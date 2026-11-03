@@ -49,7 +49,7 @@ Radeon HD 6770M, 2560x1440).
   Bildcache), `SFModel` (SFItem/SFShelf/SFPage + Resolver-Registry), `SFStore` (SQLite:
   progress, settings, jcache), `SFScreen` (Screen + Navigator), `SFTile`,
   `SFBrowseScreen` (Shelves/Grid, virtualisiert, Hero), `SFPlayerScreen`.
-- Provider (je Quelle eine Datei): Library (lokal `~/TV Shows`), YouTube, ZDF, ARD,
+- Provider (je Quelle eine Datei): YouTube, ZDF, ARD,
   ORF, CCC, Mediathek.
 - `helper/` SofaRemote (LaunchAgent): hält Apple IR exklusiv, Menu startet Sofa,
   leitet Tasten per Mach-Port an die App.
@@ -57,9 +57,16 @@ Radeon HD 6770M, 2560x1440).
   Log `~/Library/Logs/Sofa.log`.
 
 ## Datenquellen
-- Lokal: `/Users/imac/TV Shows/<Sendung>/tvshow.nfo` (genre YouTube|ZDF|ARD = Quelle),
-  `Season YYYY/sYYYY.eMMDDNN - Titel.{mp4,nfo,-thumb.jpg,info.json}`, poster/fanart.
-  Layout bleibt kompatibel (408 GB Bestand, ~1800 Videos, 117 Sendungen).
+- Offline-Bestand: `~/Movies/Sofa/<quelle>/<Sendung>/<Titel> [<id>].mp4` + `.jpg`,
+  poster.jpg/fanart.jpg je Sendung; Metadaten nur in der DB (`downloads`, `subscriptions`).
+  `SFLibrary` ist nur noch eine Sicht darauf (gruppiert nach Quelle + Sendung).
+- MIGRIERT 2026-11-03 (`SFMigration`, einmalig, Setting `migration.tvshows`): aus
+  `~/TV Shows` (ytdl-sub/Kodi) 1787 Videos / 427 GB verschoben (Umbenennen, 0 Fehler),
+  141 Fortschritte local:… → yt:/zdf:/ard:, 127 Abos aus `~/ytdl-sub/subscriptions-kodi.yaml`
+  (+ Jay Foreman manuell: Kanal heißt jetzt „Map Men“, UCbbQalJ4OaC0oQ0AqRaOJ9g).
+  Altbestand ohne Abo-Bindung (wird nie automatisch gelöscht), neue Abo-Folgen 90 Tage.
+  Rest (NFO + info.json, 10 GB) im Papierkorb. ytdl-sub-Daemon `com.ytdlsub.run`
+  per `launchctl unload -w` deaktiviert; `com.bgutil.potserver` bleibt (yt-dlp-Resolver).
 - Apple IR: AppleIRController, Consumer-Page-Usages: 0x40 Menu, 0x41 Select,
   0x42 Up, 0x43 Down, 0x44 Left, 0x45 Right, 0xCD Play/Pause, 0xB5/0xB6 Next/Prev,
   0xE9/0xEA Vol; GenericDesktop 0x89..0x8D System-Menu*. Exklusiv-Open scheitert
@@ -116,6 +123,7 @@ Gilt für ALLE Apps (YouTube, ZDF, ARD, ORF, CCC …); Umsetzung je Quelle darf 
 - 2026-11-03: yt-dlp nur für YouTube; alles andere eigen.
 - 2026-11-03: Premium-Leitbild statt Download-Manager (s. Abschnitt oben).
 - 2026-11-03: Kodi-Kompatibilität kein Kriterium mehr; Downloads in Sofa-eigenem Speicher.
+- 2026-11-03: Migration durchgeführt, ytdl-sub aus; Kodi-Import (SFKodiImport) entfernt.
 - 2026-11-03: ORF über libcurl+lokalen HLS-Proxy statt NSURLSession (10.9-TLS zu alt). User-Prio danach: YouTube + Handy-Koppeln.
 
 ## Dev-Kreislauf (closed loop, stört Kodi nicht)
@@ -152,9 +160,10 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
 - [~] ZDF / ARD / ORF nativ nach `docs/mediathek-apis.md` (Geo-/DRM-Sperren kennzeichnen). ARD+ZDF fertig (Geo-Check vor Start), ORF fertig 2026-11-03 (TLS-Brücke, Highlights `_embedded.video_item._embedded.item`, nur QXA-Streams; Einzelqualitäten → 403). Ggf. noch 3sat/ARTE.
 - [x] Update ohne Störung (sofa-deploy, sofort auch während Wiedergabe, Position bleibt).
 - [~] YouTube online (InnerTube nativ + yt-dlp-Resolver) nach `docs/youtube.md`. FERTIG 2026-11-03: `SFYouTube` (Firefox-Cookies → SAPISIDHASH, Abos/Später ansehen/Kanäle/Kanalseite UULF ohne Shorts/Playlists), `SFYTResolver` + `res/ytresolver.py` (eigenes venv `~/Library/Application Support/Sofa/ytdlp`, yt-dlp 2026.10.21, ~3,5 s/Video, 1080p HLS), Player-Retry -12643 + Ausweich-URLs (95 → 18). Lokale Kopie wird bevorzugt (`externalID`). OFFEN: Suche (braucht Bildschirmtastatur), Kanal-Banner als Hero, Live-Tab.
-- [ ] Eigene Abo-Engine (ersetzt ytdl-sub + com.ytdlsub.run), Abonnieren aus jeder App. → jetzt als Premium-Offline-Schicht (siehe Leitbild): `SFDownloads` generisch (ffmpeg -c copy aus HLS/MP4, ORF über Proxy), Downloads in Sofa-eigenen Speicher (DB `downloads`), ~/TV Shows nur Migration, Identität = Quell-ID (yt:…), Progress-Migration von local:…, Kontextmenü Herunterladen/Automatisch laden, Kachel-Status.
+- [x] Eigene Abo-Engine (ersetzt ytdl-sub + com.ytdlsub.run; live seit 2026-11-03, Feeds yt/zdf/ard/orf), Abonnieren aus jeder App. → jetzt als Premium-Offline-Schicht (siehe Leitbild): `SFDownloads` generisch (ffmpeg -c copy aus HLS/MP4, ORF über Proxy), Downloads in Sofa-eigenen Speicher (DB `downloads`), ~/TV Shows nur Migration, Identität = Quell-ID (yt:…), Progress-Migration von local:…, Kontextmenü Herunterladen/Automatisch laden, Kachel-Status.
 - [x] Handy-Koppeln (YouTube "Mit TV verbinden", Lounge-API) nativ — 2026-11-03: `SFLounge` (libcurl-Long-Poll, NSURLSession puffert auf 10.9!), `SFPairScreen` (YouTube → Mehr → „Mit Handy verbinden“), Befehle in main.m (`loungeCommand:`), weckt Display + holt Sofa nach vorne. Getestet mit `tools/lounge-remote.py <code>` (simuliertes Handy): setPlaylist/pause/seek/play/getNowPlaying ok. Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId `lounge.dev.*`). OFFEN: Test mit echtem Android/iPhone (getDiscoveryDeviceId unbeantwortet).
-- [ ] Bildschirmtastatur für Suche (nur 7 Remote-Tasten).
+- [x] Bildschirmtastatur für Suche (nur 7 Remote-Tasten) + Suche in allen Apps.
+- [ ] Downloads-Regal je App + Home, Speicherplatz-Anzeige; Kontextmenü: „Herunterladen“ nach oben, Hinweis „OK halten: Optionen“.
 - [ ] Periodisch Background-Review-Agents (User-Wunsch) — nach jedem größeren Baustein.
 - [ ] Video-Frames im Dev-Stream (AVPlayerItemVideoOutput), sonst schwarz.
 - [ ] MacPorts-Port im Overlay (Endzustand), /Applications-Kopie ist Übergang.
