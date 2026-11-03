@@ -284,6 +284,8 @@ static uint16_t gPort = 8765;
     }
     if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
         SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
+        // Stream-Adresse des alten Prozesses nicht wiederverwenden (scheiterte mit -1102) -> neu auflösen
+        if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
         SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
         if ([st[@"pos"] doubleValue] > 2) p.startPosition = [st[@"pos"] doubleValue] - 2;
         p.startPaused = [st[@"paused"] boolValue];

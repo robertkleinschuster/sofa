@@ -42,7 +42,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimer *_seekTimer;
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
-    NSURL *_openURL; NSDate *_openAt; NSInteger _openTries; NSTimeInterval _openResume;   // Retry bei sporadischem HLS-Öffnungsfehler
+    NSURL *_openURL; NSDate *_openAt; NSInteger _openTries; NSTimeInterval _openResume;
+    BOOL _holdPaused;   // „pausiert starten“ gilt über Wiederholungsversuche/Ausweich-Streams hinweg, bis der User Play drückt   // Retry bei sporadischem HLS-Öffnungsfehler
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
     id _endObs, _failObs;
@@ -242,6 +243,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             return;
         }
         self->_openTries = 0;
+        self->_holdPaused = self.startPaused;   // neuer Inhalt: nur pausiert, wenn ausdrücklich verlangt
         [self playURL:url];
     }];
 }
@@ -249,6 +251,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)playURL:(NSURL *)url {
     [self teardownPlayer];
     _openURL = url; _openAt = [NSDate date]; _openTries++;
+    if (self.startPaused) _holdPaused = YES;
     url = [[SFStreamProxy shared] playableURLFor:url];   // TLS-Brücke für ORF & Co.
     SFLog(@"player: play %@", url.isFileURL ? url.path : url.host);
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
@@ -281,7 +284,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [_player seekToTime:CMTimeMakeWithSeconds(resume - 3, 600)];
         [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(resume)]];
     }
-    if (self.startPaused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
+    if (self.startPaused || _holdPaused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
     else [_player play];
     __weak SFPlayerScreen *ws = self;
     _timeObserver = [_player addPeriodicTimeObserverForInterval:CMTimeMake(1, 2) queue:dispatch_get_main_queue() usingBlock:^(CMTime time) {
@@ -324,7 +327,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
                 SFLog(@"player: failed %@", self->_pitem.error);
                 [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@", self->_pitem.error.localizedDescription ?: @""]];
             } else if (self->_pitem.status == AVPlayerItemStatusReadyToPlay) {
-                if (self.startPaused) { [self->_player pause]; self.startPaused = NO; }   // Pause während des Ladens
+                if (self.startPaused || self->_holdPaused) { [self->_player pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
                 [self postState];
                 if (self->_item.duration <= 0) {
                     double d = CMTimeGetSeconds(self->_pitem.duration);
@@ -475,7 +478,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (NSUInteger)queueIndex { return _index; }
 - (BOOL)hasNext { return [self nextItem] != nil; }
 - (BOOL)hasPrevious { return _explicitQueue && _index > 0; }
-- (void)remotePlay { self.startPaused = NO; if (_player && _player.rate == 0) [self togglePause]; }
+- (void)remotePlay { self.startPaused = NO; _holdPaused = NO; if (_player && _player.rate == 0) [self togglePause]; }
 - (void)remotePause {
     // Pause während des Ladens/Retry: merken, damit der Player pausiert startet
     if (!_player || _pitem.status != AVPlayerItemStatusReadyToPlay) { self.startPaused = YES; [_player pause]; [self postState]; return; }
@@ -524,7 +527,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 }
 
 - (void)togglePause {
-    self.startPaused = NO;
+    self.startPaused = NO; _holdPaused = NO;
     if (!_player) return;
     if (_player.rate > 0) { [_player pause]; [self saveProgress]; }
     else {
