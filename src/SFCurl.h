@@ -1,0 +1,20 @@
+// TLS-Brücke: Server, die nur moderne TLS-Chiffren sprechen (z.B. ORF: TLS 1.2 nur
+// AES-GCM, TLS 1.3), sind mit SecureTransport von 10.9 nicht erreichbar. Für diese Hosts
+// nutzt Sofa libcurl aus MacPorts (OpenSSL).
+//  * SFCurlFetch: synchroner Abruf (nur im Hintergrund aufrufen)
+//  * SFStreamProxy: lokaler HTTP-Proxy (127.0.0.1) für AVFoundation inkl. HLS-Umschreibung
+#import "SFCore.h"
+
+NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
+                    NSInteger *status, NSError **error);
+
+// Hosts, die den curl-Weg brauchen (wird bei SSL-Fehlern automatisch gelernt).
+BOOL SFHostNeedsCurl(NSString *host);
+void SFMarkHostNeedsCurl(NSString *host);
+BOOL SFIsTLSError(NSError *e);
+
+@interface SFStreamProxy : NSObject
++ (instancetype)shared;
+// Liefert für https-URLs eines curl-Hosts eine lokale Proxy-URL, sonst die URL selbst.
+- (NSURL *)playableURLFor:(NSURL *)url;
+@end

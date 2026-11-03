@@ -1,0 +1,17 @@
+#!/bin/bash
+# Neues Sofa ausrollen, ohne den Nutzer zu stören: Build -> /Applications/Sofa.app.staged.
+# SofaRemote (läuft dauerhaft) übernimmt innerhalb von ~3 s: Sofa sichert Zustand
+# (Bereich + laufendes Video + Position), zeigt "wird aktualisiert", Tausch, Neustart,
+# Wiedergabe läuft an derselben Stelle weiter. Rollback: Sofa.app.prev.
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+make -C "$SRC" >/dev/null
+rm -rf /Applications/Sofa.app.staged.tmp
+cp -R "$SRC/build/Sofa.app" /Applications/Sofa.app.staged.tmp
+rm -rf /Applications/Sofa.app.staged   # nie in ein altes .staged verschachteln
+mv /Applications/Sofa.app.staged.tmp /Applications/Sofa.app.staged   # atomar sichtbar
+echo "bereitgestellt; warte auf Übernahme durch SofaRemote ..."
+for i in $(seq 1 60); do [ -e /Applications/Sofa.app.staged ] || break; sleep 0.5; done
+[ -e /Applications/Sofa.app.staged ] && { echo "WARNUNG: nicht übernommen (läuft SofaRemote mit Update-Logik?)"; exit 1; }
+tail -4 "$HOME/Library/Logs/SofaRemote.log"

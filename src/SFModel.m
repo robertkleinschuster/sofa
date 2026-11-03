@@ -1,0 +1,121 @@
+#import "SFModel.h"
+
+NSError *SFError(NSString *msg) {
+    return [NSError errorWithDomain:@"Sofa" code:1 userInfo:@{NSLocalizedDescriptionKey: msg ?: @"Fehler"}];
+}
+
+static NSMutableDictionary *resolvers(void) {
+    static NSMutableDictionary *d; static dispatch_once_t o;
+    dispatch_once(&o, ^{ d = [NSMutableDictionary new]; });
+    return d;
+}
+void SFRegisterResolver(NSString *prefix, SFRefResolver r) { resolvers()[prefix] = [r copy]; }
+void SFResolveRef(NSString *ref, SFURLDone done) {
+    NSRange c = [ref rangeOfString:@":"];
+    SFRefResolver r = c.location == NSNotFound ? nil : resolvers()[[ref substringToIndex:c.location]];
+    if (!r) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
+    r([ref substringFromIndex:c.location + 1], done);
+}
+
+@implementation SFItem
+
+- (NSDictionary *)dictionaryRepresentation {
+    NSMutableDictionary *d = [NSMutableDictionary new];
+    d[@"kind"] = @(self.kind);
+    if (self.identifier) d[@"id"] = self.identifier;
+    if (self.title) d[@"title"] = self.title;
+    if (self.subtitle) d[@"subtitle"] = self.subtitle;
+    if (self.plot) d[@"plot"] = self.plot.length > 2000 ? [self.plot substringToIndex:2000] : self.plot;
+    if (self.image) d[@"image"] = self.image;
+    if (self.backdrop) d[@"backdrop"] = self.backdrop;
+    if (self.channel) d[@"channel"] = self.channel;
+    if (self.source) d[@"source"] = self.source;
+    if (self.date) d[@"date"] = @(self.date.timeIntervalSince1970);
+    if (self.duration > 0) d[@"duration"] = @(self.duration);
+    if (self.localPath) d[@"localPath"] = self.localPath;
+    if (self.externalID) d[@"externalID"] = self.externalID;
+    else if (self.playURL) d[@"url"] = self.playURL.absoluteString;
+    if (self.resolverRef) d[@"ref"] = self.resolverRef;
+    return d;
+}
+
++ (instancetype)itemWithDictionary:(NSDictionary *)d {
+    SFItem *i = [SFItem new];
+    i.kind = [d[@"kind"] integerValue];
+    i.identifier = d[@"id"];
+    i.title = d[@"title"];
+    i.subtitle = d[@"subtitle"];
+    i.plot = d[@"plot"];
+    i.image = d[@"image"];
+    i.backdrop = d[@"backdrop"];
+    i.channel = d[@"channel"];
+    i.source = d[@"source"];
+    if (d[@"date"]) i.date = [NSDate dateWithTimeIntervalSince1970:[d[@"date"] doubleValue]];
+    i.duration = [d[@"duration"] doubleValue];
+    i.localPath = d[@"localPath"];
+    i.externalID = d[@"externalID"];
+    if (i.localPath) i.playURL = [NSURL fileURLWithPath:i.localPath];
+    else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
+    i.resolverRef = d[@"ref"];
+    return i;
+}
+
+- (id)copyWithZone:(NSZone *)z {
+    SFItem *i = [SFItem itemWithDictionary:[self dictionaryRepresentation]];
+    i.plot = self.plot; i.style = self.style; i.resolver = self.resolver; i.pageLoader = self.pageLoader;
+    i.action = self.action; i.tint = self.tint; i.themeName = self.themeName; i.badge = self.badge;
+    i.playURL = self.playURL;
+    return i;
+}
+
+- (void)resolveURL:(SFURLDone)done {
+    void (^main)(NSURL *, NSError *) = ^(NSURL *u, NSError *e) { SFMain(^{ done(u, e); }); };
+    if (self.localPath) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:self.localPath]) {
+            main([NSURL fileURLWithPath:self.localPath], nil);
+            return;
+        }
+        if (!self.resolverRef && !self.resolver) { main(nil, SFError(@"Die Datei wurde gelöscht.")); return; }
+    }
+    if (self.resolver) { self.resolver(main); return; }
+    if (self.resolverRef) { SFResolveRef(self.resolverRef, main); return; }
+    if (self.playURL) { main(self.playURL, nil); return; }
+    main(nil, SFError(@"Kein Stream verfügbar."));
+}
+@end
+
+@implementation SFShelf
++ (instancetype)shelf:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items {
+    SFShelf *s = [SFShelf new]; s.title = title; s.style = st; s.items = items; s.layout = SFShelfRail;
+    return s;
+}
++ (instancetype)grid:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items {
+    SFShelf *s = [self shelf:title style:st items:items]; s.layout = SFShelfGrid;
+    return s;
+}
+@end
+
+@implementation SFPage
++ (instancetype)page:(NSString *)title theme:(NSString *)theme shelves:(NSArray *)shelves {
+    SFPage *p = [SFPage new]; p.title = title; p.themeName = theme; p.shelves = shelves;
+    return p;
+}
+@end
+
+static NSMutableDictionary *gAlternates;   // URL-String -> nächster URL-String
+void SFSetAlternateURLs(NSURL *primary, NSArray *alts) {
+    if (!primary) return;
+    if (!gAlternates) gAlternates = [NSMutableDictionary new];
+    NSString *prev = primary.absoluteString;
+    for (id a in alts) {
+        NSString *s = [a isKindOfClass:[NSURL class]] ? [a absoluteString] : a;
+        if (![s isKindOfClass:[NSString class]] || [s isEqualToString:prev]) continue;
+        gAlternates[prev] = s;
+        prev = s;
+    }
+    if (gAlternates.count > 400) [gAlternates removeAllObjects];
+}
+NSURL *SFNextAlternateURL(NSURL *failed) {
+    NSString *n = failed ? gAlternates[failed.absoluteString] : nil;
+    return n ? [NSURL URLWithString:n] : nil;
+}

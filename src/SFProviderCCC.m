@@ -1,0 +1,137 @@
+#import "SFProviderCCC.h"
+#import "SFNet.h"
+#import "SFStore.h"
+
+static NSString *const kAPI = @"https://api.media.ccc.de/public";
+
+@implementation SFProviderCCC
+
+static NSDate *parseDate(NSString *s) {
+    if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
+    static NSDateFormatter *df; static dispatch_once_t o;
+    dispatch_once(&o, ^{ df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd"; });
+    @synchronized (df) { return [df dateFromString:[s substringToIndex:10]]; }
+}
+
+static id nn(id v) { return (v == [NSNull null]) ? nil : v; }
+static NSString *str(id v) { v = nn(v); return [v isKindOfClass:[NSString class]] ? v : nil; }
+static NSArray *arr(id v) { v = nn(v); return [v isKindOfClass:[NSArray class]] ? v : nil; }
+static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictionary class]] ? v : nil; }
+
++ (SFItem *)eventItem:(NSDictionary *)e {
+    SFItem *i = [SFItem new];
+    i.kind = SFItemVideo;
+    i.identifier = [@"ccc:" stringByAppendingString:e[@"guid"]];
+    i.resolverRef = i.identifier;
+    i.title = nn(e[@"title"]);
+    i.channel = nn(e[@"conference_title"]);
+    NSArray *persons = nn(e[@"persons"]);
+    NSString *who = [persons isKindOfClass:[NSArray class]] ? [persons componentsJoinedByString:@", "] : nil;
+    i.date = parseDate(nn(e[@"date"]) ?: nn(e[@"release_date"]));
+    i.subtitle = who.length ? who : SFFormatDateShort(i.date);
+    NSString *sub = nn(e[@"subtitle"]);
+    NSString *desc = nn(e[@"description"]);
+    i.plot = sub.length ? [NSString stringWithFormat:@"%@\n%@", sub, desc ?: @""] : desc;
+    i.image = nn(e[@"poster_url"]) ?: nn(e[@"thumb_url"]);
+    i.backdrop = i.image;
+    i.duration = [nn(e[@"length"]) doubleValue];
+    i.source = @"ccc";
+    i.style = SFTileStyleLandscape;
+    return i;
+}
+
++ (NSArray *)eventItems:(NSArray *)events {
+    NSMutableArray *a = [NSMutableArray new];
+    for (NSDictionary *e in arr(events)) if (dict(e) && str(e[@"guid"])) [a addObject:[self eventItem:e]];
+    return a;
+}
+
++ (SFItem *)conferenceItem:(NSDictionary *)c {
+    SFItem *i = [SFItem new];
+    i.kind = SFItemFolder;
+    i.identifier = [@"cccconf:" stringByAppendingString:c[@"acronym"]];
+    i.title = nn(c[@"title"]);
+    NSString *logo = nn(c[@"logo_url"]);
+    i.image = [logo.lowercaseString hasSuffix:@".svg"] ? nil : logo;   // 10.9 kann kein SVG
+    i.imageFit = YES;
+    i.date = parseDate(nn(c[@"event_last_released_at"]));
+    i.subtitle = SFFormatDateShort(i.date);
+    i.themeName = @"ccc";
+    i.source = @"ccc";
+    NSString *acr = c[@"acronym"];
+    NSString *title = i.title;
+    i.pageLoader = ^(SFPageDone done) {
+        [SFNet getJSON:[NSString stringWithFormat:@"%@/conferences/%@", kAPI, acr] headers:nil cacheAge:3600 done:^(id j, NSError *e) {
+            if (!j) { done(nil, e); return; }
+            NSArray *evs = [[self eventItems:dict(j)[@"events"]] sortedArrayUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
+                return [b.date ?: [NSDate distantPast] compare:a.date ?: [NSDate distantPast]];
+            }];
+            NSString *d = nn(j[@"description"]);
+            SFPage *p = [SFPage page:title theme:@"ccc" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Vorträge", (unsigned long)evs.count] style:SFTileStyleLandscape items:evs]]];
+            p.subtitle = d;
+            done(p, nil);
+        }];
+    };
+    return i;
+}
+
++ (void)registerResolver {
+    SFRegisterResolver(@"ccc", ^(NSString *guid, SFURLDone done) {
+        [SFNet getJSON:[NSString stringWithFormat:@"%@/events/%@", kAPI, guid] headers:nil cacheAge:600 done:^(id j, NSError *e) {
+            if (!dict(j)) { done(nil, e ?: SFError(@"Vortrag nicht gefunden.")); return; }
+            NSString *orig = nn(j[@"original_language"]);
+            NSDictionary *best = nil; int bestScore = -1;
+            for (NSDictionary *r in arr(dict(j)[@"recordings"])) {
+                if (!dict(r)) continue;
+                if (![nn(r[@"mime_type"]) isEqualToString:@"video/mp4"]) continue;
+                int sc = 0;
+                if ([nn(r[@"high_quality"]) boolValue]) sc += 4;
+                NSString *lang = nn(r[@"language"]);
+                if (orig && [lang isEqualToString:orig]) sc += 2;      // Originalton, eine Sprache
+                else if (orig && [lang hasPrefix:orig]) sc += 1;
+                if (sc > bestScore) { bestScore = sc; best = r; }
+            }
+            NSString *u = nn(best[@"recording_url"]);
+            done(u ? [NSURL URLWithString:u] : nil, u ? nil : SFError(@"Keine abspielbare Aufzeichnung."));
+        }];
+    });
+}
+
++ (SFPageLoader)homeLoader {
+    return ^(SFPageDone done) {
+        dispatch_group_t g = dispatch_group_create();
+        __block id recent, popular, confs;
+        NSInteger year = [[NSCalendar currentCalendar] component:NSCalendarUnitYear fromDate:[NSDate date]];
+        dispatch_group_enter(g);
+        [SFNet getJSON:[kAPI stringByAppendingString:@"/events/recent"] headers:nil cacheAge:1800 done:^(id j, NSError *e) { recent = j; dispatch_group_leave(g); }];
+        dispatch_group_enter(g);
+        [SFNet getJSON:[NSString stringWithFormat:@"%@/events/popular?year=%ld", kAPI, (long)year] headers:nil cacheAge:6 * 3600 done:^(id j, NSError *e) { popular = j; dispatch_group_leave(g); }];
+        dispatch_group_enter(g);
+        [SFNet getJSON:[kAPI stringByAppendingString:@"/conferences"] headers:nil cacheAge:6 * 3600 done:^(id j, NSError *e) { confs = j; dispatch_group_leave(g); }];
+        dispatch_group_notify(g, dispatch_get_main_queue(), ^{
+            if (!recent && !popular && !confs) { done(nil, SFError(@"media.ccc.de ist nicht erreichbar.")); return; }
+            NSMutableArray *shelves = [NSMutableArray new];
+            NSArray *cont = [[SFStore shared] continueWatching:20 source:@"ccc"];
+            if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
+            NSArray *r = [self eventItems:dict(recent)[@"events"]];
+            if (r.count) [shelves addObject:[SFShelf shelf:@"Neu veröffentlicht" style:SFTileStyleLandscape items:r]];
+            NSArray *p = [self eventItems:dict(popular)[@"events"]];
+            if (p.count) [shelves addObject:[SFShelf shelf:[NSString stringWithFormat:@"Beliebt %ld", (long)year] style:SFTileStyleLandscape items:p]];
+            NSMutableArray *cs = [NSMutableArray new];
+            NSMutableArray *valid = [NSMutableArray new];
+            for (id c in arr(dict(confs)[@"conferences"])) if (dict(c) && str(c[@"acronym"])) [valid addObject:c];
+            NSArray *sorted = [valid sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+                return [str(b[@"event_last_released_at"]) ?: @"" compare:str(a[@"event_last_released_at"]) ?: @""];
+            }];
+            for (NSDictionary *c in sorted) [cs addObject:[self conferenceItem:c]];
+            // Congress-Reihe hervorheben
+            NSArray *congress = [cs filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SFItem *i, NSDictionary *b) {
+                return i.title && [i.identifier rangeOfString:@"c3" options:NSAnchoredSearch | NSBackwardsSearch].location != NSNotFound && [i.title rangeOfString:@"C3"].location != NSNotFound;
+            }]];
+            if (congress.count) [shelves addObject:[SFShelf shelf:@"Chaos Communication Congress" style:SFTileStyleWide items:congress]];
+            if (cs.count) [shelves addObject:[SFShelf grid:@"Alle Konferenzen" style:SFTileStyleWide items:cs]];
+            done([SFPage page:nil theme:@"ccc" shelves:shelves], nil);
+        });
+    };
+}
+@end

@@ -1,0 +1,343 @@
+#import "SFLayers.h"
+#import <ImageIO/ImageIO.h>
+#import <CommonCrypto/CommonDigest.h>
+#import "SFCurl.h"
+
+#pragma mark - SFLabel
+
+@implementation SFLabel
+
++ (instancetype)labelWithFont:(NSFont *)f color:(NSColor *)c {
+    SFLabel *l = [self layer];
+    l.font = f; l.color = c; l.maxLines = 1;
+    return l;
+}
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        self.contentsScale = [NSScreen mainScreen].backingScaleFactor ?: 1;
+        self.needsDisplayOnBoundsChange = YES;
+        self.anchorPoint = CGPointZero;
+        _maxLines = 1;
+        _alignment = NSLeftTextAlignment;
+    }
+    return self;
+}
+- (id<CAAction>)actionForKey:(NSString *)event {
+    if ([event isEqualToString:@"contents"]) return nil;
+    return [super actionForKey:event];
+}
+
+- (void)setText:(NSString *)t { if (![_text isEqualToString:t]) { _text = [t copy]; [self setNeedsDisplay]; } }
+- (void)setFont:(NSFont *)f { _font = f; [self setNeedsDisplay]; }
+- (void)setColor:(NSColor *)c { _color = c; [self setNeedsDisplay]; }
+- (void)setMaxLines:(NSInteger)m { _maxLines = m; [self setNeedsDisplay]; }
+
+- (NSAttributedString *)attributed {
+    NSMutableParagraphStyle *ps = [NSMutableParagraphStyle new];
+    ps.alignment = self.alignment;
+    ps.lineBreakMode = self.maxLines == 1 ? NSLineBreakByTruncatingTail : NSLineBreakByWordWrapping;
+    ps.lineSpacing = self.lineSpacing;
+    NSMutableDictionary *a = [@{NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:U(24)],
+                                NSForegroundColorAttributeName: self.color ?: [NSColor whiteColor],
+                                NSParagraphStyleAttributeName: ps} mutableCopy];
+    if (self.shadow) {
+        NSShadow *sh = [NSShadow new];
+        sh.shadowColor = [NSColor colorWithDeviceWhite:0 alpha:0.75];
+        sh.shadowBlurRadius = U(6);
+        sh.shadowOffset = NSMakeSize(0, -U(1));
+        a[NSShadowAttributeName] = sh;
+    }
+    return [[NSAttributedString alloc] initWithString:self.text ?: @"" attributes:a];
+}
+
+- (CGFloat)lineHeight {
+    // gleiche Messmethode wie beim Zeichnen (Line-Fragment), sonst passt Zeile 2 nicht
+    NSDictionary *a = @{NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:U(24)]};
+    NSRect r = [@"ÄÖgy" boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)
+                                     options:NSStringDrawingUsesLineFragmentOrigin attributes:a];
+    return ceil(r.size.height) + self.lineSpacing;
+}
+
+- (CGFloat)sizeToFitWidth:(CGFloat)w {
+    CGFloat h;
+    if (!self.text.length) h = [self lineHeight];   // Platz für später gesetzten Text
+    else {
+        NSRect r = [[self attributed] boundingRectWithSize:NSMakeSize(w, CGFLOAT_MAX)
+                                                  options:NSStringDrawingUsesLineFragmentOrigin];
+        h = ceil(r.size.height) + ceil(fabs(self.font.descender) * 0.5);  // Unterlängen nicht abschneiden
+        if (self.maxLines > 0) h = MIN(h, [self lineHeight] * self.maxLines + ceil(fabs(self.font.descender) * 0.5));
+        if (self.shadow) h += U(4);
+    }
+    CGRect b = self.bounds; b.size = CGSizeMake(w, h);
+    self.bounds = b;
+    return h;
+}
+
+- (void)drawInContext:(CGContextRef)ctx {
+    if (!self.text.length) return;
+    NSGraphicsContext *old = [NSGraphicsContext currentContext];
+    // Ist die Ebene in einem geometryFlipped-Baum, liefert CA einen gespiegelten Kontext.
+    NSGraphicsContext *g = [NSGraphicsContext graphicsContextWithGraphicsPort:ctx flipped:self.contentsAreFlipped];
+    [NSGraphicsContext setCurrentContext:g];
+    CGContextSaveGState(ctx);
+    CGContextSetShouldSmoothFonts(ctx, false);
+    CGContextSetShouldAntialias(ctx, true);
+    NSRect r = NSMakeRect(0, 0, self.bounds.size.width, self.bounds.size.height);
+    NSStringDrawingOptions o = NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine;
+    [[self attributed] drawWithRect:r options:o];
+    CGContextRestoreGState(ctx);
+    [NSGraphicsContext setCurrentContext:old];
+}
+@end
+
+#pragma mark - Image cache
+
+@implementation SFImageCache {
+    NSCache *_mem;
+    NSOperationQueue *_decode;
+    NSOperationQueue *_net;
+    NSString *_diskDir;
+    NSURLSession *_session;
+    NSMutableDictionary *_pending;
+}
+
++ (instancetype)shared {
+    static SFImageCache *s; static dispatch_once_t o;
+    dispatch_once(&o, ^{ s = [SFImageCache new]; });
+    return s;
+}
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        _mem = [NSCache new];
+        _mem.totalCostLimit = 350 * 1024 * 1024;  // dekodierte Pixel
+        _decode = [NSOperationQueue new];
+        _decode.maxConcurrentOperationCount = 3;
+        _net = [NSOperationQueue new];
+        _net.maxConcurrentOperationCount = 6;
+        _diskDir = [SFCacheDir() stringByAppendingPathComponent:@"img"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:_diskDir withIntermediateDirectories:YES attributes:nil error:nil];
+        NSURLSessionConfiguration *c = [NSURLSessionConfiguration defaultSessionConfiguration];
+        c.HTTPMaximumConnectionsPerHost = 4;
+        c.timeoutIntervalForRequest = 20;
+        c.URLCache = nil;
+        _session = [NSURLSession sessionWithConfiguration:c];
+        _pending = [NSMutableDictionary new];
+    }
+    return self;
+}
+
+- (void)trim { [_mem removeAllObjects]; }
+
+static NSString *hashString(NSString *s) {
+    unsigned char d[CC_SHA1_DIGEST_LENGTH];
+    NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
+    CC_SHA1(data.bytes, (CC_LONG)data.length, d);
+    NSMutableString *o = [NSMutableString string];
+    for (int i = 0; i < CC_SHA1_DIGEST_LENGTH; i++) [o appendFormat:@"%02x", d[i]];
+    return o;
+}
+
+static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) CF_RETURNS_RETAINED;
+static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
+    if (!src) return NULL;
+    NSDictionary *o = @{(id)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
+                        (id)kCGImageSourceThumbnailMaxPixelSize: @(MAX(16, px)),
+                        (id)kCGImageSourceCreateThumbnailWithTransform: @YES,
+                        (id)kCGImageSourceShouldCacheImmediately: @YES};
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)o);
+}
+
+- (void)imageForSource:(NSString *)src maxPixel:(CGFloat)px blurred:(BOOL)blur
+            completion:(void (^)(CGImageRef))done {
+    if (!src.length) { done(NULL); return; }
+    if (blur) px = 64;  // winzig dekodieren, die GPU skaliert weich hoch = günstige Unschärfe
+    px = ceil(px / 64) * 64;
+    NSString *key = [NSString stringWithFormat:@"%@|%.0f", src, px];
+    id hit = [_mem objectForKey:key];
+    if (hit) { done((__bridge CGImageRef)hit); return; }
+
+    @synchronized (_pending) {
+        NSMutableArray *w = _pending[key];
+        if (w) { [w addObject:[done copy]]; return; }
+        _pending[key] = [NSMutableArray arrayWithObject:[done copy]];
+    }
+    void (^finish)(CGImageRef) = ^(CGImageRef img) {
+        if (img) {
+            size_t cost = CGImageGetBytesPerRow(img) * CGImageGetHeight(img);
+            [self->_mem setObject:(__bridge id)img forKey:key cost:cost];
+        }
+        CGImageRef keep = img ? CGImageRetain(img) : NULL;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSArray *ws;
+            @synchronized (self->_pending) { ws = self->_pending[key]; [self->_pending removeObjectForKey:key]; }
+            for (void (^cb)(CGImageRef) in ws) cb(keep);
+            if (keep) CGImageRelease(keep);
+        });
+    };
+
+    BOOL remote = [src hasPrefix:@"http://"] || [src hasPrefix:@"https://"];
+    if (!remote) {
+        [_decode addOperationWithBlock:^{
+            CGImageSourceRef s = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:src], NULL);
+            CGImageRef img = decodeThumb(s, px);
+            if (s) CFRelease(s);
+            finish(img);
+            if (img) CGImageRelease(img);
+        }];
+        return;
+    }
+    NSString *disk = [_diskDir stringByAppendingPathComponent:hashString(src)];
+    void (^decodeData)(NSData *) = ^(NSData *data) {
+        [self->_decode addOperationWithBlock:^{
+            CGImageSourceRef s = data ? CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL) : NULL;
+            CGImageRef img = decodeThumb(s, px);
+            if (s) CFRelease(s);
+            finish(img);
+            if (img) CGImageRelease(img);
+        }];
+    };
+    [_net addOperationWithBlock:^{
+        NSData *cached = [NSData dataWithContentsOfFile:disk];
+        if (cached.length) { decodeData(cached); return; }
+        NSURL *u = [NSURL URLWithString:src];
+        if (!u) { finish(NULL); return; }
+        if (SFHostNeedsCurl(u.host)) {   // TLS-Brücke (z.B. ORF-Bilder)
+            NSInteger st = 0;
+            NSData *data = SFCurlFetch(src, @"GET", nil, nil, &st, NULL);
+            if (data.length && st < 400) { [data writeToFile:disk atomically:YES]; decodeData(data); }
+            else finish(NULL);
+            return;
+        }
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        [[self->_session dataTaskWithURL:u completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
+            NSInteger code = [(NSHTTPURLResponse *)r statusCode];
+            if (SFIsTLSError(e)) SFMarkHostNeedsCurl(u.host);   // nächster Versuch über curl
+            if (data.length && code < 400) {
+                [data writeToFile:disk atomically:YES];
+                decodeData(data);
+            } else {
+                finish(NULL);
+            }
+            dispatch_semaphore_signal(sem);
+        }] resume];
+        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
+    }];
+}
+@end
+
+#pragma mark - SFImageLayer
+
+@interface SFImageLayer (Fade)
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want;
+@end
+
+@implementation SFImageLayer
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        self.contentsGravity = kCAGravityResizeAspectFill;
+        self.masksToBounds = YES;
+        self.minificationFilter = kCAFilterTrilinear;
+    }
+    return self;
+}
+- (id<CAAction>)actionForKey:(NSString *)event {
+    if ([event isEqualToString:@"contents"]) return nil;
+    return [super actionForKey:event];
+}
+
+- (void)setPlaceholderColor:(NSColor *)c {
+    _placeholderColor = c;
+    if (!self.contents) self.backgroundColor = c.CGColor;
+}
+
+- (void)setSource:(NSString *)source {
+    if ([_source isEqualToString:source] && (self.contents || !source)) return;
+    _source = [source copy];
+    self.contents = nil;
+    self.backgroundColor = self.placeholderColor.CGColor;
+    if (!source.length) return;
+    CGFloat px = MAX(self.bounds.size.width, self.bounds.size.height) * self.contentsScale;
+    if (px < 1) px = 512;
+    NSString *want = _source;
+    __weak SFImageLayer *ws = self;
+    [[SFImageCache shared] imageForSource:source maxPixel:px blurred:self.blurred completion:^(CGImageRef img) {
+        SFImageLayer *s = ws;
+        if (!s || ![s.source isEqualToString:want] || !img) return;
+        if (s.fadeEdges) { [s applyFaded:img source:want]; return; }
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        s.contents = (__bridge id)img;
+        [CATransaction commit];
+        CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+        fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.25;
+        [s addAnimation:fade forKey:@"fadein"];
+    }];
+}
+@end
+
+static CGImageRef fadedImage(CGImageRef src) CF_RETURNS_RETAINED;
+static CGImageRef fadedImage(CGImageRef src) {
+    size_t w = CGImageGetWidth(src), h = CGImageGetHeight(src);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
+    CGContextRef m = CGBitmapContextCreate(NULL, w, h, 8, 0, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
+    // Maske: horizontal 0->1 (linke 45 %), multipliert mit vertikal 1->0 (untere 45 %)
+    uint8_t *mp = CGBitmapContextGetData(m);
+    size_t bpr = CGBitmapContextGetBytesPerRow(m);
+    for (size_t y = 0; y < h; y++) {
+        // Bitmap-Zeile 0 = oben
+        double fy = (double)y / h;
+        double vy = fy < 0.55 ? 1.0 : MAX(0, 1.0 - (fy - 0.55) / 0.45);
+        if (fy < 0.18) vy *= 0.35 + 0.65 * (fy / 0.18);   // oben leicht abdunkeln (Header/Uhr lesbar)
+        for (size_t x = 0; x < w; x++) {
+            double fx = (double)x / w;
+            double vx = fx > 0.45 ? 1.0 : fx / 0.45;
+            double a = vx * vx * (3 - 2 * vx) * vy * vy * (3 - 2 * vy);
+            mp[y * bpr + x] = (uint8_t)(a * 255);
+        }
+    }
+    CGImageRef mask = CGBitmapContextCreateImage(m);
+    CGContextClipToMask(c, CGRectMake(0, 0, w, h), mask);
+    CGContextDrawImage(c, CGRectMake(0, 0, w, h), src);
+    CGImageRef out = CGBitmapContextCreateImage(c);
+    CGImageRelease(mask); CGContextRelease(m); CGContextRelease(c); CGColorSpaceRelease(cs);
+    return out;
+}
+
+@implementation SFImageLayer (Fade)
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want {
+    static NSCache *cache;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ cache = [NSCache new]; cache.countLimit = 12; });
+    void (^set)(id) = ^(id im) {
+        if (![self.source isEqualToString:want]) return;
+        [CATransaction begin]; [CATransaction setDisableActions:YES];
+        self.contents = im;
+        [CATransaction commit];
+        CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+        fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.35;
+        [self addAnimation:fade forKey:@"fadein"];
+    };
+    id hit = [cache objectForKey:want];
+    if (hit) { set(hit); return; }
+    CGImageRef keep = CGImageRetain(img);
+    SFBackground(^{
+        CGImageRef f = fadedImage(keep);
+        CGImageRelease(keep);
+        id obj = (__bridge_transfer id)f;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (obj) { [cache setObject:obj forKey:want]; set(obj); } });
+    });
+}
+@end
+
+CALayer *SFGradientBackground(NSColor *top, NSColor *bottom, CGRect frame) {
+    CAGradientLayer *g = [CAGradientLayer layer];
+    g.frame = frame;
+    g.colors = @[(id)top.CGColor, (id)bottom.CGColor];
+    g.startPoint = CGPointMake(0.5, 0);   // geometryFlipped Wurzel: y=0 oben
+    g.endPoint = CGPointMake(0.5, 0.7);
+    return g;
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>de.sofa.app</string>
+  <key>ProgramArguments</key>
+  <array><string>/Applications/Sofa.app/Contents/MacOS/Sofa</string></array>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>RunAtLoad</key><true/>
+  <!-- Absturz -> automatisch neu starten; reguläres Beenden (exit 0) nicht -->
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>

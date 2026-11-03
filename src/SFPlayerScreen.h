@@ -1,0 +1,31 @@
+// Vollbild-Player (AVFoundation) mit eigener OSD, Fortsetzen, Spulen, Autoplay.
+#import "SFScreen.h"
+#import "SFModel.h"
+
+@interface SFPlayerScreen : SFScreen
+- (instancetype)initWithItem:(SFItem *)item queue:(NSArray *)queue index:(NSUInteger)index;
+@property (nonatomic) BOOL startFromBeginning;
+@property (nonatomic) NSTimeInterval startPosition;
+@property (nonatomic) BOOL startPaused;               // nach Update pausiert lassen   // >0: exakt hier starten (Update-Wiederaufnahme)
+@property (nonatomic, readonly) SFItem *item;
+- (NSTimeInterval)currentTime;
+- (BOOL)isPaused;
+- (NSTimeInterval)duration;
+
+// Fernsteuerung (Handy-Koppeln / Lounge)
+extern NSString *const SFPlayerStateNotification;   // object = SFPlayerScreen; bei jeder Zustandsänderung
+typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnded = 0, SFPlaybackPlaying = 1, SFPlaybackPaused = 2, SFPlaybackBuffering = 3 };
+@property (nonatomic, readonly) SFPlaybackState playbackState;
+@property (nonatomic, copy) NSString *remoteListID;      // gesetzt, wenn vom Handy gestartet
+@property (nonatomic, readonly) NSArray *queue;
+@property (nonatomic, readonly) NSUInteger queueIndex;
+- (void)remotePlay;
+- (void)remotePause;
+- (void)remoteSeekTo:(NSTimeInterval)t;
+- (void)remoteNext;                                   // wie Autoplay (Queue bzw. nächste Folge)
+- (void)remotePrevious;
+- (BOOL)hasNext;
+- (BOOL)hasPrevious;
+- (void)playQueueIndex:(NSUInteger)i at:(NSTimeInterval)t;
+- (void)replaceQueue:(NSArray *)items index:(NSUInteger)i at:(NSTimeInterval)t;   // Queue explizit (Handy): Weiter = nächster Eintrag
+@end

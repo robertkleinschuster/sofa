@@ -1,0 +1,110 @@
+#!/bin/bash
+# sofa-dev — geschlossener Entwicklungskreislauf für Sofa, ohne den echten Bildschirm
+# (Kodi-Nutzer) zu stören: unsichtbare Instanz (--dev), Steuerung per FIFO, Screenshots
+# aus dem Offscreen-Fenster, Log-/Crash-Prüfung.
+#
+#   sofa-dev build                 make (Fehler -> Exit 1)
+#   sofa-dev start [WxH]           Dev-Instanz (neu) starten, Default 1920x1080
+#   sofa-dev stop                  Dev-Instanz beenden
+#   sofa-dev key k [k ...]         Tasten senden (up down left right select menu play
+#                                  selecthold menuhold next prev uphold downhold)
+#   sofa-dev shot NAME             Screenshot -> $SHOTS/NAME.png (Pfad wird ausgegeben)
+#   sofa-dev do "key down" "shot a" "sleep 1" ...   Abfolge
+#   sofa-dev check                 läuft? neue Crash-Reports? Fehler im Log?
+#   sofa-dev log [N]               letzte N Logzeilen (Default 40)
+#   sofa-dev cycle [WxH]           build + start + check (Standard-Schleife)
+set -u
+unset DYLD_INSERT_LIBRARIES
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$ROOT/build/SofaDev.app/Contents/MacOS/Sofa"   # Bundle-ID de.sofa.dev
+CACHE="$HOME/Library/Caches/Sofa"
+# Instanzen: "test" (Default, automatische Tests, Port 8766) und "view" (Live-Vorschau
+# für den User, Port 8765). SOFA_INSTANCE=view sofa-dev start ...
+INST="${SOFA_INSTANCE:-test}"
+case "$INST" in view) PORT=8767 ;; test) PORT=8766 ;; *) PORT="${SOFA_PORT:-8770}" ;; esac   # 8765 = echte App; weitere Instanzen (Agents): SOFA_INSTANCE=name SOFA_PORT=877x
+FIFO="$CACHE/dev-$INST.fifo"
+PIDF="$CACHE/dev-$INST.pid"
+STARTF="$CACHE/dev-$INST.start"
+LOG="$HOME/Library/Logs/Sofa.log"
+SHOTS="${SOFA_SHOTS:-/private/tmp/claude-501/sofa-shots}"
+mkdir -p "$CACHE" "$SHOTS"
+
+alive() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+
+send() {
+  alive || { echo "sofa-dev: keine Dev-Instanz" >&2; return 1; }
+  printf '%s\n' "$*" > "$FIFO"
+}
+
+cmd_build() { make -C "$ROOT" 2>&1 | /usr/bin/grep -E 'error|warning:' ; [ "${PIPESTATUS[0]}" = 0 ] && echo "build ok" || { echo "BUILD FAILED"; return 1; }; }
+
+cmd_stop() {
+  if alive; then
+    local p; p="$(cat "$PIDF")"
+    printf 'quit\n' > "$FIFO" 2>/dev/null
+    for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$p" 2>/dev/null || break; sleep 0.3; done
+    kill -0 "$p" 2>/dev/null && kill "$p"
+  fi
+  rm -f "$PIDF"
+}
+
+cmd_start() {
+  cmd_stop
+  local size="${1:-1920x1080}"
+  rm -f "$FIFO"
+  date +%s > "$STARTF"
+  echo "----- dev start [$INST] $(date) $size" >> "$LOG"
+  "$BIN" --dev --instance "$INST" --port "$PORT" --size "$size" >> "$CACHE/dev-$INST.stderr" 2>&1 &
+  echo $! > "$PIDF"
+  for i in $(seq 1 50); do [ -p "$FIFO" ] && break; sleep 0.2; done
+  [ -p "$FIFO" ] || { echo "start: FIFO fehlt"; cmd_check; return 1; }
+  sleep 1.5
+  echo "started [$INST] pid $(cat "$PIDF") ($size) http://127.0.0.1:$PORT/"
+}
+
+cmd_key() { for k in "$@"; do send "key $k" || return 1; sleep 0.35; done; }
+
+cmd_shot() {
+  local f="$SHOTS/$1.png"
+  rm -f "$f"
+  send "shot $f" || return 1
+  for i in $(seq 1 40); do [ -s "$f" ] && { echo "$f"; return 0; }; sleep 0.15; done
+  echo "shot: kein Bild ($f)"; return 1
+}
+
+cmd_check() {
+  local st=0
+  if alive; then echo "running pid $(cat "$PIDF")"; else echo "NOT RUNNING"; st=1; fi
+  local since; since="$(cat "$STARTF" 2>/dev/null || echo 0)"
+  for c in "$HOME"/Library/Logs/DiagnosticReports/Sofa_*.crash; do
+    [ -f "$c" ] || continue
+    [ "$(stat -f %m "$c")" -ge "$since" ] && { echo "CRASH: $c"; /usr/bin/grep -m5 -E 'Exception Type|Crashed Thread|^0 ' "$c"; st=1; }
+  done
+  [ -s "$CACHE/dev-$INST.stderr" ] && /usr/bin/grep -E -i 'exception|error|assert' "$CACHE/dev-$INST.stderr" | tail -5
+  return $st
+}
+
+cmd_do() {
+  for step in "$@"; do
+    set -- $step
+    case "$1" in
+      key) shift; cmd_key "$@" ;;
+      shot) cmd_shot "$2" ;;
+      sleep) sleep "$2" ;;
+      *) send "$step" ;;
+    esac || return 1
+  done
+}
+
+case "${1:-}" in
+  build) cmd_build ;;
+  start) shift; cmd_start "$@" ;;
+  stop) cmd_stop ;;
+  key) shift; cmd_key "$@" ;;
+  shot) cmd_shot "$2" ;;
+  do) shift; cmd_do "$@" ;;
+  check) cmd_check ;;
+  log) tail -n "${2:-40}" "$LOG" ;;
+  cycle) shift; cmd_build && cmd_start "$@" && cmd_check ;;
+  *) sed -n '2,20p' "$0" ;;
+esac
