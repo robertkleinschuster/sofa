@@ -467,11 +467,18 @@ static NSSet *skipKeys(void) {
         // "UULF" = nur Langvideos (ohne Shorts); Fallback "UU" = alle Uploads
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
         __block NSString *banner = nil, *desc = nil, *meta = nil, *avatar = nil;
-        __block NSArray *playlists = nil, *popular = nil;
+        __block NSArray *playlists = nil, *popular = nil, *streams = nil;
         void (^build)(NSArray *, NSError *) = ^(NSArray *items, NSError *e) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
             for (SFItem *i in items) [(i.kind == SFItemLive ? live : vids) addObject:i];
+            // Live-Tab: laufende Streams zu „Jetzt live“ (ohne Doppelte), vergangene als eigenes Regal
+            NSMutableArray *pastStreams = [NSMutableArray new];
+            NSMutableSet *liveIDs = [NSMutableSet setWithArray:[live valueForKey:@"identifier"]];
+            for (SFItem *i in streams) {
+                if (i.kind == SFItemLive) { if (i.identifier && ![liveIDs containsObject:i.identifier]) { [liveIDs addObject:i.identifier]; [live addObject:i]; } }
+                else if (i.kind == SFItemVideo) [pastStreams addObject:i];
+            }
             // Kanalkopf wie bei YouTube: kompakte Knöpfe unter Banner/Name statt großer Kachel.
             // [Folgen] (rot, solange nicht gefolgt) · [Automatisch laden: An/Aus] (nur wenn gefolgt)
             SFDownloads *dl = [SFDownloads shared];
@@ -534,6 +541,7 @@ static NSSet *skipKeys(void) {
             if (vids.count) [shelves addObject:[SFShelf shelf:@"Neueste Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(0, MIN(vids.count, (NSUInteger)12))]]];
             if (popular.count >= 4) [shelves addObject:[SFShelf shelf:@"Beliebt" style:SFTileStyleLandscape items:[popular subarrayWithRange:NSMakeRange(0, MIN(popular.count, (NSUInteger)12))]]];
             if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
+            if (pastStreams.count) [shelves addObject:[SFShelf shelf:@"Livestreams" style:SFTileStyleLandscape items:[pastStreams subarrayWithRange:NSMakeRange(0, MIN(pastStreams.count, (NSUInteger)12))]]];
             // Ältere Videos weiter unten als Raster (wie der Videos-Tab), ohne die Reihe oben zu wiederholen
             if (vids.count > 12) [shelves addObject:[SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(12, vids.count - 12)]]];
             if (!shelves.count && !items) { done(nil, e); return; }
@@ -590,6 +598,12 @@ static NSSet *skipKeys(void) {
                 popular = pv;
                 dispatch_group_leave(g);
             }];
+        }];
+        // Live-Tab (wie bei YouTube): laufende + vergangene Streams; kurz gecacht, Live-Status ändert sich
+        dispatch_group_enter(g);
+        [self call:@"browse" body:@{@"browseId": cid, @"params": @"EgdzdHJlYW1z8gYECgJ6AA=="} auth:NO cache:600 done:^(id j, NSError *le) {
+            streams = j ? [self videosIn:j cont:NULL channels:nil] : nil;
+            dispatch_group_leave(g);
         }];
         void (^build0)(NSArray *, NSError *) = build;
         build = ^(NSArray *items, NSError *e) { dispatch_group_notify(g, dispatch_get_main_queue(), ^{ build0(items, e); }); };

@@ -352,6 +352,10 @@ static uint16_t gPort = 8765;
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
         f.pageLoader = [SFProviderZDF categoryLoader:[arg substringFromIndex:8] title:@"Test"];
         SFOpenItem(self.nav, f, nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: beliebige YouTube-Kanalseite
+        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
+        f.pageLoader = [SFYouTube channelLoader:[arg substringFromIndex:10] title:@"Kanal"];
+        SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"quit"]) {
