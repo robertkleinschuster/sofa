@@ -137,6 +137,7 @@ Gilt für ALLE Apps (YouTube, ZDF, ARD, ORF, CCC …); Umsetzung je Quelle darf 
 - 2026-11-03: Premium-Leitbild statt Download-Manager (s. Abschnitt oben).
 - 2026-11-03: Kodi-Kompatibilität kein Kriterium mehr; Downloads in Sofa-eigenem Speicher.
 - 2026-11-03: Migration durchgeführt, ytdl-sub aus; Kodi-Import (SFKodiImport) entfernt.
+- 2026-11-03: Kein Mehrbenutzer-Konzept (User): Gerät wird geteilt, alles ist gemeinsam (Verlauf, Weiterschauen, Abos). Keine Anmelde-/Firefox-Hinweise in der Oberfläche.
 - 2026-11-03: ORF über libcurl+lokalen HLS-Proxy statt NSURLSession (10.9-TLS zu alt). User-Prio danach: YouTube + Handy-Koppeln.
 
 ## Dev-Kreislauf (closed loop, stört Kodi nicht)
