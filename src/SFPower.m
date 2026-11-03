@@ -89,7 +89,6 @@ static __weak SFNavigator *gNav;
 + (void)showPowerMenuOn:(SFNavigator *)nav {
     gNav = nav;
     SFMenuOption *off = [SFMenuOption option:@"Bildschirm ausschalten" action:^{ [self displayOff]; }];
-    off.detail = @"Taste drücken zum Einschalten";
     SFMenuOption *timer = [SFMenuOption option:@"Sleep-Timer" action:^{
         dispatch_async(dispatch_get_main_queue(), ^{ [self showSleepTimerMenuOn:nav]; });
     }];
