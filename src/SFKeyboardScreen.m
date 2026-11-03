@@ -1,8 +1,9 @@
 #import "SFKeyboardScreen.h"
+#import "SFStore.h"
 #import "SFLayers.h"
 #import "SFLogo.h"
 
-typedef NS_ENUM(NSInteger, SFKbKind) { SFKbChar, SFKbSpace, SFKbDelete, SFKbSubmit };
+typedef NS_ENUM(NSInteger, SFKbKind) { SFKbChar, SFKbSpace, SFKbDelete, SFKbSubmit, SFKbLayout };
 
 @interface SFKbKey : NSObject
 @property (nonatomic) SFKbKind kind;
@@ -56,7 +57,10 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 #pragma mark Aufbau
 
 - (NSArray *)buildKeys {
-    NSArray *lines = @[@"abcdefghij", @"klmnopqrst", @"uvwxyzäöüß", @"1234567890"];
+    // Layout wählbar (gemerkt): ABC (alphabetisch, für Ungeübte) oder QWERTZ (wie die Computertastatur)
+    BOOL qwertz = [[[SFStore shared] setting:@"keyboard.layout"] isEqualToString:@"qwertz"];
+    NSArray *lines = qwertz ? @[@"qwertzuiop", @"asdfghjklö", @"yxcvbnmäüß", @"1234567890"]
+                            : @[@"abcdefghij", @"klmnopqrst", @"uvwxyzäöüß", @"1234567890"];
     NSMutableArray *rows = [NSMutableArray new];
     for (NSString *line in lines) {
         NSMutableArray *r = [NSMutableArray new];
@@ -69,8 +73,8 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         [rows addObject:r];
     }
     NSMutableArray *last = [NSMutableArray new];
-    NSArray *specials = @[@[@(SFKbSpace), @"Leerzeichen", @0, @4], @[@(SFKbDelete), @"Löschen", @4, @3],
-                          @[@(SFKbSubmit), self.submitTitle ?: @"Suchen", @7, @3]];
+    NSArray *specials = @[@[@(SFKbLayout), qwertz ? @"ABC" : @"QWERTZ", @0, @2], @[@(SFKbSpace), @"Leerzeichen", @2, @3],
+                          @[@(SFKbDelete), @"Löschen", @5, @2], @[@(SFKbSubmit), self.submitTitle ?: @"Suchen", @7, @3]];
     for (NSArray *s in specials) {
         SFKbKey *k = [SFKbKey new];
         k.kind = [s[0] integerValue]; k.label = s[1]; k.col = [s[2] integerValue]; k.span = [s[3] integerValue];
@@ -340,8 +344,11 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
                 SFKbKey *k = keys[i];
                 BOOL f = grid && (NSInteger)r == self->_row && (NSInteger)i == self->_key;
                 BOOL submit = k.kind == SFKbSubmit;
-                k.bg.backgroundColor = (f ? t.focus : (submit ? t.accent : keyBg)).CGColor;
-                k.text.color = f ? on : (submit ? t.accentText : t.text);
+                // „Suchen“ unfokussiert nur als Akzent-Umriss: sonst zwei gleich aussehende Tasten (Fokus unklar)
+                k.bg.backgroundColor = (f ? t.focus : keyBg).CGColor;
+                k.bg.borderColor = t.accent.CGColor;
+                k.bg.borderWidth = (submit && !f) ? U(3) : 0;
+                k.text.color = f ? on : (submit ? t.accent : t.text);
                 k.bg.transform = f ? CATransform3DMakeScale(1.1, 1.1, 1) : CATransform3DIdentity;
                 k.bg.zPosition = f ? 10 : 0;
                 k.bg.shadowOpacity = f ? 0.45 : 0;
@@ -425,6 +432,13 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         case SFKbSpace: [self insert:@" "]; break;
         case SFKbDelete: [self deleteBackward]; break;
         case SFKbSubmit: [self submit:_text]; break;
+        case SFKbLayout: {   // ABC <-> QWERTZ, gemerkt; Fokus bleibt auf dem Umschalter
+            BOOL q = [[[SFStore shared] setting:@"keyboard.layout"] isEqualToString:@"qwertz"];
+            [[SFStore shared] setSetting:q ? @"abc" : @"qwertz" forKey:@"keyboard.layout"];
+            [self layoutForSize:self.size];
+            [self focusKind:SFKbLayout orChar:nil];
+            return;
+        }
     }
     // kurzes "Drück"-Feedback
     CABasicAnimation *a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];

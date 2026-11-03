@@ -60,7 +60,29 @@ static SFSuggestProvider suggestions(NSString *source) {
         NSMutableArray *mine = [NSMutableArray new];
         for (NSString *r in recent)
             if ([r rangeOfString:q options:NSCaseInsensitiveSearch | NSAnchoredSearch].location != NSNotFound && ![r isEqualToString:q]) [mine addObject:r];
-        if (![source isEqualToString:@"youtube"]) { done(@"Zuletzt gesucht", mine); return; }
+        if (![source isEqualToString:@"youtube"]) {
+            // Mediatheken: Titel der ersten Treffer als Vorschläge (Sendungen zuerst) – man sieht beim
+            // Tippen, wann es reicht. Ab 2 Zeichen; die Suchanfragen sind gecacht.
+            if (q.length < 2) { done(@"Zuletzt gesucht", mine); return; }
+            SFPageLoader l = searchLoader(source, q);
+            if (!l) { done(@"Zuletzt gesucht", mine); return; }
+            l(^(SFPage *page, NSError *e) {
+                NSMutableArray *all = [[mine subarrayWithRange:NSMakeRange(0, MIN(mine.count, (NSUInteger)2))] mutableCopy];
+                NSMutableArray *folders = [NSMutableArray new], *videos = [NSMutableArray new];
+                for (SFShelf *sh in page.shelves) for (SFItem *i in sh.items) {
+                    if (!i.title.length || [i.identifier hasPrefix:@"search:"]) continue;
+                    [(i.kind == SFItemFolder ? folders : videos) addObject:i.title];
+                }
+                for (NSString *s in [folders arrayByAddingObjectsFromArray:videos]) {
+                    BOOL dup = NO;
+                    for (NSString *x in all) if ([x caseInsensitiveCompare:s] == NSOrderedSame) dup = YES;
+                    if (!dup) [all addObject:s];
+                    if (all.count >= 6) break;
+                }
+                done(all.count > mine.count ? @"Vorschläge" : @"Zuletzt gesucht", all);
+            });
+            return;
+        }
         [SFYouTube suggestions:q done:^(NSArray *list) {
             NSMutableArray *all = [[mine subarrayWithRange:NSMakeRange(0, MIN(mine.count, (NSUInteger)2))] mutableCopy];
             for (NSString *s in list) {

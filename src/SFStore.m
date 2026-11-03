@@ -187,7 +187,12 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     });
 }
 
+// Dev-Instanzen: alle Einstellungen in eigenem Namensraum (Tests dürfen nie Tastatur-Layout,
+// zuletzt Gesuchtes, Handy-Kopplung usw. der echten App verändern)
+static NSString *SK(NSString *key) { return (SFDevMode && ![key hasPrefix:@"dev."]) ? [@"dev." stringByAppendingString:key] : key; }
+
 - (NSString *)setting:(NSString *)key {
+    key = SK(key);
     __block NSString *v = nil;
     dispatch_sync(_q, ^{
         sqlite3_stmt *st;
@@ -199,6 +204,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     return v;
 }
 - (void)setSetting:(NSString *)value forKey:(NSString *)key {
+    key = SK(key);
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO settings (k,v) VALUES (?,?)", -1, &st, NULL) != SQLITE_OK) return;
