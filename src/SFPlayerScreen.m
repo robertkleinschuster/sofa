@@ -446,7 +446,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimeInterval c = [self current];
     // YouTube-Autoplay: ab der Hälfte die Empfehlung „Als Nächstes“ holen (einmal je Video)
     NSTimeInterval dur = [self duration];
-    if (!_upNextAsked && !_explicitQueue && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
+    BOOL playlistGoesOn = _item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID];
+    if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
         _upNextAsked = YES;
         SFItem *forItem = _item;
         [SFYouTube upNextFor:_item.externalID done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];

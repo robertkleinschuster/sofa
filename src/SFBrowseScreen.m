@@ -131,7 +131,11 @@
         self->_content.frame = CGRectMake(0, 0, size.width, size.height);
     });
     _laidOut = YES;
-    if (_page) [self buildRows];
+    if (_page) {
+        BOOL hdr = _headerFocus;
+        [self buildRows];
+        if (hdr && _searchPill) [self focusHeaderSearch];
+    }
 }
 
 - (void)buildHeader:(CGSize)size {
@@ -403,23 +407,27 @@ static void auditImages(SFPage *page) {
         SFItem *it = [self focusedItem];
         fItem = it.identifier ?: it.title;
     }
+    BOOL hdr = keep && _headerFocus;   // Fokus auf „Suche“ übersteht Neuladen (z. B. Download fertig)
     _page = page;
     if (!_laidOut) return;
     _pageTitle.text = page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", page.title ?: @"", page.subtitle] : page.title;
     [self buildRows];
+    BOOL found = NO;
     if (fShelf) {
-        for (NSUInteger i = 0; i < _rows.count; i++) {
+        for (NSUInteger i = 0; i < _rows.count && !found; i++) {
             SFRow *r = _rows[i];
             if (![[self shelfTitleForRow:r] isEqualToString:fShelf]) continue;
             for (NSUInteger c = 0; c < r.items.count; c++) {
                 SFItem *it = r.items[c];
                 if ([(it.identifier ?: it.title) isEqualToString:fItem]) {
                     [self focusRow:i col:c animated:NO];
-                    return;
+                    found = YES;
+                    break;
                 }
             }
         }
     }
+    if (hdr && _searchPill) [self focusHeaderSearch];
 }
 
 - (NSString *)shelfTitleForRow:(SFRow *)r {
@@ -677,10 +685,11 @@ static void auditImages(SFPage *page) {
 }
 
 - (BOOL)handleKey:(SFKey)key {
-    if (!_rows.count) return NO;
+    // Kopfzeilen-Fokus zuerst: auch eine leere Seite (z. B. offline) bleibt per „Suche“ bedienbar
     if (_headerFocus) {
         switch (key) {
             case SFKeyDown: case SFKeyDownHold:
+                if (!_rows.count || _row >= (NSInteger)_rows.count) return YES;
                 _headerFocus = NO;
                 [self updateSearchPill:YES];
                 [self focusRow:_row col:[_rows[_row] focusCol] animated:YES];
@@ -690,13 +699,17 @@ static void auditImages(SFPage *page) {
                 return YES;
             case SFKeyMenu: case SFKeyMenuHold:
                 return NO;
-            default: {   // Anschlag
-                CABasicAnimation *a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-                a.fromValue = @1.08; a.toValue = @1.0; a.duration = 0.18;
+            default: {   // Anschlag (um die fokussierte Größe 1,08 herum, ohne Zurückspringen)
+                CAKeyframeAnimation *a = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
+                a.values = @[@1.08, @1.14, @1.08]; a.duration = 0.2;
                 [_searchPill addAnimation:a forKey:@"bump"];
                 return YES;
             }
         }
+    }
+    if (!_rows.count) {
+        if ((key == SFKeyUp || key == SFKeyUpHold) && _searchPill) { [self focusHeaderSearch]; return YES; }
+        return NO;
     }
     SFRow *r = _rows[_row];
     // Halten der Pfeile (Remote-Helper wiederholt) = weiter navigieren

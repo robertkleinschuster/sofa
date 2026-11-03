@@ -287,8 +287,17 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
                 SFKeyboardScreen *s2 = ws;
                 if (!s2 || seq != s2->_sugSeq) return;
                 s2->_sugHeadingText = heading;
+                // Fokus in der Liste hängt am Text, nicht an der Position: ändert sich die Liste unter dem
+                // Fokus, nicht stillschweigend einen anderen Begriff auswählen – sonst zurück zur Tastatur.
+                NSString *was = (s2->_area == 1 && s2->_sug < (NSInteger)s2->_suggestions.count) ? s2->_suggestions[s2->_sug] : nil;
                 s2->_suggestions = list.count > kMaxSug ? [list subarrayWithRange:NSMakeRange(0, kMaxSug)] : (list ?: @[]);
+                BOOL lost = NO;
+                if (was) {
+                    NSUInteger at = [s2->_suggestions indexOfObject:was];
+                    if (at != NSNotFound) s2->_sug = at; else lost = YES;
+                }
                 [s2 renderSuggestions];
+                if (lost && s2->_area == 1) [s2 leaveSuggestions];
             });
         });
     });

@@ -1,4 +1,5 @@
 #import "SFYouTube.h"
+#import "SFMenuScreen.h"
 #import "SFYTResolver.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -488,7 +489,23 @@ static NSSet *skipKeys(void) {
             if (!following) fb.tint = [SFTheme themeNamed:@"youtube"].accent;
             fb.backdrop = banner; fb.heroTitle = title; fb.heroMeta = meta; fb.plot = desc;
             fb.action = ^{
-                if ([fo isFollowing:fid]) { [fo unfollow:fid]; [navi() toast:[NSString stringWithFormat:@"„%@“ entfernt", title]]; }
+                if ([fo isFollowing:fid]) {
+                    // Wie YouTube („Abo beenden?“): Entfolgen nur mit Rückfrage – der Knopf hat beim
+                    // Öffnen den Fokus, ein reflexhaftes OK darf den Kanal nicht stillschweigend entfernen.
+                    SFNavigator *nav = navi();
+                    BOOL dlOn = [dl isSubscribed:fid];
+                    SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
+                    SFMenuOption *yes = [SFMenuOption option:@"Nicht mehr folgen" action:^{
+                        [fo unfollow:fid];
+                        [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ nicht mehr", title]];
+                    }];
+                    NSString *sub = dlOn ? @"Neue Videos erscheinen nicht mehr unter „Neue Folgen“ und werden nicht mehr geladen. Vorhandene Downloads bleiben."
+                                         : @"Neue Videos erscheinen dann nicht mehr unter „Neue Folgen“.";
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [nav push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ nicht mehr folgen?", title]
+                                                             subtitle:sub options:@[no, yes] theme:[SFTheme themeNamed:@"youtube"]]];
+                    });
+                }
                 else { [fo follow:folder]; [navi() toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Videos erscheinen unter „Neue Folgen“", title]]; }
             };
             [buttons addObject:fb];
@@ -546,7 +563,7 @@ static NSSet *skipKeys(void) {
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EglwbGF5bGlzdHPyBgQKAkIA"} auth:NO cache:3600 done:^(id j, NSError *pe) {
             NSMutableArray *pl = [NSMutableArray new];
-            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder) { i.style = SFTileStyleLandscape; [pl addObject:i]; }
+            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // Mixe (RD…) sind keine Kanal-Playlists
             playlists = pl;
             dispatch_group_leave(g);
         }];

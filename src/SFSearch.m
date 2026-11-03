@@ -79,7 +79,9 @@ static SFSuggestProvider suggestions(NSString *source) {
                     if (!dup) [all addObject:s];
                     if (all.count >= 6) break;
                 }
-                done(all.count > mine.count ? @"Vorschläge" : @"Zuletzt gesucht", all);
+                NSUInteger fromRecent = MIN(mine.count, (NSUInteger)2);
+                if (all.count == fromRecent) { done(@"Zuletzt gesucht", mine); return; }   // keine Treffer (z. B. offline): alle eigenen
+                done(@"Vorschläge", all);
             });
             return;
         }
