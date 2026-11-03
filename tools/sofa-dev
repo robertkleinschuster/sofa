@@ -8,7 +8,8 @@
 #   sofa-dev stop                  Dev-Instanz beenden
 #   sofa-dev key k [k ...]         Tasten senden (up down left right select menu play
 #                                  selecthold menuhold next prev uphold downhold)
-#   sofa-dev wshot NAME            echte Fensteraufnahme (inkl. Video/OpenGL)
+#   sofa-dev wshot NAME            echte Fensteraufnahme (geht aus der SSH-Shell nicht: kein Window-Server-Zugriff)
+#   sofa-dev frame NAME            echtes mpv-Videobild (GL-Readback in eigenes FBO, 1280x720) -> $SHOTS/NAME.png
 #   sofa-dev open pair|history     Seite direkt öffnen (Dev)
 #   sofa-dev shot NAME             Screenshot -> $SHOTS/NAME.png (Pfad wird ausgegeben)
 #   sofa-dev do "key down" "shot a" "sleep 1" ...   Abfolge
@@ -74,6 +75,13 @@ cmd_wshot() {
   mkdir -p "$SHOTS"; screencapture -x -o -l "$wid" "$SHOTS/$1.png" && echo "$SHOTS/$1.png"
 }
 
+cmd_frame() {
+  local f="$SHOTS/$1.png"; rm -f "$f"; mkdir -p "$SHOTS"
+  send "frameshot $f" || return 1
+  for i in $(seq 1 40); do [ -s "$f" ] && { echo "$f"; return 0; }; sleep 0.15; done
+  echo "frame: kein Bild (läuft ein Video über mpv? SOFA_FORCE_MPV=1)"; return 1
+}
+
 cmd_shot() {
   local f="$SHOTS/$1.png"
   rm -f "$f"
@@ -113,6 +121,7 @@ case "${1:-}" in
   build) cmd_build ;;
   start) shift; cmd_start "$@" ;;
   stop) cmd_stop ;;
+  frame) cmd_frame "${2:?Name}" ;;
   key) shift; cmd_key "$@" ;;
   shot) cmd_shot "$2" ;;
   wshot) cmd_wshot "$2" ;;

@@ -12,6 +12,7 @@
 #import "SFDevServer.h"
 #import "SFMigration.h"
 #import "SFPairScreen.h"
+#import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
 #import "SFProviderCCC.h"
@@ -341,6 +342,8 @@ static uint16_t gPort = 8765;
         if (k) [self.nav sendKey:k.integerValue];
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
+    } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: echtes mpv-Bild aus dem GL-Framebuffer
+        SFMPVDevFrameShot(arg);
     } else if ([cmd isEqualToString:@"home"]) {
         [self.nav popToRoot];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: Seiten direkt öffnen (stabiler als Tastenfolgen)

@@ -3,5 +3,10 @@
 // SFMPVAvailable() NO und Sofa spielt nur über AVFoundation. Siehe SFEngine.h.
 #import "SFEngine.h"
 
+// Dev: nächstes gerendertes mpv-Bild direkt aus dem GL-Framebuffer als PNG sichern (zeigt das
+// echte Videobild, auch wenn das Dev-Fenster für den Window-Server unsichtbar ist).
+extern NSString *SFMPVDevFrameShotPath;
+void SFMPVDevFrameShot(NSString *path);
+
 @interface SFMPVEngine : NSObject <SFEngine>
 @end

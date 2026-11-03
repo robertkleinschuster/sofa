@@ -25,6 +25,34 @@ NSDictionary *SFMPVSourceFor(NSURL *url) {
 #import <OpenGL/gl3.h>
 #endif
 
+NSString *SFMPVDevFrameShotPath = nil;
+
+static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
+    NSMutableData *px = [NSMutableData dataWithLength:(NSUInteger)w * h * 4];
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.mutableBytes);
+    GLenum err = glGetError();
+    // GL liefert Zeilen von unten nach oben, CG erwartet oben zuerst: Zeilen tauschen
+    uint8_t *b = px.mutableBytes; size_t rb = (size_t)w * 4;
+    NSMutableData *tmp = [NSMutableData dataWithLength:rb];
+    for (GLint y = 0; y < h / 2; y++) {
+        memcpy(tmp.mutableBytes, b + y * rb, rb);
+        memcpy(b + y * rb, b + (h - 1 - y) * rb, rb);
+        memcpy(b + (h - 1 - y) * rb, tmp.mutableBytes, rb);
+    }
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bc = CGBitmapContextCreate(px.mutableBytes, w, h, 8, w * 4, cs, (CGBitmapInfo)kCGImageAlphaNoneSkipLast);
+    CGImageRef img = bc ? CGBitmapContextCreateImage(bc) : NULL;
+    if (img) {
+        CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], CFSTR("public.png"), 1, NULL);
+        if (d) { CGImageDestinationAddImage(d, img, NULL); CGImageDestinationFinalize(d); CFRelease(d); }
+        CGImageRelease(img);
+    }
+    if (bc) CGContextRelease(bc);
+    CGColorSpaceRelease(cs);
+    SFLog(@"mpv: dev frameshot %dx%d fbo=%d glerr=0x%x -> %@", w, h, fbo, err, path);
+}
+
 BOOL SFMPVAvailable(void) {
 #if SF_HAVE_MPV
     static int v = -1;
@@ -58,8 +86,11 @@ static void *glProc(void *ctx, const char *name) {
     CGLContextObj _ctx;
 }
 
+static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „frameshot“)
+
 - (instancetype)init {
     if ((self = [super init])) {
+        gDevLayer = self;
         self.asynchronous = NO;              // gezeichnet wird auf Anforderung (mpv-Update-Callback)
         self.needsDisplayOnBoundsChange = YES;
         self.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
@@ -82,10 +113,40 @@ static void *glProc(void *ctx, const char *name) {
     return _ctx;
 }
 
+// Dev: aktuelles Bild im GL-Kontext der Ebene in ein eigenes FBO rendern und als PNG sichern –
+// unabhängig davon, ob CoreAnimation das (Offscreen-)Fenster zeichnet.
+- (void)devFrameShot {
+    NSString *path = SFMPVDevFrameShotPath;
+    SFMPVDevFrameShotPath = nil;
+    if (!path || !_rc || !_ctx) { SFLog(@"mpv: dev frameshot nicht möglich (rc=%d ctx=%d)", _rc != NULL, _ctx != NULL); return; }
+    CGLLockContext(_ctx);
+    CGLSetCurrentContext(_ctx);
+    GLint w = 1280, h = 720;
+    GLuint tex = 0, fb = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glGenFramebuffers(1, &fb);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    mpv_opengl_fbo f = { .fbo = (int)fb, .w = w, .h = h, .internal_format = GL_RGBA8 };
+    int flip = 1;
+    mpv_render_param p[] = { { MPV_RENDER_PARAM_OPENGL_FBO, &f }, { MPV_RENDER_PARAM_FLIP_Y, &flip }, { MPV_RENDER_PARAM_INVALID, NULL } };
+    mpv_render_context_render(_rc, p);
+    devWritePNG(path, (GLint)fb, w, h);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fb);
+    glDeleteTextures(1, &tex);
+    CGLUnlockContext(_ctx);
+}
+
 static void onUpdate(void *ctx) {
     // mpv-Thread -> Main: neuer Frame bereit
     SFMPVLayer *l = (__bridge SFMPVLayer *)ctx;
-    dispatch_async(dispatch_get_main_queue(), ^{ [l setNeedsDisplay]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (SFMPVDevFrameShotPath) [l devFrameShot];
+        [l setNeedsDisplay];
+    });
 }
 
 - (BOOL)canDrawInCGLContext:(CGLContextObj)ctx pixelFormat:(CGLPixelFormatObj)pf forLayerTime:(CFTimeInterval)t displayTime:(const CVTimeStamp *)ts {
@@ -108,7 +169,14 @@ static void onUpdate(void *ctx) {
     GLint fbo = 0, vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
     glGetIntegerv(GL_VIEWPORT, vp);
-    if (_rc && vp[2] > 0 && vp[3] > 0) {   // ohne Größe (vor dem ersten Layout) nicht rendern
+    // Ohne Größe oder mit unfertigem CA-Framebuffer (erster Aufruf vor dem Erscheinen) nicht rendern –
+    // sonst meldet mpv INVALID_FRAMEBUFFER_OPERATION; der nächste Frame kommt ohnehin.
+    BOOL fbOK = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (_rc && fbOK && vp[2] > 0 && vp[3] > 0) {
+        // Fehler-Flags von CoreAnimation (z. B. aus dem Aufbau der Ebene) sind „klebrig“ und würden
+        // mpv als eigener Fehler gemeldet – vorher abholen.
+        GLenum stale; int n = 0;
+        while ((stale = glGetError()) != GL_NO_ERROR && n++ < 8) if (SFDevMode) SFLog(@"mpv: GL-Fehler vor dem Rendern: 0x%x", stale);
         mpv_opengl_fbo f = { .fbo = fbo, .w = vp[2], .h = vp[3], .internal_format = 0 };
         int flip = 1;
         mpv_render_param p[] = {
@@ -325,3 +393,8 @@ static void onWakeup(void *ctx) {
 @end
 
 #endif
+
+void SFMPVDevFrameShot(NSString *path) {
+    SFMPVDevFrameShotPath = path;
+    dispatch_async(dispatch_get_main_queue(), ^{ [gDevLayer devFrameShot]; });
+}
