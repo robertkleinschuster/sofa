@@ -12,6 +12,7 @@
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
 #import "SFLogo.h"
+#import "SFSearch.h"
 
 // Ein sichtbarer "Zeilen"-Abschnitt: Rail = eine Zeile; Grid = mehrere Zeilen.
 @interface SFRow : NSObject
@@ -40,6 +41,8 @@
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
     NSTimer *_prefetchTimer;      // YouTube vorladen bei ruhendem Fokus
     CALayer *_hintKey, *_phonePill, *_phoneDot;   // Statuszeile oben rechts
+    CALayer *_searchPill; CAShapeLayer *_searchIcon; SFLabel *_searchLabel;   // Kopfzeile: „Suche“
+    BOOL _headerFocus;           // Fokus liegt auf „Suche“ statt auf einer Kachel
     CALayer *_content;           // vertikal verschobener Inhalt
     NSMutableArray *_rows;
     NSInteger _row;              // fokussierte Zeile
@@ -185,6 +188,36 @@
         x += _wordmark.bounds.size.width + U(28);
     }
 
+    // „Suche“ als sichtbarer Knopf neben dem Logo (wie die Suche oben in TV-Apps): Hoch aus der
+    // ersten Reihe fokussiert ihn – die Suche ist so nie mehr als ein, zwei Tasten entfernt.
+    _searchPill = nil;
+    if (self.searchSource) {
+        _searchPill = [CALayer layer];
+        _searchPill.cornerRadius = U(26);
+        _searchPill.borderWidth = U(2);
+        _searchIcon = [CAShapeLayer layer];
+        CGMutablePathRef sp = CGPathCreateMutable();
+        CGPathAddEllipseInRect(sp, NULL, CGRectMake(U(2), U(2), U(18), U(18)));
+        CGPathMoveToPoint(sp, NULL, U(17), U(17));
+        CGPathAddLineToPoint(sp, NULL, U(25), U(25));
+        _searchIcon.path = sp; CGPathRelease(sp);
+        _searchIcon.fillColor = NULL;
+        _searchIcon.lineWidth = U(3.5);
+        _searchIcon.lineCap = kCALineCapRound;
+        _searchIcon.frame = CGRectMake(U(22), U(13), U(27), U(27));
+        [_searchPill addSublayer:_searchIcon];
+        _searchLabel = [SFLabel labelWithFont:[t medium:26] color:t.text];
+        _searchLabel.text = @"Suche";
+        NSSize lsz = [_searchLabel.text sizeWithAttributes:@{NSFontAttributeName: _searchLabel.font}];
+        CGFloat lh = [_searchLabel sizeToFitWidth:ceil(lsz.width) + 4];
+        _searchLabel.position = CGPointMake(U(60), (U(52) - lh) / 2);
+        [_searchPill addSublayer:_searchLabel];
+        _searchPill.frame = CGRectMake(x + U(8), U(44), U(60) + ceil(lsz.width) + U(26), U(52));
+        [_header addSublayer:_searchPill];
+        x = CGRectGetMaxX(_searchPill.frame) + U(28);
+        [self updateSearchPill:NO];
+    }
+
     _pageTitle = [SFLabel labelWithFont:[t regular:34] color:t.textDim];
     _pageTitle.text = _page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", _page.title ?: @"", _page.subtitle] : _page.title;
     [_pageTitle sizeToFitWidth:size.width - x - U(960)];
@@ -304,7 +337,7 @@ static CGFloat textWidth(SFLabel *l) {
         return;
     }
     if (![_hint.text isEqualToString:@"halten: Optionen"]) { SFNoAnimate(^{ self->_hint.text = @"halten: Optionen"; }); [self layoutStatusRow]; }
-    SFItem *it = [self focusedItem];
+    SFItem *it = _headerFocus ? nil : [self focusedItem];
     BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it] || [[SFFollows shared] canFollow:it])));
     SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.85 : 0; self->_hintKey.opacity = show ? 0.85 : 0; });
 }
@@ -567,6 +600,7 @@ static void auditImages(SFPage *page) {
 
 - (void)focusRow:(NSInteger)row col:(NSInteger)col animated:(BOOL)anim {
     if (row < 0 || row >= (NSInteger)_rows.count) return;
+    if (_headerFocus) { _headerFocus = NO; [self updateSearchPill:anim]; }
     SFRow *old = _row < (NSInteger)_rows.count ? _rows[_row] : nil;
     SFTileLayer *ot = old.tiles[@(old.focusCol)];
     ot.focused = NO;
@@ -617,8 +651,53 @@ static void auditImages(SFPage *page) {
     else [self updateBackdropFor:[self focusedItem]];
 }
 
+- (void)updateSearchPill:(BOOL)anim {
+    if (!_searchPill) return;
+    SFTheme *t = self.theme;
+    BOOL f = _headerFocus;
+    void (^ch)(void) = ^{
+        self->_searchPill.backgroundColor = f ? t.text.CGColor : [t.text colorWithAlphaComponent:0.08].CGColor;
+        self->_searchPill.borderColor = f ? t.text.CGColor : [t.text colorWithAlphaComponent:0.35].CGColor;
+        NSColor *fg = f ? (t.backgroundTop ?: t.background) : t.text;
+        self->_searchIcon.strokeColor = fg.CGColor;
+        self->_searchLabel.color = fg;
+        self->_searchPill.transform = f ? CATransform3DMakeScale(1.08, 1.08, 1) : CATransform3DIdentity;
+    };
+    if (anim) SFAnimate(0.16, ch); else SFNoAnimate(ch);
+}
+
+- (void)focusHeaderSearch {
+    SFRow *r = _row < (NSInteger)_rows.count ? _rows[_row] : nil;
+    SFTileLayer *ot = r.tiles[@(r.focusCol)];
+    ot.focused = NO;
+    _headerFocus = YES;
+    [self updateSearchPill:YES];
+    [self updateHint];
+    if (self.showsHero) [self updateHeroFor:SFSearchTile(self.searchSource)];
+}
+
 - (BOOL)handleKey:(SFKey)key {
     if (!_rows.count) return NO;
+    if (_headerFocus) {
+        switch (key) {
+            case SFKeyDown: case SFKeyDownHold:
+                _headerFocus = NO;
+                [self updateSearchPill:YES];
+                [self focusRow:_row col:[_rows[_row] focusCol] animated:YES];
+                return YES;
+            case SFKeySelect: case SFKeyPlayPause:
+                SFOpenSearch(self.navigator, self.searchSource, nil);
+                return YES;
+            case SFKeyMenu: case SFKeyMenuHold:
+                return NO;
+            default: {   // Anschlag
+                CABasicAnimation *a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+                a.fromValue = @1.08; a.toValue = @1.0; a.duration = 0.18;
+                [_searchPill addAnimation:a forKey:@"bump"];
+                return YES;
+            }
+        }
+    }
     SFRow *r = _rows[_row];
     // Halten der Pfeile (Remote-Helper wiederholt) = weiter navigieren
     if (key == SFKeyUpHold) key = SFKeyUp;
@@ -639,6 +718,7 @@ static void auditImages(SFPage *page) {
         case SFKeyUp:
         case SFKeyDown: {
             NSInteger nr = _row + (key == SFKeyDown ? 1 : -1);
+            if (nr < 0 && _searchPill) { [self focusHeaderSearch]; return YES; }
             if (nr < 0 || nr >= (NSInteger)_rows.count) { [self bump:0]; return YES; }
             SFRow *n = _rows[nr];
             NSInteger col;

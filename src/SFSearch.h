@@ -7,6 +7,7 @@
 // „Kategorien“, sonst als eigene kleine Reihe weit oben.
 SFPageLoader SFWithSearchTile(SFPageLoader loader, NSString *source);
 SFItem *SFSearchTile(NSString *source);
+BOOL SFHasSearch(NSString *source);   // hat diese App eine Suche?
 void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText);
 // Zuletzt gesucht (SFStore-Einstellung "search.recent.<source>"), neueste zuerst.
 NSArray *SFRecentSearches(NSString *source);

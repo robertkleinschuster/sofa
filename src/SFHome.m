@@ -302,6 +302,7 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
         online = SFWithSearchTile(online, source);   // Kachel „Suche“
         SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
         c.showsHero = YES;
+        if (SFHasSearch(source)) c.searchSource = source;   // Knopf „Suche“ in der Kopfzeile
         c.restoreKey = [@"app:" stringByAppendingString:source];
         [self reloadOnLibraryChange:c];   // Downloads-Regal aktuell halten
         return c;

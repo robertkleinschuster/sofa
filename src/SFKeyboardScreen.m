@@ -31,6 +31,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
     CALayer *_sugBox, *_sugHighlight;
     NSMutableArray *_sugRows;         // CALayer
     NSArray *_suggestions;            // NSString
+    NSInteger _retRow, _retKey;       // Absprung-Taste bei „Rechts halten“ (-1 = geometrisch zurück)
     NSString *_sugHeadingText;
     NSInteger _area;                  // 0 = Raster, 1 = Vorschläge
     NSInteger _row, _key, _wantCol, _sug;
@@ -48,6 +49,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         _submitTitle = @"Suchen";
         _sugRows = [NSMutableArray new];
         _suggestions = @[];
+        _retRow = -1;
     }
     return self;
 }
@@ -361,8 +363,11 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             SFLabel *l = [[self->_sugRows[i] sublayers] firstObject];
             l.color = (sf && (NSInteger)i == self->_sug) ? on : t.text;
         }
+        // „Rechts halten“ springt zu den Vorschlägen, sobald es welche gibt (ein Griff statt bis zu 10× rechts)
         self->_hint.text = grid
-            ? @"Play/Pause: Zeichen löschen   ·   Mitte halten: alles löschen   ·   Rechts halten: zu „Suchen“   ·   MENU: zurück"
+            ? (self->_suggestions.count
+               ? @"Play/Pause: Zeichen löschen   ·   Mitte halten: alles löschen   ·   Rechts halten: zu den Vorschlägen   ·   MENU: zurück"
+               : @"Play/Pause: Zeichen löschen   ·   Mitte halten: alles löschen   ·   Rechts halten: zu „Suchen“   ·   MENU: zurück")
             : @"Mitte: sofort suchen   ·   Mitte halten: in die Textzeile übernehmen   ·   Links: zur Tastatur";
     };
     if (anim) SFAnimate(0.14, ch); else SFNoAnimate(ch);
@@ -394,7 +399,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         if (!_suggestions.count) { [self bump:YES]; return; }
         CGFloat ky = [self focusedKey].bg.frame.origin.y + U(kKeyH) / 2 - (_sugBox.frame.origin.y + U(50));
         _sug = MAX(0, MIN((NSInteger)_suggestions.count - 1, (NSInteger)floor(ky / U(kSugRowH + kSugGap))));
-        _area = 1;
+        _area = 1; _retRow = -1;
         [self updateFocus:YES];
         return;
     }
@@ -404,6 +409,12 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 }
 
 - (void)leaveSuggestions {
+    if (_retRow >= 0 && _retRow < (NSInteger)_rows.count && _retKey < (NSInteger)[_rows[_retRow] count]) {
+        _row = _retRow; _key = _retKey; _wantCol = [_rows[_row][_key] col];
+        _retRow = -1; _area = 0;
+        [self updateFocus:YES];
+        return;
+    }
     CGFloat sy = _sugBox.frame.origin.y + U(50) + _sug * U(kSugRowH + kSugGap) + U(kSugRowH) / 2 - U(kGridY);
     _row = MAX(0, MIN((NSInteger)_rows.count - 1, (NSInteger)floor(sy / U(kKeyH + kGap))));
     _key = [_rows[_row] count] - 1;
@@ -477,7 +488,11 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             }
             return YES;
         case SFKeyPlayPause: [self deleteBackward]; return YES;
-        case SFKeyNext: [self focusKind:SFKbSubmit orChar:nil]; return YES;
+        case SFKeyNext:
+            if (grid && _suggestions.count) { _retRow = _row; _retKey = _key; _sug = 0; _area = 1; [self updateFocus:YES]; }
+            else if (grid) [self focusKind:SFKbSubmit orChar:nil];
+            else [self bump:YES];
+            return YES;
         case SFKeyPrev: [self focusKind:SFKbChar orChar:@"a"]; return YES;
         case SFKeyMenu:
             if (self.onCancel) self.onCancel();

@@ -70,6 +70,9 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark Layout
 
+// Einblendungen über der Zeitleiste (U(150) v. u.) statt darauf
+- (CGFloat)toastCenterFromBottom { return U(250); }
+
 - (void)layoutForSize:(CGSize)size {
     CALayer *L = self.layer;
     SFTheme *t = self.theme;
@@ -299,7 +302,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     _openResume = live ? 0 : (exact ? resume : (resume > 15 ? resume - 3 : 0));
     BOOL paused = self.startPaused || _holdPaused;
     [_engine openURL:open audioURL:audio start:_openResume exact:exact paused:paused];
-    if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(resume)]];
+    if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(_openResume)]];   // = tatsächlicher Startpunkt (3 s Vorlauf)
     if (paused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
     else [self setAssertion:YES];
 }

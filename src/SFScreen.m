@@ -24,6 +24,7 @@
 - (BOOL)handleKey:(SFKey)key { return NO; }
 - (BOOL)wantsCursorHidden { return YES; }
 - (BOOL)isOpaque { return YES; }
+- (CGFloat)toastCenterFromBottom { return U(110); }
 @end
 
 NSCursor *SFBlankCursor(void) {
@@ -261,11 +262,15 @@ NSCursor *SFBlankCursor(void) {
     NSUInteger seq = ++_toastSeq;
     SFNoAnimate(^{
         self->_toastLabel.text = text;
-        CGFloat w = MIN(U(1100), sz.width - U(200));
+        // Breite am Text ausrichten (kurze Hinweise als kompakte Pille), lange umbrechen
+        CGFloat maxW = MIN(U(1100), sz.width - U(200));
+        CGFloat tw = ceil([text sizeWithAttributes:@{NSFontAttributeName: self->_toastLabel.font}].width);
+        CGFloat w = MIN(maxW, MAX(U(320), tw + U(96)));
         CGFloat h = [self->_toastLabel sizeToFitWidth:w - U(64)];
         self->_toastLayer.bounds = CGRectMake(0, 0, w, h + U(44));
-        self->_toastLayer.position = CGPointMake(sz.width / 2, sz.height - U(110));
-        self->_toastLabel.position = CGPointMake(U(32), U(22));
+        CGFloat fromBottom = self.top ? [self.top toastCenterFromBottom] : U(110);
+        self->_toastLayer.position = CGPointMake(sz.width / 2, sz.height - fromBottom);
+        self->_toastLabel.position = CGPointMake(U(32), U(22));   // Label = Breite − 2·32
     });
     SFAnimate(0.25, ^{ self->_toastLayer.opacity = 1; });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

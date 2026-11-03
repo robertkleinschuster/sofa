@@ -120,6 +120,8 @@ static SFNavigator *appNavigator(void) {
     return [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
 }
 
+BOOL SFHasSearch(NSString *source) { return searchLoader(source, @"") != nil; }
+
 SFItem *SFSearchTile(NSString *source) {
     SFTheme *t = [SFTheme themeNamed:source];
     SFItem *i = [SFItem new];

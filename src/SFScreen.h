@@ -18,6 +18,7 @@
 - (BOOL)handleKey:(SFKey)key;         // NO = Navigator übernimmt (Menu = zurück)
 - (BOOL)wantsCursorHidden;
 - (BOOL)isOpaque;                     // NO = darunterliegender Screen bleibt sichtbar (Dialoge)
+- (CGFloat)toastCenterFromBottom;     // Lage der Einblendung (Player: über Zeitleiste/OSD)
 @end
 
 @interface SFNavigator : NSView

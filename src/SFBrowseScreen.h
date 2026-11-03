@@ -9,6 +9,7 @@
 @property (nonatomic, copy) SFPageLoader loader;         // zum Laden/Neuladen
 @property (nonatomic) BOOL showsHero;                     // großes Info-Feld zum fokussierten Item
 @property (nonatomic, copy) NSString *reloadNotification;  // bei dieser Notification neu laden
+@property (nonatomic, copy) NSString *searchSource;        // Kopfzeile: Knopf „Suche“ (Hoch aus der ersten Reihe)
 - (instancetype)initWithLoader:(SFPageLoader)loader theme:(SFTheme *)theme;
 - (instancetype)initWithPage:(SFPage *)page;
 - (void)reload;
