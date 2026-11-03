@@ -13,7 +13,7 @@ static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictiona
 static NSArray *arr(id v) { v = nn(v); return [v isKindOfClass:[NSArray class]] ? v : nil; }
 
 // GraphQL-Fragmente (frei formulierte Queries; persisted hashes brechen bei Redeploys)
-#define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
+#define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title canonical } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
 #define COLL_F  @"canonical title collectionType teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } }"
 
 static NSDate *isoDate(NSString *s) {
@@ -73,6 +73,8 @@ static NSDate *isoDate(NSString *s) {
     i.image = [self img:dict(v[@"teaser"]) big:NO];
     i.backdrop = [self img:dict(v[@"teaser"]) big:YES];
     i.channel = str(dict(v[@"smartCollection"])[@"title"]);
+    NSString *sc = str(dict(v[@"smartCollection"])[@"canonical"]);
+    if (sc.length) i.showRef = [@"zdfshow:" stringByAppendingString:sc];
     i.date = isoDate(str(v[@"editorialDate"]));
     i.source = @"zdf"; i.themeName = @"zdf";
     i.style = SFTileStyleLandscape;
@@ -201,6 +203,8 @@ static NSDate *isoDate(NSString *s) {
             }
             SFPage *p = [SFPage page:t theme:@"zdf" shelves:shelves];
             p.backdrop = [self img:dict(sc[@"teaser"]) big:YES];
+            // Staffelauswahl steht oben (wie bei Streamingdiensten), der Fokus startet aber auf den Folgen
+            if (shelves.count > 1 && [[shelves[0] title] isEqualToString:@"Weitere Staffeln"]) p.focusShelf = 1;
             if (!shelves.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
             done(p, nil);
         }];

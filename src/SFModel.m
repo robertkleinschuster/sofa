@@ -34,6 +34,7 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     if (self.duration > 0) d[@"duration"] = @(self.duration);
     if (self.localPath) d[@"localPath"] = self.localPath;
     if (self.externalID) d[@"externalID"] = self.externalID;
+    if (self.showRef) d[@"showRef"] = self.showRef;
     else if (self.playURL) d[@"url"] = self.playURL.absoluteString;
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
     return d;
@@ -54,6 +55,7 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     i.duration = [d[@"duration"] doubleValue];
     i.localPath = d[@"localPath"];
     i.externalID = d[@"externalID"];
+    i.showRef = d[@"showRef"];
     if (i.localPath) i.playURL = [NSURL fileURLWithPath:i.localPath];
     else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
     i.resolverRef = d[@"ref"];

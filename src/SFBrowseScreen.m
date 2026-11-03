@@ -34,6 +34,7 @@
 
 @implementation SFBrowseScreen {
     SFPage *_page;
+    BOOL _pinTop;   // Startfokus unterhalb der ersten Reihe: nicht scrollen, solange die Zeile sichtbar ist
     CALayer *_bg;
     SFImageLayer *_backdrop;
     CALayer *_backdropBox;
@@ -523,7 +524,7 @@ static void auditImages(SFPage *page) {
                 r.titleHeight = i == 0 ? titleH : 0;
                 r.y = y; r.height = r.titleHeight + tileH;
                 [_rows addObject:r];
-                y += r.height + U(40);
+                y += r.height + U(58);   // Platz für die nach unten wandernden Titel der vergrößerten Fokus-Kachel
             }
             y += U(12);
         }
@@ -544,7 +545,11 @@ static void auditImages(SFPage *page) {
     _scrollY = 0;
     SFNoAnimate(^{ self->_content.position = CGPointZero; });
     [self updateVisibleRows];
-    [self focusRow:0 col:0 animated:NO];
+    NSUInteger start = 0;   // Startfokus der Seite (Staffelauswahl bleibt per „Hoch“ erreichbar)
+    for (NSUInteger i = 0; i < _rows.count && _page.focusShelf; i++) if ([_rows[i] shelf] == _page.focusShelf) { start = i; break; }
+    _pinTop = start > 0;
+    [self focusRow:start col:0 animated:NO];
+    _pinTop = NO;
 }
 
 - (void)materializeRow:(SFRow *)r {
@@ -642,6 +647,7 @@ static void auditImages(SFPage *page) {
     // Vertikal: fokussierte Zeile an die Oberkante des Inhaltsbereichs
     CGFloat target = MAX(0, r.y - _contentTop);
     if (row == 0) target = 0;
+    if (_pinTop && r.y + r.height <= self.size.height - U(40)) target = 0;   // Reihe darüber (z. B. Staffeln) bleibt sichtbar
     _scrollY = target;
     [self updateVisibleRows];
 
@@ -855,7 +861,34 @@ static void auditImages(SFPage *page) {
                 }]];
             }
         }
-        SFShow *show = it.channel ? [[SFLibrary shared] showNamed:it.channel source:it.source] : nil;
+        // Zur Sendung / zum Kanal der Folge (online, wie bei der Quelle) – nicht, wenn man schon dort ist
+        SFPageLoader showPage = it.showRef && ![it.showRef isEqualToString:self.folderIdentifier] ? SFShowPageLoader(it.showRef, it.channel) : nil;
+        if (showPage) {
+            BOOL yt = [it.showRef hasPrefix:@"ytchannel:"];
+            NSString *name = it.channel.length ? it.channel : nil;
+            [opts addObject:[SFMenuOption option:name ? [NSString stringWithFormat:@"%@ „%@“", yt ? @"Zum Kanal" : @"Zur Sendung", name] : (yt ? @"Zum Kanal" : @"Zur Sendung") action:^{
+                SFItem *f = [SFItem new];
+                f.kind = SFItemFolder; f.identifier = it.showRef; f.title = it.channel; f.themeName = it.themeName ?: it.source;
+                f.pageLoader = showPage;
+                SFOpenItem(nav, f, nil, 0);
+            }]];
+        }
+        // ohne gespeicherte Kennung: beim Auswählen bei der Quelle nachschlagen (nicht auf der Kanalseite selbst)
+        SFShowRefLookup lookup = !showPage && !it.showRef && ![self.folderIdentifier hasPrefix:@"ytchannel:"] ? SFShowRefLookupFor(it.source) : nil;
+        if (lookup && it.kind == SFItemVideo) {
+            NSString *name = it.channel.length ? it.channel : nil;
+            [opts addObject:[SFMenuOption option:name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal" action:^{
+                lookup(it, ^(NSString *ref) {
+                    SFPageLoader pl = ref ? SFShowPageLoader(ref, it.channel) : nil;
+                    if (!pl) { [nav toast:@"Kanal nicht gefunden"]; return; }
+                    SFItem *f = [SFItem new];
+                    f.kind = SFItemFolder; f.identifier = ref; f.title = it.channel; f.themeName = it.themeName ?: it.source;
+                    f.pageLoader = pl;
+                    SFOpenItem(nav, f, nil, 0);
+                });
+            }]];
+        }
+        SFShow *show = !showPage && !lookup && it.channel ? [[SFLibrary shared] showNamed:it.channel source:it.source] : nil;
         if (show && ![_page.title isEqualToString:show.name]) {
             [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Zu „%@“", show.name] action:^{
                 SFItem *f = [SFItem new];
@@ -1015,6 +1048,7 @@ void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index
         case SFItemFolder: {
             SFTheme *t = [SFTheme themeNamed:item.themeName ?: nav.top.theme.identifier ?: @"home"];
             SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
+            b.folderIdentifier = item.identifier;
             // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
             if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
             if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // Kanalkopf (Banner, Abonnenten, Beschreibung)

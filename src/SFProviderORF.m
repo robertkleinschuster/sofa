@@ -70,6 +70,8 @@ static NSArray *listItems(id j) {
     i.image = [self image:e big:NO];
     i.backdrop = [self image:e big:YES];
     i.channel = str(e[@"profile_title"]) ?: str(e[@"genre_title"]);
+    NSString *ph = str(dict(dict(e[@"_links"])[@"profile"])[@"href"]);
+    if (ph.length && str(e[@"profile_title"])) i.showRef = [@"orfprofile:" stringByAppendingString:ph.lastPathComponent];
     i.date = isoDate(str(e[@"date"]));
     i.duration = [nn(e[@"duration_seconds"]) doubleValue];
     i.source = @"orf"; i.themeName = @"orf";

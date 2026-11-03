@@ -47,6 +47,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *heroTitle;       // Hero-Titel statt title (z. B. Kanalname über einer Aktions-Kachel)
 @property (nonatomic, copy) NSString *heroMeta;        // Hero-Metazeile statt Kanal/Datum/Dauer
 @property (nonatomic, copy) NSString *externalID;      // ID bei der Quelle (YouTube-Video-ID)
+@property (nonatomic, copy) NSString *showRef;         // Sendung/Kanal der Folge („ytchannel:UC…“, „zdfshow:…“) → „Zur Sendung“
 @property (nonatomic) BOOL imageFit;
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (App-Kacheln)
 @property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // Bild einpassen statt füllen (Logos)
@@ -72,6 +73,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *backdrop;
 @property (nonatomic, copy) NSArray *shelves;
 @property (nonatomic, copy) NSString *emptyText;
+@property (nonatomic) NSUInteger focusShelf;       // Startfokus (z. B. Folgen statt der Staffelauswahl darüber)
 + (instancetype)page:(NSString *)title theme:(NSString *)theme shelves:(NSArray *)shelves;
 @end
 

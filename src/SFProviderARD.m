@@ -60,6 +60,8 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     NSString *pub = str(dict(t[@"publicationService"])[@"name"]);
     NSString *show = str(dict(t[@"show"])[@"title"]);
     i.channel = show ?: pub;
+    NSString *sid = str(dict(t[@"show"])[@"id"]);
+    if (sid.length) i.showRef = [@"ardshow:" stringByAppendingString:sid];
     i.date = isoDate(str(t[@"broadcastedOn"]));
     i.duration = [nn(t[@"duration"]) doubleValue];
     i.style = SFTileStyleLandscape;

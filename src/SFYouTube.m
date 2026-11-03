@@ -252,6 +252,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     if (local) {   // schon heruntergeladen: lokale Datei (Qualität, offline, gemeinsamer Fortschritt)
         SFItem *i = [local copy];
         i.subtitle = meta.length ? [NSString stringWithFormat:@"%@ · auf diesem Mac", meta] : @"Auf diesem Mac";
+        if (!i.showRef && [cid hasPrefix:@"UC"]) i.showRef = [@"ytchannel:" stringByAppendingString:cid];
         return i;
     }
     SFItem *i = [SFItem new];
@@ -261,6 +262,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     i.externalID = vid;
     i.title = title;
     i.channel = channel;
+    if ([cid hasPrefix:@"UC"]) i.showRef = [@"ytchannel:" stringByAppendingString:cid];
     i.subtitle = meta;
     i.image = thumb ?: [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", vid];
     i.backdrop = i.image;
@@ -815,6 +817,15 @@ static NSSet *skipKeys(void) {
     });
     // Abo-Feed: Langvideos eines Kanals, neueste zuerst (immer als Online-Items)
     SFRegisterShowPage(@"ytchannel", ^SFPageLoader(NSString *cid, NSString *title) { return [self channelLoader:cid title:title]; });
+    // Kanal eines Videos ohne gespeicherte Kanal-ID (ältere Merkliste/Weiterschauen/Downloads): player → videoDetails.channelId
+    SFRegisterShowRefLookup(@"youtube", ^(SFItem *item, void (^done)(NSString *)) {
+        NSString *vid = item.externalID ?: ([item.identifier hasPrefix:@"yt:"] ? restOfID(item.identifier) : nil);
+        if (vid.length != 11) { done(nil); return; }
+        [self call:@"player" body:@{@"videoId": vid} auth:NO cache:86400 done:^(id j, NSError *e) {
+            NSString *cid = str(path(j, @"videoDetails.channelId"));
+            SFMain(^{ done([cid hasPrefix:@"UC"] ? [@"ytchannel:" stringByAppendingString:cid] : nil); });
+        }];
+    });
     SFRegisterFeed(@"ytchannel", ^(NSString *cid, void (^done)(NSArray *, NSError *)) {
         if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
         [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} auth:NO cache:900 done:^(id j, NSError *e) {

@@ -11,6 +11,11 @@ extern NSString *const SFFollowsDidChangeNotification;
 // Seite einer Sendung/eines Kanals aus seiner Kennung bauen (je Provider registriert)
 typedef SFPageLoader (^SFShowPageFactory)(NSString *ref, NSString *title);
 void SFRegisterShowPage(NSString *prefix, SFShowPageFactory f);
+SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil, wenn für den Typ keine Seite registriert ist
+// Sendung/Kanal einer Folge nachträglich ermitteln (Items ohne showRef, z. B. ältere gespeicherte)
+typedef void (^SFShowRefLookup)(SFItem *item, void (^done)(NSString *ref));
+void SFRegisterShowRefLookup(NSString *source, SFShowRefLookup f);
+SFShowRefLookup SFShowRefLookupFor(NSString *source);
 
 @interface SFFollows : NSObject
 + (instancetype)shared;

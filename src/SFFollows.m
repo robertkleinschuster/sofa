@@ -7,6 +7,15 @@ NSString *const SFFollowsDidChangeNotification = @"SFFollowsDidChange";
 
 static NSMutableDictionary *gPages;
 void SFRegisterShowPage(NSString *prefix, SFShowPageFactory f) { if (!gPages) gPages = [NSMutableDictionary new]; gPages[prefix] = [f copy]; }
+static NSMutableDictionary *gLookups;
+void SFRegisterShowRefLookup(NSString *source, SFShowRefLookup f) { if (!gLookups) gLookups = [NSMutableDictionary new]; gLookups[source] = [f copy]; }
+SFShowRefLookup SFShowRefLookupFor(NSString *source) { return source ? gLookups[source] : nil; }
+SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
+    NSRange r = [ref rangeOfString:@":"];
+    if (r.location == NSNotFound || NSMaxRange(r) >= ref.length) return nil;
+    SFShowPageFactory f = gPages[[ref substringToIndex:r.location]];
+    return f ? f([ref substringFromIndex:NSMaxRange(r)], title) : nil;
+}
 static NSString *prefixOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? nil : [s substringToIndex:r.location]; }
 static NSString *restOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? s : [s substringFromIndex:NSMaxRange(r)]; }
 
