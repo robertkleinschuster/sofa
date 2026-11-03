@@ -7,6 +7,24 @@ NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotific
 static NSMutableDictionary *gFeeds, *gDLURL;
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f) { if (!gFeeds) gFeeds = [NSMutableDictionary new]; gFeeds[prefix] = [f copy]; }
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f) { if (!gDLURL) gDLURL = [NSMutableDictionary new]; gDLURL[prefix] = [f copy]; }
+void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref)) {
+    SFRegisterFeed(prefix, ^(NSString *ref, void (^done)(NSArray *, NSError *)) {
+        SFPageLoader l = loaderFor(ref);
+        if (!l) { done(nil, SFError(@"Unbekannte Sendung")); return; }
+        l(^(SFPage *page, NSError *e) {
+            if (!page) { done(nil, e); return; }
+            NSMutableArray *items = [NSMutableArray new];
+            NSMutableSet *seen = [NSMutableSet new];
+            for (SFShelf *sh in page.shelves) for (SFItem *i in sh.items)
+                if (i.kind == SFItemVideo && i.identifier && ![seen containsObject:i.identifier]) { [seen addObject:i.identifier]; [items addObject:i]; }
+            [items sortUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
+                return [(b.date ?: [NSDate distantPast]) compare:(a.date ?: [NSDate distantPast])];
+            }];
+            done(items, nil);
+        });
+    });
+}
+
 static NSString *prefixOf(NSString *ref) { NSRange r = [ref rangeOfString:@":"]; return r.location == NSNotFound ? nil : [ref substringToIndex:r.location]; }
 static NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@":"]; return r.location == NSNotFound ? ref : [ref substringFromIndex:NSMaxRange(r)]; }
 
@@ -35,6 +53,7 @@ static NSString *ffmpegPath(void) {
     NSString *_runningID;
     BOOL _started, _checking;
     NSTimer *_checkTimer;
+    NSMutableDictionary *_itemCache; // id -> SFItem (aus JSON), ungültig bei save:
 }
 
 + (instancetype)shared {
@@ -57,6 +76,7 @@ static NSString *T(NSString *sql) {
         [st run:T(@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)") args:nil];
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
+        _itemCache = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:T(@"SELECT * FROM downloads") args:nil]) _recs[r[@"id"]] = [r mutableCopy];
         for (NSDictionary *r in [st rows:T(@"SELECT * FROM subscriptions") args:nil]) _subs[r[@"id"]] = [r mutableCopy];
         // Abgebrochene Läufe vom letzten Mal wieder einreihen
@@ -72,6 +92,8 @@ static NSString *T(NSString *sql) {
 #pragma mark Persistenz
 
 - (void)save:(NSDictionary *)r {
+    [_itemCache removeObjectForKey:r[@"id"]];
+    _generation++;
     [[SFStore shared] run:T(@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
                      args:@[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
                             r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
@@ -114,6 +136,14 @@ static NSString *T(NSString *sql) {
 }
 
 - (SFItem *)itemFromRec:(NSDictionary *)r {
+    SFItem *c = _itemCache[r[@"id"]];
+    if (c) return c;
+    c = [self parseRec:r];
+    if (c) _itemCache[r[@"id"]] = c;
+    return c;
+}
+
+- (SFItem *)parseRec:(NSDictionary *)r {
     NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     if (![d isKindOfClass:[NSDictionary class]]) return nil;
     SFItem *i = [SFItem itemWithDictionary:d];
@@ -181,6 +211,9 @@ static NSString *T(NSString *sql) {
     SFDLState st = r ? [r[@"state"] integerValue] : SFDLNone;
     if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
     if (subID && r && (st == SFDLDismissed || ([r[@"tries"] integerValue] >= 3 && st == SFDLFailed))) return NO;
+    // Abo-Folgen gehören zur Sendung des Abos (ZDF/ARD nennen die Reihe oft anders)
+    NSString *subTitle = subID ? _subs[subID][@"title"] : nil;
+    if (subTitle.length) { item = [item copy]; item.channel = subTitle; }
     r = r ?: [NSMutableDictionary new];
     r[@"id"] = item.identifier;
     r[@"source"] = item.source ?: @"";
@@ -240,8 +273,12 @@ static NSString *T(NSString *sql) {
     _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
 }
 
+- (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel {
+    return [[[SFDownloads root] stringByAppendingPathComponent:safeName(source ?: @"", 20)] stringByAppendingPathComponent:safeName(channel ?: @"Einzelne", 80)];
+}
+
 - (NSString *)targetPathFor:(NSDictionary *)r item:(SFItem *)item {
-    NSString *dir = [[[SFDownloads root] stringByAppendingPathComponent:safeName(r[@"source"], 20)] stringByAppendingPathComponent:safeName(item.channel ?: @"Einzelne", 80)];
+    NSString *dir = [self folderForSource:r[@"source"] channel:item.channel];
     NSString *idPart = safeName(restOf(item.identifier), 40);
     return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ [%@].mp4", safeName(item.title ?: @"Video", 120), idPart]];
 }
@@ -477,6 +514,7 @@ static NSString *T(NSString *sql) {
 
 - (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err {
     if (!item.identifier || ![[NSFileManager defaultManager] fileExistsAtPath:path]) return NO;
+    if ([self fileFor:item.identifier]) { if (err) *err = SFError(@"bereits vorhanden"); return NO; }
     NSMutableDictionary *r = [@{@"id": item.identifier, @"source": item.source ?: @"", @"channel": item.channel ?: @"",
                                 @"state": @(SFDLDone), @"progress": @1.0,
                                 @"added": @([[NSDate date] timeIntervalSince1970])} mutableCopy];

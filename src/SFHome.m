@@ -92,7 +92,7 @@ static NSDictionary *appInfo(void) {
     i.identifier = [@"show:" stringByAppendingString:sh.name];
     i.title = sh.name;
     i.channel = sh.name;
-    i.subtitle = [NSString stringWithFormat:@"%lu Folgen · %@", (unsigned long)sh.episodes.count, SFFormatDateShort(sh.latest)];
+    i.subtitle = [NSString stringWithFormat:@"%lu %@ · %@", (unsigned long)sh.episodes.count, sh.episodes.count == 1 ? @"Folge" : @"Folgen", SFFormatDateShort(sh.latest)];
     i.image = [sh.source isEqualToString:@"youtube"] ? (sh.poster ?: ((SFItem *)sh.episodes.firstObject).image) : ((SFItem *)sh.episodes.firstObject).image;
     i.backdrop = ((SFItem *)sh.episodes.firstObject).image;
     i.plot = ((SFItem *)sh.episodes.firstObject).title ? [NSString stringWithFormat:@"Neueste Folge: %@", ((SFItem *)sh.episodes.firstObject).title] : nil;

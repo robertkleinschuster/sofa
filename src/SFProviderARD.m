@@ -1,3 +1,4 @@
+#import "SFDownloads.h"
 #import "SFProviderARD.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -130,7 +131,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             for (NSDictionary *t in arr(j[@"teasers"])) { SFItem *it = [self itemFromTeaser:t]; if (it) [items addObject:it]; }
             NSInteger total = [nn(dict(j[@"pagination"])[@"totalElements"]) integerValue];
             NSString *h = total > (NSInteger)items.count ? [NSString stringWithFormat:@"Neueste %lu von %ld Folgen", (unsigned long)items.count, (long)total]
-                                                         : [NSString stringWithFormat:@"%lu Folgen", (unsigned long)items.count];
+                                                         : [NSString stringWithFormat:@"%lu %@", (unsigned long)items.count, items.count == 1 ? @"Folge" : @"Folgen"];
             SFPage *p = [SFPage page:title ?: str(j[@"title"]) theme:@"ard" shelves:@[[SFShelf grid:h style:SFTileStyleLandscape items:items]]];
             if (!items.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
             done(p, nil);
@@ -210,6 +211,8 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
 }
 
 + (void)registerResolver {
+    // Abo-Feed ("Neue Folgen automatisch laden")
+    SFRegisterFeedFromLoader(@"ardshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil]; });
     SFRegisterResolver(@"ard", ^(NSString *itemId, SFURLDone done) {
         NSString *u = [NSString stringWithFormat:@"%@/pages/ard/item/%@?embedded=true&mcV6=true", kGW, itemId];
         [SFNet getJSON:u headers:nil cacheAge:300 done:^(id j, NSError *e) {

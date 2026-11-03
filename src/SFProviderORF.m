@@ -1,3 +1,4 @@
+#import "SFDownloads.h"
 #import "SFProviderORF.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -93,7 +94,7 @@ static NSArray *listItems(id j) {
         [self get:[NSString stringWithFormat:@"/profile/%@/episodes?limit=100", pid] cache:900 done:^(id j, NSError *e) {
             NSArray *eps = [self episodeItems:j];
             if (!j) { done(nil, e); return; }
-            SFPage *p = [SFPage page:title theme:@"orf" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Folgen", (unsigned long)eps.count] style:SFTileStyleLandscape items:eps]]];
+            SFPage *p = [SFPage page:title theme:@"orf" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu %@", (unsigned long)eps.count, eps.count == 1 ? @"Folge" : @"Folgen"] style:SFTileStyleLandscape items:eps]]];
             if (!eps.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
             done(p, nil);
         }];
@@ -280,6 +281,8 @@ static NSArray *listItems(id j) {
 }
 
 + (void)registerResolver {
+    // Abo-Feed ("Neue Folgen automatisch laden")
+    SFRegisterFeedFromLoader(@"orfprofile", ^SFPageLoader(NSString *ref) { return [self profileLoader:ref title:nil]; });
     SFRegisterResolver(@"orf", ^(NSString *eid, SFURLDone done) {
         [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
             NSDictionary *ep = dict(j);

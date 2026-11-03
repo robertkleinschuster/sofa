@@ -1,12 +1,12 @@
-// Lokale Bibliothek: ~/TV Shows (Sendung/tvshow.nfo + Season/*.mp4/.nfo/-thumb.jpg).
-// Scan im Hintergrund mit mtime-Cache; meldet Änderungen per Notification.
+// Bibliothek = Sicht auf die Offline-Schicht (SFDownloads), gruppiert nach Quelle + Sendung/Kanal.
+// Kein eigener Speicher und kein Scan mehr (früher ~/TV Shows von ytdl-sub/Kodi).
 #import "SFModel.h"
 
 extern NSString *const SFLibraryDidChangeNotification;
 
 @interface SFShow : NSObject
 @property (nonatomic, copy) NSString *name;
-@property (nonatomic, copy) NSString *path;
+@property (nonatomic, copy) NSString *path;      // Ordner im Sofa-Speicher
 @property (nonatomic, copy) NSString *source;    // youtube | zdf | ard | orf | ccc
 @property (nonatomic, copy) NSString *poster;
 @property (nonatomic, copy) NSString *fanart;
@@ -16,13 +16,10 @@ extern NSString *const SFLibraryDidChangeNotification;
 
 @interface SFLibrary : NSObject
 + (instancetype)shared;
-@property (nonatomic, copy, readonly) NSString *root;
 @property (nonatomic, readonly) BOOL ready;
-- (void)scan;                                    // asynchron
-- (void)whenReady:(dispatch_block_t)block;       // Main-Thread, nach erstem Scan
+- (void)whenReady:(dispatch_block_t)block;       // Main-Thread
 - (NSArray *)showsForSource:(NSString *)source;  // nil = alle; sortiert nach neuester Folge
 - (NSArray *)latestEpisodes:(NSInteger)n source:(NSString *)source;
 - (SFShow *)showNamed:(NSString *)name;
-- (SFItem *)episodeForPath:(NSString *)path;
 - (SFItem *)episodeForYouTubeID:(NSString *)vid;  // heruntergeladene Kopie eines YouTube-Videos
 @end

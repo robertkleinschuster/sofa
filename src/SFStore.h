@@ -21,5 +21,5 @@
 - (void)run:(NSString *)sql args:(NSArray *)args;                // asynchron (Schreiben)
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchron, Array von Dictionaries
 // Fortschritt/Verlauf auf neue ID umschlüsseln (Migration local:… -> yt:…); nur wenn Ziel frei
-- (void)renameProgress:(NSString *)from to:(NSString *)to;
+- (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // Migration: id + Item ersetzen
 @end

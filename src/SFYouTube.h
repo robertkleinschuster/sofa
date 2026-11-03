@@ -14,5 +14,6 @@
 // Autovervollständigung (suggestqueries-clients6.youtube.com, schlichtes GET); done auf Main, nie nil
 + (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;
 + (SFItem *)itemForVideoID:(NSString *)vid;                     // Platzhalter (lokale Kopie, falls vorhanden)
++ (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *channelID))done;   // @handle-URL -> UC…
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done; // Titel/Kanal/Dauer per InnerTube "player"
 @end

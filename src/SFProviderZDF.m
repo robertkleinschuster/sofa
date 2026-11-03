@@ -1,3 +1,4 @@
+#import "SFDownloads.h"
 #import "SFProviderZDF.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -169,7 +170,7 @@ static NSDate *isoDate(NSString *s) {
                 NSString *st = str(sn[@"title"]) ?: [NSString stringWithFormat:@"%@", nn(sn[@"number"]) ?: @""];
                 NSInteger cnt = [nn(sn[@"countEpisodes"]) integerValue];
                 NSString *head = cnt > (NSInteger)eps.count ? [NSString stringWithFormat:@"%@ · neueste %lu von %ld", st, (unsigned long)eps.count, (long)cnt]
-                                                            : [NSString stringWithFormat:@"%@ · %lu Folgen", st, (unsigned long)eps.count];
+                                                            : [NSString stringWithFormat:@"%@ · %lu %@", st, (unsigned long)eps.count, eps.count == 1 ? @"Folge" : @"Folgen"];
                 if (eps.count) [shelves addObject:[SFShelf grid:head style:SFTileStyleLandscape items:eps]];
                 NSInteger seasons = [nn(sc[@"countSeasons"]) integerValue];
                 if (seasons > 1) {
@@ -282,6 +283,8 @@ static NSDate *isoDate(NSString *s) {
 #pragma mark Stream
 
 + (void)registerResolver {
+    // Abo-Feed ("Neue Folgen automatisch laden")
+    SFRegisterFeedFromLoader(@"zdfshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil season:0]; });
     SFRegisterResolver(@"zdf", ^(NSString *canonical, SFURLDone done) {
         NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
         [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {

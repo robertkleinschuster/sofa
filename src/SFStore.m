@@ -265,14 +265,19 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
     return out;
 }
 
-- (void)renameProgress:(NSString *)from to:(NSString *)to {
-    if (!from || !to || [from isEqualToString:to]) return;
+// Migration: Fortschritt unter neue Identität stellen (inkl. gespeichertem Item, "updated" bleibt)
+- (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item {
+    NSString *to = item.identifier;
+    if (!from || !to || [from isEqualToString:to]) return NO;
     @synchronized (_progressCache) {
         NSArray *a = _progressCache[from];
-        if (!a || _progressCache[to]) return;
+        if (!a || _progressCache[to]) return NO;
         _progressCache[to] = a;
         [_progressCache removeObjectForKey:from];
     }
-    dispatch_async(_q, ^{ [self runNow:@"UPDATE OR IGNORE progress SET id=? WHERE id=?" args:@[to, from]]; });
+    NSString *js = [self json:item];
+    NSString *src = item.source ?: @"";
+    dispatch_async(_q, ^{ [self runNow:@"UPDATE OR IGNORE progress SET id=?, item=?, source=? WHERE id=?" args:@[to, js ?: @"{}", src, from]]; });
+    return YES;
 }
 @end

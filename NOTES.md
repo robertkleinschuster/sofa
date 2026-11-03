@@ -161,6 +161,16 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
 - [x] Systemlautstärke per Remote (Player: +/-), keine App-interne Lautstärke.
 - [x] Dev-Viewer im Browser (Tailscale), getrennte view/test-Instanzen.
 
+- [ ] **Moderne Codecs nachrüsten** (User 2026-11-03): jede Quelle problemlos abspielen,
+  Format-Auswahl entschärfen. Heute: AVFoundation 10.9 = nur H.264/AAC in TS/MP4-HLS;
+  kein VP9/AV1/HEVC/Opus, kein fMP4/DASH, HLS ≤ v6 (Proxy deckelt), sporadisch -12643.
+  Optionen (VOR Umsetzung recherchieren + vorlegen, Doktrin: nativ via MacPorts):
+  (a) libmpv (MacPorts mpv/ffmpeg) als zweite Player-Engine hinter SFPlayerScreen,
+      Ausgabe in eigene GL-/CALayer-Fläche; AVFoundation bleibt für H.264 (Hardware).
+  (b) eigener Decoder-Pfad libavcodec/libavformat + Rendering (mehr Aufwand).
+  Gewinn: YouTube direkt DASH/VP9 (1080p60/1440p, ohne HLS-Umweg), ORF/ARD ohne
+  Versions-Tricks, Downloads ohne Remux-Grenzen. Prüfen: CPU (2011er iMac) für VP9/AV1
+  in Software, Hardware nur H.264 → Auswahl-Regel "H.264 bevorzugen, sonst Software".
 ## Display-Sleep/Wake (aus Kodi-Erfahrung, siehe ~/kodi-setup-NOTES.md "Sleep/Wake-Modell")
 - macOS verwaltet Timeouts (pmset displaysleep 5, sleep 0); Sofa hat KEINE eigene
   Energieverwaltung.

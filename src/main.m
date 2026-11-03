@@ -10,7 +10,7 @@
 #import "SFRemote.h"
 #import "SFStore.h"
 #import "SFDevServer.h"
-#import "SFKodiImport.h"
+#import "SFMigration.h"
 #import "SFProviderCCC.h"
 #import "SFProviderARD.h"
 #import "SFProviderZDF.h"
@@ -80,7 +80,7 @@ static uint16_t gPort = 8765;
     __weak SFNavigator *wnav = self.nav;
     self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
     [SFPower setNavigator:self.nav];
-    SFKodiImportIfNeeded();
+    SFMigrateLibraryIfNeeded();
     [[SFDownloads shared] start];
     // Handy-Koppeln: echte App immer; Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {

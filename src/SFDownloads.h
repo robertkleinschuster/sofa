@@ -19,6 +19,8 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 // Liefert die neuesten Folgen eines Abos (Kanal/Sendung), neueste zuerst.
 typedef void (^SFFeedFetcher)(NSString *ref, void (^done)(NSArray *items, NSError *e));
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f);
+// Feed aus einem Seiten-Loader (Sendungsseite): alle Videos der Seite, neueste zuerst
+void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref));
 // Optional: eigene Download-URL (z.B. YouTube 720p statt 1080p-Stream)
 typedef void (^SFDownloadURLFetcher)(SFItem *item, SFURLDone done);
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
@@ -36,6 +38,8 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 - (NSArray *)items:(NSString *)source;           // fertige Downloads (SFItem, neueste zuerst); nil = alle
 - (NSArray *)active;                             // laufend/wartend (SFItem)
 - (unsigned long long)bytesUsed;
+@property (nonatomic, readonly) NSUInteger generation;   // ändert sich bei jeder Zustandsänderung (nicht bei Fortschritt)
+- (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // Ordner einer Sendung im Sofa-Speicher
 
 // Abos (Kanal/Sendung automatisch laden)
 - (BOOL)isSubscribed:(NSString *)folderIdentifier;

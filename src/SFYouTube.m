@@ -634,6 +634,13 @@ static NSSet *skipKeys(void) {
 
 #pragma mark - Setup
 
++ (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *))done {
+    [self call:@"navigation/resolve_url" body:@{@"url": url} auth:NO cache:86400 done:^(id j, NSError *e) {
+        id be = [j isKindOfClass:[NSDictionary class]] ? j[@"endpoint"][@"browseEndpoint"][@"browseId"] : nil;
+        SFMain(^{ done([be isKindOfClass:[NSString class]] && [be hasPrefix:@"UC"] ? be : nil); });
+    }];
+}
+
 + (void)setup {
     SFRegisterResolver(@"yt", ^(NSString *vid, SFURLDone done) {
         SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
