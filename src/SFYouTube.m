@@ -3,6 +3,7 @@
 #import "SFNet.h"
 #import "SFStore.h"
 #import "SFLibrary.h"
+#import "SFHome.h"
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
 #import "SFScreen.h"
@@ -595,7 +596,7 @@ static NSSet *skipKeys(void) {
                 SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
                 [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
             };
-            [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[pair]]];
+            [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFHome downloadsTile:@"youtube"], pair]]];
             if (chs.count) [shelves addObject:[SFShelf grid:@"Kanäle" style:SFTileStyleCircle items:chs]];
             SFPage *p = [SFPage page:nil theme:@"youtube" shelves:shelves];
             if (!auth || authErr) p.subtitle = authErr ? authErr.localizedDescription : @"Für deine Abos in Firefox bei YouTube anmelden.";

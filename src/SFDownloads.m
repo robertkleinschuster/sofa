@@ -201,6 +201,48 @@ static NSString *T(NSString *sql) {
     return n;
 }
 
+- (unsigned long long)bytesUsedFor:(NSString *)source {
+    unsigned long long n = 0;
+    for (NSDictionary *r in _recs.allValues)
+        if ([r[@"state"] integerValue] == SFDLDone && (!source || [r[@"source"] isEqualToString:source])) n += [r[@"bytes"] unsignedLongLongValue];
+    return n;
+}
+
+- (unsigned long long)freeBytes {
+    NSString *root = [SFDownloads root];
+    NSString *p = [[NSFileManager defaultManager] fileExistsAtPath:root] ? root : NSHomeDirectory();
+    return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:p error:nil][NSFileSystemFreeSize] unsignedLongLongValue];
+}
+
+static NSString *gb(unsigned long long b) {
+    if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
+    return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
+}
+
+- (NSString *)storageSummary:(NSString *)source {
+    return [NSString stringWithFormat:@"%@ belegt · %@ frei", gb([self bytesUsedFor:source]), gb([self freeBytes])];
+}
+
+- (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source {
+    if (!channel) return nil;
+    for (NSDictionary *s in _subs.allValues)
+        if ([s[@"title"] isEqualToString:channel] && (!source || [s[@"source"] isEqualToString:source])) return s[@"id"];
+    return nil;
+}
+
+- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source {
+    NSUInteger n = 0;
+    for (NSDictionary *r in [_recs.allValues copy]) {
+        if (![r[@"channel"] isEqualToString:channel] || (source && ![r[@"source"] isEqualToString:source])) continue;
+        SFDLState st = [r[@"state"] integerValue];
+        if (st == SFDLDismissed) continue;
+        [self remove:r[@"id"]];
+        n++;
+    }
+    SFLog(@"downloads: %lu Downloads von %@ gelöscht", (unsigned long)n, channel);
+    return n;
+}
+
 #pragma mark Aktionen
 
 - (void)download:(SFItem *)item { [self enqueue:item sub:nil]; }
@@ -246,6 +288,8 @@ static NSString *T(NSString *sql) {
         [self save:r];
     } else {
         [_recs removeObjectForKey:identifier];
+        [_itemCache removeObjectForKey:identifier];
+        _generation++;
         [[SFStore shared] run:T(@"DELETE FROM downloads WHERE id=?") args:@[identifier]];
     }
     [self changed:identifier];
@@ -254,9 +298,12 @@ static NSString *T(NSString *sql) {
 - (void)pruneEmptyDirs:(NSString *)dir {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *root = [SFDownloads root];
+    NSSet *decor = [NSSet setWithArray:@[@".DS_Store", @"poster.jpg", @"fanart.jpg"]];   // Sendungsbilder zählen nicht als Inhalt
     while (dir.length > root.length && [dir hasPrefix:root]) {
         NSArray *c = [fm contentsOfDirectoryAtPath:dir error:nil];
-        if (c.count && !(c.count == 1 && [c[0] isEqualToString:@".DS_Store"])) break;
+        BOOL empty = YES;
+        for (NSString *f in c) if (![decor containsObject:f]) { empty = NO; break; }
+        if (!empty) break;
         [fm removeItemAtPath:dir error:nil];
         dir = [dir stringByDeletingLastPathComponent];
     }

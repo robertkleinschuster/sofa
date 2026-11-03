@@ -39,6 +39,11 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 - (NSArray *)active;                             // laufend/wartend (SFItem)
 - (unsigned long long)bytesUsed;
 @property (nonatomic, readonly) NSUInteger generation;   // ändert sich bei jeder Zustandsänderung (nicht bei Fortschritt)
+- (unsigned long long)bytesUsedFor:(NSString *)source;   // nil = alle
+- (unsigned long long)freeBytes;                           // freier Platz auf dem Speicher-Volume
+- (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"
+- (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
+- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // Anzahl gelöschter Downloads
 - (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // Ordner einer Sendung im Sofa-Speicher
 
 // Abos (Kanal/Sendung automatisch laden)

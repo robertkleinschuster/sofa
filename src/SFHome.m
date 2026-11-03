@@ -7,6 +7,7 @@
 #import "SFProviderORF.h"
 #import "SFYouTube.h"
 #import "SFSearch.h"
+#import "SFDownloads.h"
 
 @implementation SFHome
 
@@ -48,6 +49,7 @@ static NSDictionary *appInfo(void) {
             kodi.action = ^{
                 [[NSWorkspace sharedWorkspace] launchApplication:@"Kodi"];
             };
+            [apps addObject:[self downloadsTile:nil]];
             [apps addObject:kodi];
 
             NSMutableArray *shelves = [NSMutableArray new];
@@ -124,6 +126,85 @@ static NSDictionary *appInfo(void) {
     };
 }
 
+#pragma mark Downloads (Offline-Bestand, wie „Downloads“ bei YouTube Premium)
+
++ (SFPageLoader)downloadsLoader:(NSString *)source {
+    return ^(SFPageDone done) {
+        SFDownloads *dl = [SFDownloads shared];
+        NSMutableArray *shelves = [NSMutableArray new];
+        NSMutableArray *active = [NSMutableArray new];
+        for (SFItem *i in [dl active]) {
+            if (source && ![i.source isEqualToString:source]) continue;
+            SFItem *c = [i copy];
+            double p = 0;
+            SFDLState st = [dl stateFor:c.identifier progress:&p];
+            c.subtitle = [NSString stringWithFormat:@"%@ · %@", c.channel ?: @"", st == SFDLRunning ? @"wird geladen" : @"wartet"];
+            [active addObject:c];
+        }
+        if (active.count) [shelves addObject:[SFShelf shelf:@"Wird geladen" style:SFTileStyleLandscape items:active]];
+        NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:source] copyItems:YES];
+        for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel ?: @"", SFFormatDateShort(e.date)];
+        if (latest.count) [shelves addObject:[SFShelf shelf:@"Zuletzt geladen" style:SFTileStyleLandscape items:latest]];
+        NSMutableArray *shows = [NSMutableArray new];
+        for (SFShow *sh in [[SFLibrary shared] showsForSource:source]) [shows addObject:[self showTile:sh]];
+        if (shows.count) [shelves addObject:[SFShelf grid:@"Sendungen und Kanäle" style:SFTileStyleLandscape items:shows]];
+        SFPage *p = [SFPage page:@"Downloads" theme:source ?: @"home" shelves:shelves];
+        p.subtitle = [dl storageSummary:source];
+        if (!shelves.count)
+            p.emptyText = @"Noch keine Downloads.\nBei einem Video OK gedrückt halten und „Herunterladen“ wählen –\nbei einer Sendung „Neue Folgen automatisch laden“.";
+        done(p, nil);
+    };
+}
+
+// Kachelbild: Download-Symbol (Kreis + Pfeil + Ablage) in den Farben der App, einmal erzeugt
+static NSString *downloadsArt(NSString *source) {
+    SFTheme *t = [SFTheme themeNamed:source ?: @"home"];
+    NSString *path = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"downloads-art-v1-%@.png", source ?: @"home"]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
+    const NSInteger W = 1280, H = 720;
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:W pixelsHigh:H bitsPerSample:8 samplesPerPixel:4
+                                                                      hasAlpha:YES isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
+    NSColor *bg = t.surface ?: t.background, *acc = t.accent ?: [NSColor whiteColor];
+    [[[NSGradient alloc] initWithStartingColor:[bg blendedColorWithFraction:0.25 ofColor:acc] endingColor:bg] drawInRect:NSMakeRect(0, 0, W, H) angle:-60];
+    CGFloat cx = W / 2.0, cy = H / 2.0 + 40, r = 170;
+    [acc setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(cx - r, cy - r, 2 * r, 2 * r)] fill];
+    NSColor *fg = t.accentText ?: [NSColor whiteColor];
+    [fg setStroke];
+    NSBezierPath *p = [NSBezierPath bezierPath];
+    p.lineWidth = 26; p.lineCapStyle = NSRoundLineCapStyle; p.lineJoinStyle = NSRoundLineJoinStyle;
+    [p moveToPoint:NSMakePoint(cx, cy + 95)]; [p lineToPoint:NSMakePoint(cx, cy - 55)];               // Schaft
+    [p moveToPoint:NSMakePoint(cx - 70, cy + 15)]; [p lineToPoint:NSMakePoint(cx, cy - 55)];
+    [p lineToPoint:NSMakePoint(cx + 70, cy + 15)];                                                       // Spitze
+    [p moveToPoint:NSMakePoint(cx - 85, cy - 105)]; [p lineToPoint:NSMakePoint(cx + 85, cy - 105)];     // Ablage
+    [p stroke];
+    [NSGraphicsContext restoreGraphicsState];
+    [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
+    return path;
+}
+
+// Kachel, die die Downloads-Seite öffnet (Home: alle Quellen, in Apps: nur diese Quelle)
++ (SFItem *)downloadsTile:(NSString *)source {
+    SFDownloads *dl = [SFDownloads shared];
+    SFItem *i = [SFItem new];
+    i.kind = SFItemFolder;
+    i.identifier = source ? [@"downloads:" stringByAppendingString:source] : @"downloads:";
+    i.title = @"Downloads";
+    NSUInteger running = 0;
+    for (SFItem *a in [dl active]) if (!source || [a.source isEqualToString:source]) running++;
+    i.subtitle = running ? [NSString stringWithFormat:@"%lu %@ · %@", (unsigned long)running, running == 1 ? @"wird geladen" : @"werden geladen", [dl storageSummary:source]]
+                         : [dl storageSummary:source];
+    i.plot = @"Heruntergeladene Videos – auch ohne Internet. Hier siehst du, was gerade geladen wird, und verwaltest Sendungen, die automatisch geladen werden.";
+    i.themeName = source ?: @"home";
+    i.source = source;
+    if (!source) { i.style = SFTileStyleApp; i.tint = SFHex(0x2c3e50); }
+    else { i.style = SFTileStyleWide; i.image = downloadsArt(source); }
+    i.pageLoader = [self downloadsLoader:source];
+    return i;
+}
+
 // Online-Startseite um "Meine Sendungen" (lokale Downloads dieser Quelle) ergänzen.
 + (SFPageLoader)withLocalShows:(SFPageLoader)online source:(NSString *)source {
     return ^(SFPageDone done) {
@@ -136,10 +217,14 @@ static NSDictionary *appInfo(void) {
                 if (!page && !mine.count) { done(nil, err); return; }
                 SFPage *p = page ?: [SFPage page:nil theme:source shelves:@[]];
                 NSMutableArray *sh = [p.shelves mutableCopy] ?: [NSMutableArray new];
-                if (mine.count) {
-                    NSUInteger at = 0;
+                BOOL any = mine.count || [[SFDownloads shared] bytesUsedFor:source] > 0;
+                for (SFItem *a in [[SFDownloads shared] active]) if ([a.source isEqualToString:source]) any = YES;
+                if (any) {
+                    [mine insertObject:[self downloadsTile:source] atIndex:0];
+                    // Die App öffnet auf ihren Inhalten: Downloads nach „Weiterschauen“, sonst nach dem ersten Regal
+                    NSUInteger at = sh.count ? 1 : 0;
                     for (NSUInteger k = 0; k < sh.count; k++) if ([[sh[k] title] isEqualToString:@"Weiterschauen"]) at = k + 1;
-                    [sh insertObject:[SFShelf shelf:@"Meine Sendungen" style:SFTileStyleWide items:mine] atIndex:MIN(at, sh.count)];
+                    [sh insertObject:[SFShelf shelf:@"Downloads" style:SFTileStyleWide items:mine] atIndex:MIN(at, sh.count)];
                 }
                 if (!page && err) p.emptyText = @"Die Mediathek ist gerade nicht erreichbar.";
                 p.shelves = sh;
@@ -162,6 +247,7 @@ static NSDictionary *appInfo(void) {
         SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
         c.showsHero = YES;
         c.restoreKey = [@"app:" stringByAppendingString:source];
+        [self reloadOnLibraryChange:c];   // Downloads-Regal aktuell halten
         return c;
     }
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {

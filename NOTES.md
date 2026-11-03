@@ -95,6 +95,19 @@ Gesehen/Fortsetzen einmalig aus Kodi `MyVideos116.db` importieren.
 3. Abo-Engine nativ (ersetzt ytdl-sub + LaunchDaemon com.ytdlsub.run).
 4. Handy-Koppeln (Lounge), Kodi-Import, Port, XBMCHelper/Kodi-Autostart ablösen.
 
+## Leitbild „Exzellente UX“ (User-Vorgabe 2026-11-03, VERBINDLICH, oberste Priorität)
+„UX ist super wichtig, exzellente professionelle UX soll unbedingt gewährleistet werden.
+Alles selbsterklärend und intuitiv.“ Daraus folgt für jede Funktion:
+- Ohne Anleitung auffindbar: versteckte Gesten sichtbar machen (Kopfzeile zeigt
+  „OK halten: Optionen“, sobald der Fokus auf etwas mit Optionen steht).
+- Smart-TV-Menüführung, immer mit der 7-Tasten-Apple-Remote gedacht (Menu = zurück,
+  Play/Pause spielt direkt, OK halten = Optionen, MENU auf Home = Energie).
+- Beschriftungen in Nutzersprache („Energie“, „Neue Folgen automatisch laden“), keine Technik.
+- Wichtigstes zuerst (Optionen: Abspielen → Download → Gesehen …).
+- Destruktives nur mit Bestätigung, die die Folge nennt („Ja, 7 Folgen löschen“).
+- Leere Zustände erklären den nächsten Schritt; jede Aktion bekommt sichtbares Feedback (Toast).
+- Vor „fertig“: UI per Dev-Screenshot prüfen.
+
 ## Leitbild „Premium-Erlebnis“ (User-Vorgabe 2026-11-03, VERBINDLICH)
 Sofa ist **kein Download-Manager mit Bibliothek** (wie früher Kodi + ytdl-sub), sondern
 pro Quelle ein **nativer Client, der streamt UND offline kann – wie YouTube Premium**.
@@ -163,7 +176,8 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
 - [x] Eigene Abo-Engine (ersetzt ytdl-sub + com.ytdlsub.run; live seit 2026-11-03, Feeds yt/zdf/ard/orf), Abonnieren aus jeder App. → jetzt als Premium-Offline-Schicht (siehe Leitbild): `SFDownloads` generisch (ffmpeg -c copy aus HLS/MP4, ORF über Proxy), Downloads in Sofa-eigenen Speicher (DB `downloads`), ~/TV Shows nur Migration, Identität = Quell-ID (yt:…), Progress-Migration von local:…, Kontextmenü Herunterladen/Automatisch laden, Kachel-Status.
 - [x] Handy-Koppeln (YouTube "Mit TV verbinden", Lounge-API) nativ — 2026-11-03: `SFLounge` (libcurl-Long-Poll, NSURLSession puffert auf 10.9!), `SFPairScreen` (YouTube → Mehr → „Mit Handy verbinden“), Befehle in main.m (`loungeCommand:`), weckt Display + holt Sofa nach vorne. Getestet mit `tools/lounge-remote.py <code>` (simuliertes Handy): setPlaylist/pause/seek/play/getNowPlaying ok. Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId `lounge.dev.*`). OFFEN: Test mit echtem Android/iPhone (getDiscoveryDeviceId unbeantwortet).
 - [x] Bildschirmtastatur für Suche (nur 7 Remote-Tasten) + Suche in allen Apps.
-- [ ] Downloads-Regal je App + Home, Speicherplatz-Anzeige; Kontextmenü: „Herunterladen“ nach oben, Hinweis „OK halten: Optionen“.
+- [x] Downloads (2026-11-03): Kachel auf Home + Regal „Downloads“ je App (nach Weiterschauen/erstem Regal, Kachel mit Download-Symbol in App-Farben) → Seite „Downloads · X GB belegt · Y GB frei“ mit Wird geladen / Zuletzt geladen / Sendungen und Kanäle; Sendung: „Automatisch laden An/Aus“, „Alle Downloads löschen“ mit Bestätigung (Fokus auf Abbrechen); Kontextmenü Abspielen → Download → Gesehen; Kopfzeile „OK halten: Optionen“. Offline-Seiten laden bei Bestandsänderung live neu.
+- [ ] „Gesehenes automatisch löschen“ (Smart Downloads), Offline-Modus (kein Netz → Downloads statt Fehlerseite) prüfen.
 - [ ] Periodisch Background-Review-Agents (User-Wunsch) — nach jedem größeren Baustein.
 - [ ] Video-Frames im Dev-Stream (AVPlayerItemVideoOutput), sonst schwarz.
 - [ ] MacPorts-Port im Overlay (Endzustand), /Applications-Kopie ist Übergang.

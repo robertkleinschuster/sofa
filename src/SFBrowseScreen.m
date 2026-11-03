@@ -33,7 +33,7 @@
     CALayer *_backdropBox;
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
-    SFLabel *_wordmark, *_pageTitle, *_clock;
+    SFLabel *_wordmark, *_pageTitle, *_clock, *_hint;
     CALayer *_content;           // vertikal verschobener Inhalt
     NSMutableArray *_rows;
     NSInteger _row;              // fokussierte Zeile
@@ -178,8 +178,8 @@
     }
 
     _pageTitle = [SFLabel labelWithFont:[t regular:34] color:t.textDim];
-    _pageTitle.text = _page.title;
-    [_pageTitle sizeToFitWidth:size.width - x - U(400)];
+    _pageTitle.text = _page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", _page.title ?: @"", _page.subtitle] : _page.title;
+    [_pageTitle sizeToFitWidth:size.width - x - U(960)];
     _pageTitle.position = CGPointMake(x, U(52));
     [_header addSublayer:_pageTitle];
 
@@ -188,8 +188,23 @@
     [_clock sizeToFitWidth:U(300)];
     _clock.position = CGPointMake(size.width - U(96) - U(300), U(52));
     [_header addSublayer:_clock];
+    // Remote-Hinweis: Optionen gibt es nur per Halten – sonst unentdeckbar
+    _hint = [SFLabel labelWithFont:[t regular:26] color:t.textDim];
+    _hint.alignment = NSRightTextAlignment;
+    _hint.text = @"OK halten: Optionen";
+    [_hint sizeToFitWidth:U(520)];
+    _hint.position = CGPointMake(size.width - U(96) - U(300) - U(560), U(58));
+    _hint.opacity = 0;
+    [_header addSublayer:_hint];
+    [self updateHint];
     [self updateClock];
     [self.layer addSublayer:_header];
+}
+
+- (void)updateHint {
+    SFItem *it = [self focusedItem];
+    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [[SFDownloads shared] canSubscribe:it])));
+    SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.8 : 0; });
 }
 
 - (void)updateClock {
@@ -243,7 +258,7 @@
     }
     _page = page;
     if (!_laidOut) return;
-    _pageTitle.text = page.title;
+    _pageTitle.text = page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", page.title ?: @"", page.subtitle] : page.title;
     [self buildRows];
     if (fShelf) {
         for (NSUInteger i = 0; i < _rows.count; i++) {
@@ -446,6 +461,7 @@
     col = MAX(0, MIN(col, (NSInteger)r.items.count - 1));
     _row = row;
     r.focusCol = col;
+    [self updateHint];
 
     // Vertikal: fokussierte Zeile an die Oberkante des Inhaltsbereichs
     CGFloat target = MAX(0, r.y - _contentTop);
@@ -575,20 +591,6 @@
                 [nav push:ps];
             }]];
         }
-        if (it.kind == SFItemVideo) {
-            BOOL w = p >= 1;
-            [opts addObject:[SFMenuOption option:w ? @"Als ungesehen markieren" : @"Als gesehen markieren" action:^{
-                [[SFStore shared] setWatched:!w forItem:it];
-                [ws refreshTiles];
-                if (!w) [ws reload];
-            }]];
-            if (p > 0 && p < 1) {
-                [opts addObject:[SFMenuOption option:@"Aus „Weiterschauen“ entfernen" action:^{
-                    [[SFStore shared] removeFromContinue:it.identifier];
-                    [ws reload];
-                }]];
-            }
-        }
         if (it.kind == SFItemVideo) {   // Offline-Schicht: Download ist eine Option des Inhalts
             SFDownloads *dl = [SFDownloads shared];
             double dp = 0;
@@ -604,6 +606,20 @@
                 [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it]; [nav toast:@"Wird heruntergeladen – auch offline verfügbar"]; }]];
             }
         }
+        if (it.kind == SFItemVideo) {
+            BOOL w = p >= 1;
+            [opts addObject:[SFMenuOption option:w ? @"Als ungesehen markieren" : @"Als gesehen markieren" action:^{
+                [[SFStore shared] setWatched:!w forItem:it];
+                [ws refreshTiles];
+                if (!w) [ws reload];
+            }]];
+            if (p > 0 && p < 1) {
+                [opts addObject:[SFMenuOption option:@"Aus „Weiterschauen“ entfernen" action:^{
+                    [[SFStore shared] removeFromContinue:it.identifier];
+                    [ws reload];
+                }]];
+            }
+        }
         SFShow *show = it.channel ? [[SFLibrary shared] showNamed:it.channel] : nil;
         if (show && ![_page.title isEqualToString:show.name]) {
             [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Zu „%@“", show.name] action:^{
@@ -616,13 +632,41 @@
     } else if (it.kind == SFItemFolder) {
         [opts addObject:[SFMenuOption option:@"Öffnen" action:^{ SFOpenItem(nav, it, items, idx); }]];
         SFDownloads *dl = [SFDownloads shared];
+        if ([it.identifier hasPrefix:@"show:"]) {   // Sendung im Offline-Bestand
+            NSString *ch = it.channel ?: it.title, *src = it.source;
+            NSString *sid = [dl subscriptionIDForChannel:ch source:src];
+            if (sid) {
+                SFMenuOption *o = [SFMenuOption option:@"Automatisch laden" action:^{
+                    [dl unsubscribe:sid]; [nav toast:@"Automatisch laden aus – vorhandene Folgen bleiben"];
+                }];
+                o.detail = @"An";
+                [opts addObject:o];
+            }
+            SFShow *sh = [[SFLibrary shared] showNamed:ch];
+            NSUInteger n = sh.episodes.count;
+            SFMenuOption *del = [SFMenuOption option:@"Alle Downloads löschen" action:^{
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    SFMenuOption *yes = [SFMenuOption option:[NSString stringWithFormat:@"Ja, %lu %@ löschen", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"] action:^{
+                        if (sid) [dl unsubscribe:sid];
+                        [dl removeAllOfChannel:ch source:src];
+                        [nav toast:[NSString stringWithFormat:@"„%@“ gelöscht", ch]];
+                    }];
+                    SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
+                    [nav push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ löschen?", ch]
+                                                         subtitle:sid ? @"Die Folgen werden gelöscht und nicht mehr automatisch geladen." : @"Die Folgen werden vom Mac gelöscht."
+                                                          options:@[no, yes] theme:ws.theme]];
+                });
+            }];
+            del.detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"];
+            [opts addObject:del];
+        }
         if ([dl canSubscribe:it]) {
             BOOL on = [dl isSubscribed:it.identifier];
-            SFMenuOption *o = [SFMenuOption option:on ? @"Nicht mehr automatisch laden" : @"Neue Folgen automatisch laden" action:^{
-                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisches Laden beendet"]; }
-                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden automatisch geladen", it.title]]; }
+            SFMenuOption *o = [SFMenuOption option:@"Automatisch laden" action:^{
+                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisch laden aus – vorhandene Folgen bleiben"]; }
+                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden automatisch geladen – auch offline verfügbar", it.title]]; }
             }];
-            if (!on) o.detail = @"offline verfügbar";
+            o.detail = on ? @"An" : @"Aus";
             [opts addObject:o];
         }
     }
@@ -716,6 +760,8 @@ void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index
         case SFItemFolder: {
             SFTheme *t = [SFTheme themeNamed:item.themeName ?: nav.top.theme.identifier ?: @"home"];
             SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
+            // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
+            if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"]) b.reloadNotification = SFLibraryDidChangeNotification;
             [nav push:b];
             break;
         }
