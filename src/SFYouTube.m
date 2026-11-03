@@ -467,7 +467,7 @@ static NSSet *skipKeys(void) {
         // "UULF" = nur Langvideos (ohne Shorts); Fallback "UU" = alle Uploads
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
         __block NSString *banner = nil, *desc = nil, *meta = nil, *avatar = nil;
-        __block NSArray *playlists = nil;
+        __block NSArray *playlists = nil, *popular = nil;
         void (^build)(NSArray *, NSError *) = ^(NSArray *items, NSError *e) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
@@ -532,6 +532,7 @@ static NSSet *skipKeys(void) {
                 if (started.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:started]];
             }
             if (vids.count) [shelves addObject:[SFShelf shelf:@"Neueste Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(0, MIN(vids.count, (NSUInteger)12))]]];
+            if (popular.count >= 4) [shelves addObject:[SFShelf shelf:@"Beliebt" style:SFTileStyleLandscape items:[popular subarrayWithRange:NSMakeRange(0, MIN(popular.count, (NSUInteger)12))]]];
             if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
             // Ältere Videos weiter unten als Raster (wie der Videos-Tab), ohne die Reihe oben zu wiederholen
             if (vids.count > 12) [shelves addObject:[SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(12, vids.count - 12)]]];
@@ -566,6 +567,29 @@ static NSSet *skipKeys(void) {
             for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // Mixe (RD…) sind keine Kanal-Playlists
             playlists = pl;
             dispatch_group_leave(g);
+        }];
+        // „Beliebt“ wie im Videos-Tab von YouTube: Tab laden, Sortier-Chip „Beliebt“ → dessen Fortsetzung
+        // liefert die Videos nach Aufrufen sortiert (Chip-Text sprachabhängig; sonst der zweite von drei)
+        dispatch_group_enter(g);
+        [self call:@"browse" body:@{@"browseId": cid, @"params": @"EgZ2aWRlb3PyBgQKAjoA"} auth:NO cache:86400 done:^(id j, NSError *ve) {
+            NSString *tok = nil;
+            for (NSDictionary *tab in arr(path(j, @"contents.twoColumnBrowseResultsRenderer.tabs"))) {
+                NSArray *chips = arr(path(tab, @"tabRenderer.content.richGridRenderer.header.chipBarViewModel.chips"));
+                for (NSUInteger k = 0; k < chips.count && !tok; k++) {
+                    NSDictionary *c = dict(dict(chips[k])[@"chipViewModel"]);
+                    NSString *t = str(c[@"text"]);
+                    if ([t isEqualToString:@"Beliebt"] || [t isEqualToString:@"Popular"] || (chips.count == 3 && k == 1 && !t.length))
+                        tok = str(path(c, @"tapCommand.innertubeCommand.continuationCommand.token"));
+                }
+                if (!tok && chips.count == 3) tok = str(path(dict(chips[1]), @"chipViewModel.tapCommand.innertubeCommand.continuationCommand.token"));
+            }
+            if (!tok) { dispatch_group_leave(g); return; }
+            [self call:@"browse" body:@{@"continuation": tok} auth:NO cache:86400 done:^(id pj, NSError *pe) {
+                NSMutableArray *pv = [NSMutableArray new];
+                for (SFItem *i in (pj ? [self videosIn:pj cont:NULL channels:nil] : @[])) if (i.kind == SFItemVideo) [pv addObject:i];
+                popular = pv;
+                dispatch_group_leave(g);
+            }];
         }];
         void (^build0)(NSArray *, NSError *) = build;
         build = ^(NSArray *items, NSError *e) { dispatch_group_notify(g, dispatch_get_main_queue(), ^{ build0(items, e); }); };
