@@ -176,6 +176,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     if (p) { [self stop]; [self dropSession]; }
     else [self start];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
 }
 - (BOOL)sharesAllPlayback { return [[[SFStore shared] setting:[self key:@"shareAll"]] isEqualToString:@"1"]; }
 - (void)setSharesAllPlayback:(BOOL)s {
@@ -201,6 +202,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     @synchronized (_remotes) { [_remotes removeAllObjects]; }
     SFLog(@"lounge: alle Handys getrennt (neue screenId)");
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
     if (!wasPaused) [self start];
 }
 
@@ -251,6 +253,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
                 continue;
             }
             NSInteger code = [self longPoll];
+            if (gen != _loopGen) break;                              // inzwischen pausiert/neu gestartet: alte Schleife endet still
             if (code == 200) { backoff = 1; continue; }            // normales Ende nach ~5 min
             __block BOOL reset = NO;
             dispatch_sync(_q, ^{
@@ -447,6 +450,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     }
     if (newOne) [self greet];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
 }
 
 - (void)handle:(NSString *)cmd args:(NSDictionary *)args {
@@ -458,9 +462,11 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         @synchronized (_remotes) { _remotes[args[@"id"] ?: @"?"] = args[@"name"] ?: @"Handy"; }
         [self greet];
         [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
     } else if ([cmd isEqualToString:@"remoteDisconnected"]) {
         @synchronized (_remotes) { [_remotes removeObjectForKey:args[@"id"] ?: @"?"]; }
         [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
     } else if ([cmd isEqualToString:@"getNowPlaying"]) {
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]]]];
         return;

@@ -307,7 +307,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
             SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
-            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = _openResume;
+            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (self->_closing || it != self->_item) return;
                 if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
@@ -318,7 +318,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv scheitert -> AVFoundation
             SFLog(@"player: mpv scheitert -> AVFoundation");
             _mpvFailedURL = _openURL;
-            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = _openResume;
+            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (self->_closing || it != self->_item) return;
                 self->_openTries = 0;
@@ -333,7 +333,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         if (tryMPV || alt) {
             NSURL *next = tryMPV ? _openURL : alt;
             SFLog(@"player: %@", tryMPV ? @"AVFoundation scheitert -> mpv" : @"switching to alternate stream");
-            SFItem *it = _item; NSTimeInterval pos = _openResume;
+            SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (self->_closing || it != self->_item) return;
                 self->_openTries = 0;
@@ -349,7 +349,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             SFLog(@"player: alle Streams abgelehnt -> frisch auflösen");
             [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
             _mpvFailedURL = nil;
-            NSTimeInterval pos = _openResume;
+            self.startPaused = self.startPaused || _holdPaused;   // „pausiert starten“ übersteht das Neu-Auflösen
+            NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
             if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
             [self teardownPlayer];
             [self startItem];
@@ -361,6 +362,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@", _engine.error.localizedDescription ?: @""]];
         [self postState];
     } else if (_engine.status == SFEngineReady) {
+        [self showMessage:@""];   // z. B. „Verbindung unterbrochen“ nach erfolgreichem Ausweichen
         if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
         [self postState];
         if (_item.duration <= 0 && _engine.duration > 0) _item.duration = _engine.duration;
@@ -377,6 +379,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)engineTick { [self tick]; }
 
 - (void)teardownPlayer {
+    _engine.delegate = nil;   // keine späten Rückrufe der alten Engine
     [_engine shutdown];
     _engine = nil;
 }

@@ -400,6 +400,9 @@ static NSString *gb(unsigned long long b) {
     NSTask *t = [NSTask new];
     t.launchPath = @"/usr/bin/nice";
     NSMutableArray *args = [@[@"-n", @"10", ff, @"-nostdin", @"-hide_banner", @"-loglevel", @"error", @"-y", @"-progress", @"pipe:1",
+                              // Bandbreite schonen: höchstens 3x Abspielgeschwindigkeit (Hintergrund-Downloads sollen
+                              // Streaming am TV und andere Verbindungen nicht ausbremsen); kurzer Anlauf ungedrosselt
+                              @"-readrate", @"3", @"-readrate_initial_burst", @"10",
                               @"-i", src.absoluteString, @"-c", @"copy", @"-movflags", @"+faststart"] mutableCopy];
     if (![src.path.pathExtension.lowercaseString isEqualToString:@"mp4"]) [args addObjectsFromArray:@[@"-bsf:a", @"aac_adtstoasc"]];
     [args addObject:part];
@@ -509,6 +512,7 @@ static NSString *gb(unsigned long long b) {
     if (folder.image) s[@"image"] = folder.image;
     _subs[folder.identifier] = s;
     [self saveSub:s];
+    SFLog(@"downloads: Automatisch herunterladen an: %@ (%@)", folder.title, folder.identifier);
     [[SFFollows shared] follow:folder];   // Automatisch herunterladen setzt Folgen voraus
     [self changed:folder.identifier];
     [self checkSub:s initial:YES done:nil];
@@ -516,6 +520,7 @@ static NSString *gb(unsigned long long b) {
 
 - (void)unsubscribe:(NSString *)fid {
     if (!_subs[fid]) return;
+    SFLog(@"downloads: Automatisch herunterladen aus: %@ (%@)", _subs[fid][@"title"], fid);
     [_subs removeObjectForKey:fid];
     [[SFStore shared] run:T(@"DELETE FROM subscriptions WHERE id=?") args:@[fid]];
     // bereits geladene Folgen bleiben, werden aber nicht mehr automatisch gelöscht
