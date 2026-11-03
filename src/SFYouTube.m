@@ -461,11 +461,32 @@ static NSSet *skipKeys(void) {
         // Alle Uploads, neueste zuerst: Playlist "UU" + Kanal-ID ohne "UC"
         // "UULF" = nur Langvideos (ohne Shorts); Fallback "UU" = alle Uploads
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
-        __block NSString *banner = nil, *desc = nil;
+        __block NSString *banner = nil, *desc = nil, *meta = nil, *avatar = nil;
         void (^build)(NSArray *, NSError *) = ^(NSArray *items, NSError *e) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
             for (SFItem *i in items) [(i.kind == SFItemLive ? live : vids) addObject:i];
+            // Kanalkopf: Hauptaktion des Kanals sichtbar statt versteckt im Optionsmenü
+            SFDownloads *dl = [SFDownloads shared];
+            NSString *fid = [@"ytchannel:" stringByAppendingString:cid];
+            BOOL on = [dl isSubscribed:fid];
+            SFItem *sub = [SFItem new];
+            sub.kind = SFItemAction; sub.style = SFTileStyleWide; sub.source = @"youtube"; sub.themeName = @"youtube";
+            sub.identifier = [@"ytsub:" stringByAppendingString:cid];
+            sub.title = on ? @"Automatisch laden: An" : @"Automatisch laden: Aus";
+            sub.subtitle = on ? @"An · neue Videos sind offline verfügbar" : @"Aus · neue Videos automatisch herunterladen";
+            sub.image = SFDownloadsArt(@"youtube");
+            sub.backdrop = banner; sub.heroTitle = title; sub.heroMeta = meta; sub.plot = desc;
+            sub.action = ^{
+                SFItem *folder = [SFItem new];
+                folder.kind = SFItemFolder; folder.identifier = fid; folder.title = title; folder.source = @"youtube"; folder.image = avatar;
+                id d = [NSApp delegate];
+                SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
+                if ([dl isSubscribed:fid]) { [dl unsubscribe:fid]; [nav toast:@"Automatisch laden aus – vorhandene Videos bleiben"]; }
+                else { [dl subscribe:folder]; [nav toast:[NSString stringWithFormat:@"Neue Videos von „%@“ werden automatisch geladen – auch offline verfügbar", title]]; }
+                [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];   // Seite aktualisieren
+            };
+            [shelves addObject:[SFShelf shelf:nil style:SFTileStyleWide items:@[sub]]];
             if (live.count) [shelves addObject:[SFShelf shelf:@"Jetzt live" style:SFTileStyleLandscape items:live]];
             SFShow *local = [[SFLibrary shared] showNamed:title source:@"youtube"];
             if (local.episodes.count) {
@@ -477,11 +498,29 @@ static NSSet *skipKeys(void) {
             if (!shelves.count && !items) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:shelves];
             p.backdrop = banner;
-            p.subtitle = desc;
             if (!shelves.count) p.emptyText = @"Dieser Kanal hat keine Videos.";
             done(p, nil);
         };
         if (!uploads) { build(nil, SFError(@"Unbekannter Kanal.")); return; }
+        // Kanalkopf (Banner, Abonnenten, Beschreibung) parallel zu den Uploads
+        dispatch_group_t g = dispatch_group_create();
+        dispatch_group_enter(g);
+        [self call:@"browse" body:@{@"browseId": cid} auth:NO cache:86400 done:^(id j, NSError *he) {
+            NSDictionary *vm = dict(path(j, @"header.pageHeaderRenderer.content.pageHeaderViewModel"));
+            // Banner-Vorlage ist 2560x1440; ohne fcrop-Ausschnitt = volles TV-Motiv (16:9)
+            NSString *bu = str(dict(arr(path(vm, @"banner.imageBannerViewModel.image.sources")).lastObject)[@"url"]);
+            NSRange eq = [bu rangeOfString:@"=" options:NSBackwardsSearch];
+            if (eq.location != NSNotFound) banner = [[bu substringToIndex:eq.location] stringByAppendingString:@"=w1920-fcrop64=1,00000000ffffffff-k-c0xffffffff-no-nd-rj"];
+            avatar = str(dict(arr(path(vm, @"image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources")).lastObject)[@"url"]);
+            NSMutableArray *parts = [NSMutableArray new];
+            for (NSDictionary *row in arr(path(vm, @"metadata.contentMetadataViewModel.metadataRows")))
+                for (NSDictionary *pt in arr(dict(row)[@"metadataParts"])) { NSString *t = str(path(pt, @"text.content")); if (t.length) [parts addObject:t]; }
+            meta = parts.count ? [parts componentsJoinedByString:@" · "] : nil;
+            desc = str(path(vm, @"description.descriptionPreviewViewModel.description.content"));
+            dispatch_group_leave(g);
+        }];
+        void (^build0)(NSArray *, NSError *) = build;
+        build = ^(NSArray *items, NSError *e) { dispatch_group_notify(g, dispatch_get_main_queue(), ^{ build0(items, e); }); };
         [self collect:@"browse" body:@{@"browseId": [@"VL" stringByAppendingString:uploads]} auth:NO cache:600 max:100
                  into:[NSMutableArray new] json:nil done:^(NSArray *items, NSError *e) {
             if (items.count) { [[SFLibrary shared] whenReady:^{ build(items, e); }]; return; }

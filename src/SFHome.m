@@ -158,7 +158,7 @@ static NSDictionary *appInfo(void) {
 }
 
 // Kachelbild: Download-Symbol (Kreis + Pfeil + Ablage) in den Farben der App, einmal erzeugt
-static NSString *downloadsArt(NSString *source) {
+NSString *SFDownloadsArt(NSString *source) {
     SFTheme *t = [SFTheme themeNamed:source ?: @"home"];
     NSString *path = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"downloads-art-v1-%@.png", source ?: @"home"]];
     if ([[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
@@ -203,7 +203,7 @@ static NSString *downloadsArt(NSString *source) {
     i.themeName = source ?: @"home";
     i.source = source;
     if (!source) { i.style = SFTileStyleApp; i.tint = SFHex(0x2c3e50); }
-    else { i.style = SFTileStyleWide; i.image = downloadsArt(source); }
+    else { i.style = SFTileStyleWide; i.image = SFDownloadsArt(source); }
     i.pageLoader = [self downloadsLoader:source];
     return i;
 }

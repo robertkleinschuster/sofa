@@ -33,3 +33,20 @@ H.264 ≤1080p → AVFoundation (Hardware), sonst VP9 → mpv, AV1 nur wenn Mess
 4. Langfristig eine Engine (mpv für alles) oder AVFoundation dauerhaft für H.264?
 5. Obergrenze 1080p60 VP9 oder 1440p zulassen?
 6. libcurl-Proxy behalten oder TLS direkt über ffmpeg/gnutls?
+
+## Entscheidungen (User 2026-11-03)
+1. Erst messen (Mess-Gate mit ffmpeg-Port), dann mpv.
+2. Neuestes mpv als Overlay-Port (libmpv, ohne Cocoa/Swift).
+3. H.264 ≤1080p bleibt AVFoundation (Hardware); mpv nur für VP9/AV1/Rest.
+4. Obergrenze YouTube: 1080p60.
+
+## Mess-Gate (2026-11-03) — BESTANDEN
+ffmpeg8 8.1.3 (+gpl2+vmaf) per `sudo port -n install ffmpeg8` gebaut (MacPorts, alle 48 Deps waren da).
+Testmaterial: Big Buck Bunny 60fps (YouTube aqz-KE-bpKQ), je 60 s, reine Dekodierung `-threads 0 -f null`:
+| Format | Decoder | fps | Echtzeit |
+|---|---|---|---|
+| VP9 1080p60 (itag 303) | ffvp9 | 507 | 8,5x |
+| VP9 1440p60 (itag 308) | ffvp9 | 271 | 4,5x |
+| AV1 1080p60 (itag 399) | libdav1d | 376 | 6,3x |
+→ Software-Dekodierung ist auf dem i5-2500S kein Engpass (VP9 1080p60 ≈ 1 Kern). Auch 1440p60 wäre machbar;
+User-Obergrenze bleibt 1080p60 (kann später angehoben werden). Nächster Schritt: Overlay-Port mpv (libmpv, ohne Cocoa/Swift).

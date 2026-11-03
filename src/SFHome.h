@@ -2,6 +2,8 @@
 // der Quellen-Apps.
 #import "SFBrowseScreen.h"
 
+NSString *SFDownloadsArt(NSString *source);   // Kachelbild mit Download-Symbol in App-Farben
+
 @interface SFHome : NSObject
 + (SFScreen *)homeScreen;
 + (SFScreen *)appScreen:(NSString *)source;                  // youtube, zdf, ard, orf, ccc

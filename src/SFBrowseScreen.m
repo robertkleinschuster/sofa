@@ -733,13 +733,14 @@
         if (seq != self->_heroSeq) return;
         CGFloat w = self.size.width * 0.5;
         SFNoAnimate(^{
-            self->_heroTitle.text = it.title ?: self->_page.title;
+            self->_heroTitle.text = it.heroTitle ?: it.title ?: self->_page.title;
             CGFloat h1 = [self->_heroTitle sizeToFitWidth:w];
             NSMutableArray *meta = [NSMutableArray new];
             if (it.channel.length && ![it.channel isEqualToString:it.title]) [meta addObject:it.channel];
             if (it.date) [meta addObject:SFFormatDateShort(it.date)];
             if (it.duration > 0) [meta addObject:SFFormatDuration(it.duration)];
             if (!meta.count && it.subtitle.length) [meta addObject:it.subtitle];
+            if (it.heroMeta.length) { [meta removeAllObjects]; [meta addObject:it.heroMeta]; }
             self->_heroMeta.text = [meta componentsJoinedByString:@"  ·  "];
             CGFloat h2 = [self->_heroMeta sizeToFitWidth:w];
             NSString *plot = [it.plot stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
@@ -781,7 +782,8 @@ void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index
             SFTheme *t = [SFTheme themeNamed:item.themeName ?: nav.top.theme.identifier ?: @"home"];
             SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
             // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
-            if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"]) b.reloadNotification = SFLibraryDidChangeNotification;
+            if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
+            if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // Kanalkopf (Banner, Abonnenten, Beschreibung)
             [nav push:b];
             break;
         }
