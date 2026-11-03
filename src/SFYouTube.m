@@ -9,6 +9,7 @@
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
 #import "SFFollows.h"
+#import "SFWatchLater.h"
 #import "SFEngine.h"
 #import "SFScreen.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -698,7 +699,8 @@ static NSSet *skipKeys(void) {
                 for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
                 if (latest.count) [shelves addObject:[SFShelf shelf:@"Neu heruntergeladen" style:SFTileStyleLandscape items:latest]];
             }
-            if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
+            // „Später ansehen“ des Kontos einmalig in Sofas eigene Liste übernehmen (Regal kommt aus SFWithWatchLater)
+            if (later.count) [[SFWatchLater shared] importItems:later once:@"watchlater.import.youtube"];
             // Kanäle: gefolgte (echte Kanalseiten) + heruntergeladene ohne bekannte Kanal-ID (Offline-Seite)
             NSMutableArray *chs = [NSMutableArray new];
             NSMutableSet *names = [NSMutableSet new];

@@ -13,6 +13,7 @@
 #import "SFHome.h"
 #import "SFLogo.h"
 #import "SFSearch.h"
+#import "SFWatchLater.h"
 
 // Ein sichtbarer "Zeilen"-Abschnitt: Rail = eine Zeile; Grid = mehrere Zeilen.
 @interface SFRow : NSObject
@@ -401,8 +402,10 @@ static void auditImages(SFPage *page) {
     auditImages(page);
     // Fokus merken (per Shelf-Titel + Item-ID)
     NSString *fShelf = nil, *fItem = nil;
+    NSInteger fRow = -1, fCol = 0;
     if (keep && _row < (NSInteger)_rows.count) {
         SFRow *r = _rows[_row];
+        fRow = _row; fCol = r.focusCol;
         fShelf = r.title ?: [self shelfTitleForRow:r];
         SFItem *it = [self focusedItem];
         fItem = it.identifier ?: it.title;
@@ -426,6 +429,14 @@ static void auditImages(SFPage *page) {
                 }
             }
         }
+    }
+    // Fokussiertes Element weg (z. B. aus „Später ansehen“ entfernt): in derselben Reihe an derselben
+    // Stelle bleiben (= das nächste Element); ist die Reihe ganz weg, die Reihe, die nachgerückt ist.
+    if (!found && fRow >= 0 && _rows.count) {
+        NSInteger target = -1;
+        for (NSUInteger i = 0; i < _rows.count && fShelf; i++) if ([[self shelfTitleForRow:_rows[i]] isEqualToString:fShelf]) { target = i; break; }
+        if (target < 0) target = MIN(fRow, (NSInteger)_rows.count - 1);
+        [self focusRow:target col:fCol animated:NO];   // focusRow begrenzt die Spalte selbst
     }
     if (hdr && _searchPill) [self focusHeaderSearch];
 }
@@ -797,6 +808,14 @@ static void auditImages(SFPage *page) {
                 SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:items index:idx];
                 ps.startFromBeginning = YES;
                 [nav push:ps];
+            }]];
+        }
+        if (it.kind == SFItemVideo && it.identifier && p < 1) {   // eigene Merkliste, für alle Apps
+            SFWatchLater *wl = [SFWatchLater shared];
+            BOOL in = [wl contains:it.identifier];
+            [opts addObject:[SFMenuOption option:in ? @"Aus „Später ansehen“ entfernen" : @"Später ansehen" action:^{
+                if (in) { [wl remove:it.identifier]; [nav toast:@"Aus „Später ansehen“ entfernt"]; }
+                else { [wl add:it]; [nav toast:@"Gemerkt – steht unter „Später ansehen“"]; }
             }]];
         }
         if (it.kind == SFItemVideo) {   // Offline-Schicht: Download ist eine Option des Inhalts

@@ -7,6 +7,7 @@
 #import "SFProviderORF.h"
 #import "SFYouTube.h"
 #import "SFSearch.h"
+#import "SFWatchLater.h"
 #import "SFDownloads.h"
 #import "SFIconArt.h"
 #import "SFLounge.h"
@@ -55,6 +56,8 @@ static NSDictionary *appInfo(void) {
             NSArray *cont = [[SFStore shared] continueWatching:20 source:nil];
             for (SFItem *e in cont) e.subtitle = [NSString stringWithFormat:@"%@ · noch %@", e.channel ?: @"", SFFormatDuration(MAX(0, e.duration - [[SFStore shared] positionFor:e.identifier]))];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
+            NSArray *later = [[SFWatchLater shared] items:nil];
+            if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
             // Gefolgtes (Folgen-Konzept): neue Folgen streamen, Seiten online; Downloads stecken in der Kachel „Downloads“
             SFFollows *fo = [SFFollows shared];
             NSArray *latest = [fo latest:40 source:nil];
@@ -299,6 +302,7 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     else if ([source isEqualToString:@"zdf"]) online = [self withLocalShows:[SFProviderZDF homeLoader] source:source];
     else if ([source isEqualToString:@"orf"]) online = [self withLocalShows:[SFProviderORF homeLoader] source:source];
     if (online) {
+        online = SFWithWatchLater(online, source);   // Regal „Später ansehen“ (eigene Merkliste)
         online = SFWithSearchTile(online, source);   // Kachel „Suche“
         SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
         c.showsHero = YES;
