@@ -1,4 +1,4 @@
-// "Fernseher"-Steuerung: Sofa ist die 10-Fuß-Shell des iMac (= TV). Bildschirm aus,
+// Energie-Menü (MENU auf Home): Sofa ist das Smart-TV-Overlay dieses iMac. Bildschirm aus,
 // Ruhezustand, Sleep-Timer. macOS-Timeouts (pmset displaysleep 5, sleep 0) bleiben der
 // Leerlauf-Rückfall; das hier ist die aktive Steuerung. Wecken: jede Remote-Taste
 // (SofaRemote: erster Druck weckt nur und holt Sofa nach vorne).

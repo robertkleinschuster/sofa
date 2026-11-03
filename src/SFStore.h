@@ -17,4 +17,9 @@
 // Einfacher JSON-Cache für Provider (z.B. Mediathek-Antworten), mit Alter.
 - (id)cachedJSON:(NSString *)key maxAge:(NSTimeInterval)age;
 - (void)cacheJSON:(id)obj forKey:(NSString *)key;
+// Generischer Zugriff für andere Module (Downloads). Werte: NSString/NSNumber/NSData/NSNull.
+- (void)run:(NSString *)sql args:(NSArray *)args;                // asynchron (Schreiben)
+- (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchron, Array von Dictionaries
+// Fortschritt/Verlauf auf neue ID umschlüsseln (Migration local:… -> yt:…); nur wenn Ziel frei
+- (void)renameProgress:(NSString *)from to:(NSString *)to;
 @end

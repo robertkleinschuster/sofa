@@ -68,8 +68,13 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     return i;
 }
 
+static NSString *(^gLocalLookup)(NSString *);
+void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [lookup copy]; }
+
 - (void)resolveURL:(SFURLDone)done {
     void (^main)(NSURL *, NSError *) = ^(NSURL *u, NSError *e) { SFMain(^{ done(u, e); }); };
+    NSString *offline = (!self.localPath && gLocalLookup && self.identifier) ? gLocalLookup(self.identifier) : nil;
+    if (offline) { main([NSURL fileURLWithPath:offline], nil); return; }
     if (self.localPath) {
         if ([[NSFileManager defaultManager] fileExistsAtPath:self.localPath]) {
             main([NSURL fileURLWithPath:self.localPath], nil);

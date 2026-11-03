@@ -128,7 +128,8 @@ static NSDate *isoDate(NSString *s) {
 + (SFPageLoader)curatedLoader:(NSString *)canonical title:(NSString *)title {
     NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title } ... on CuratedCollection { canonical title } } } } } } } }", VIDEO_F, COLL_F];
     return ^(SFPageDone done) {
-        [self gql:q vars:@{@"canonical": canonical, @"first": @30} cache:900 done:^(id d, NSError *e) {
+        // items(first:) erlaubt seit 11/2026 nur 1…26 (sonst leere Cluster + Fehler)
+        [self gql:q vars:@{@"canonical": canonical, @"first": @26} cache:900 done:^(id d, NSError *e) {
             NSDictionary *cc = dict(dict(d)[@"curatedCollectionByCanonical"]);
             if (!cc) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
             NSMutableArray *shelves = [NSMutableArray new];

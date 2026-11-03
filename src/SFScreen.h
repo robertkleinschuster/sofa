@@ -32,6 +32,6 @@
 - (void)toast:(NSString *)text;
 // Lautstärke ändern (dir ±1) und Anzeige einblenden
 - (void)volumeStep:(int)dir;
-// MENU auf dem untersten Screen (Home): "Fernseher"-Menü statt nichts
+// MENU auf dem untersten Screen (Home): Energie-Menü statt nichts
 @property (nonatomic, copy) dispatch_block_t rootMenuHandler;
 @end

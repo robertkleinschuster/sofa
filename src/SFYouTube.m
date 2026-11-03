@@ -4,6 +4,7 @@
 #import "SFStore.h"
 #import "SFLibrary.h"
 #import "SFPairScreen.h"
+#import "SFDownloads.h"
 #import "SFScreen.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <sqlite3.h>
@@ -52,6 +53,27 @@ static NSTimeInterval parseDuration(NSString *s) {
         t = t * 60 + q.integerValue;
     }
     return t;
+}
+
+// "vor 3 Tagen", "vor 1 Stunde", "vor 2 Wochen", "vor 5 Monaten", "vor 1 Jahr" (auch
+// "… gestreamt", "Premiere vor …") -> ungefähres Datum (für Sortierung/Behaltefrist)
+static NSDate *relativeDate(NSString *s) {
+    if (!s.length) return nil;
+    NSRange v = [s rangeOfString:@"vor "];
+    if (v.location == NSNotFound) return nil;
+    NSScanner *sc = [NSScanner scannerWithString:[s substringFromIndex:NSMaxRange(v)]];
+    NSInteger n = 0;
+    if (![sc scanInteger:&n]) return nil;
+    NSString *rest = [[s substringFromIndex:NSMaxRange(v)] lowercaseString];
+    double unit = 0;
+    if ([rest rangeOfString:@"sekunde"].location != NSNotFound) unit = 1;
+    else if ([rest rangeOfString:@"minute"].location != NSNotFound) unit = 60;
+    else if ([rest rangeOfString:@"stunde"].location != NSNotFound) unit = 3600;
+    else if ([rest rangeOfString:@"tag"].location != NSNotFound) unit = 86400;
+    else if ([rest rangeOfString:@"woche"].location != NSNotFound) unit = 7 * 86400;
+    else if ([rest rangeOfString:@"monat"].location != NSNotFound) unit = 30.4 * 86400;
+    else if ([rest rangeOfString:@"jahr"].location != NSNotFound) unit = 365 * 86400;
+    return unit ? [NSDate dateWithTimeIntervalSinceNow:-n * unit] : nil;
 }
 
 #pragma mark - Auth (Firefox-Cookies)
@@ -203,12 +225,14 @@ static NSDate *gCookiesAt;
     }];
 }
 
+static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@":"]; return r.location == NSNotFound ? ident : [ident substringFromIndex:NSMaxRange(r)]; }
+
 #pragma mark - Parser (rekursiver Walker, docs/youtube.md §3.0)
 
 + (SFItem *)videoItem:(NSString *)vid title:(NSString *)title channel:(NSString *)channel channelID:(NSString *)cid
                   meta:(NSString *)meta thumb:(NSString *)thumb duration:(NSTimeInterval)dur live:(BOOL)live {
     if (vid.length != 11) return nil;
-    SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
+    SFItem *local = [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]] ?: [[SFLibrary shared] episodeForYouTubeID:vid];
     if (local) {   // schon heruntergeladen: lokale Datei (Qualität, offline, gemeinsamer Fortschritt)
         SFItem *i = [local copy];
         i.subtitle = meta.length ? [NSString stringWithFormat:@"%@ · auf diesem Mac", meta] : @"Auf diesem Mac";
@@ -228,6 +252,19 @@ static NSDate *gCookiesAt;
     i.source = @"youtube"; i.themeName = @"youtube";
     i.style = SFTileStyleLandscape;
     if (live) i.badge = @"LIVE";
+    return i;
+}
+
+// Online-Item ohne Ersetzung durch lokale Kopie (für Downloads/Abos)
++ (SFItem *)videoItemOnline:(NSString *)vid {
+    if (vid.length != 11) return nil;
+    SFItem *i = [SFItem new];
+    i.kind = SFItemVideo;
+    i.identifier = [@"yt:" stringByAppendingString:vid];
+    i.resolverRef = i.identifier;
+    i.externalID = vid;
+    i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", vid];
+    i.source = @"youtube"; i.themeName = @"youtube"; i.style = SFTileStyleLandscape;
     return i;
 }
 
@@ -279,7 +316,11 @@ static NSDate *gCookiesAt;
         }
         if (upcoming) return nil;   // noch nicht abspielbar
         if (channel && meta) meta = [NSString stringWithFormat:@"%@ · %@", channel, meta];
-        return [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
+        SFItem *vi = [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
+        NSDate *when = nil;
+        for (NSString *part in rowTexts.lastObject) if ((when = relativeDate(part))) break;
+        if (!vi.localPath) vi.date = when;
+        return vi;
     }
     if ([type isEqualToString:@"LOCKUP_CONTENT_TYPE_PLAYLIST"]) {
         NSDictionary *pt = dict(path(l, @"contentImage.collectionThumbnailViewModel.primaryThumbnail.thumbnailViewModel"));
@@ -318,8 +359,10 @@ static NSDate *gCookiesAt;
     if (live && views) [meta addObject:views];
     if (when) [meta addObject:when];
     if ([v[@"isPlayable"] isKindOfClass:[NSNumber class]] && ![v[@"isPlayable"] boolValue]) return nil;
-    return [self videoItem:vid title:title channel:channel channelID:chID meta:[meta componentsJoinedByString:@" · "]
+    SFItem *vi = [self videoItem:vid title:title channel:channel channelID:chID meta:[meta componentsJoinedByString:@" · "]
                      thumb:lastURL(path(v, @"thumbnail.thumbnails")) duration:dur live:live];
+    if (!vi.localPath) vi.date = relativeDate(when);
+    return vi;
 }
 
 static NSSet *skipKeys(void) {
@@ -580,6 +623,34 @@ static NSSet *skipKeys(void) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
             done(u, e);
+        }];
+    });
+    // Abo-Feed: Langvideos eines Kanals, neueste zuerst (immer als Online-Items)
+    SFRegisterFeed(@"ytchannel", ^(NSString *cid, void (^done)(NSArray *, NSError *)) {
+        if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
+        [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} auth:NO cache:900 done:^(id j, NSError *e) {
+            NSMutableArray *online = [NSMutableArray new];
+            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
+                if (i.kind != SFItemVideo) continue;
+                if (i.localPath) {   // lokale Kopie ersetzt: Online-Identität wiederherstellen
+                    SFItem *o = [self videoItemOnline:i.externalID ?: restOfID(i.identifier)];
+                    if (!o) continue;
+                    o.title = i.title; o.channel = i.channel; o.date = i.date; o.duration = i.duration;
+                    [online addObject:o];
+                    continue;
+                }
+                [online addObject:i];
+            }
+            done(j ? online : nil, e);
+        }];
+    });
+    // Downloads in 720p (wie bisher ytdl-sub): spart Platz, am TV gut genug
+    SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFURLDone done) {
+        NSString *vid = item.externalID ?: restOfID(item.identifier);
+        [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
+            NSString *u = r[@"url"];
+            for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
+            done(u ? [NSURL URLWithString:u] : nil, e);
         }];
     });
     SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {

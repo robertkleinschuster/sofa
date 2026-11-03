@@ -213,4 +213,66 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
         sqlite3_step(st); sqlite3_finalize(st);
     });
 }
+
+#pragma mark Generisch
+
+static void bindAny(sqlite3_stmt *st, int idx, id v) {
+    if ([v isKindOfClass:[NSString class]]) sqlite3_bind_text(st, idx, [v UTF8String], -1, SQLITE_TRANSIENT);
+    else if ([v isKindOfClass:[NSNumber class]]) {
+        const char *t = [v objCType];
+        if (strcmp(t, @encode(double)) == 0 || strcmp(t, @encode(float)) == 0) sqlite3_bind_double(st, idx, [v doubleValue]);
+        else sqlite3_bind_int64(st, idx, [v longLongValue]);
+    }
+    else if ([v isKindOfClass:[NSData class]]) sqlite3_bind_blob(st, idx, [v bytes], (int)[v length], SQLITE_TRANSIENT);
+    else sqlite3_bind_null(st, idx);
+}
+
+- (void)runNow:(NSString *)sql args:(NSArray *)args {
+    sqlite3_stmt *st;
+    if (sqlite3_prepare_v2(_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db)); return; }
+    for (NSUInteger i = 0; i < args.count; i++) bindAny(st, (int)i + 1, args[i]);
+    if (sqlite3_step(st) != SQLITE_DONE) SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db));
+    sqlite3_finalize(st);
+}
+
+- (void)run:(NSString *)sql args:(NSArray *)args {
+    dispatch_async(_q, ^{ [self runNow:sql args:args]; });
+}
+
+- (NSArray *)rows:(NSString *)sql args:(NSArray *)args {
+    NSMutableArray *out = [NSMutableArray new];
+    dispatch_sync(_q, ^{
+        sqlite3_stmt *st;
+        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(self->_db)); return; }
+        for (NSUInteger i = 0; i < args.count; i++) bindAny(st, (int)i + 1, args[i]);
+        int n = sqlite3_column_count(st);
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            NSMutableDictionary *r = [NSMutableDictionary new];
+            for (int c = 0; c < n; c++) {
+                NSString *k = @(sqlite3_column_name(st, c));
+                switch (sqlite3_column_type(st, c)) {
+                    case SQLITE_INTEGER: r[k] = @(sqlite3_column_int64(st, c)); break;
+                    case SQLITE_FLOAT: r[k] = @(sqlite3_column_double(st, c)); break;
+                    case SQLITE_TEXT: r[k] = @((const char *)sqlite3_column_text(st, c)); break;
+                    case SQLITE_BLOB: r[k] = [NSData dataWithBytes:sqlite3_column_blob(st, c) length:sqlite3_column_bytes(st, c)]; break;
+                    default: break;
+                }
+            }
+            [out addObject:r];
+        }
+        sqlite3_finalize(st);
+    });
+    return out;
+}
+
+- (void)renameProgress:(NSString *)from to:(NSString *)to {
+    if (!from || !to || [from isEqualToString:to]) return;
+    @synchronized (_progressCache) {
+        NSArray *a = _progressCache[from];
+        if (!a || _progressCache[to]) return;
+        _progressCache[to] = a;
+        [_progressCache removeObjectForKey:from];
+    }
+    dispatch_async(_q, ^{ [self runNow:@"UPDATE OR IGNORE progress SET id=? WHERE id=?" args:@[to, from]]; });
+}
 @end

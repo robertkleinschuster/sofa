@@ -25,7 +25,7 @@ case "$INST" in view) PORT=8767 ;; test) PORT=8766 ;; *) PORT="${SOFA_PORT:-8770
 FIFO="$CACHE/dev-$INST.fifo"
 PIDF="$CACHE/dev-$INST.pid"
 STARTF="$CACHE/dev-$INST.start"
-LOG="$HOME/Library/Logs/Sofa.log"
+LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"   # jede Dev-Instanz eigenes Log (echte App: Sofa.log)
 SHOTS="${SOFA_SHOTS:-/private/tmp/claude-501/sofa-shots}"
 mkdir -p "$CACHE" "$SHOTS"
 

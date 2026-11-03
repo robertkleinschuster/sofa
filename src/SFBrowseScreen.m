@@ -3,6 +3,7 @@
 #import "SFLayers.h"
 #import "SFStore.h"
 #import "SFMenuScreen.h"
+#import "SFDownloads.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -53,6 +54,7 @@
     if ((self = [super initWithTheme:theme])) {
         _loader = [loader copy];
         _rows = [NSMutableArray new];
+        [self observeDownloads];
     }
     return self;
 }
@@ -60,8 +62,13 @@
     if ((self = [super initWithTheme:[SFTheme themeNamed:page.themeName ?: @"home"]])) {
         _rows = [NSMutableArray new];
         _page = page;
+        [self observeDownloads];
     }
     return self;
+}
+// Download-Status auf den Kacheln live halten
+- (void)observeDownloads {
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
 }
 - (SFPage *)page { return _page; }
 
@@ -582,6 +589,21 @@
                 }]];
             }
         }
+        if (it.kind == SFItemVideo) {   // Offline-Schicht: Download ist eine Option des Inhalts
+            SFDownloads *dl = [SFDownloads shared];
+            double dp = 0;
+            SFDLState ds = [dl stateFor:it.identifier progress:&dp];
+            NSString *ident = it.identifier;
+            if (ds == SFDLQueued || ds == SFDLRunning) {
+                SFMenuOption *o = [SFMenuOption option:@"Download abbrechen" action:^{ [dl remove:ident]; [nav toast:@"Download abgebrochen"]; }];
+                o.detail = ds == SFDLRunning ? [NSString stringWithFormat:@"%d %%", (int)round(dp * 100)] : @"wartet";
+                [opts addObject:o];
+            } else if (ds == SFDLDone || it.localPath) {
+                if (ds == SFDLDone) [opts addObject:[SFMenuOption option:@"Download löschen" action:^{ [dl remove:ident]; [nav toast:@"Download gelöscht"]; [ws reload]; }]];
+            } else if (it.resolverRef || it.resolver) {
+                [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it]; [nav toast:@"Wird heruntergeladen – auch offline verfügbar"]; }]];
+            }
+        }
         SFShow *show = it.channel ? [[SFLibrary shared] showNamed:it.channel] : nil;
         if (show && ![_page.title isEqualToString:show.name]) {
             [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Zu „%@“", show.name] action:^{
@@ -593,6 +615,16 @@
         }
     } else if (it.kind == SFItemFolder) {
         [opts addObject:[SFMenuOption option:@"Öffnen" action:^{ SFOpenItem(nav, it, items, idx); }]];
+        SFDownloads *dl = [SFDownloads shared];
+        if ([dl canSubscribe:it]) {
+            BOOL on = [dl isSubscribed:it.identifier];
+            SFMenuOption *o = [SFMenuOption option:on ? @"Nicht mehr automatisch laden" : @"Neue Folgen automatisch laden" action:^{
+                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisches Laden beendet"]; }
+                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden automatisch geladen", it.title]]; }
+            }];
+            if (!on) o.detail = @"offline verfügbar";
+            [opts addObject:o];
+        }
     }
     if (!opts.count) return;
     NSString *sub = it.channel && ![it.channel isEqualToString:it.title] ? it.channel : it.subtitle;

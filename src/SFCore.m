@@ -2,6 +2,7 @@
 
 CGFloat SFScale = 1.0;
 
+NSString *SFLogFileName = @"Sofa.log";
 void SFLog(NSString *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];
@@ -11,7 +12,7 @@ void SFLog(NSString *fmt, ...) {
     dispatch_once(&once, ^{
         q = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
         NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"];
-        NSString *p = [dir stringByAppendingPathComponent:@"Sofa.log"];
+        NSString *p = [dir stringByAppendingPathComponent:SFLogFileName ?: @"Sofa.log"];
         NSDictionary *a = [[NSFileManager defaultManager] attributesOfItemAtPath:p error:nil];
         if ([a fileSize] > 4 * 1024 * 1024) {
             NSString *old = [p stringByAppendingString:@".1"];

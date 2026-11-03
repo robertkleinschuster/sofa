@@ -17,6 +17,7 @@ extern CGFloat SFScale;
 static inline CGFloat U(CGFloat v) { return round(v * SFScale); }
 
 void SFLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
+extern NSString *SFLogFileName;   // "Sofa.log"; Dev-Instanzen: "Sofa-dev-<instanz>.log"
 
 static inline void SFMain(dispatch_block_t b) {
     if ([NSThread isMainThread]) b(); else dispatch_async(dispatch_get_main_queue(), b);

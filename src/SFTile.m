@@ -1,4 +1,5 @@
 #import "SFTile.h"
+#import "SFDownloads.h"
 #import "SFStore.h"
 #import "SFLogo.h"
 
@@ -19,6 +20,7 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
     SFImageLayer *_image;
     CALayer *_ring;
     CALayer *_progressBg, *_progress;
+    CALayer *_dlChip; SFLabel *_dlLabel;   // Download-Status unten links
     CALayer *_durationPill;
     SFLabel *_duration;
     CALayer *_badgeBg;
@@ -135,6 +137,17 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
             [holder addSublayer:_durationPill];
         }
 
+        // Download-Status (Offline-Schicht): Chip unten links, nur bei Videos
+        if (st == SFTileStyleLandscape && item.kind == SFItemVideo) {
+            _dlChip = [CALayer layer];
+            _dlChip.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.78].CGColor;
+            _dlChip.cornerRadius = U(5);
+            _dlChip.hidden = YES;
+            _dlLabel = [SFLabel labelWithFont:[theme medium:19] color:[NSColor whiteColor]];
+            [_dlChip addSublayer:_dlLabel];
+            [holder addSublayer:_dlChip];
+        }
+
         // Fortschritt
         if (st == SFTileStyleLandscape || st == SFTileStylePoster) {
             _progressBg = [CALayer layer];
@@ -193,7 +206,30 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
     _image.source = self.item.image;
 }
 
+- (void)refreshDownload {
+    if (!_dlChip) return;
+    double p = 0;
+    SFDLState s = [[SFDownloads shared] stateFor:self.item.identifier progress:&p];
+    NSString *t = nil;
+    if (s == SFDLRunning) t = [NSString stringWithFormat:@"\u2193 %d %%", (int)round(p * 100)];
+    else if (s == SFDLQueued) t = @"\u2193 wartet";
+    else if (s == SFDLDone && !self.item.localPath) t = @"\u2193 Offline";
+    else if (s == SFDLFailed) t = @"Download fehlgeschlagen";
+    SFNoAnimate(^{
+        self->_dlChip.hidden = (t == nil);
+        if (!t) return;
+        self->_dlLabel.text = t;
+        NSSize ts = [t sizeWithAttributes:@{NSFontAttributeName: self->_dlLabel.font}];
+        [self->_dlLabel sizeToFitWidth:ceil(ts.width) + 2];
+        CGFloat pw = self->_dlLabel.bounds.size.width + U(14), ph = self->_dlLabel.bounds.size.height + U(4);
+        CGFloat ih = self->_dlChip.superlayer.bounds.size.height;
+        self->_dlChip.frame = CGRectMake(U(10), ih - ph - U(12), pw, ph);
+        self->_dlLabel.position = CGPointMake(U(7), U(2));
+    });
+}
+
 - (void)refreshProgress {
+    [self refreshDownload];
     if (!_progressBg) return;
     double p = self.item.kind == SFItemVideo ? [[SFStore shared] progressFor:self.item.identifier] : 0;
     BOOL watched = p >= 1;

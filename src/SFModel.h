@@ -81,4 +81,6 @@ NSError *SFError(NSString *msg);
 // Ausweich-URLs (z.B. YouTube: 1080p-HLS -> 720p-HLS -> 360p-MP4), falls AVFoundation die
 // erste URL wiederholt nicht öffnet.
 void SFSetAlternateURLs(NSURL *primary, NSArray *alternates);
+// Offline-Kopie zu einer Quell-ID (von SFDownloads gesetzt): resolveURL spielt dann lokal.
+void SFSetLocalFileLookup(NSString *(^lookup)(NSString *identifier));
 NSURL *SFNextAlternateURL(NSURL *failed);

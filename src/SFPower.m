@@ -95,7 +95,7 @@ static __weak SFNavigator *gNav;
     timer.detail = [self timerDetail];
     SFMenuOption *sleep = [SFMenuOption option:@"Ruhezustand" action:^{ [self systemSleep]; }];
     sleep.detail = @"Mac schlafen legen";
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Fernseher" subtitle:nil options:@[off, timer, sleep] theme:nav.top.theme]];
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[off, timer, sleep] theme:nav.top.theme]];
 }
 
 + (void)setNavigator:(SFNavigator *)nav { gNav = nav; }

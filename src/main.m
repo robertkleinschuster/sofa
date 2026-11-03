@@ -18,6 +18,7 @@
 #import "SFYouTube.h"
 #import "SFLounge.h"
 #import "SFPower.h"
+#import "SFDownloads.h"
 #import "SFPlayerScreen.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFPlayerScreen.h"
@@ -80,6 +81,7 @@ static uint16_t gPort = 8765;
     self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
     [SFPower setNavigator:self.nav];
     SFKodiImportIfNeeded();
+    [[SFDownloads shared] start];
     // Handy-Koppeln: echte App immer; Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
         __weak SFAppDelegate *wl = self;
@@ -359,6 +361,7 @@ int main(int argc, const char *argv[]) {
                 if (sscanf(argv[++i], "%dx%d", &w, &h) == 2) del.devSize = NSMakeSize(w, h);
             }
         }
+        if (SFDevMode) SFLogFileName = [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstance];
         // Dev: nie im Dock, nie im Vordergrund (stört Kodi nicht).
         app.activationPolicy = SFDevMode ? NSApplicationActivationPolicyProhibited : NSApplicationActivationPolicyRegular;
         app.delegate = del;
