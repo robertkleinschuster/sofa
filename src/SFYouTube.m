@@ -695,6 +695,20 @@ static NSSet *skipKeys(void) {
 
 #pragma mark - Setup
 
++ (void)upNextFor:(NSString *)vid done:(void (^)(SFItem *))done {
+    [self call:@"next" body:@{@"videoId": vid} auth:NO cache:1800 done:^(id j, NSError *e) {
+        id sec = path(j, @"contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results");
+        SFItem *pick = nil;
+        for (SFItem *i in (sec ? [self videosIn:sec cont:NULL channels:nil] : @[])) {
+            if (i.kind != SFItemVideo || !i.identifier || [i.externalID isEqualToString:vid]) continue;
+            if (i.duration > 0 && i.duration < 90) continue;                 // keine Shorts
+            if ([[SFStore shared] watched:i.identifier]) continue;           // schon gesehen
+            pick = i; break;
+        }
+        SFMain(^{ done(pick); });
+    }];
+}
+
 + (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *))done {
     [self call:@"navigation/resolve_url" body:@{@"url": url} auth:NO cache:86400 done:^(id j, NSError *e) {
         id be = [j isKindOfClass:[NSDictionary class]] ? j[@"endpoint"][@"browseEndpoint"][@"browseId"] : nil;

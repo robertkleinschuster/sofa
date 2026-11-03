@@ -4,6 +4,7 @@
 #import "SFAVEngine.h"
 #import "SFMPVEngine.h"
 #import "SFYTResolver.h"
+#import "SFYouTube.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"
@@ -50,6 +51,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSInteger _nextCountdown;
     NSURL *_mpvFailedURL;        // mpv scheiterte an dieser URL -> AVFoundation versuchen
     BOOL _reresolved;            // YouTube: Streams abgelehnt -> einmal frisch auflösen
+    SFItem *_upNext;             // YouTube „Als Nächstes“ (Empfehlung), im Hintergrund geholt
+    BOOL _upNextAsked;
     __weak SFItem *_lastStartedItem;
 }
 
@@ -222,7 +225,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
-    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _lastStartedItem = _item; }
+    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -438,6 +441,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)tick {
     NSTimeInterval c = [self current];
+    // YouTube-Autoplay: ab der Hälfte die Empfehlung „Als Nächstes“ holen (einmal je Video)
+    NSTimeInterval dur = [self duration];
+    if (!_upNextAsked && !_explicitQueue && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
+        _upNextAsked = YES;
+        SFItem *forItem = _item;
+        [SFYouTube upNextFor:_item.externalID done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
+    }
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];
     if (_spinner && _engine.status == SFEngineReady && _engine.likelyToKeepUp) [self showSpinner:NO];
@@ -589,17 +599,18 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 // so nie in eine fremde Sendung.
 - (SFItem *)nextItem {
     if (_explicitQueue) return _index + 1 < _queue.count ? _queue[_index + 1] : nil;
-    if (!_item.localPath || !_item.channel) return nil;
+    if (!_item.localPath || !_item.channel) return _upNext;   // gestreamtes YouTube: Empfehlung
     SFShow *show = [[SFLibrary shared] showNamed:_item.channel source:_item.source];
     NSUInteger i = NSNotFound;
     for (NSUInteger k = 0; k < show.episodes.count; k++)
         if ([[show.episodes[k] localPath] isEqualToString:_item.localPath]) { i = k; break; }
-    if (i == NSNotFound || i == 0) return nil;
+    if (i == NSNotFound || i == 0) return _upNext;           // letzte heruntergeladene Folge: Empfehlung
     return show.episodes[i - 1];
 }
 
 - (void)didEnd:(NSNotification *)n {
     _ended = YES;
+    [self updatePauseState];   // am Ende kein Pause-Symbol über der „Als Nächstes“-Karte
     [self postState];
     [self saveProgress];
     [self setAssertion:NO];
@@ -613,25 +624,44 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     [self showMessage:@"Die Verbindung wurde unterbrochen."];
 }
 
+// „Als Nächstes“ / „Nächste Folge“: Karte wie bei YouTube – Vorschaubild links, rechts Countdown,
+// Titel, Kanal und Remote-Hinweis; über dem Fortschrittsbalken, damit Zeit und Balken frei bleiben.
 - (void)showNextCard:(SFItem *)next {
     SFTheme *t = self.theme;
-    if (!_nextCard) {
-        _nextCard = [CALayer layer];
-        _nextCard.backgroundColor = [NSColor colorWithDeviceWhite:0.08 alpha:0.92].CGColor;
-        _nextCard.cornerRadius = U(16);
-        _nextLabel = [SFLabel labelWithFont:[t medium:30] color:[NSColor whiteColor]];
-        _nextLabel.maxLines = 3;
-        [_nextCard addSublayer:_nextLabel];
-        [self.layer addSublayer:_nextCard];
-    }
+    [_nextCard removeFromSuperlayer];
+    _nextCard = [CALayer layer];
+    _nextCard.backgroundColor = [NSColor colorWithDeviceWhite:0.07 alpha:0.94].CGColor;
+    _nextCard.cornerRadius = U(18);
+    CGFloat pad = U(24), tw = U(320), th = U(180), cw = U(980), ch = th + 2 * pad;
+    SFImageLayer *thumb = [SFImageLayer layer];
+    thumb.frame = CGRectMake(pad, pad, tw, th);
+    thumb.cornerRadius = U(10); thumb.masksToBounds = YES;
+    thumb.contentsGravity = kCAGravityResizeAspectFill;
+    thumb.placeholderColor = [NSColor colorWithDeviceWhite:0.15 alpha:1];
+    thumb.source = next.image;
+    [_nextCard addSublayer:thumb];
+    CGFloat x = pad + tw + U(28), w = cw - x - pad;
+    _nextLabel = [SFLabel labelWithFont:[t medium:24] color:t.accent];
+    SFLabel *title = [SFLabel labelWithFont:[t bold:32] color:[NSColor whiteColor]];
+    title.maxLines = 2; title.text = next.title;
+    SFLabel *sub = [SFLabel labelWithFont:[t regular:24] color:[NSColor colorWithDeviceWhite:1 alpha:0.7]];
+    sub.text = next.channel ?: @"";
+    SFLabel *hint = [SFLabel labelWithFont:[t medium:22] color:[NSColor colorWithDeviceWhite:1 alpha:0.6]];
+    hint.text = @"OK: jetzt abspielen   ·   MENU: beenden";
+    for (SFLabel *l in @[_nextLabel, title, sub, hint]) [_nextCard addSublayer:l];
+    BOOL rec = next == _upNext;
     _nextCountdown = 8;
     void (^upd)(void) = ^{
-        self->_nextLabel.text = [NSString stringWithFormat:@"Nächste Folge in %ld s\n%@\nOK = jetzt  ·  Menu = beenden", (long)self->_nextCountdown, next.title];
-        CGFloat h = [self->_nextLabel sizeToFitWidth:U(700)];
-        self->_nextCard.frame = CGRectMake(self.size.width - U(860), self.size.height - h - U(160), U(760), h + U(60));
-        self->_nextLabel.position = CGPointMake(U(30), U(30));
+        self->_nextLabel.text = [NSString stringWithFormat:@"%@ in %ld s", rec ? @"Als Nächstes" : @"Nächste Folge", (long)self->_nextCountdown];
+        CGFloat y = pad;
+        y += [self->_nextLabel sizeToFitWidth:w] + U(6); self->_nextLabel.position = CGPointMake(x, pad);
+        CGFloat h1 = [title sizeToFitWidth:w]; title.position = CGPointMake(x, y); y += h1 + U(6);
+        CGFloat h2 = sub.text.length ? [sub sizeToFitWidth:w] : 0; sub.position = CGPointMake(x, y);
+        CGFloat hh = [hint sizeToFitWidth:w]; hint.position = CGPointMake(x, ch - pad - hh);
+        (void)h2;
+        self->_nextCard.frame = CGRectMake(self.size.width - U(110) - cw, self.size.height - U(190) - ch, cw, ch);
     };
-    SFNoAnimate(upd);
+    SFNoAnimate(^{ upd(); [self.layer addSublayer:self->_nextCard]; });
     _nextCard.hidden = NO;
     [_nextTimer invalidate];
     _nextTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(nextTick:) userInfo:[upd copy] repeats:YES];
@@ -655,6 +685,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (_explicitQueue) _index = MIN(_index, _queue.count - 1);
     _item = next;
     _lastSaved = 0;
+    _upNext = nil; _upNextAsked = NO;
     [self startItem];
 }
 
