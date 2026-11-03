@@ -125,7 +125,7 @@
     if (![e isKindOfClass:[NSString class]]) return @"Video nicht abspielbar.";
     NSString *l = e.lowercaseString;
     if ([l rangeOfString:@"private"].location != NSNotFound) return @"Dieses Video ist privat.";
-    if ([l rangeOfString:@"age"].location != NSNotFound && [l rangeOfString:@"confirm"].location != NSNotFound) return @"Altersbeschränktes Video – Anmeldung in Firefox nötig.";
+    if ([l rangeOfString:@"age"].location != NSNotFound && [l rangeOfString:@"confirm"].location != NSNotFound) return @"Dieses Video ist altersbeschränkt und kann hier nicht abgespielt werden.";
     if ([l rangeOfString:@"premiere"].location != NSNotFound || [l rangeOfString:@"live event will begin"].location != NSNotFound) return @"Dieser Livestream hat noch nicht begonnen.";
     if ([l rangeOfString:@"unavailable"].location != NSNotFound || [l rangeOfString:@"nicht verfügbar"].location != NSNotFound) return @"Video nicht verfügbar.";
     return e;

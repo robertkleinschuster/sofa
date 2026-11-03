@@ -649,7 +649,8 @@ static NSSet *skipKeys(void) {
             [chs sortUsingComparator:^NSComparisonResult(SFItem *x, SFItem *y) { return [x.title localizedCaseInsensitiveCompare:y.title]; }];
             if (chs.count) [shelves addObject:[SFShelf grid:@"Kanäle" style:SFTileStyleCircle items:chs]];
             SFPage *p = [SFPage page:nil theme:@"youtube" shelves:shelves];
-            if (!auth || authErr) p.subtitle = authErr ? authErr.localizedDescription : @"Für deine Abos in Firefox bei YouTube anmelden.";
+            // Kein Anmelde-Hinweis in der Oberfläche (Gerät für alle; ohne Anmeldung gibt es eben keine Abos-Regale)
+            if (authErr) SFLog(@"yt: Abos nicht verfügbar: %@", authErr.localizedDescription);
             if (!shelves.count) p.emptyText = @"YouTube ist gerade nicht erreichbar.";
             done(p, nil);
         });
