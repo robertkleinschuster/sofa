@@ -69,7 +69,11 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
                 [_image addSublayer:_scrim];
             }
         }
-        if (item.imageFit) { _image.contentsGravity = kCAGravityResizeAspect; _image.backgroundColor = theme.surface.CGColor; }
+        if (item.imageFit) {   // Logos: eingepasst, Hintergrund passend zur Logo-Helligkeit
+            _image.contentsGravity = kCAGravityResizeAspect;
+            _image.placeholderColor = theme.surface; _image.backgroundColor = theme.surface.CGColor;
+            _image.adaptiveBackground = YES;
+        }
         [holder addSublayer:_image];
 
         CGImageRef logoImg = (st == SFTileStyleApp && item.logo) ? SFLogoImage(item.logo, item.logoVariant) : NULL;

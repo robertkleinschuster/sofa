@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFIconArt.h"
 #import "SFProviderARD.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -144,7 +145,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     i.kind = SFItemFolder; i.title = title; i.themeName = @"ard"; i.source = @"ard";
     i.identifier = [@"ardnav:" stringByAppendingString:title];
     i.pageLoader = [self loaderForURL:url title:title];
-    i.image = img;
+    i.image = img ?: SFIconArt([title rangeOfString:@"A–Z"].location != NSNotFound ? @"az" : @"grid", @"ard");   // Navigationskacheln ohne Quellbild
     i.style = SFTileStyleWide;
     return i;
 }

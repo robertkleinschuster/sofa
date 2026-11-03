@@ -1,4 +1,5 @@
 #import "SFSearch.h"
+#import "SFIconArt.h"
 #import "SFKeyboardScreen.h"
 #import "SFBrowseScreen.h"
 #import "SFStore.h"
@@ -106,6 +107,7 @@ SFItem *SFSearchTile(NSString *source) {
     i.subtitle = placeholder(source);
     i.plot = @"Mit der Bildschirmtastatur suchen. Zuletzt gesuchte Begriffe stehen gleich rechts daneben.";
     i.tint = t.accent;
+    i.image = SFIconArt(@"search", source);
     i.style = SFTileStyleWide;
     i.source = source; i.themeName = source;
     i.action = ^{ SFOpenSearch(appNavigator(), source, nil); };

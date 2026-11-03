@@ -8,6 +8,7 @@
 #import "SFYouTube.h"
 #import "SFSearch.h"
 #import "SFDownloads.h"
+#import "SFIconArt.h"
 
 @implementation SFHome
 
@@ -158,34 +159,7 @@ static NSDictionary *appInfo(void) {
     };
 }
 
-// Kachelbild: Download-Symbol (Kreis + Pfeil + Ablage) in den Farben der App, einmal erzeugt
-NSString *SFDownloadsArt(NSString *source) {
-    SFTheme *t = [SFTheme themeNamed:source ?: @"home"];
-    NSString *path = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"downloads-art-v1-%@.png", source ?: @"home"]];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) return path;
-    const NSInteger W = 1280, H = 720;
-    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:W pixelsHigh:H bitsPerSample:8 samplesPerPixel:4
-                                                                      hasAlpha:YES isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-    [NSGraphicsContext saveGraphicsState];
-    [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
-    NSColor *bg = t.surface ?: t.background, *acc = t.accent ?: [NSColor whiteColor];
-    [[[NSGradient alloc] initWithStartingColor:[bg blendedColorWithFraction:0.25 ofColor:acc] endingColor:bg] drawInRect:NSMakeRect(0, 0, W, H) angle:-60];
-    CGFloat cx = W / 2.0, cy = H / 2.0 + 40, r = 170;
-    [acc setFill];
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(cx - r, cy - r, 2 * r, 2 * r)] fill];
-    NSColor *fg = t.accentText ?: [NSColor whiteColor];
-    [fg setStroke];
-    NSBezierPath *p = [NSBezierPath bezierPath];
-    p.lineWidth = 26; p.lineCapStyle = NSRoundLineCapStyle; p.lineJoinStyle = NSRoundLineJoinStyle;
-    [p moveToPoint:NSMakePoint(cx, cy + 95)]; [p lineToPoint:NSMakePoint(cx, cy - 55)];               // Schaft
-    [p moveToPoint:NSMakePoint(cx - 70, cy + 15)]; [p lineToPoint:NSMakePoint(cx, cy - 55)];
-    [p lineToPoint:NSMakePoint(cx + 70, cy + 15)];                                                       // Spitze
-    [p moveToPoint:NSMakePoint(cx - 85, cy - 105)]; [p lineToPoint:NSMakePoint(cx + 85, cy - 105)];     // Ablage
-    [p stroke];
-    [NSGraphicsContext restoreGraphicsState];
-    [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
-    return path;
-}
+NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", source); }
 
 #pragma mark Verlauf (alles Abgespielte, zum Wiederfinden)
 

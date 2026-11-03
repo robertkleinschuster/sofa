@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFIconArt.h"
 #import "SFProviderORF.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -24,6 +25,13 @@ static NSDate *isoDate(NSString *s) {
 }
 
 @implementation SFProviderORF
+
+// Sofa-eigene Einstiege (ohne Quellbild): Symbol-Kachel statt leerer Fläche
++ (SFItem *)navFolder:(NSString *)title ident:(NSString *)ident icon:(NSString *)icon loader:(SFPageLoader)loader {
+    SFItem *f = [self folder:title ident:ident loader:loader];
+    f.image = SFIconArt(icon, @"orf");
+    return f;
+}
 
 + (void)get:(NSString *)pathOrURL cache:(NSTimeInterval)age done:(SFJSONDone)done {
     NSString *u = [pathOrURL hasPrefix:@"http"] ? pathOrURL : [kAPI stringByAppendingString:pathOrURL];
@@ -222,8 +230,8 @@ static NSArray *listItems(id j) {
                     if (k == 0) {
                         if (live.count) [shelves addObject:[SFShelf shelf:@"Live" style:SFTileStyleLandscape items:live]];
                         [shelves addObject:[SFShelf shelf:@"Entdecken" style:SFTileStyleWide items:@[
-                            [self folder:@"Sendungen A–Z" ident:@"orfnav:az" loader:[self azLoader]],
-                            [self folder:@"Kategorien" ident:@"orfnav:genres" loader:[self genresLoader]]]]];
+                            [self navFolder:@"Sendungen A–Z" ident:@"orfnav:az" icon:@"az" loader:[self azLoader]],
+                            [self navFolder:@"Kategorien" ident:@"orfnav:genres" icon:@"grid" loader:[self genresLoader]]]]];
                     }
                 }
                 done([SFPage page:nil theme:@"orf" shelves:shelves], nil);

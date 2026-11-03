@@ -280,7 +280,18 @@
     });
 }
 
+// Dev-Audit: Kacheln ohne Bild protokollieren (große leere Flächen finden)
+static void auditImages(SFPage *page) {
+    if (!SFDevMode) return;
+    for (SFShelf *sh in page.shelves) {
+        NSMutableArray *miss = [NSMutableArray new];
+        for (SFItem *i in sh.items) if (!i.image.length && !i.logo.length && i.style != SFTileStyleApp) [miss addObject:[NSString stringWithFormat:@"%@<%@>", i.title ?: @"?", i.identifier ?: @""]];
+        if (miss.count) SFLog(@"noimg: [%@] %@ / %@: %@", page.themeName, page.title ?: @"(Start)", sh.title ?: @"-", [miss componentsJoinedByString:@", "]);
+    }
+}
+
 - (void)setPage:(SFPage *)page keepFocus:(BOOL)keep {
+    auditImages(page);
     // Fokus merken (per Shelf-Titel + Item-ID)
     NSString *fShelf = nil, *fItem = nil;
     if (keep && _row < (NSInteger)_rows.count) {

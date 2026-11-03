@@ -21,6 +21,7 @@
 @property (nonatomic, copy) NSString *source;  // Dateipfad oder http(s)-URL
 @property (nonatomic, strong) NSColor *placeholderColor;
 @property (nonatomic) BOOL blurred;            // für Hintergrundbilder
+@property (nonatomic) BOOL adaptiveBackground; // Logos: Hintergrund nach Helligkeit des Bildes (dunkles Logo -> hell)
 @property (nonatomic) BOOL fadeEdges;          // links + unten weich ausblenden (Backdrops)
 @end
 

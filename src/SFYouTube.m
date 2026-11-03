@@ -4,6 +4,7 @@
 #import "SFStore.h"
 #import "SFLibrary.h"
 #import "SFHome.h"
+#import "SFIconArt.h"
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
 #import "SFEngine.h"
@@ -637,6 +638,7 @@ static NSSet *skipKeys(void) {
             pair.kind = SFItemAction; pair.title = @"Mit Handy verbinden"; pair.identifier = @"yt:pair";
             pair.subtitle = @"Videos vom Handy auf den Fernseher schicken";
             pair.style = SFTileStyleWide; pair.source = @"youtube"; pair.themeName = @"youtube";
+            pair.image = SFIconArt(@"phone", @"youtube");
             pair.action = ^{
                 id d = [NSApp delegate];
                 SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;

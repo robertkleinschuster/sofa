@@ -128,7 +128,7 @@ static NSDate *isoDate(NSString *s) {
 
 + (SFPageLoader)curatedLoader:(NSString *)canonical title:(NSString *)title {
     // items(first:) erlaubt seit 11/2026 nur 1…26 (sonst leere Cluster + Fehler)
-    NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title } ... on CuratedCollection { canonical title } } } } } } } }", VIDEO_F, COLL_F];
+    NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } ... on CuratedCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } } } } }", VIDEO_F, COLL_F];
     return ^(SFPageDone done) {
         [self gql:q vars:@{@"canonical": canonical, @"first": @26} cache:900 done:^(id d, NSError *e) {
             NSDictionary *cc = dict(dict(d)[@"curatedCollectionByCanonical"]);

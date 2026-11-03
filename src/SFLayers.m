@@ -139,6 +139,37 @@ static NSString *hashString(NSString *s) {
     return o;
 }
 
+// SVG (z. B. Konferenz-Logos): ImageIO kann auf 10.9 kein SVG -> einmal per rsvg-convert (librsvg,
+// MacPorts, nativ) in ein PNG rastern; das PNG ersetzt danach den Cache-Eintrag.
+static BOOL looksLikeSVG(NSData *d) {
+    if (d.length < 5) return NO;
+    NSString *head = [[NSString alloc] initWithData:[d subdataWithRange:NSMakeRange(0, MIN(d.length, (NSUInteger)1024))] encoding:NSUTF8StringEncoding];
+    if (!head) head = [[NSString alloc] initWithData:[d subdataWithRange:NSMakeRange(0, MIN(d.length, (NSUInteger)1024))] encoding:NSISOLatin1StringEncoding];
+    return [head rangeOfString:@"<svg" options:NSCaseInsensitiveSearch].location != NSNotFound;
+}
+static NSData *rasterizeSVG(NSData *svg) {
+    NSString *tool = @"/opt/local/bin/rsvg-convert";
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:tool]) return nil;
+    NSString *tmp = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
+    NSString *in = [tmp stringByAppendingPathExtension:@"svg"], *out = [tmp stringByAppendingPathExtension:@"png"];
+    if (![svg writeToFile:in atomically:NO]) return nil;
+    NSTask *t = [NSTask new];
+    t.launchPath = tool;
+    t.arguments = @[@"-a", @"-w", @"1024", @"-f", @"png", @"-o", out, in];   // Seitenverhältnis halten, 1024 px breit
+    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
+    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
+    t.environment = env;
+    t.standardError = [NSFileHandle fileHandleWithNullDevice];
+    t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+    NSData *png = nil;
+    @try { [t launch]; [t waitUntilExit]; if (t.terminationStatus == 0) png = [NSData dataWithContentsOfFile:out]; }
+    @catch (NSException *e) { png = nil; }
+    [[NSFileManager defaultManager] removeItemAtPath:in error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:out error:nil];
+    if (!png.length) SFLog(@"image: SVG nicht gerastert");
+    return png.length ? png : nil;
+}
+
 static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) CF_RETURNS_RETAINED;
 static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     if (!src) return NULL;
@@ -180,7 +211,11 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     BOOL remote = [src hasPrefix:@"http://"] || [src hasPrefix:@"https://"];
     if (!remote) {
         [_decode addOperationWithBlock:^{
-            CGImageSourceRef s = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:src], NULL);
+            CGImageSourceRef s = NULL;
+            if ([src.pathExtension.lowercaseString isEqualToString:@"svg"]) {
+                NSData *png = rasterizeSVG([NSData dataWithContentsOfFile:src]);
+                s = png ? CGImageSourceCreateWithData((__bridge CFDataRef)png, NULL) : NULL;
+            } else s = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:src], NULL);
             CGImageRef img = decodeThumb(s, px);
             if (s) CFRelease(s);
             finish(img);
@@ -189,8 +224,13 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         return;
     }
     NSString *disk = [_diskDir stringByAppendingPathComponent:hashString(src)];
-    void (^decodeData)(NSData *) = ^(NSData *data) {
+    void (^decodeData)(NSData *) = ^(NSData *raw) {
         [self->_decode addOperationWithBlock:^{
+            NSData *data = raw;
+            if (looksLikeSVG(data)) {   // einmal rastern, PNG ersetzt den Cache-Eintrag
+                data = rasterizeSVG(data);
+                if (data) [data writeToFile:disk atomically:YES];
+            }
             CGImageSourceRef s = data ? CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL) : NULL;
             CGImageRef img = decodeThumb(s, px);
             if (s) CFRelease(s);
@@ -233,6 +273,10 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 - (void)applyFaded:(CGImageRef)img source:(NSString *)want;
 @end
 
+@interface SFImageLayer (Adaptive)
+- (void)adaptBackgroundTo:(CGImageRef)img source:(NSString *)want;
+@end
+
 @implementation SFImageLayer
 
 - (instancetype)init {
@@ -267,6 +311,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         SFImageLayer *s = ws;
         if (!s || ![s.source isEqualToString:want] || !img) return;
         if (s.fadeEdges) { [s applyFaded:img source:want]; return; }
+        if (s.adaptiveBackground) [s adaptBackgroundTo:img source:want];
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         s.contents = (__bridge id)img;
@@ -275,6 +320,60 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.25;
         [s addAnimation:fade forKey:@"fadein"];
     }];
+}
+@end
+
+// Analyse eines Logos (24x24): Helligkeit der deckenden Pixel, Deckungsgrad, mittlere Randfarbe
+typedef struct { double lum, coverage, er, eg, eb; } SFLogoInfo;
+static SFLogoInfo logoInfo(CGImageRef img) {
+    SFLogoInfo info = { -1, 0, 0, 0, 0 };
+    const int n = 24;
+    uint8_t px[n * n * 4];
+    memset(px, 0, sizeof px);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef c = CGBitmapContextCreate(px, n, n, 8, n * 4, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(cs);
+    if (!c) return info;
+    CGContextDrawImage(c, CGRectMake(0, 0, n, n), img);
+    CGContextRelease(c);
+    double sum = 0, w = 0, er = 0, eg = 0, eb = 0, en = 0;
+    for (int y = 0; y < n; y++) for (int x = 0; x < n; x++) {
+        int i = y * n + x;
+        double a = px[i * 4 + 3] / 255.0;
+        if (a >= 0.3) {
+            double r = px[i * 4] / 255.0 / a, g = px[i * 4 + 1] / 255.0 / a, b = px[i * 4 + 2] / 255.0 / a;
+            sum += (0.2126 * r + 0.7152 * g + 0.0722 * b) * a; w += a;
+            if (x == 0 || y == 0 || x == n - 1 || y == n - 1) { er += r; eg += g; eb += b; en++; }
+        }
+    }
+    info.coverage = w / (n * n);
+    if (w >= 6) info.lum = sum / w;
+    if (en > 0) { info.er = er / en; info.eg = eg / en; info.eb = eb / en; }
+    return info;
+}
+
+@implementation SFImageLayer (Adaptive)
+- (void)adaptBackgroundTo:(CGImageRef)img source:(NSString *)want {
+    CGImageRef keep = CGImageRetain(img);
+    __weak SFImageLayer *ws = self;
+    SFBackground(^{
+        SFLogoInfo li = logoInfo(keep);
+        double lum = li.lum;
+        CGImageRelease(keep);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SFImageLayer *s = ws;
+            if (!s || ![s.source isEqualToString:want] || lum < 0) return;
+            CGFloat bgLum = 0.5;
+            NSColor *pc = [s.placeholderColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+            if (pc) bgLum = 0.2126 * pc.redComponent + 0.7152 * pc.greenComponent + 0.0722 * pc.blueComponent;
+            NSColor *bg = nil;
+            if (li.coverage > 0.85) {   // deckendes Bild: Ränder in seiner eigenen Randfarbe füllen (nahtlos)
+                bg = [NSColor colorWithCalibratedRed:li.er green:li.eg blue:li.eb alpha:1];
+            } else if (lum < 0.4 && bgLum < 0.5) bg = [NSColor colorWithCalibratedWhite:0.9 alpha:1];        // dunkles Logo auf dunkel -> hell
+            else if (lum > 0.7 && bgLum > 0.5) bg = [NSColor colorWithCalibratedWhite:0.14 alpha:1];  // helles Logo auf hell -> dunkel
+            if (bg) SFAnimate(0.25, ^{ s.backgroundColor = bg.CGColor; });
+        });
+    });
 }
 @end
 
