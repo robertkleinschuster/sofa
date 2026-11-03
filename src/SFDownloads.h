@@ -20,6 +20,7 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 // Liefert die neuesten Folgen eines Abos (Kanal/Sendung), neueste zuerst.
 typedef void (^SFFeedFetcher)(NSString *ref, void (^done)(NSArray *items, NSError *e));
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f);
+SFFeedFetcher SFFeedFor(NSString *identifier);   // registrierter Feed für "prefix:ref" (oder nil)
 // Feed aus einem Seiten-Loader (Sendungsseite): alle Videos der Seite, neueste zuerst
 void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref));
 // Optional: eigene Download-URL (z.B. YouTube 720p statt 1080p-Stream)

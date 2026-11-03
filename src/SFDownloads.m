@@ -2,12 +2,14 @@
 #import "SFStore.h"
 #import "SFCurl.h"
 #import "SFNet.h"
+#import "SFFollows.h"
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 static NSMutableDictionary *gFeeds, *gDLURL;
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f) { if (!gFeeds) gFeeds = [NSMutableDictionary new]; gFeeds[prefix] = [f copy]; }
+SFFeedFetcher SFFeedFor(NSString *identifier) { NSRange r = [identifier rangeOfString:@":"]; return r.location == NSNotFound ? nil : gFeeds[[identifier substringToIndex:r.location]]; }
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f) { if (!gDLURL) gDLURL = [NSMutableDictionary new]; gDLURL[prefix] = [f copy]; }
 void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref)) {
     SFRegisterFeed(prefix, ^(NSString *ref, void (^done)(NSArray *, NSError *)) {
@@ -507,6 +509,7 @@ static NSString *gb(unsigned long long b) {
     if (folder.image) s[@"image"] = folder.image;
     _subs[folder.identifier] = s;
     [self saveSub:s];
+    [[SFFollows shared] follow:folder];   // Automatisch herunterladen setzt Folgen voraus
     [self changed:folder.identifier];
     [self checkSub:s initial:YES done:nil];
 }

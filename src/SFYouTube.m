@@ -7,6 +7,7 @@
 #import "SFIconArt.h"
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
+#import "SFFollows.h"
 #import "SFEngine.h"
 #import "SFScreen.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -468,27 +469,42 @@ static NSSet *skipKeys(void) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
             for (SFItem *i in items) [(i.kind == SFItemLive ? live : vids) addObject:i];
-            // Kanalkopf: Hauptaktion des Kanals sichtbar statt versteckt im Optionsmenü
+            // Kanalkopf wie bei YouTube: kompakte Knöpfe unter Banner/Name statt großer Kachel.
+            // [Folgen] (rot, solange nicht gefolgt) · [Automatisch laden: An/Aus] (nur wenn gefolgt)
             SFDownloads *dl = [SFDownloads shared];
+            SFFollows *fo = [SFFollows shared];
             NSString *fid = [@"ytchannel:" stringByAppendingString:cid];
-            BOOL on = [dl isSubscribed:fid];
-            SFItem *sub = [SFItem new];
-            sub.kind = SFItemAction; sub.style = SFTileStyleWide; sub.source = @"youtube"; sub.themeName = @"youtube";
-            sub.identifier = [@"ytsub:" stringByAppendingString:cid];
-            sub.title = on ? @"Automatisch laden: An" : @"Automatisch laden: Aus";
-            sub.subtitle = on ? @"An · neue Videos sind offline verfügbar" : @"Aus · neue Videos automatisch herunterladen";
-            sub.image = SFDownloadsArt(@"youtube");
-            sub.backdrop = banner; sub.heroTitle = title; sub.heroMeta = meta; sub.plot = desc;
-            sub.action = ^{
-                SFItem *folder = [SFItem new];
-                folder.kind = SFItemFolder; folder.identifier = fid; folder.title = title; folder.source = @"youtube"; folder.image = avatar;
-                id d = [NSApp delegate];
-                SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-                if ([dl isSubscribed:fid]) { [dl unsubscribe:fid]; [nav toast:@"Automatisch laden aus – vorhandene Videos bleiben"]; }
-                else { [dl subscribe:folder]; [nav toast:[NSString stringWithFormat:@"Neue Videos von „%@“ werden automatisch geladen – auch offline verfügbar", title]]; }
-                [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];   // Seite aktualisieren
+            SFItem *folder = [SFItem new];
+            folder.kind = SFItemFolder; folder.identifier = fid; folder.title = title; folder.source = @"youtube"; folder.image = avatar;
+            BOOL following = [fo isFollowing:fid], autoDL = [dl isSubscribed:fid];
+            SFNavigator *(^navi)(void) = ^SFNavigator *{ id d = [NSApp delegate]; return [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil; };
+            NSMutableArray *buttons = [NSMutableArray new];
+            SFItem *fb = [SFItem new];
+            fb.kind = SFItemAction; fb.style = SFTileStyleButton; fb.source = @"youtube"; fb.themeName = @"youtube";
+            fb.identifier = [@"ytfollow:" stringByAppendingString:cid];
+            fb.title = following ? @"✓  Gefolgt" : @"Folgen";
+            if (!following) fb.tint = [SFTheme themeNamed:@"youtube"].accent;
+            fb.backdrop = banner; fb.heroTitle = title; fb.heroMeta = meta; fb.plot = desc;
+            fb.action = ^{
+                if ([fo isFollowing:fid]) { [fo unfollow:fid]; [navi() toast:[NSString stringWithFormat:@"„%@“ entfernt", title]]; }
+                else { [fo follow:folder]; [navi() toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Videos erscheinen unter „Neue Folgen“", title]]; }
             };
-            [shelves addObject:[SFShelf shelf:nil style:SFTileStyleWide items:@[sub]]];
+            [buttons addObject:fb];
+            if (following) {
+                SFItem *db = [SFItem new];
+                db.kind = SFItemAction; db.style = SFTileStyleButton; db.source = @"youtube"; db.themeName = @"youtube";
+                db.identifier = [@"ytautodl:" stringByAppendingString:cid];
+                db.title = autoDL ? @"Automatisch laden: An" : @"Automatisch laden: Aus";
+                db.backdrop = banner; db.heroTitle = title; db.heroMeta = meta;
+                db.plot = @"Neue Videos dieses Kanals automatisch herunterladen – dann laufen sie auch ohne Internet.";
+                db.action = ^{
+                    if ([dl isSubscribed:fid]) { [dl unsubscribe:fid]; [navi() toast:@"Automatisch laden aus – vorhandene Videos bleiben"]; }
+                    else { [dl subscribe:folder]; [navi() toast:[NSString stringWithFormat:@"Neue Videos von „%@“ werden heruntergeladen", title]]; }
+                    [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];
+                };
+                [buttons addObject:db];
+            }
+            [shelves addObject:[SFShelf shelf:nil style:SFTileStyleButton items:buttons]];
             if (live.count) [shelves addObject:[SFShelf shelf:@"Jetzt live" style:SFTileStyleLandscape items:live]];
             SFShow *local = [[SFLibrary shared] showNamed:title source:@"youtube"];
             if (local.episodes.count) {
@@ -600,32 +616,31 @@ static NSSet *skipKeys(void) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"youtube"];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
-            NSMutableArray *lives = [NSMutableArray new], *news = [NSMutableArray new];
-            for (SFItem *i in subs) [(i.kind == SFItemLive ? lives : news) addObject:i];
+            // Folgen-Konzept (User 2026-11-03): eine gemeinsame Sofa-Liste statt Konto-Abos.
+            // Die Kanäle des angemeldeten Kontos werden einmalig als Folgen übernommen.
+            SFFollows *fo = [SFFollows shared];
+            [fo importFollows:channels key:@"follows.ytAccountImported"];
+            NSMutableArray *lives = [NSMutableArray new];
+            for (SFItem *i in subs) if (i.kind == SFItemLive) [lives addObject:i];
             if (lives.count) [shelves addObject:[SFShelf shelf:@"Jetzt live" style:SFTileStyleLandscape items:lives]];
-            if (news.count) [shelves addObject:[SFShelf shelf:@"Neu in deinen Abos" style:SFTileStyleLandscape items:[news subarrayWithRange:NSMakeRange(0, MIN(news.count, 40))]]];
-            else {   // offline / nicht angemeldet: lokale Downloads
+            NSArray *news = [fo latest:40 source:@"youtube"];
+            if (news.count) [shelves addObject:[SFShelf shelf:@"Neue Videos" style:SFTileStyleLandscape items:news]];
+            else {   // offline / erste Aktualisierung läuft: Heruntergeladenes
                 NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:@"youtube"] copyItems:YES];
                 for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
                 if (latest.count) [shelves addObject:[SFShelf shelf:@"Neu heruntergeladen" style:SFTileStyleLandscape items:latest]];
             }
             if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
-            // Kanäle: Abos (online) + heruntergeladene Kanäle, ohne Doppelte
-            NSMutableArray *chs = [channels mutableCopy];
+            // Kanäle: gefolgte (echte Kanalseiten) + heruntergeladene ohne bekannte Kanal-ID (Offline-Seite)
+            NSMutableArray *chs = [NSMutableArray new];
             NSMutableSet *names = [NSMutableSet new];
-            for (SFItem *c in chs) [names addObject:c.title.lowercaseString];
+            for (SFItem *c in [fo follows:@"youtube"]) { c.style = SFTileStyleCircle; [chs addObject:c]; [names addObject:c.title.lowercaseString]; }
             for (SFShow *sh in [[SFLibrary shared] showsForSource:@"youtube"]) {
                 if ([names containsObject:sh.name.lowercaseString]) continue;
-                // Kanal mit bekannter ID (Abo) -> echte Kanalseite (online + lokale Kopien), nicht nur Offline-Liste
-                NSString *sid = [[SFDownloads shared] subscriptionIDForChannel:sh.name source:@"youtube"];
-                if ([sid hasPrefix:@"ytchannel:UC"]) {
-                    SFItem *ci = [self channelItem:[sid substringFromIndex:10] title:sh.name avatar:sh.poster meta:@"Neue Videos werden automatisch geladen"];
-                    if (ci) { ci.style = SFTileStyleCircle; [chs addObject:ci]; continue; }
-                }
                 SFItem *i = [SFItem new];
                 i.kind = SFItemFolder; i.title = sh.name; i.identifier = [@"show:" stringByAppendingString:sh.name];
                 i.image = sh.poster; i.style = SFTileStyleCircle; i.source = @"youtube"; i.themeName = @"youtube";
-                i.subtitle = @"Auf diesem Mac";
+                i.subtitle = @"Heruntergeladen";
                 NSString *name = sh.name;
                 i.pageLoader = ^(SFPageDone d2) {
                     SFShow *s2 = [[SFLibrary shared] showNamed:name source:@"youtube"];
@@ -704,6 +719,7 @@ static NSSet *skipKeys(void) {
         }];
     });
     // Abo-Feed: Langvideos eines Kanals, neueste zuerst (immer als Online-Items)
+    SFRegisterShowPage(@"ytchannel", ^SFPageLoader(NSString *cid, NSString *title) { return [self channelLoader:cid title:title]; });
     SFRegisterFeed(@"ytchannel", ^(NSString *cid, void (^done)(NSArray *, NSError *)) {
         if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
         [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} auth:NO cache:900 done:^(id j, NSError *e) {

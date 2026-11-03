@@ -6,6 +6,7 @@
 #import "SFDownloads.h"
 #import "SFNet.h"
 #import "SFLounge.h"
+#import "SFFollows.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -288,7 +289,7 @@ static CGFloat textWidth(SFLabel *l) {
     }
     if (![_hint.text isEqualToString:@"halten: Optionen"]) { SFNoAnimate(^{ self->_hint.text = @"halten: Optionen"; }); [self layoutStatusRow]; }
     SFItem *it = [self focusedItem];
-    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it])));
+    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it] || [[SFFollows shared] canFollow:it])));
     SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.85 : 0; self->_hintKey.opacity = show ? 0.85 : 0; });
 }
 
@@ -767,11 +768,20 @@ static void auditImages(SFPage *page) {
             del.detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"];
             [opts addObject:del];
         }
+        // Folgen = Kern (Neue Folgen, Meine Sendungen); Automatisch herunterladen = optionaler Zusatz
+        SFFollows *fo = [SFFollows shared];
+        if ([fo canFollow:it]) {
+            BOOL following = [fo isFollowing:it.identifier];
+            [opts addObject:[SFMenuOption option:following ? @"Nicht mehr folgen" : @"Folgen" action:^{
+                if (following) { [fo unfollow:it.identifier]; [nav toast:[NSString stringWithFormat:@"„%@“ entfernt", it.title]]; }
+                else { [fo follow:it]; [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Folgen erscheinen unter „Neue Folgen“", it.title]]; }
+            }]];
+        }
         if ([dl canSubscribe:it]) {
             BOOL on = [dl isSubscribed:it.identifier];
-            SFMenuOption *o = [SFMenuOption option:@"Automatisch laden" action:^{
-                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisch laden aus – vorhandene Folgen bleiben"]; }
-                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden automatisch geladen – auch offline verfügbar", it.title]]; }
+            SFMenuOption *o = [SFMenuOption option:@"Automatisch herunterladen" action:^{
+                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisch herunterladen aus – vorhandene Folgen bleiben"]; }
+                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden heruntergeladen – auch offline verfügbar", it.title]]; }
             }];
             o.detail = on ? @"An" : @"Aus";
             [opts addObject:o];

@@ -13,6 +13,7 @@
 #import "SFMigration.h"
 #import "SFPairScreen.h"
 #import "SFNet.h"
+#import "SFFollows.h"
 #import "SFProviderCCC.h"
 #import "SFProviderARD.h"
 #import "SFProviderZDF.h"
@@ -84,6 +85,7 @@ static uint16_t gPort = 8765;
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
+    [[SFFollows shared] start];   // nach SFYouTube setup (Seiten/Feeds registriert)
     [[SFDownloads shared] start];
     // Handy-Koppeln: echte App immer; Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {

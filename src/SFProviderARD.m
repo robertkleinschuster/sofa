@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFFollows.h"
 #import "SFIconArt.h"
 #import "SFProviderARD.h"
 #import "SFNet.h"
@@ -214,6 +215,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
 + (void)registerResolver {
     // Abo-Feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"ardshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil]; });
+    SFRegisterShowPage(@"ardshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title]; });
     SFRegisterResolver(@"ard", ^(NSString *itemId, SFURLDone done) {
         NSString *u = [NSString stringWithFormat:@"%@/pages/ard/item/%@?embedded=true&mcV6=true", kGW, itemId];
         [SFNet getJSON:u headers:nil cacheAge:300 done:^(id j, NSError *e) {

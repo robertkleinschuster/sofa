@@ -8,6 +8,7 @@ typedef NS_ENUM(NSInteger, SFTileStyle) {
     SFTileStylePoster,      // 2:3 Poster (Sendungen)
     SFTileStyleApp,         // App-Kachel auf dem Home-Screen
     SFTileStyleWide,        // 16:9 groß mit Text im Bild (Sendungen/Rubriken)
+    SFTileStyleButton,      // kompakte Pille mit Text (Aktionen: Folgen, Automatisch herunterladen)
 };
 
 @interface SFTheme : NSObject

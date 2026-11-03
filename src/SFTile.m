@@ -9,6 +9,7 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
         case SFTileStylePoster:   return (SFTileMetrics){240, 360, 64, 36};
         case SFTileStyleApp:      return (SFTileMetrics){320, 192, 0, 40};
         case SFTileStyleWide:     return (SFTileMetrics){560, 315, 0, 40};
+        case SFTileStyleButton:   return (SFTileMetrics){340, 76, 0, 24};
         case SFTileStyleLandscape:
         default:                  return (SFTileMetrics){384, 216, 112, 36};
     }
@@ -37,7 +38,7 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
         CGFloat w = U(m.width), ih = U(m.imageHeight), th = U(m.textHeight);
         self.anchorPoint = CGPointMake(0.5, 0);    // skaliert von oben-mitte
         self.bounds = CGRectMake(0, 0, w, ih + (th ? U(14) + th : 0));
-        CGFloat corner = st == SFTileStyleCircle ? ih / 2 : U(theme.corner);
+        CGFloat corner = (st == SFTileStyleCircle || st == SFTileStyleButton) ? ih / 2 : U(theme.corner);
 
         // Schatten-Träger (ohne masksToBounds), darin das maskierte Bild
         CALayer *holder = [CALayer layer];
@@ -101,6 +102,13 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
                 sub.position = CGPointMake(U(12), ih - sh - U(16));
                 [_image addSublayer:sub];
             }
+        } else if (st == SFTileStyleButton) {
+            // Aktions-Pille: Titel zentriert; aktive Aktionen (tint) farbig, sonst neutrale Fläche
+            SFLabel *bt = [SFLabel labelWithFont:[theme bold:26] color:item.tint ? [NSColor whiteColor] : theme.text];
+            bt.text = item.title; bt.alignment = NSCenterTextAlignment; bt.maxLines = 1;
+            CGFloat h = [bt sizeToFitWidth:w - U(36)];
+            bt.position = CGPointMake(U(18), (ih - h) / 2);
+            [_image addSublayer:bt];
         } else if (st == SFTileStyleWide) {
             // Mit Bild: weiß + Schatten über dem Bild. Ohne Bild: Themenfarbe auf der Kachelfläche
             // (weiß auf hellgrau war im hellen ORF-Theme kaum lesbar)

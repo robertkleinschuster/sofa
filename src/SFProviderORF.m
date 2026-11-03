@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFFollows.h"
 #import "SFIconArt.h"
 #import "SFProviderORF.h"
 #import "SFNet.h"
@@ -291,6 +292,7 @@ static NSArray *listItems(id j) {
 + (void)registerResolver {
     // Abo-Feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"orfprofile", ^SFPageLoader(NSString *ref) { return [self profileLoader:ref title:nil]; });
+    SFRegisterShowPage(@"orfprofile", ^SFPageLoader(NSString *ref, NSString *title) { return [self profileLoader:ref title:title]; });
     SFRegisterResolver(@"orf", ^(NSString *eid, SFURLDone done) {
         [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
             NSDictionary *ep = dict(j);

@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFFollows.h"
 #import "SFProviderZDF.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -305,6 +306,7 @@ static NSDate *isoDate(NSString *s) {
 + (void)registerResolver {
     // Abo-Feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"zdfshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil season:0]; });
+    SFRegisterShowPage(@"zdfshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title season:0]; });
     SFRegisterResolver(@"zdf", ^(NSString *canonical, SFURLDone done) {
         NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
         [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {

@@ -10,6 +10,7 @@
 #import "SFDownloads.h"
 #import "SFIconArt.h"
 #import "SFLounge.h"
+#import "SFFollows.h"
 #import "SFPairScreen.h"
 
 @implementation SFHome
@@ -54,16 +55,21 @@ static NSDictionary *appInfo(void) {
             NSArray *cont = [[SFStore shared] continueWatching:20 source:nil];
             for (SFItem *e in cont) e.subtitle = [NSString stringWithFormat:@"%@ · noch %@", e.channel ?: @"", SFFormatDuration(MAX(0, e.duration - [[SFStore shared] positionFor:e.identifier]))];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
-            NSArray *latest = [[SFLibrary shared] latestEpisodes:40 source:nil];
-            latest = [[NSArray alloc] initWithArray:latest copyItems:YES];
-            for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
-            [shelves addObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:latest]];
-            NSMutableArray *shows = [NSMutableArray new];
-            for (SFShow *sh in [[SFLibrary shared] showsForSource:nil]) {
-                if (shows.count >= 30) break;
-                [shows addObject:[self showTile:sh]];
+            // Gefolgtes (Folgen-Konzept): neue Folgen streamen, Seiten online; Downloads stecken in der Kachel „Downloads“
+            SFFollows *fo = [SFFollows shared];
+            NSArray *latest = [fo latest:40 source:nil];
+            if (!latest.count) {   // noch nichts gefolgt / erste Aktualisierung läuft: Heruntergeladenes zeigen
+                latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
+                for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
             }
-            [shelves addObject:[SFShelf shelf:@"Sendungen" style:SFTileStyleLandscape items:shows]];
+            if (latest.count) [shelves addObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:latest]];
+            NSMutableArray *channels = [NSMutableArray new], *tv = [NSMutableArray new];
+            for (SFItem *f in [fo follows:nil]) {
+                if ([f.source isEqualToString:@"youtube"]) { f.style = SFTileStyleCircle; [channels addObject:f]; }
+                else { f.style = SFTileStyleLandscape; [tv addObject:f]; }
+            }
+            if (tv.count) [shelves addObject:[SFShelf shelf:@"Meine Sendungen" style:SFTileStyleLandscape items:tv]];
+            if (channels.count) [shelves addObject:[SFShelf shelf:@"Meine Kanäle" style:SFTileStyleCircle items:channels]];
             SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
             done(p, nil);
         }];
@@ -254,27 +260,28 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     return i;
 }
 
-// Online-Startseite um "Meine Sendungen" (lokale Downloads dieser Quelle) ergänzen.
+// Online-Startseite einer Mediathek um das Gefolgte ergänzen (Folgen-Konzept):
+//   Weiterschauen · Neue Folgen (gefolgte Sendungen, gestreamt) · Meine Sendungen (+ Downloads-Kachel am Ende) · Mediathek …
+// Downloads sind nur ein Zustand eines Videos (schneller Start, offline) – keine eigene Welt.
 + (SFPageLoader)withLocalShows:(SFPageLoader)online source:(NSString *)source {
     return ^(SFPageDone done) {
         online(^(SFPage *page, NSError *err) {
             [[SFLibrary shared] whenReady:^{
+                SFFollows *fo = [SFFollows shared];
                 NSMutableArray *mine = [NSMutableArray new];
-                for (SFShow *sh in [[SFLibrary shared] showsForSource:source]) {
-                    SFItem *i = [self showTile:sh]; i.style = SFTileStyleWide; [mine addObject:i];
-                }
+                for (SFItem *f in [fo follows:source]) { f.style = SFTileStyleWide; [mine addObject:f]; }
+                SFDownloads *dl = [SFDownloads shared];
+                BOOL anyDL = [dl bytesUsedFor:source] > 0;
+                for (SFItem *a in [dl active]) if ([a.source isEqualToString:source]) anyDL = YES;
+                if (anyDL) [mine addObject:[self downloadsTile:source]];
+                NSArray *news = [fo latest:30 source:source];
                 if (!page && !mine.count) { done(nil, err); return; }
                 SFPage *p = page ?: [SFPage page:nil theme:source shelves:@[]];
                 NSMutableArray *sh = [p.shelves mutableCopy] ?: [NSMutableArray new];
-                BOOL any = mine.count || [[SFDownloads shared] bytesUsedFor:source] > 0;
-                for (SFItem *a in [[SFDownloads shared] active]) if ([a.source isEqualToString:source]) any = YES;
-                if (any) {
-                    [mine insertObject:[self downloadsTile:source] atIndex:0];
-                    // Die App öffnet auf ihren Inhalten: Downloads nach „Weiterschauen“, sonst nach dem ersten Regal
-                    NSUInteger at = sh.count ? 1 : 0;
-                    for (NSUInteger k = 0; k < sh.count; k++) if ([[sh[k] title] isEqualToString:@"Weiterschauen"]) at = k + 1;
-                    [sh insertObject:[SFShelf shelf:@"Downloads" style:SFTileStyleWide items:mine] atIndex:MIN(at, sh.count)];
-                }
+                NSUInteger at = sh.count ? 1 : 0;   // die App öffnet auf ihren eigenen Inhalten
+                for (NSUInteger k = 0; k < sh.count; k++) if ([[sh[k] title] isEqualToString:@"Weiterschauen"]) at = k + 1;
+                if (mine.count) [sh insertObject:[SFShelf shelf:@"Meine Sendungen" style:SFTileStyleWide items:mine] atIndex:MIN(at, sh.count)];
+                if (news.count) [sh insertObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:news] atIndex:MIN(at, sh.count)];
                 if (!page && err) p.emptyText = @"Die Mediathek ist gerade nicht erreichbar.";
                 p.shelves = sh;
                 done(p, nil);
