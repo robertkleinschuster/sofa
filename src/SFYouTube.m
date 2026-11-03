@@ -849,7 +849,16 @@ static NSSet *skipKeys(void) {
     });
     SFBackground(^{
         [self loadCookies];
-        SFMain(^{ [[SFYTResolver shared] start]; });
+        SFMain(^{
+            [[SFYTResolver shared] start];
+            // „Später ansehen“ des Kontos gleich beim Start einmalig übernehmen – sonst zeigt die
+            // Startseite das Regal erst, nachdem die YouTube-App einmal geöffnet wurde
+            if (gSAPISID.length && ![[SFStore shared] setting:@"watchlater.import.youtube"].length)   // Firefox-Login vorhanden
+                [self call:@"browse" body:@{@"browseId": @"VLWL"} auth:YES cache:120 done:^(id j, NSError *e) {
+                    NSArray *later = j ? [self videosIn:j cont:NULL channels:nil] : nil;
+                    if (later.count) [[SFWatchLater shared] importItems:later once:@"watchlater.import.youtube"];
+                }];
+        });
     });
     // Firefox rotiert Session-Cookies -> regelmäßig neu lesen
     [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(refreshCookies) userInfo:nil repeats:YES];
