@@ -1,6 +1,8 @@
 // Persistenz (SQLite): Wiedergabe-Positionen, Gesehen-Status, Verlauf, Einstellungen.
 #import "SFModel.h"
 
+NSString *SFProgressTable(void);   // "progress" bzw. "dev_progress" (Dev-Instanzen)
+
 @interface SFStore : NSObject
 + (instancetype)shared;
 - (NSTimeInterval)positionFor:(NSString *)identifier;

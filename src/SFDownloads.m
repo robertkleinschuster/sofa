@@ -597,7 +597,7 @@ static NSString *deleteWatchedKey(void) { return SFDevMode ? @"downloads.dev.del
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (self.deletesWatched) {
         NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> Zeitpunkt "gesehen"
-        for (NSDictionary *row in [[SFStore shared] rows:@"SELECT id, updated FROM progress WHERE watched=1" args:nil]) seen[row[@"id"]] = row[@"updated"];
+        for (NSDictionary *row in [[SFStore shared] rows:[NSString stringWithFormat:@"SELECT id, updated FROM %@ WHERE watched=1", SFProgressTable()] args:nil]) seen[row[@"id"]] = row[@"updated"];
         for (NSMutableDictionary *r in [_recs.allValues copy]) {
             if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
             NSNumber *w = seen[r[@"id"]];
