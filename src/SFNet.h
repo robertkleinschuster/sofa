@@ -3,7 +3,12 @@
 
 typedef void (^SFJSONDone)(id json, NSError *error);   // Main-Thread
 
+// Netzstatus (SystemConfiguration-Reachability; Dev: SOFA_OFFLINE=1 simuliert offline)
+extern NSString *const SFNetOnlineDidChangeNotification;
+
 @interface SFNet : NSObject
++ (BOOL)isOnline;
++ (void)startMonitoring;
 + (void)getJSON:(NSString *)url headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (NSString *)userAgent;

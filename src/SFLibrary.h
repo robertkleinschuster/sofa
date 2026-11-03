@@ -21,5 +21,6 @@ extern NSString *const SFLibraryDidChangeNotification;
 - (NSArray *)showsForSource:(NSString *)source;  // nil = alle; sortiert nach neuester Folge
 - (NSArray *)latestEpisodes:(NSInteger)n source:(NSString *)source;
 - (SFShow *)showNamed:(NSString *)name;
+- (SFShow *)showNamed:(NSString *)name source:(NSString *)source;   // source nil = beliebig
 - (SFItem *)episodeForYouTubeID:(NSString *)vid;  // heruntergeladene Kopie eines YouTube-Videos
 @end

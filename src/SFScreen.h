@@ -35,3 +35,5 @@
 // MENU auf dem untersten Screen (Home): Energie-Menü statt nichts
 @property (nonatomic, copy) dispatch_block_t rootMenuHandler;
 @end
+
+NSCursor *SFBlankCursor(void);   // transparenter Mauszeiger (TV-Oberfläche)

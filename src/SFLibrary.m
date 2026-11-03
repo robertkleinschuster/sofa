@@ -7,7 +7,8 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 
 @implementation SFLibrary {
     NSArray *_shows;
-    NSUInteger _gen;
+    NSUInteger _gen;        // Stand des Gruppierungs-Caches
+    NSUInteger _notified;   // zuletzt gemeldeter Stand (getrennt, sonst schluckt ein Rebuild die Meldung)
     BOOL _pending;
 }
 
@@ -20,6 +21,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 - (instancetype)init {
     if ((self = [super init])) {
         _gen = NSNotFound;
+        _notified = [SFDownloads shared].generation;
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(downloadsChanged) name:SFDownloadsDidChangeNotification object:nil];
     }
     return self;
@@ -30,11 +32,13 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 
 // Fortschritts-Meldungen kommen alle 2 s: nur bei echten Zustandsänderungen neu gruppieren
 - (void)downloadsChanged {
-    if (_pending || [SFDownloads shared].generation == _gen) return;
+    if (_pending || [SFDownloads shared].generation == _notified) return;
     _pending = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         self->_pending = NO;
-        if ([SFDownloads shared].generation == self->_gen) return;
+        NSUInteger g = [SFDownloads shared].generation;
+        if (g == self->_notified) return;
+        self->_notified = g;
         self->_shows = nil;
         [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:self];
     });
@@ -50,7 +54,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSMutableDictionary *eps = [NSMutableDictionary new];      // key -> NSMutableArray
     for (SFItem *e in [dl items:nil]) {   // neueste zuerst
         NSString *src = e.source.length ? e.source : @"youtube";
-        NSString *ch = e.channel.length ? e.channel : @"Einzelne Videos";
+        NSString *ch = e.channel.length ? e.channel : SFUnsortedChannel;
         NSString *k = [NSString stringWithFormat:@"%@\t%@", src, ch];
         SFShow *s = groups[k];
         if (!s) {
@@ -101,9 +105,10 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     return all;
 }
 
-- (SFShow *)showNamed:(NSString *)name {
+- (SFShow *)showNamed:(NSString *)name { return [self showNamed:name source:nil]; }
+- (SFShow *)showNamed:(NSString *)name source:(NSString *)source {
     if (!name) return nil;
-    for (SFShow *s in [self shows]) if ([s.name isEqualToString:name]) return s;
+    for (SFShow *s in [self shows]) if ([s.name isEqualToString:name] && (!source.length || [s.source isEqualToString:source])) return s;
     return nil;
 }
 

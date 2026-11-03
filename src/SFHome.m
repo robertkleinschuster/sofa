@@ -101,14 +101,15 @@ static NSDictionary *appInfo(void) {
     i.date = sh.latest;
     i.source = sh.source;
     i.themeName = sh.source;
-    i.pageLoader = [self showLoader:sh.name];
+    i.pageLoader = [self showLoader:sh.name source:sh.source];
     return i;
 }
 
-+ (SFPageLoader)showLoader:(NSString *)showName {
++ (SFPageLoader)showLoader:(NSString *)showName { return [self showLoader:showName source:nil]; }
++ (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source {
     return ^(SFPageDone done) {
         [[SFLibrary shared] whenReady:^{
-            SFShow *sh = [[SFLibrary shared] showNamed:showName];
+            SFShow *sh = [[SFLibrary shared] showNamed:showName source:source];
             if (!sh) { done(nil, SFError(@"Sendung nicht mehr vorhanden.")); return; }
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *started = [NSMutableArray new];
@@ -196,7 +197,9 @@ static NSString *downloadsArt(NSString *source) {
     for (SFItem *a in [dl active]) if (!source || [a.source isEqualToString:source]) running++;
     i.subtitle = running ? [NSString stringWithFormat:@"%lu %@ · %@", (unsigned long)running, running == 1 ? @"wird geladen" : @"werden geladen", [dl storageSummary:source]]
                          : [dl storageSummary:source];
-    i.plot = @"Heruntergeladene Videos – auch ohne Internet. Hier siehst du, was gerade geladen wird, und verwaltest Sendungen, die automatisch geladen werden.";
+    i.plot = [dl deletesWatched]
+        ? @"Heruntergeladene Videos – auch ohne Internet. Automatisch geladene Folgen verschwinden einen Tag nach dem Ansehen von selbst."
+        : @"Heruntergeladene Videos – auch ohne Internet. Hier siehst du, was gerade geladen wird, und verwaltest deine Sendungen.";
     i.themeName = source ?: @"home";
     i.source = source;
     if (!source) { i.style = SFTileStyleApp; i.tint = SFHex(0x2c3e50); }

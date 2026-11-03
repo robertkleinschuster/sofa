@@ -42,3 +42,6 @@ extern BOOL SFDevMode;   // unsichtbarer Entwicklungsmodus (main.m)
 // Dev: Ebenenbaum in Kontext rendern (Modell-Ebenen, AVPlayerLayer ausgespart —
 // presentationLayer-Kopien der AVPlayerLayer crashen bei Freigabe auf 10.9).
 void SFRenderLayerTree(CALayer *root, CGContextRef ctx);
+
+// Dev-Test: SOFA_OFFLINE=1 lässt alle Netzanfragen scheitern (nur Dev-Instanzen)
+BOOL SFSimulatedOffline(void);

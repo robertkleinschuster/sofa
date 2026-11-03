@@ -26,6 +26,16 @@
 - (BOOL)isOpaque { return YES; }
 @end
 
+NSCursor *SFBlankCursor(void) {
+    static NSCursor *c;
+    if (!c) {
+        NSImage *img = [[NSImage alloc] initWithSize:NSMakeSize(16, 16)];
+        [img lockFocus]; [[NSColor clearColor] set]; NSRectFill(NSMakeRect(0, 0, 16, 16)); [img unlockFocus];
+        c = [[NSCursor alloc] initWithImage:img hotSpot:NSZeroPoint];
+    }
+    return c;
+}
+
 @implementation SFNavigator {
     NSMutableArray *_stack;
     CALayer *_root;
@@ -37,6 +47,9 @@
     SFLabel *_volLabel;
     NSUInteger _volSeq;
 }
+
+// Kein Mauszeiger in der TV-Oberfläche (siehe main.m hideCursor)
+- (void)resetCursorRects { if (!SFDevMode) [self addCursorRect:self.bounds cursor:SFBlankCursor()]; }
 
 - (instancetype)initWithFrame:(NSRect)f {
     if ((self = [super initWithFrame:f])) {

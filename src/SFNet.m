@@ -3,7 +3,38 @@
 #import "SFModel.h"
 #import "SFCurl.h"
 
+#import <SystemConfiguration/SystemConfiguration.h>
+
+NSString *const SFNetOnlineDidChangeNotification = @"SFNetOnlineDidChange";
+static BOOL gOnline = YES;
+static SCNetworkReachabilityRef gReach;
+
+static void setOnline(BOOL on) {
+    if (SFSimulatedOffline()) on = NO;
+    if (on == gOnline) return;
+    gOnline = on;
+    SFLog(@"net: %@", on ? @"online" : @"OFFLINE");
+    SFMain(^{ [[NSNotificationCenter defaultCenter] postNotificationName:SFNetOnlineDidChangeNotification object:nil]; });
+}
+
+static void reachCallback(SCNetworkReachabilityRef r, SCNetworkReachabilityFlags f, void *info) {
+    setOnline((f & kSCNetworkReachabilityFlagsReachable) && !(f & kSCNetworkReachabilityFlagsConnectionRequired));
+}
+
 @implementation SFNet
+
++ (BOOL)isOnline { return gOnline && !SFSimulatedOffline(); }
+
++ (void)startMonitoring {
+    if (gReach) return;
+    if (SFSimulatedOffline()) { setOnline(NO); return; }
+    gReach = SCNetworkReachabilityCreateWithName(NULL, "www.youtube.com");
+    if (!gReach) return;
+    SCNetworkReachabilityFlags f;
+    if (SCNetworkReachabilityGetFlags(gReach, &f)) reachCallback(gReach, f, NULL);
+    SCNetworkReachabilitySetCallback(gReach, reachCallback, NULL);
+    SCNetworkReachabilityScheduleWithRunLoop(gReach, CFRunLoopGetMain(), kCFRunLoopCommonModes);
+}
 
 + (NSURLSession *)session {
     static NSURLSession *s; static dispatch_once_t o;
@@ -46,6 +77,7 @@
         finish(json, nil);
     };
     // TLS-Brücke: Hosts, die 10.9-SecureTransport nicht kann -> libcurl
+    if (SFSimulatedOffline()) { SFBackground(^{ handle(nil, 0, SFError(@"Keine Internetverbindung.")); }); return; }
     void (^viaCurl)(void) = ^{
         SFBackground(^{
             NSMutableDictionary *h = [req.allHTTPHeaderFields mutableCopy] ?: [NSMutableDictionary new];

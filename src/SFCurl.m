@@ -1,5 +1,6 @@
 #import "SFCurl.h"
 #import "SFNet.h"
+#import "SFModel.h"
 #include <curl/curl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -87,6 +88,7 @@ static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers,
 }
 
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body, NSInteger *status, NSError **error) {
+    if (SFSimulatedOffline()) { if (error) *error = SFError(@"Keine Internetverbindung."); return nil; }
     return fetchFull(url, method ?: @"GET", headers, body, status, NULL, error);
 }
 

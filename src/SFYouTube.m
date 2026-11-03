@@ -467,7 +467,7 @@ static NSSet *skipKeys(void) {
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
             for (SFItem *i in items) [(i.kind == SFItemLive ? live : vids) addObject:i];
             if (live.count) [shelves addObject:[SFShelf shelf:@"Jetzt live" style:SFTileStyleLandscape items:live]];
-            SFShow *local = [[SFLibrary shared] showNamed:title];
+            SFShow *local = [[SFLibrary shared] showNamed:title source:@"youtube"];
             if (local.episodes.count) {
                 NSMutableArray *started = [NSMutableArray new];
                 for (SFItem *x in local.episodes) { double pr = [[SFStore shared] progressFor:x.identifier]; if (pr > 0 && pr < 1) [started addObject:x]; }
@@ -581,7 +581,7 @@ static NSSet *skipKeys(void) {
                 i.subtitle = @"Auf diesem Mac";
                 NSString *name = sh.name;
                 i.pageLoader = ^(SFPageDone d2) {
-                    SFShow *s2 = [[SFLibrary shared] showNamed:name];
+                    SFShow *s2 = [[SFLibrary shared] showNamed:name source:@"youtube"];
                     SFPage *p = [SFPage page:name theme:@"youtube" shelves:@[[SFShelf grid:@"Heruntergeladen" style:SFTileStyleLandscape items:s2.episodes ?: @[]]]];
                     d2(p, nil);
                 };

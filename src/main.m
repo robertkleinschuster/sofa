@@ -11,6 +11,7 @@
 #import "SFStore.h"
 #import "SFDevServer.h"
 #import "SFMigration.h"
+#import "SFNet.h"
 #import "SFProviderCCC.h"
 #import "SFProviderARD.h"
 #import "SFProviderZDF.h"
@@ -81,6 +82,7 @@ static uint16_t gPort = 8765;
     self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
+    [SFNet startMonitoring];
     [[SFDownloads shared] start];
     // Handy-Koppeln: echte App immer; Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
@@ -191,14 +193,33 @@ static uint16_t gPort = 8765;
     [self.window setFrame:f display:YES];
 }
 
-// Mauszeiger hat in der 10-Fuß-UI keinen Sinn: komplett aus, solange Sofa vorne ist
-// (NSCursor hide/unhide zählt -> nur einmal je Zustand).
+// Mauszeiger hat in der 10-Fuß-UI keinen Sinn: unsichtbar, solange Sofa vorne ist.
+// Drei Schichten, weil das System den Zeiger in vielen Lagen wieder einblendet (Display-Wake,
+// App-Wechsel, Cursor-Setzen anderer Prozesse) und Hide/Show-Zählung dabei auseinanderläuft:
+//  1. transparenter Cursor für das ganze Fenster (Cursor-Rects in SFNavigator + set)
+//  2. Wächter (1 s): ist der Zeiger sichtbar, obwohl Sofa vorne ist -> wieder ausblenden (+ Log)
+//  3. beim Verlassen (andere App vorne) zuverlässig wieder einblenden
+- (void)enforceCursorHidden {
+    if (SFDevMode || ![NSApp isActive]) return;
+    [SFBlankCursor() set];
+    if (CGCursorIsVisible()) {
+        CGDisplayHideCursor(kCGNullDirectDisplay);
+        static NSDate *lastLog;
+        if (!lastLog || -[lastLog timeIntervalSinceNow] > 60) { lastLog = [NSDate date]; SFLog(@"cursor: war sichtbar -> ausgeblendet"); }
+    }
+}
 - (void)hideCursor:(BOOL)hide {
-    static BOOL hidden = NO;
-    if (SFDevMode || hide == hidden) return;
-    hidden = hide;
-    if (hide) { [NSCursor hide]; CGDisplayHideCursor(kCGDirectMainDisplay); }
-    else { [NSCursor unhide]; CGDisplayShowCursor(kCGDirectMainDisplay); }
+    if (SFDevMode) return;
+    static NSTimer *watch;
+    if (hide) {
+        [self.window invalidateCursorRectsForView:self.nav];
+        [self enforceCursorHidden];
+        if (!watch) watch = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(enforceCursorHidden) userInfo:nil repeats:YES];
+    } else {
+        [watch invalidate]; watch = nil;
+        for (int i = 0; i < 8 && !CGCursorIsVisible(); i++) CGDisplayShowCursor(kCGNullDirectDisplay);
+        [[NSCursor arrowCursor] set];
+    }
 }
 - (void)applicationDidBecomeActive:(NSNotification *)n { [self hideCursor:YES]; }
 - (void)applicationDidResignActive:(NSNotification *)n { [self hideCursor:NO]; }

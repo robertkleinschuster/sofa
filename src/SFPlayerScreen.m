@@ -563,7 +563,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (SFItem *)nextItem {
     if (_explicitQueue) return _index + 1 < _queue.count ? _queue[_index + 1] : nil;
     if (!_item.localPath || !_item.channel) return nil;
-    SFShow *show = [[SFLibrary shared] showNamed:_item.channel];
+    SFShow *show = [[SFLibrary shared] showNamed:_item.channel source:_item.source];
     NSUInteger i = NSNotFound;
     for (NSUInteger k = 0; k < show.episodes.count; k++)
         if ([[show.episodes[k] localPath] isEqualToString:_item.localPath]) { i = k; break; }

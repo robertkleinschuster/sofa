@@ -5,7 +5,8 @@
 // Abos ("Neue Folgen automatisch laden") ersetzen ytdl-sub.
 #import "SFModel.h"
 
-extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (oder nil = viele)
+extern NSString *const SFDownloadsDidChangeNotification;
+extern NSString *const SFUnsortedChannel;   // Sendungsname für Videos ohne Kanal   // object = identifier (oder nil = viele)
 
 typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLNone = -1,
@@ -53,6 +54,8 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 - (BOOL)canSubscribe:(SFItem *)folder;           // gibt es einen Feed für diesen Ordnertyp?
 - (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays)
 - (void)checkSubscriptionsNow;
+// Smart Downloads: gesehene Abo-Folgen 1 Tag nach dem Ansehen löschen (Standard: an; manuelle nie)
+@property (nonatomic) BOOL deletesWatched;
 
 // Migration (einmalig): vorhandene Datei übernehmen (wird in den Sofa-Speicher verschoben)
 - (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;

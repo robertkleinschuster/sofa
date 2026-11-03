@@ -1,8 +1,10 @@
 #import "SFDownloads.h"
 #import "SFStore.h"
 #import "SFCurl.h"
+#import "SFNet.h"
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
+NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 static NSMutableDictionary *gFeeds, *gDLURL;
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f) { if (!gFeeds) gFeeds = [NSMutableDictionary new]; gFeeds[prefix] = [f copy]; }
@@ -38,6 +40,14 @@ static NSString *safeName(NSString *s, NSUInteger max) {
     NSString *t = [o stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" ."]];
     if (t.length > max) t = [t substringToIndex:max];
     return t.length ? t : @"Video";
+}
+
+static NSString *idHash(NSString *s) {   // FNV-1a 64 bit, stabil
+    uint64_t h = 1469598103934665603ULL;
+    NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
+    const uint8_t *b = d.bytes;
+    for (NSUInteger i = 0; i < d.length; i++) { h ^= b[i]; h *= 1099511628211ULL; }
+    return [NSString stringWithFormat:@"%016llx", (unsigned long long)h];
 }
 
 static NSString *ffmpegPath(void) {
@@ -233,7 +243,8 @@ static NSString *gb(unsigned long long b) {
 - (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source {
     NSUInteger n = 0;
     for (NSDictionary *r in [_recs.allValues copy]) {
-        if (![r[@"channel"] isEqualToString:channel] || (source && ![r[@"source"] isEqualToString:source])) continue;
+        NSString *rc = [r[@"channel"] length] ? r[@"channel"] : SFUnsortedChannel;
+        if (![rc isEqualToString:channel] || (source && ![r[@"source"] isEqualToString:source])) continue;
         SFDLState st = [r[@"state"] integerValue];
         if (st == SFDLDismissed) continue;
         [self remove:r[@"id"]];
@@ -253,6 +264,7 @@ static NSString *gb(unsigned long long b) {
     SFDLState st = r ? [r[@"state"] integerValue] : SFDLNone;
     if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
     if (subID && r && (st == SFDLDismissed || ([r[@"tries"] integerValue] >= 3 && st == SFDLFailed))) return NO;
+    if (subID && r && !r[@"sub"]) subID = nil;   // einmal manuell geladen = manuell (keine Behaltefrist)
     // Abo-Folgen gehören zur Sendung des Abos (ZDF/ARD nennen die Reihe oft anders)
     NSString *subTitle = subID ? _subs[subID][@"title"] : nil;
     if (subTitle.length) { item = [item copy]; item.channel = subTitle; }
@@ -279,7 +291,12 @@ static NSString *gb(unsigned long long b) {
 - (void)remove:(NSString *)identifier {
     NSMutableDictionary *r = _recs[identifier];
     if (!r) return;
-    if ([identifier isEqualToString:_runningID]) { [_task terminate]; }
+    if ([identifier isEqualToString:_runningID]) {   // laufend: Slot sofort freigeben, Rückrufe verwerfen
+        NSTask *t = _task;
+        _task = nil; _runningID = nil;
+        [t terminate];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
+    }
     if (r[@"path"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"path"] error:nil];
     if (r[@"thumb"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"thumb"] error:nil];
     [self pruneEmptyDirs:[r[@"path"] stringByDeletingLastPathComponent]];
@@ -314,6 +331,8 @@ static NSString *gb(unsigned long long b) {
 - (void)start {
     if (_started) return;
     _started = YES;
+    [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
     // Abos: kurz nach dem Start, dann alle 3 h; Aufräumen bei jeder Prüfung
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
@@ -326,12 +345,15 @@ static NSString *gb(unsigned long long b) {
 
 - (NSString *)targetPathFor:(NSDictionary *)r item:(SFItem *)item {
     NSString *dir = [self folderForSource:r[@"source"] channel:item.channel];
-    NSString *idPart = safeName(restOf(item.identifier), 40);
+    NSString *rest = restOf(item.identifier);
+    // kurze IDs (YouTube) lesbar; lange (ARD-crid base64, ZDF-canonical) teilen lange Präfixe -> Hash
+    NSString *idPart = rest.length <= 16 ? safeName(rest, 16) : idHash(item.identifier);
     return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ [%@].mp4", safeName(item.title ?: @"Video", 120), idPart]];
 }
 
 - (void)pump {
     if (!_started || _runningID) return;
+    if (![SFNet isOnline]) return;   // offline: warten statt Versuche zu verbrauchen (weiter bei SFNetOnlineDidChange)
     // manuelle Downloads vor Abo-Downloads, jeweils älteste Anforderung zuerst
     NSDictionary *next = nil;
     for (NSDictionary *r in _recs.allValues) {
@@ -346,6 +368,12 @@ static NSString *gb(unsigned long long b) {
     if (!ff) { SFLog(@"downloads: ffmpeg fehlt"); return; }
     NSMutableDictionary *r = _recs[next[@"id"]];
     SFItem *item = [self itemFromRec:r];
+    if (!item) {
+        r[@"state"] = @(SFDLFailed); r[@"error"] = @"Eintrag unlesbar"; r[@"tries"] = @3;
+        [self save:r];
+        dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
+        return;
+    }
     _runningID = r[@"id"];
     r[@"state"] = @(SFDLRunning); r[@"progress"] = @0;
     [self save:r];
@@ -488,7 +516,8 @@ static NSString *gb(unsigned long long b) {
     [_subs removeObjectForKey:fid];
     [[SFStore shared] run:T(@"DELETE FROM subscriptions WHERE id=?") args:@[fid]];
     // bereits geladene Folgen bleiben, werden aber nicht mehr automatisch gelöscht
-    for (NSMutableDictionary *r in _recs.allValues) if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] == SFDLDone) { [r removeObjectForKey:@"sub"]; [self save:r]; }
+    for (NSMutableDictionary *r in _recs.allValues)
+        if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) { [r removeObjectForKey:@"sub"]; [self save:r]; }
     [self changed:fid];
 }
 
@@ -497,6 +526,7 @@ static NSString *gb(unsigned long long b) {
     if (!f) { if (done) done(); return; }
     f(restOf(s[@"id"]), ^(NSArray *items, NSError *e) {
         SFMain(^{
+            if (self->_subs[s[@"id"]] != s) { if (done) done(); return; }   // inzwischen abbestellt/ersetzt
             if (!items) { SFLog(@"downloads: Abo %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
             NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
             double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
@@ -505,7 +535,11 @@ static NSString *gb(unsigned long long b) {
             for (SFItem *it in items) {
                 if (it.kind != SFItemVideo) continue;
                 n++;
-                if (initial && n > 3) break;                          // neues Abo: die 3 neuesten
+                if (initial && n > 3) {                              // neues Abo: die 3 neuesten, Älteres nie nachladen
+                    double pub3 = it.date ? [it.date timeIntervalSince1970] : now;
+                    if ([s[@"since"] doubleValue] <= 0) s[@"since"] = @(pub3);
+                    break;
+                }
                 double pub = it.date ? [it.date timeIntervalSince1970] : 0;
                 if (pub && pub < now - keep) break;                   // älter als Behaltefrist
                 if (since > 0 && pub && pub <= since) break;         // migrierte Abos: nur Neues
@@ -522,7 +556,7 @@ static NSString *gb(unsigned long long b) {
 }
 
 - (void)checkSubscriptionsNow {
-    if (_checking) return;
+    if (_checking || ![SFNet isOnline]) return;
     _checking = YES;
     [self cleanup];
     NSArray *all = [_subs.allValues copy];
@@ -535,16 +569,44 @@ static NSString *gb(unsigned long long b) {
         if (i >= all.count) { me->_checking = NO; next = nil; SFLog(@"downloads: Abo-Prüfung fertig"); return; }
         NSMutableDictionary *s = all[i++];
         // nacheinander, mit kleiner Pause (schont die Quellen)
-        [me checkSub:s initial:NO done:^{
+        __block BOOL called = NO;
+        dispatch_block_t step = ^{
+            if (called) return;
+            called = YES;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
-        }];
+        };
+        [me checkSub:s initial:NO done:step];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);   // Zeitlimit je Feed
     };
     next();
 }
 
-// Behaltefrist: Abo-Folgen nach keepDays (ab Veröffentlichung) löschen
+static NSString *deleteWatchedKey(void) { return SFDevMode ? @"downloads.dev.deleteWatched" : @"downloads.deleteWatched"; }   // Dev nie die echte Einstellung
+- (BOOL)deletesWatched { return ![[[SFStore shared] setting:deleteWatchedKey()] isEqualToString:@"0"]; }
+- (void)setDeletesWatched:(BOOL)on {
+    [[SFStore shared] setSetting:on ? @"1" : @"0" forKey:deleteWatchedKey()];
+    _generation++;
+    [self changed:nil];
+    SFLog(@"downloads: gesehene Abo-Folgen löschen %@", on ? @"an" : @"aus");
+    if (on) [self cleanup];
+}
+
+// Behaltefrist: Abo-Folgen nach keepDays (ab Veröffentlichung) löschen;
+// Smart Downloads: gesehene Abo-Folgen 1 Tag nach dem Ansehen
 - (void)cleanup {
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    if (self.deletesWatched) {
+        NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> Zeitpunkt "gesehen"
+        for (NSDictionary *row in [[SFStore shared] rows:@"SELECT id, updated FROM progress WHERE watched=1" args:nil]) seen[row[@"id"]] = row[@"updated"];
+        for (NSMutableDictionary *r in [_recs.allValues copy]) {
+            if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
+            NSNumber *w = seen[r[@"id"]];
+            if (w && [w doubleValue] < now - 86400) {
+                SFLog(@"downloads: gesehen, gelöscht: %@", r[@"id"]);
+                [self remove:r[@"id"]];
+            }
+        }
+    }
     for (NSMutableDictionary *r in [_recs.allValues copy]) {
         if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
         NSDictionary *s = _subs[r[@"sub"]];

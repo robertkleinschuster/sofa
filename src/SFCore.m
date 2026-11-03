@@ -115,3 +115,9 @@ void SFRenderLayerTree(CALayer *root, CGContextRef ctx) {
     for (NSUInteger i = 0; i < pl.count; i++) [pl[i] setHidden:[states[i] boolValue]];
     [CATransaction commit];
 }
+
+BOOL SFSimulatedOffline(void) {
+    static int v = -1;
+    if (v < 0) v = SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_OFFLINE"] length] > 0;
+    return v == 1;
+}

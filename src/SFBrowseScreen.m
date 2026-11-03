@@ -4,6 +4,7 @@
 #import "SFStore.h"
 #import "SFMenuScreen.h"
 #import "SFDownloads.h"
+#import "SFNet.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -69,6 +70,7 @@
 // Download-Status auf den Kacheln live halten
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
 }
 - (SFPage *)page { return _page; }
 
@@ -185,15 +187,17 @@
 
     _clock = [SFLabel labelWithFont:[t medium:32] color:t.textDim];
     _clock.alignment = NSRightTextAlignment;
+    _clock.shadow = !t.light;
     [_clock sizeToFitWidth:U(300)];
     _clock.position = CGPointMake(size.width - U(96) - U(300), U(52));
     [_header addSublayer:_clock];
     // Remote-Hinweis: Optionen gibt es nur per Halten – sonst unentdeckbar
-    _hint = [SFLabel labelWithFont:[t regular:26] color:t.textDim];
+    _hint = [SFLabel labelWithFont:[t medium:26] color:t.text];
     _hint.alignment = NSRightTextAlignment;
+    _hint.shadow = !t.light;   // lesbar auch über hellen Hintergrundbildern
     _hint.text = @"OK halten: Optionen";
-    [_hint sizeToFitWidth:U(520)];
-    _hint.position = CGPointMake(size.width - U(96) - U(300) - U(560), U(58));
+    [_hint sizeToFitWidth:U(900)];
+    _hint.position = CGPointMake(size.width - U(96) - U(300) - U(940), U(58));
     _hint.opacity = 0;
     [_header addSublayer:_hint];
     [self updateHint];
@@ -202,8 +206,14 @@
 }
 
 - (void)updateHint {
+    if (![SFNet isOnline]) {   // Offline hat Vorrang: erklärt, warum Online-Inhalte nicht laufen
+        SFNoAnimate(^{ self->_hint.text = @"Keine Internetverbindung – Downloads sind verfügbar"; });
+        SFAnimate(0.2, ^{ self->_hint.opacity = 1; });
+        return;
+    }
+    if (![_hint.text isEqualToString:@"OK halten: Optionen"]) SFNoAnimate(^{ self->_hint.text = @"OK halten: Optionen"; });
     SFItem *it = [self focusedItem];
-    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [[SFDownloads shared] canSubscribe:it])));
+    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it])));
     SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.8 : 0; });
 }
 
@@ -620,18 +630,28 @@
                 }]];
             }
         }
-        SFShow *show = it.channel ? [[SFLibrary shared] showNamed:it.channel] : nil;
+        SFShow *show = it.channel ? [[SFLibrary shared] showNamed:it.channel source:it.source] : nil;
         if (show && ![_page.title isEqualToString:show.name]) {
             [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Zu „%@“", show.name] action:^{
                 SFItem *f = [SFItem new];
                 f.kind = SFItemFolder; f.themeName = show.source;
-                f.pageLoader = [SFHome showLoader:show.name];
+                f.pageLoader = [SFHome showLoader:show.name source:show.source];
                 SFOpenItem(nav, f, nil, 0);
             }]];
         }
     } else if (it.kind == SFItemFolder) {
         [opts addObject:[SFMenuOption option:@"Öffnen" action:^{ SFOpenItem(nav, it, items, idx); }]];
         SFDownloads *dl = [SFDownloads shared];
+        if ([it.identifier hasPrefix:@"downloads:"]) {   // Einstellungen der Offline-Schicht
+            BOOL on = [dl deletesWatched];
+            SFMenuOption *o = [SFMenuOption option:@"Gesehenes löschen" action:^{
+                [dl setDeletesWatched:!on];
+                [nav toast:!on ? @"Abo-Folgen werden 1 Tag nach dem Ansehen gelöscht – spart Platz"
+                               : @"Gesehene Abo-Folgen bleiben erhalten"];
+            }];
+            o.detail = on ? @"An" : @"Aus";
+            [opts addObject:o];
+        }
         if ([it.identifier hasPrefix:@"show:"]) {   // Sendung im Offline-Bestand
             NSString *ch = it.channel ?: it.title, *src = it.source;
             NSString *sid = [dl subscriptionIDForChannel:ch source:src];
@@ -642,7 +662,7 @@
                 o.detail = @"An";
                 [opts addObject:o];
             }
-            SFShow *sh = [[SFLibrary shared] showNamed:ch];
+            SFShow *sh = [[SFLibrary shared] showNamed:ch source:src];
             NSUInteger n = sh.episodes.count;
             SFMenuOption *del = [SFMenuOption option:@"Alle Downloads löschen" action:^{
                 dispatch_async(dispatch_get_main_queue(), ^{

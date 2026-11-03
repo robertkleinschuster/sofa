@@ -10,7 +10,7 @@ HBIN    := $(APP)/Contents/MacOS/SofaRemote
 CFLAGS  := -I/opt/local/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function -Isrc
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
-           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -lsqlite3 -L/opt/local/lib -lcurl
+           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -lsqlite3 -L/opt/local/lib -lcurl
 SRC     := $(wildcard src/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)

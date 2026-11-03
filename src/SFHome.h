@@ -6,6 +6,7 @@
 + (SFScreen *)homeScreen;
 + (SFScreen *)appScreen:(NSString *)source;                  // youtube, zdf, ard, orf, ccc
 + (SFPageLoader)showLoader:(NSString *)showName;               // lokale Sendung
++ (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source;
 + (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = alle Quellen
 + (SFItem *)downloadsTile:(NSString *)source;                  // öffnet die Downloads-Seite
 @end
