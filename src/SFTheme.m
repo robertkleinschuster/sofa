@@ -95,7 +95,7 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
         t.backgroundTop = SFHex(0xffffff);
         t.surface = SFHex(0xdadce0);
         t.text = SFHex(0x141414);
-        t.textDim = SFHexA(0x141414, 0.6);
+        t.textDim = SFHexA(0x141414, 0.74);   // auf Hellgrau mit TV-Abstand lesbar (0.6 war zu schwach)
         t.accent = SFHex(0xd8001b);
         t.accentText = SFHex(0xffffff);
         t.focus = SFHex(0xd8001b);

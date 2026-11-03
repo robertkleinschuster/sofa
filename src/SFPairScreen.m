@@ -2,6 +2,7 @@
 #import "SFLounge.h"
 #import "SFLayers.h"
 #import "SFLogo.h"
+#import "SFMenuScreen.h"
 
 @implementation SFPairScreen {
     SFLabel *_title, *_steps, *_code, *_hint, *_phones, *_countdown;
@@ -117,10 +118,48 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
 }
 
 - (void)updatePhones {
-    NSArray *n = [SFLounge shared].remoteNames;
-    _phones.text = n.count ? [@"Verbunden: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"";
+    SFLounge *l = [SFLounge shared];
+    NSArray *n = l.remoteNames;
+    NSString *status = l.paused ? @"Verbindung pausiert – Handys können Sofa gerade nicht steuern."
+                     : n.count ? [@"Verbunden: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"";
+    _phones.text = [NSString stringWithFormat:@"%@%@OK drücken: Verbindung pausieren, Handys trennen, Wiedergabe teilen",
+                    status, status.length ? @"\n" : @""];
+    _phones.maxLines = 0;
     if (self.size.width > 0) [self layoutForSize:self.size];
 }
 
-- (BOOL)handleKey:(SFKey)key { return NO; }   // Menu -> zurück (Navigator)
+// Optionen (Mehrbenutzer/Privatsphäre): pausieren ≠ trennen – zwei getrennte Funktionen
+- (void)showOptions {
+    SFLounge *l = [SFLounge shared];
+    SFNavigator *nav = self.navigator;
+    SFTheme *t = self.theme;
+    BOOL paused = l.paused, share = l.sharesAllPlayback;
+    SFMenuOption *pause = [SFMenuOption option:paused ? @"Verbindung fortsetzen" : @"Verbindung pausieren" action:^{
+        l.paused = !paused;
+        [nav toast:paused ? @"Handys können Sofa wieder steuern" : @"Verbindung pausiert – Kopplung bleibt erhalten"];
+    }];
+    pause.detail = paused ? @"pausiert" : nil;
+    SFMenuOption *shareO = [SFMenuOption option:@"Am Handy anzeigen" action:^{
+        l.sharesAllPlayback = !share;
+        [nav toast:!share ? @"Alles, was am Sofa läuft, ist am Handy sichtbar" : @"Nur vom Handy gestartete Videos sind am Handy sichtbar"];
+    }];
+    shareO.detail = share ? @"Alles" : @"Nur vom Handy";
+    SFMenuOption *forget = [SFMenuOption option:@"Alle Handys trennen" action:^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
+            SFMenuOption *yes = [SFMenuOption option:@"Ja, alle Handys trennen" action:^{
+                [l forgetAllPhones];
+                [nav toast:@"Alle Handys getrennt – zum Verbinden neuen Code eingeben"];
+            }];
+            [nav push:[[SFMenuScreen alloc] initWithTitle:@"Alle Handys trennen?" subtitle:@"Die Handys müssen danach mit einem neuen Code verbunden werden." options:@[no, yes] theme:t]];
+        });
+    }];
+    forget.detail = @"neuer Code nötig";
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Handy-Verbindung" subtitle:nil options:@[pause, shareO, forget] theme:t]];
+}
+
+- (BOOL)handleKey:(SFKey)key {
+    if (key == SFKeySelect || key == SFKeySelectHold) { [self showOptions]; return YES; }
+    return NO;   // Menu -> zurück (Navigator)
+}
 @end

@@ -9,6 +9,7 @@
 #   sofa-dev key k [k ...]         Tasten senden (up down left right select menu play
 #                                  selecthold menuhold next prev uphold downhold)
 #   sofa-dev wshot NAME            echte Fensteraufnahme (inkl. Video/OpenGL)
+#   sofa-dev open pair|history     Seite direkt öffnen (Dev)
 #   sofa-dev shot NAME             Screenshot -> $SHOTS/NAME.png (Pfad wird ausgegeben)
 #   sofa-dev do "key down" "shot a" "sleep 1" ...   Abfolge
 #   sofa-dev check                 läuft? neue Crash-Reports? Fehler im Log?
@@ -98,6 +99,8 @@ cmd_do() {
     set -- $step
     case "$1" in
       key) shift; cmd_key "$@" ;;
+  open) send "open $2" ;;
+      open) send "open $2"; sleep 1 ;;
       shot) cmd_shot "$2" ;;
       wshot) cmd_wshot "$2" ;;
       sleep) sleep "$2" ;;

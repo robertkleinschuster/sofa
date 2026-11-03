@@ -43,6 +43,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     NSMutableData *_frameBuf;
     NSMutableDictionary *_remotes;  // id -> name
     BOOL _running;
+    NSUInteger _loopGen;
     NSDate *_lastAlive;
     NSString *_cpn;
     NSTimer *_tick;
@@ -93,7 +94,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     _deviceID = [st setting:[self key:@"deviceId"]];
     if (!_deviceID) { _deviceID = [[[NSUUID UUID] UUIDString] lowercaseString]; [st setSetting:_deviceID forKey:[self key:@"deviceId"]]; }
     _screenID = [st setting:[self key:@"screenId"]];
-    if (!_screenID) {
+    if (!_screenID.length) {   // leer = „alle Handys getrennt“ -> neue screenId
         NSInteger code = 0;
         NSData *d = [self http:@"GET" url:[kAPI stringByAppendingString:@"/pairing/generate_screen_id"] body:nil status:&code];
         NSString *s = [[[NSString alloc] initWithData:d ?: [NSData data] encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -103,7 +104,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     }
     _token = [st setting:[self key:@"token"]];
     double refreshAt = [[st setting:[self key:@"tokenRefresh"]] doubleValue];
-    if (!_token || [[NSDate date] timeIntervalSince1970] > refreshAt) return [self refreshToken];
+    if (!_token.length || [[NSDate date] timeIntervalSince1970] > refreshAt) return [self refreshToken];
     return YES;
 }
 
@@ -167,11 +168,50 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     return 200;
 }
 
+- (BOOL)paused { return [[[SFStore shared] setting:[self key:@"paused"]] isEqualToString:@"1"]; }
+- (void)setPaused:(BOOL)p {
+    if (p == self.paused) return;
+    [[SFStore shared] setSetting:p ? @"1" : @"0" forKey:[self key:@"paused"]];
+    SFLog(@"lounge: Verbindung %@", p ? @"pausiert" : @"fortgesetzt");
+    if (p) { [self stop]; [self dropSession]; }
+    else [self start];
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+}
+- (BOOL)sharesAllPlayback { return [[[SFStore shared] setting:[self key:@"shareAll"]] isEqualToString:@"1"]; }
+- (void)setSharesAllPlayback:(BOOL)s {
+    [[SFStore shared] setSetting:s ? @"1" : @"0" forKey:[self key:@"shareAll"]];
+    _lastVideo = nil;
+    [self greet];   // Handy sofort auf den neuen Stand bringen (ggf. „nichts läuft“)
+}
+
+// Session lokal verwerfen (Kopplung/screenId bleibt)
+- (void)dropSession {
+    dispatch_sync(_q, ^{ self->_sid = nil; });
+    @synchronized (_remotes) { [_remotes removeAllObjects]; }
+}
+
+- (void)forgetAllPhones {
+    BOOL wasPaused = self.paused;
+    [self stop];
+    dispatch_sync(_q, ^{
+        SFStore *st = [SFStore shared];
+        for (NSString *k in @[@"screenId", @"token", @"tokenRefresh"]) [st setSetting:@"" forKey:[self key:k]];
+        self->_screenID = nil; self->_token = nil; self->_sid = nil;
+    });
+    @synchronized (_remotes) { [_remotes removeAllObjects]; }
+    SFLog(@"lounge: alle Handys getrennt (neue screenId)");
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
+    if (!wasPaused) [self start];
+}
+
 - (void)start {
-    if (_running) return;
+    if (_running || self.paused) return;
     _running = YES;
+    _loopGen++;
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];   // Fortsetzen: nicht doppelt
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerChanged:) name:SFPlayerStateNotification object:nil];
     // Laufende Position regelmäßig melden (Handy-Fortschrittsbalken)
+    [_tick invalidate];
     _tick = [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(periodic) userInfo:nil repeats:YES];
     [NSThread detachNewThreadSelector:@selector(runLoop) toTarget:self withObject:nil];
 }
@@ -179,6 +219,9 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 - (void)stop {
     if (!_running) return;
     _running = NO;
+    _loopGen++;
+    [_tick invalidate]; _tick = nil;
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     dispatch_async(_q, ^{ if (self->_sid) [self sendNow:@[@[@"loungeScreenDisconnected", @{}]]]; dispatch_semaphore_signal(sem); });
     dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)));   // best effort
@@ -187,7 +230,8 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 - (void)runLoop {
     @autoreleasepool { [[NSThread currentThread] setName:@"sofa.lounge.poll"]; }
     double backoff = 1;
-    while (_running) {
+    NSUInteger gen = _loopGen;   // Pausieren/Fortsetzen startet eine neue Schleife; alte endet hier
+    while (_running && gen == _loopGen) {
         @autoreleasepool {
             __block BOOL ok = NO;
             __block NSInteger st = 0;
@@ -317,6 +361,8 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
 }
 
 - (NSString *)videoIDOf:(SFPlayerScreen *)p {
+    // Privatsphäre: am Sofa gestartete Wiedergabe nur teilen, wenn ausdrücklich erlaubt
+    if (!p.remoteListID && !self.sharesAllPlayback) return nil;
     NSString *v = p.item.externalID;
     return [p.item.source isEqualToString:@"youtube"] && v.length == 11 ? v : nil;
 }
@@ -404,6 +450,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
 }
 
 - (void)handle:(NSString *)cmd args:(NSDictionary *)args {
+    if (self.paused) return;   // pausiert: nichts mehr annehmen (auch nicht über eine noch offene alte Verbindung)
     if (![cmd isEqualToString:@"getNowPlaying"]) SFLog(@"lounge: <- %@", cmd);
     SFPlayerScreen *p = [self player];
     if ([cmd isEqualToString:@"loungeStatus"]) { [self updateRemotesFromStatus:args]; return; }

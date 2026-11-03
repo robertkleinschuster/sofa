@@ -98,8 +98,11 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
                 [_image addSublayer:sub];
             }
         } else if (st == SFTileStyleWide) {
-            SFLabel *wt = [SFLabel labelWithFont:[theme bold:34] color:[NSColor whiteColor]];
-            wt.text = item.title; wt.maxLines = 2; wt.shadow = YES;
+            // Mit Bild: weiß + Schatten über dem Bild. Ohne Bild: Themenfarbe auf der Kachelfläche
+            // (weiß auf hellgrau war im hellen ORF-Theme kaum lesbar)
+            BOOL plain = !item.image.length && !item.tint;   // farbige Kacheln (Akzent) behalten weiße Schrift
+            SFLabel *wt = [SFLabel labelWithFont:[theme bold:34] color:plain ? theme.text : [NSColor whiteColor]];
+            wt.text = item.title; wt.maxLines = 2; wt.shadow = !plain;
             CGFloat h = [wt sizeToFitWidth:w - U(48)];
             wt.position = CGPointMake(U(24), ih - h - U(20));
             [_image addSublayer:wt];

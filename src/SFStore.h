@@ -13,6 +13,7 @@ NSString *SFProgressTable(void);   // "progress" bzw. "dev_progress" (Dev-Instan
 - (void)flush;   // ausstehende Schreibvorgänge abschließen (Beenden)
 - (NSArray *)continueWatching:(NSInteger)limit source:(NSString *)source;  // SFItem
 - (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source;
+- (NSArray *)history:(NSInteger)limit;   // Verlauf: @{item, updated, watched, pos}, neueste zuerst
 - (void)removeFromContinue:(NSString *)identifier;
 - (NSString *)setting:(NSString *)key;
 - (void)setSetting:(NSString *)value forKey:(NSString *)key;

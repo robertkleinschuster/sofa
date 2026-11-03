@@ -14,6 +14,10 @@ extern NSString *const SFLoungeRemotesDidChangeNotification;
 - (void)fetchPairingCode:(void (^)(NSString *code, NSError *e))done;
 @property (nonatomic, readonly) NSArray *remoteNames;   // verbundene Handys
 @property (nonatomic, readonly) BOOL online;            // Bind-Session steht
+// Privatsphäre bei mehreren Nutzern (Einstellungen, gespeichert):
+@property (nonatomic) BOOL paused;              // Verbindung ruht: Kopplung bleibt, keine Befehle, nichts wird geteilt
+@property (nonatomic) BOOL sharesAllPlayback;   // NO (Standard): nur vom Handy gestartete Wiedergabe ans Handy melden
+- (void)forgetAllPhones;                        // Kopplung aufheben: neue screenId, Handys brauchen einen neuen Code
 
 // Vom Handy kommende Befehle (Main-Thread). cmd: setPlaylist, play, pause, seekTo,
 // next, previous, stopVideo, setVolume, remoteConnected …; args = Payload (Strings).

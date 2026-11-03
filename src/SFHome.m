@@ -50,6 +50,7 @@ static NSDictionary *appInfo(void) {
                 [[NSWorkspace sharedWorkspace] launchApplication:@"Kodi"];
             };
             [apps addObject:[self downloadsTile:nil]];
+            [apps addObject:[self historyTile]];
             [apps addObject:kodi];
 
             NSMutableArray *shelves = [NSMutableArray new];
@@ -184,6 +185,54 @@ NSString *SFDownloadsArt(NSString *source) {
     [NSGraphicsContext restoreGraphicsState];
     [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
     return path;
+}
+
+#pragma mark Verlauf (alles Abgespielte, zum Wiederfinden)
+
++ (SFPageLoader)historyLoader {
+    return ^(SFPageDone done) {
+        NSCalendar *cal = [NSCalendar currentCalendar];
+        NSDate *today = [cal startOfDayForDate:[NSDate date]];
+        NSDate *yesterday = [today dateByAddingTimeInterval:-86400], *week = [today dateByAddingTimeInterval:-6 * 86400];
+        NSArray *names = @[@"Heute", @"Gestern", @"Diese Woche", @"Früher"];
+        NSMutableArray *groups = [NSMutableArray arrayWithArray:@[[NSMutableArray new], [NSMutableArray new], [NSMutableArray new], [NSMutableArray new]]];
+        static NSDateFormatter *tf;
+        if (!tf) { tf = [NSDateFormatter new]; tf.dateFormat = @"HH:mm"; }
+        for (NSDictionary *h in [[SFStore shared] history:300]) {
+            SFItem *e = [h[@"item"] copy];
+            NSDate *when = [NSDate dateWithTimeIntervalSince1970:[h[@"updated"] doubleValue]];
+            NSInteger g = [when compare:today] != NSOrderedAscending ? 0 : [when compare:yesterday] != NSOrderedAscending ? 1 : [when compare:week] != NSOrderedAscending ? 2 : 3;
+            NSString *state = [h[@"watched"] boolValue] ? @"gesehen"
+                            : ([h[@"pos"] doubleValue] > 0 && e.duration > 0 ? [NSString stringWithFormat:@"noch %@", SFFormatDuration(MAX(0, e.duration - [h[@"pos"] doubleValue]))] : nil);
+            NSString *when2 = g < 2 ? [tf stringFromDate:when] : SFFormatDateShort(when);
+            NSMutableArray *sub = [NSMutableArray new];
+            if (e.channel.length) [sub addObject:e.channel];
+            [sub addObject:when2];
+            if (state) [sub addObject:state];
+            e.subtitle = [sub componentsJoinedByString:@" · "];
+            e.style = SFTileStyleLandscape;
+            [groups[g] addObject:e];
+        }
+        NSMutableArray *shelves = [NSMutableArray new];
+        for (NSUInteger g = 0; g < 4; g++) if ([groups[g] count])
+            [shelves addObject:g < 3 ? [SFShelf shelf:names[g] style:SFTileStyleLandscape items:groups[g]] : [SFShelf grid:names[g] style:SFTileStyleLandscape items:groups[g]]];
+        SFPage *p = [SFPage page:@"Verlauf" theme:@"home" shelves:shelves];
+        if (!shelves.count) p.emptyText = @"Noch nichts angesehen. Alles, was du abspielst, findest du hier wieder.";
+        done(p, nil);
+    };
+}
+
++ (SFItem *)historyTile {
+    SFItem *i = [SFItem new];
+    i.kind = SFItemFolder;
+    i.identifier = @"history:";
+    i.title = @"Verlauf";
+    i.subtitle = @"Zuletzt angesehen";
+    i.plot = @"Alles, was du zuletzt abgespielt hast – aus allen Apps, nach Tagen sortiert. So findest du Videos schnell wieder.";
+    i.themeName = @"home";
+    i.style = SFTileStyleApp; i.tint = SFHex(0x34495e);
+    i.pageLoader = [self historyLoader];
+    return i;
 }
 
 // Kachel, die die Downloads-Seite öffnet (Home: alle Quellen, in Apps: nur diese Quelle)

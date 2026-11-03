@@ -153,6 +153,27 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 - (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source {
     return [self query:@"1=1" limit:limit source:source];
 }
+// Verlauf: zuletzt abgespielte Inhalte mit Zeitpunkt (@{item, updated, watched, pos})
+- (NSArray *)history:(NSInteger)limit {
+    NSMutableArray *out = [NSMutableArray new];
+    dispatch_sync(_q, ^{
+        sqlite3_stmt *st;
+        NSString *sql = [NSString stringWithFormat:P(@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld"), (long)limit];
+        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) return;
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            const char *t = (const char *)sqlite3_column_text(st, 0);
+            if (!t) continue;
+            NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:t length:strlen(t)] options:0 error:nil];
+            if (![d isKindOfClass:[NSDictionary class]]) continue;
+            SFItem *i = [SFItem itemWithDictionary:d];
+            if (i.localPath && ![[NSFileManager defaultManager] fileExistsAtPath:i.localPath] && !i.resolverRef) continue;
+            [out addObject:@{@"item": i, @"updated": @(sqlite3_column_double(st, 1)), @"watched": @(sqlite3_column_int(st, 2)), @"pos": @(sqlite3_column_double(st, 3))}];
+        }
+        sqlite3_finalize(st);
+    });
+    return out;
+}
+
 - (void)removeFromContinue:(NSString *)identifier {
     @synchronized (_progressCache) {
         NSArray *a = _progressCache[identifier];

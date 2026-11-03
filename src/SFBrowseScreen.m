@@ -5,6 +5,7 @@
 #import "SFMenuScreen.h"
 #import "SFDownloads.h"
 #import "SFNet.h"
+#import "SFLounge.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -34,7 +35,7 @@
     CALayer *_backdropBox;
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
-    SFLabel *_wordmark, *_pageTitle, *_clock, *_hint;
+    SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
     CALayer *_content;           // vertikal verschobener Inhalt
     NSMutableArray *_rows;
     NSInteger _row;              // fokussierte Zeile
@@ -71,6 +72,7 @@
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:SFLoungeRemotesDidChangeNotification object:nil];
 }
 - (SFPage *)page { return _page; }
 
@@ -185,7 +187,13 @@
     _pageTitle.position = CGPointMake(x, U(52));
     [_header addSublayer:_pageTitle];
 
-    _clock = [SFLabel labelWithFont:[t medium:32] color:t.textDim];
+    // Kopfband: sanfter Verlauf in Hintergrundfarbe, damit Uhr/Hinweis über jedem Bild lesbar sind
+    CAGradientLayer *scrim = [CAGradientLayer layer];
+    NSColor *top = t.backgroundTop ?: t.background;
+    scrim.colors = @[(id)[top colorWithAlphaComponent:0.85].CGColor, (id)[top colorWithAlphaComponent:0].CGColor];
+    scrim.frame = CGRectMake(0, 0, size.width, U(190));
+    [_header insertSublayer:scrim atIndex:0];
+    _clock = [SFLabel labelWithFont:[t medium:32] color:t.light ? t.text : t.textDim];
     _clock.alignment = NSRightTextAlignment;
     _clock.shadow = !t.light;
     [_clock sizeToFitWidth:U(300)];
@@ -200,9 +208,24 @@
     _hint.position = CGPointMake(size.width - U(96) - U(300) - U(940), U(58));
     _hint.opacity = 0;
     [_header addSublayer:_hint];
+    // Handy-Status: bei mehreren Nutzern soll man sehen, ob (und welches) Handy mitsteuert
+    _phone = [SFLabel labelWithFont:[t medium:24] color:t.accent];
+    _phone.alignment = NSRightTextAlignment;
+    _phone.shadow = !t.light;
+    _phone.position = CGPointMake(size.width - U(96) - U(900), U(104));
+    [_header addSublayer:_phone];
+    [self updatePhoneStatus];
     [self updateHint];
     [self updateClock];
     [self.layer addSublayer:_header];
+}
+
+- (void)updatePhoneStatus {
+    SFLounge *l = [SFLounge shared];
+    NSArray *n = l.remoteNames;
+    NSString *s = l.paused ? @"Handy-Verbindung pausiert"
+                : n.count ? [NSString stringWithFormat:@"Handy verbunden: %@", [n componentsJoinedByString:@", "]] : @"";
+    SFNoAnimate(^{ self->_phone.text = s; [self->_phone sizeToFitWidth:U(900)]; });
 }
 
 - (void)updateHint {

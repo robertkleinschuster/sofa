@@ -10,5 +10,6 @@ NSString *SFDownloadsArt(NSString *source);   // Kachelbild mit Download-Symbol 
 + (SFPageLoader)showLoader:(NSString *)showName;               // lokale Sendung
 + (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source;
 + (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = alle Quellen
++ (SFItem *)historyTile;                                        // öffnet den Verlauf
 + (SFItem *)downloadsTile:(NSString *)source;                  // öffnet die Downloads-Seite
 @end

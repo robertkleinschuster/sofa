@@ -11,6 +11,7 @@
 #import "SFStore.h"
 #import "SFDevServer.h"
 #import "SFMigration.h"
+#import "SFPairScreen.h"
 #import "SFNet.h"
 #import "SFProviderCCC.h"
 #import "SFProviderARD.h"
@@ -340,6 +341,10 @@ static uint16_t gPort = 8765;
         [self screenshot:arg];
     } else if ([cmd isEqualToString:@"home"]) {
         [self.nav popToRoot];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: Seiten direkt öffnen (stabiler als Tastenfolgen)
+        [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
+        SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }

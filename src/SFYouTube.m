@@ -615,6 +615,12 @@ static NSSet *skipKeys(void) {
             for (SFItem *c in chs) [names addObject:c.title.lowercaseString];
             for (SFShow *sh in [[SFLibrary shared] showsForSource:@"youtube"]) {
                 if ([names containsObject:sh.name.lowercaseString]) continue;
+                // Kanal mit bekannter ID (Abo) -> echte Kanalseite (online + lokale Kopien), nicht nur Offline-Liste
+                NSString *sid = [[SFDownloads shared] subscriptionIDForChannel:sh.name source:@"youtube"];
+                if ([sid hasPrefix:@"ytchannel:UC"]) {
+                    SFItem *ci = [self channelItem:[sid substringFromIndex:10] title:sh.name avatar:sh.poster meta:@"Neue Videos werden automatisch geladen"];
+                    if (ci) { ci.style = SFTileStyleCircle; [chs addObject:ci]; continue; }
+                }
                 SFItem *i = [SFItem new];
                 i.kind = SFItemFolder; i.title = sh.name; i.identifier = [@"show:" stringByAppendingString:sh.name];
                 i.image = sh.poster; i.style = SFTileStyleCircle; i.source = @"youtube"; i.themeName = @"youtube";

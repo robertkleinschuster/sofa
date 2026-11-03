@@ -151,7 +151,7 @@ static NSDate *isoDate(NSString *s) {
 }
 
 + (SFPageLoader)showLoader:(NSString *)canonical title:(NSString *)title season:(NSInteger)season {
-    NSString *q = [NSString stringWithFormat:@"query S($canonical: String!, $first: Int, $seasonIndex: Int) { smartCollectionByCanonical(canonical: $canonical) { __typename title collectionType teaser { description imageWithoutLogo { layouts { dim1280X720 } } } ... on ISeriesSmartCollection { countSeasons countEpisodes seasons(first: 1, offset: $seasonIndex) { nodes { number title countEpisodes episodes(first: $first, sortBy: [{field: EDITORIAL_DATE, direction: DESC}]) { nodes { %@ } } } } } ... on MovieSmartCollection { video { %@ } } } }", VIDEO_F, VIDEO_F];
+    NSString *q = [NSString stringWithFormat:@"query S($canonical: String!, $first: Int, $seasonIndex: Int) { smartCollectionByCanonical(canonical: $canonical) { __typename title collectionType teaser { description imageWithoutLogo { layouts { dim1280X720 } } } ... on ISeriesSmartCollection { countSeasons countEpisodes allSeasons: seasons(first: 60) { nodes { number title } } seasons(first: 1, offset: $seasonIndex) { nodes { number title countEpisodes episodes(first: $first, sortBy: [{field: EDITORIAL_DATE, direction: DESC}]) { nodes { %@ } } } } } ... on MovieSmartCollection { video { %@ } } } }", VIDEO_F, VIDEO_F];
     return ^(SFPageDone done) {
         [self gql:q vars:@{@"canonical": canonical, @"first": @100, @"seasonIndex": @(season)} cache:900 done:^(id d, NSError *e) {
             NSDictionary *sc = dict(dict(d)[@"smartCollectionByCanonical"]);
@@ -175,18 +175,27 @@ static NSDate *isoDate(NSString *s) {
                 NSInteger seasons = [nn(sc[@"countSeasons"]) integerValue];
                 if (seasons > 1) {
                     NSMutableArray *other = [NSMutableArray new];
+                    NSArray *named = arr(dict(sc[@"allSeasons"])[@"nodes"]);
+                    NSString *showImg = [self img:dict(sc[@"teaser"]) big:NO], *showBig = [self img:dict(sc[@"teaser"]) big:YES];
                     for (NSInteger k = 0; k < seasons; k++) {
                         if (k == season) continue;
                         SFItem *f = [SFItem new];
                         f.kind = SFItemFolder; f.themeName = @"zdf"; f.source = @"zdf";
                         f.identifier = [NSString stringWithFormat:@"zdfseason:%@:%ld", canonical, (long)k];
-                        f.title = [NSString stringWithFormat:@"Staffel %ld", (long)(seasons - k)];
+                        // ZDF benennt Staffeln oft nach Jahr („2026“) – den echten Namen zeigen, Bild der Sendung
+                        NSDictionary *sn2 = k < (NSInteger)named.count ? dict(named[k]) : nil;
+                        NSString *nm = str(sn2[@"title"]);
+                        if (!nm.length && nn(sn2[@"number"])) nm = [NSString stringWithFormat:@"%@", sn2[@"number"]];
+                        BOOL isYear = nm.length == 4 && [nm rangeOfCharacterFromSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location == NSNotFound;
+                        f.title = nm.length ? (isYear || [nm.lowercaseString hasPrefix:@"staffel"] ? nm : [@"Staffel " stringByAppendingString:nm])
+                                            : [NSString stringWithFormat:@"Staffel %ld", (long)(seasons - k)];
+                        f.image = showImg; f.backdrop = showBig;
                         f.style = SFTileStyleWide;
                         f.pageLoader = [self showLoader:canonical title:t season:k];
                         [other addObject:f];
                     }
                     [shelves insertObject:[SFShelf shelf:@"Weitere Staffeln" style:SFTileStyleWide items:other] atIndex:0];
-                    // Wide-Kacheln ohne Bild: Titel trägt die Kachel
+                    // Staffel-Kacheln: Bild der Sendung, Titel = Staffelname
                 }
             }
             SFPage *p = [SFPage page:t theme:@"zdf" shelves:shelves];
@@ -203,6 +212,17 @@ static NSDate *isoDate(NSString *s) {
                             @"pagination": @{@"first": @60, @"after": [NSNull null]}, @"user": @{@"abGroup": @"gruppe-d", @"userSegment": @"segment_0"},
                             @"tabId": [NSNull null]};
     return ^(SFPageDone done) {
+        // metaCollectionContent braucht die interne ID (UUID); Markenseiten (z. B. „Bares für Rares“)
+        // kennen wir nur per canonical -> erst auflösen, sonst kommt eine leere Liste.
+        BOOL isID = [collectionId rangeOfString:@"^[0-9a-f]{8}-[0-9a-f]{4}-" options:NSRegularExpressionSearch].location != NSNotFound;
+        if (!isID) {
+            [self gql:@"query M($c: String!) { metaCollectionByCanonical(canonical: $c) { id } }" vars:@{@"c": collectionId} cache:86400 done:^(id d, NSError *e) {
+                NSString *mid = str(dict(dict(d)[@"metaCollectionByCanonical"])[@"id"]);
+                if (!mid) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
+                [self categoryLoader:mid title:title](done);
+            }];
+            return;
+        }
         [self gql:q vars:@{@"collectionId": collectionId, @"input": input} cache:1800 done:^(id d, NSError *e) {
             NSArray *scs = arr(dict(dict(d)[@"metaCollectionContent"])[@"smartCollections"]);
             if (!d) { done(nil, e); return; }
