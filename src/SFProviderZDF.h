@@ -5,4 +5,5 @@
 @interface SFProviderZDF : NSObject
 + (void)registerResolver;
 + (SFPageLoader)homeLoader;
++ (SFPageLoader)searchLoader:(NSString *)q;
 @end

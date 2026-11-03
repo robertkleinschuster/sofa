@@ -176,6 +176,39 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     };
 }
 
+// Suche: Sendungen (search/grouping) + Videos (search/vod)
++ (SFPageLoader)searchLoader:(NSString *)query {
+    return ^(SFPageDone done) {
+        NSString *q = [SFNet escape:query];
+        __block id shows = nil, vods = nil;
+        __block NSError *err = nil;
+        dispatch_group_t g = dispatch_group_create();
+        dispatch_group_enter(g);
+        [SFNet getJSON:[NSString stringWithFormat:@"%@/widgets/ard/search/grouping?searchString=%@&pageNumber=0&pageSize=24", kGW, q] headers:nil cacheAge:600 done:^(id j, NSError *e) {
+            shows = dict(j); if (!j) err = e; dispatch_group_leave(g);
+        }];
+        dispatch_group_enter(g);
+        [SFNet getJSON:[NSString stringWithFormat:@"%@/widgets/ard/search/vod?searchString=%@&pageNumber=0&pageSize=60", kGW, q] headers:nil cacheAge:600 done:^(id j, NSError *e) {
+            vods = dict(j); if (!j) err = e; dispatch_group_leave(g);
+        }];
+        dispatch_group_notify(g, dispatch_get_main_queue(), ^{
+            if (!shows && !vods) { done(nil, err ?: SFError(@"ARD-Suche nicht erreichbar.")); return; }
+            NSMutableArray *shelves = [NSMutableArray new];
+            NSMutableArray *a = [NSMutableArray new], *b = [NSMutableArray new];
+            for (NSDictionary *t in arr(dict(shows)[@"teasers"])) { SFItem *it = [self itemFromTeaser:t]; if (it) [a addObject:it]; }
+            for (NSDictionary *t in arr(dict(vods)[@"teasers"])) { SFItem *it = [self itemFromTeaser:t]; if (it) [b addObject:it]; }
+            for (SFItem *it in a) it.style = SFTileStyleLandscape;
+            if (a.count) [shelves addObject:[SFShelf shelf:@"Sendungen" style:SFTileStyleLandscape items:a]];
+            NSInteger total = [nn(dict(dict(vods)[@"pagination"])[@"totalElements"]) integerValue];
+            NSString *h = total > (NSInteger)b.count ? [NSString stringWithFormat:@"Videos · beste %lu von %ld", (unsigned long)b.count, (long)total] : @"Videos";
+            if (b.count) [shelves addObject:[SFShelf grid:h style:SFTileStyleLandscape items:b]];
+            SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", query] theme:@"ard" shelves:shelves];
+            if (!shelves.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];
+            done(p, nil);
+        });
+    };
+}
+
 + (void)registerResolver {
     SFRegisterResolver(@"ard", ^(NSString *itemId, SFURLDone done) {
         NSString *u = [NSString stringWithFormat:@"%@/pages/ard/item/%@?embedded=true&mcV6=true", kGW, itemId];

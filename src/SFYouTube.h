@@ -11,6 +11,8 @@
 + (SFPageLoader)channelLoader:(NSString *)channelID title:(NSString *)title;
 + (SFPageLoader)playlistLoader:(NSString *)playlistID title:(NSString *)title;
 + (SFPageLoader)searchLoader:(NSString *)query;
+// Autovervollständigung (suggestqueries-clients6.youtube.com, schlichtes GET); done auf Main, nie nil
++ (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;
 + (SFItem *)itemForVideoID:(NSString *)vid;                     // Platzhalter (lokale Kopie, falls vorhanden)
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done; // Titel/Kanal/Dauer per InnerTube "player"
 @end

@@ -231,6 +231,38 @@ static NSArray *listItems(id j) {
     };
 }
 
+#pragma mark Suche
+
+// /search/{q}: Sendungen (episodes), zwei Seiten à 30. Segmente/Archiv bleiben außen vor.
++ (SFPageLoader)searchLoader:(NSString *)query {
+    return ^(SFPageDone done) {
+        [self get:[NSString stringWithFormat:@"/search/%@?limit=30", [SFNet escape:query]] cache:600 done:^(id j, NSError *e) {
+            NSDictionary *eps = dict(dict(dict(j)[@"search"])[@"episodes"]);
+            if (!eps && !dict(j)) { done(nil, e ?: SFError(@"ORF-Suche nicht erreichbar.")); return; }
+            void (^finish)(NSArray *) = ^(NSArray *items) {
+                NSInteger total = [nn(eps[@"total"]) integerValue];
+                NSString *h = total > (NSInteger)items.count ? [NSString stringWithFormat:@"Sendungen · %lu von %ld", (unsigned long)items.count, (long)total]
+                                                             : [NSString stringWithFormat:@"%lu Sendungen", (unsigned long)items.count];
+                SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", query] theme:@"orf"
+                                 shelves:items.count ? @[[SFShelf grid:h style:SFTileStyleLandscape items:items]] : @[]];
+                if (!items.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];
+                done(p, nil);
+            };
+            NSMutableArray *items = [[self episodeItems:@{@"_items": arr(eps[@"items"]) ?: @[]}] mutableCopy];
+            NSString *next = str(eps[@"next"]);
+            if (!next) { finish(items); return; }
+            [self get:next cache:600 done:^(id j2, NSError *e2) {
+                NSMutableSet *seen = [NSMutableSet new];
+                for (SFItem *i in items) [seen addObject:i.identifier];
+                id more = dict(dict(j2)[@"episodes"]) ?: dict(dict(dict(j2)[@"search"])[@"episodes"]) ?: j2;
+                for (SFItem *i in [self episodeItems:@{@"_items": arr(dict(more)[@"items"]) ?: listItems(more)}])
+                    if (![seen containsObject:i.identifier]) [items addObject:i];
+                finish(items);
+            }];
+        }];
+    };
+}
+
 #pragma mark Stream
 
 + (NSString *)hlsFrom:(NSDictionary *)obj drm:(BOOL *)drm {

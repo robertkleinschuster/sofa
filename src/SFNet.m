@@ -103,4 +103,8 @@
         SFMain(^{ done(ok); });
     }] resume];
 }
++ (NSString *)escape:(NSString *)s {
+    NSCharacterSet *ok = [NSCharacterSet characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"];
+    return [s ?: @"" stringByAddingPercentEncodingWithAllowedCharacters:ok];
+}
 @end
