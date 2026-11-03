@@ -150,4 +150,5 @@
         ((void (^)(NSDictionary *, NSError *))p[0])(nil, SFError(@"YouTube antwortet nicht."));
     });
 }
+- (void)forget:(NSString *)videoID { if (videoID) [_cache removeObjectForKey:videoID]; }
 @end

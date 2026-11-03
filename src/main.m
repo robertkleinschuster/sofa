@@ -96,6 +96,7 @@ static uint16_t gPort = 8765;
     if (SFDevMode) {
         [self.window setFrame:frame display:YES];
         [self.window orderFront:nil];      // sichtbar für den Window-Server, aber außerhalb
+        SFLog(@"dev: window %ld", (long)self.window.windowNumber);   // für screencapture -l (inkl. OpenGL-Inhalt)
         [self startFifo];
         _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:gPort];
         __weak SFAppDelegate *ws = self;

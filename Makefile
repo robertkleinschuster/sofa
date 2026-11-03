@@ -11,6 +11,10 @@ CFLAGS  := -I/opt/local/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wal
            -Wno-unused-variable -Wno-unused-function -Isrc
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
            -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -lsqlite3 -L/opt/local/lib -lcurl
+# libmpv (Overlay-Port multimedia/mpv) optional + schwach gelinkt: fehlt sie, laeuft Sofa nur mit AVFoundation
+ifneq ($(wildcard /opt/local/lib/libmpv.dylib),)
+LDFLAGS += -framework OpenGL -weak-lmpv
+endif
 SRC     := $(wildcard src/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)

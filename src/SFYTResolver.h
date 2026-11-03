@@ -10,4 +10,5 @@
 - (void)restart;               // z.B. nach Cookie-Erneuerung
 // r: url, alt (Array), height, live, duration, title
 - (void)resolve:(NSString *)videoID live:(BOOL)live done:(void (^)(NSDictionary *r, NSError *e))done;
+- (void)forget:(NSString *)videoID;   // Ergebnis verwerfen (Streams abgelehnt) -> nächster Aufruf löst frisch auf
 @end

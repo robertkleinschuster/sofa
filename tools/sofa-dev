@@ -8,6 +8,7 @@
 #   sofa-dev stop                  Dev-Instanz beenden
 #   sofa-dev key k [k ...]         Tasten senden (up down left right select menu play
 #                                  selecthold menuhold next prev uphold downhold)
+#   sofa-dev wshot NAME            echte Fensteraufnahme (inkl. Video/OpenGL)
 #   sofa-dev shot NAME             Screenshot -> $SHOTS/NAME.png (Pfad wird ausgegeben)
 #   sofa-dev do "key down" "shot a" "sleep 1" ...   Abfolge
 #   sofa-dev check                 läuft? neue Crash-Reports? Fehler im Log?
@@ -64,6 +65,14 @@ cmd_start() {
 
 cmd_key() { for k in "$@"; do send "key $k" || return 1; sleep 0.35; done; }
 
+# Echte Fensteraufnahme über den Window-Server (inkl. OpenGL/mpv-Video, das "shot" nicht sieht)
+cmd_wshot() {
+  alive || { echo "sofa-dev: keine Dev-Instanz"; return 1; }
+  local wid; wid="$(grep -a "dev: window" "$LOG" | tail -1 | awk '{print $NF}')"
+  [ -n "$wid" ] || { echo "wshot: Fenster-ID unbekannt"; return 1; }
+  mkdir -p "$SHOTS"; screencapture -x -o -l "$wid" "$SHOTS/$1.png" && echo "$SHOTS/$1.png"
+}
+
 cmd_shot() {
   local f="$SHOTS/$1.png"
   rm -f "$f"
@@ -90,6 +99,7 @@ cmd_do() {
     case "$1" in
       key) shift; cmd_key "$@" ;;
       shot) cmd_shot "$2" ;;
+      wshot) cmd_wshot "$2" ;;
       sleep) sleep "$2" ;;
       *) send "$step" ;;
     esac || return 1
@@ -102,6 +112,7 @@ case "${1:-}" in
   stop) cmd_stop ;;
   key) shift; cmd_key "$@" ;;
   shot) cmd_shot "$2" ;;
+  wshot) cmd_wshot "$2" ;;
   do) shift; cmd_do "$@" ;;
   check) cmd_check ;;
   log) tail -n "${2:-40}" "$LOG" ;;

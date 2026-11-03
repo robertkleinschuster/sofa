@@ -1,16 +1,18 @@
 #import "SFPlayerScreen.h"
 #import "SFLayers.h"
 #import "SFStore.h"
-#import <AVFoundation/AVFoundation.h>
+#import "SFAVEngine.h"
+#import "SFMPVEngine.h"
+#import "SFYTResolver.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"
 #import "SFPower.h"
 
-static void *kStatusCtx = &kStatusCtx;
-static void *kKeepUpCtx = &kKeepUpCtx;
-static void *kRateCtx = &kRateCtx;
 NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
+
+@interface SFPlayerScreen () <SFEngineDelegate>
+@end
 
 @implementation SFPlayerScreen {
     SFItem *_item;
@@ -18,10 +20,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     id _powerObs;
     BOOL _explicitQueue;   // Handy-Playlist: nächster = nächster Queue-Eintrag
     NSUInteger _index;
-    AVPlayer *_player;
-    AVPlayerItem *_pitem;
-    AVPlayerLayer *_playerLayer;
-    id _timeObserver;
+    id<SFEngine> _engine;        // AVFoundation oder mpv (SFEngine.h)
+    CALayer *_videoHost;         // trägt die Video-Ebene der aktiven Engine
     IOPMAssertionID _assertion, _sysAssertion;
     BOOL _hasAssertion;
 
@@ -46,7 +46,9 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     BOOL _holdPaused;   // „pausiert starten“ gilt über Wiederholungsversuche/Ausweich-Streams hinweg, bis der User Play drückt   // Retry bei sporadischem HLS-Öffnungsfehler
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
-    id _endObs, _failObs;
+    NSURL *_mpvFailedURL;        // mpv scheiterte an dieser URL -> AVFoundation versuchen
+    BOOL _reresolved;            // YouTube: Streams abgelehnt -> einmal frisch auflösen
+    __weak SFItem *_lastStartedItem;
 }
 
 - (instancetype)initWithItem:(SFItem *)item queue:(NSArray *)queue index:(NSUInteger)index {
@@ -67,21 +69,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     SFTheme *t = self.theme;
     SFNoAnimate(^{
         L.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
-        if (!self->_playerLayer) {
-            // 10.9-Bug: Freigabe einer AVPlayerLayer (AVSubtitleLayer dealloc) kann
-            // crashen -> eine einzige, nie freigegebene Ebene für alle Player-Screens.
-            static AVPlayerLayer *shared;
-            if (!shared) {
-                shared = [AVPlayerLayer layer];
-                shared.videoGravity = AVLayerVideoGravityResizeAspect;
-                shared.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
-            }
-            [shared removeFromSuperlayer];
-            shared.player = nil;
-            self->_playerLayer = shared;
-            [L insertSublayer:shared atIndex:0];
+        if (!self->_videoHost) {
+            self->_videoHost = [CALayer layer];
+            self->_videoHost.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
+            [L insertSublayer:self->_videoHost atIndex:0];
         }
-        self->_playerLayer.frame = L.bounds;
+        self->_videoHost.frame = L.bounds;
+        self->_engine.videoLayer.frame = self->_videoHost.bounds;
 
         [self->_osd removeFromSuperlayer];
         self->_osd = [CALayer layer];
@@ -214,7 +208,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 #pragma mark Lifecycle
 
 - (void)didAppear {
-    if (!_player && !_closing) [self startItem];
+    if (!_engine && !_closing) [self startItem];
 }
 
 - (void)willDisappear {
@@ -225,6 +219,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
+    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _lastStartedItem = _item; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -248,120 +243,142 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     }];
 }
 
-- (void)playURL:(NSURL *)url {
+- (void)playURL:(NSURL *)url { [self playURL:url forceMPV:NO]; }
+
+// Engine-Wahl (User-Vorgabe): H.264 bis 1080p über AVFoundation (Hardware); mpv nur, wenn es
+// Besseres gibt (DASH-VP9/AV1 mit mehr Auflösung/fps), das Format AVFoundation fremd ist (WebM/MKV)
+// oder AVFoundation am Stream scheitert (forceMPV).
+- (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url {
+    if (!SFMPVAvailable() || [url isEqual:_mpvFailedURL]) return NO;
+    if (SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_FORCE_MPV"] length]) return YES;   // Dev-Test
+    NSString *ext = url.path.pathExtension.lowercaseString;
+    if ([@[@"webm", @"mkv", @"ogv"] containsObject:ext]) return YES;
+    if (!src[@"video"]) return NO;
+    double dh = [src[@"height"] doubleValue], df = [src[@"fps"] doubleValue];
+    double hh = [src[@"hlsHeight"] doubleValue], hf = [src[@"hlsFps"] doubleValue];
+    return dh > hh || (dh == hh && df > hf + 1);
+}
+
+- (void)playURL:(NSURL *)url forceMPV:(BOOL)forceMPV {
     [self teardownPlayer];
     _openURL = url; _openAt = [NSDate date]; _openTries++;
     if (self.startPaused) _holdPaused = YES;
-    url = [[SFStreamProxy shared] playableURLFor:url];   // TLS-Brücke für ORF & Co.
-    SFLog(@"player: play %@", url.isFileURL ? url.path : url.host);
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
-    _pitem = [AVPlayerItem playerItemWithAsset:asset];
-    [_pitem addObserver:self forKeyPath:@"status" options:0 context:kStatusCtx];
-    [_pitem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:0 context:kKeepUpCtx];
-    // Ende-Notifications können off-main kommen -> auf die Main-Queue
+    NSDictionary *src = SFMPVSourceFor(url);
+    BOOL useMPV = SFMPVAvailable() && (forceMPV || [self prefersMPV:src url:url]);
+    NSURL *open = url, *audio = nil;
+    if (useMPV && src[@"video"]) {
+        open = [NSURL URLWithString:src[@"video"]];
+        if (src[@"audio"]) audio = [NSURL URLWithString:src[@"audio"]];
+    }
+    _engine = useMPV ? (id<SFEngine>)[SFMPVEngine new] : (id<SFEngine>)[SFAVEngine new];
+    _engine.delegate = self;
+    _engine.muted = SFDevMode;   // Dev-Modus: niemanden stören
+    SFNoAnimate(^{
+        for (CALayer *l in [self->_videoHost.sublayers copy]) [l removeFromSuperlayer];
+        CALayer *v = self->_engine.videoLayer;
+        if (v) { [v removeFromSuperlayer]; v.frame = self->_videoHost.bounds; [self->_videoHost addSublayer:v]; }
+    });
+    SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
+          useMPV && src[@"video"] ? [NSString stringWithFormat:@" (%@p%@ %@)", src[@"height"], src[@"fps"], src[@"vcodec"]] : @"");
     __weak SFPlayerScreen *wself = self;
-    _endObs = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:_pitem
-        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself didEnd:n]; }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
-    _failObs = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:_pitem
-        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself failedToEnd:n]; }];
-    _player = [AVPlayer playerWithPlayerItem:_pitem];
-    _player.actionAtItemEnd = AVPlayerActionAtItemEndPause;
-    _player.muted = SFDevMode;   // Dev-Modus: niemanden stören
-    [_player addObserver:self forKeyPath:@"rate" options:0 context:kRateCtx];
-    SFNoAnimate(^{ self->_playerLayer.player = self->_player; });
 
     NSTimeInterval resume = self.startFromBeginning ? 0 : [[SFStore shared] positionFor:_item.identifier];
     BOOL exact = self.startPosition > 0;
     if (exact) resume = self.startPosition;
     self.startFromBeginning = NO;
     self.startPosition = 0;
-    _openResume = (_item.kind == SFItemLive) ? 0 : (exact ? resume : (resume > 15 ? resume - 3 : 0));
-    if (exact && _item.kind != SFItemLive) {
-        [_player seekToTime:CMTimeMakeWithSeconds(resume, 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
-    } else if (resume > 15 && _item.kind != SFItemLive) {
-        [_player seekToTime:CMTimeMakeWithSeconds(resume - 3, 600)];
-        [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(resume)]];
-    }
-    if (self.startPaused || _holdPaused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
-    else [_player play];
-    __weak SFPlayerScreen *ws = self;
-    _timeObserver = [_player addPeriodicTimeObserverForInterval:CMTimeMake(1, 2) queue:dispatch_get_main_queue() usingBlock:^(CMTime time) {
-        [ws tick];
-    }];
-    if (_player.rate > 0) [self setAssertion:YES];
+    BOOL live = _item.kind == SFItemLive;
+    _openResume = live ? 0 : (exact ? resume : (resume > 15 ? resume - 3 : 0));
+    BOOL paused = self.startPaused || _holdPaused;
+    [_engine openURL:open audioURL:audio start:_openResume exact:exact paused:paused];
+    if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(resume)]];
+    if (paused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
+    else [self setAssertion:YES];
 }
 
-- (void)observeValueForKeyPath:(NSString *)kp ofObject:(id)obj change:(NSDictionary *)ch context:(void *)ctx {
-    if (ctx == kStatusCtx) {
-        SFMain(^{
-            if (self->_pitem.status == AVPlayerItemStatusFailed) {
-                // googlevideo-HLS scheitert auf 10.9 sporadisch sofort (-12643/-12939), derselbe
-                // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
-                if (self->_openURL && !self->_openURL.isFileURL && self->_openTries < 3 && -[self->_openAt timeIntervalSinceNow] < 3) {
-                    SFLog(@"player: open failed (%ld), retry %ld", (long)[self->_pitem.error code], (long)self->_openTries);
-                    NSURL *u = self->_openURL; SFItem *it = self->_item;
-                    NSTimeInterval pos = self->_openResume;
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        if (self->_closing || it != self->_item) return;
-                        if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                        [self playURL:u];
-                    });
-                    return;
-                }
-                NSURL *alt = SFNextAlternateURL(self->_openURL);
-                if (alt) {
-                    SFLog(@"player: switching to alternate stream");
-                    SFItem *it = self->_item; NSTimeInterval pos = self->_openResume;
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        if (self->_closing || it != self->_item) return;
-                        self->_openTries = 0;
-                        if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                        [self playURL:alt];
-                    });
-                    return;
-                }
-                [self showSpinner:NO];
-                self->_failed = YES;
-                SFLog(@"player: failed %@", self->_pitem.error);
-                [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@", self->_pitem.error.localizedDescription ?: @""]];
-            } else if (self->_pitem.status == AVPlayerItemStatusReadyToPlay) {
-                if (self.startPaused || self->_holdPaused) { [self->_player pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
-                [self postState];
-                if (self->_item.duration <= 0) {
-                    double d = CMTimeGetSeconds(self->_pitem.duration);
-                    if (d > 0 && !isnan(d) && !isinf(d)) self->_item.duration = d;
-                }
-            }
-        });
-    } else if (ctx == kKeepUpCtx) {
-        SFMain(^{ [self showSpinner:!self->_pitem.playbackLikelyToKeepUp && self->_player.rate > 0 && !self->_failed]; [self postState]; });
-    } else if (ctx == kRateCtx) {
-        SFMain(^{ [self updatePauseState]; });
-    } else {
-        [super observeValueForKeyPath:kp ofObject:obj change:ch context:ctx];
+#pragma mark SFEngineDelegate
+
+- (void)engineStatusChanged {
+    if (_engine.status == SFEngineFailed) {
+        BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
+        // googlevideo-HLS scheitert auf 10.9 sporadisch sofort (-12643/-12939), derselbe
+        // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
+        if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
+            SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
+            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = _openResume;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (self->_closing || it != self->_item) return;
+                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+                [self playURL:u];
+            });
+            return;
+        }
+        if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv scheitert -> AVFoundation
+            SFLog(@"player: mpv scheitert -> AVFoundation");
+            _mpvFailedURL = _openURL;
+            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = _openResume;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (self->_closing || it != self->_item) return;
+                self->_openTries = 0;
+                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+                [self playURL:u forceMPV:NO];
+            });
+            return;
+        }
+        NSURL *alt = viaMPV ? nil : SFNextAlternateURL(_openURL);
+        // Formate, die AVFoundation nicht kann (HLS v7, fMP4, …): mpv übernimmt vor schlechteren Ausweich-Streams
+        BOOL tryMPV = !viaMPV && SFMPVAvailable() && _openURL && ![_openURL isEqual:_mpvFailedURL];
+        if (tryMPV || alt) {
+            NSURL *next = tryMPV ? _openURL : alt;
+            SFLog(@"player: %@", tryMPV ? @"AVFoundation scheitert -> mpv" : @"switching to alternate stream");
+            SFItem *it = _item; NSTimeInterval pos = _openResume;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (self->_closing || it != self->_item) return;
+                self->_openTries = 0;
+                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+                [self playURL:next forceMPV:tryMPV];
+            });
+            return;
+        }
+        // YouTube-URLs werden sporadisch komplett abgelehnt (403/-1102): einmal frisch auflösen
+        NSString *ref = _item.resolverRef ?: _item.identifier;
+        if (!_reresolved && [ref hasPrefix:@"yt:"]) {
+            _reresolved = YES;
+            SFLog(@"player: alle Streams abgelehnt -> frisch auflösen");
+            [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
+            _mpvFailedURL = nil;
+            NSTimeInterval pos = _openResume;
+            if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+            [self teardownPlayer];
+            [self startItem];
+            return;
+        }
+        [self showSpinner:NO];
+        _failed = YES;
+        SFLog(@"player: failed (%@) %@", _engine.engineName, _engine.error);
+        [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@", _engine.error.localizedDescription ?: @""]];
+        [self postState];
+    } else if (_engine.status == SFEngineReady) {
+        if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
+        [self postState];
+        if (_item.duration <= 0 && _engine.duration > 0) _item.duration = _engine.duration;
+        [self updatePauseState];
     }
 }
+- (void)engineRateChanged { [self updatePauseState]; }
+- (void)engineBufferingChanged {
+    [self showSpinner:!_engine.likelyToKeepUp && _engine.playing && !_failed];
+    [self postState];
+}
+- (void)engineDidEnd { [self didEnd:nil]; }
+- (void)engineInterrupted { [self failedToEnd:nil]; }
+- (void)engineTick { [self tick]; }
 
 - (void)teardownPlayer {
-    if (_timeObserver) { [_player removeTimeObserver:_timeObserver]; _timeObserver = nil; }
-    if (_pitem) {
-        [_pitem removeObserver:self forKeyPath:@"status" context:kStatusCtx];
-        [_pitem removeObserver:self forKeyPath:@"playbackLikelyToKeepUp" context:kKeepUpCtx];
-        if (_endObs) [[NSNotificationCenter defaultCenter] removeObserver:_endObs];
-        if (_failObs) [[NSNotificationCenter defaultCenter] removeObserver:_failObs];
-        _endObs = _failObs = nil;
-        _pitem = nil;
-    }
-    // Reihenfolge: Ebene vom Player lösen, DANN Player freigeben.
-    if (_player) [_player pause];
-    SFNoAnimate(^{ if (self->_playerLayer.player == self->_player) self->_playerLayer.player = nil; });
-    if (_player) {
-        [_player removeObserver:self forKeyPath:@"rate" context:kRateCtx];
-        [_player replaceCurrentItemWithPlayerItem:nil];
-        _player = nil;
-    }
+    [_engine shutdown];
+    _engine = nil;
 }
 
 - (void)teardown {
@@ -388,18 +405,17 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark Progress
 
-- (NSTimeInterval)current { return _player ? CMTimeGetSeconds(_player.currentTime) : 0; }
+- (NSTimeInterval)current { return _engine.currentTime; }
 - (SFItem *)item { return _item; }
 - (NSTimeInterval)currentTime { double c = [self current]; return isnan(c) ? 0 : c; }
-- (BOOL)isPaused { return _player && _player.rate == 0; }
+- (BOOL)isPaused { return _engine && !_engine.playing; }
 - (NSTimeInterval)duration {
-    double d = _pitem ? CMTimeGetSeconds(_pitem.duration) : 0;
-    if (d > 0 && !isnan(d) && !isinf(d)) return d;
-    return _item.duration;
+    double d = _engine.duration;
+    return d > 0 ? d : _item.duration;
 }
 
 - (void)saveProgress {
-    if (!_player || _item.kind == SFItemLive || _failed) return;
+    if (!_engine || _item.kind == SFItemLive || _failed) return;
     NSTimeInterval c = [self current], d = [self duration];
     if (_ended) c = d;
     if (c > 0 && d > 0) [[SFStore shared] savePosition:c duration:d forItem:_item];
@@ -409,7 +425,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimeInterval c = [self current];
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];
-    if (_spinner && _pitem.playbackLikelyToKeepUp) [self showSpinner:NO];
+    if (_spinner && _engine.status == SFEngineReady && _engine.likelyToKeepUp) [self showSpinner:NO];
 }
 
 - (void)updateBar {
@@ -419,14 +435,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimeInterval shown = _pendingSeek != 0 ? MAX(0, MIN(d, c + _pendingSeek)) : c;
     CGFloat w = _barBg.bounds.size.width;
     double frac = live ? 1 : shown / d;
-    double buf = 0;
-    if (!live) {
-        for (NSValue *v in _pitem.loadedTimeRanges) {
-            CMTimeRange r = v.CMTimeRangeValue;
-            double end = CMTimeGetSeconds(CMTimeRangeGetEnd(r));
-            if (CMTimeGetSeconds(r.start) <= c + 1) buf = MAX(buf, end / d);
-        }
-    }
+    double buf = live ? 0 : _engine.bufferedUntil / d;
     SFNoAnimate(^{
         self->_barFill.frame = CGRectMake(0, 0, w * frac, U(8));
         self->_barBuffer.frame = CGRectMake(0, 0, w * MIN(1, buf), U(8));
@@ -456,10 +465,10 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         _osdVisible = on;
         SFAnimate(on ? 0.2 : 0.5, ^{ self->_osd.opacity = on ? 1 : 0; });
     }
-    if (on && autoHide && _player.rate > 0)
+    if (on && autoHide && _engine.playing)
         _osdTimer = [NSTimer scheduledTimerWithTimeInterval:4 target:self selector:@selector(autoHide) userInfo:nil repeats:NO];
 }
-- (void)autoHide { if (_player.rate > 0 && _pendingSeek == 0) [self showOSD:NO autoHide:NO]; }
+- (void)autoHide { if (_engine.playing && _pendingSeek == 0) [self showOSD:NO autoHide:NO]; }
 
 - (void)postState {
     [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerStateNotification object:self];
@@ -469,8 +478,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (_closing || !_item) return SFPlaybackIdle;
     if (_ended) return SFPlaybackEnded;
     if (_failed) return SFPlaybackIdle;
-    if (!_player || _pitem.status != AVPlayerItemStatusReadyToPlay || _pendingSeek != 0) return SFPlaybackBuffering;
-    if (_player.rate > 0) return _pitem.playbackLikelyToKeepUp || _pitem.playbackBufferFull ? SFPlaybackPlaying : SFPlaybackBuffering;
+    if (!_engine || _engine.status != SFEngineReady || _pendingSeek != 0) return SFPlaybackBuffering;
+    if (_engine.playing) return _engine.likelyToKeepUp ? SFPlaybackPlaying : SFPlaybackBuffering;
     return SFPlaybackPaused;
 }
 
@@ -478,18 +487,16 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (NSUInteger)queueIndex { return _index; }
 - (BOOL)hasNext { return [self nextItem] != nil; }
 - (BOOL)hasPrevious { return _explicitQueue && _index > 0; }
-- (void)remotePlay { self.startPaused = NO; _holdPaused = NO; if (_player && _player.rate == 0) [self togglePause]; }
+- (void)remotePlay { self.startPaused = NO; _holdPaused = NO; if (_engine && !_engine.playing) [self togglePause]; }
 - (void)remotePause {
     // Pause während des Ladens/Retry: merken, damit der Player pausiert startet
-    if (!_player || _pitem.status != AVPlayerItemStatusReadyToPlay) { self.startPaused = YES; [_player pause]; [self postState]; return; }
-    if (_player.rate > 0) [self togglePause];
+    if (!_engine || _engine.status != SFEngineReady) { self.startPaused = YES; [_engine pause]; [self postState]; return; }
+    if (_engine.playing) [self togglePause];
 }
 - (void)remoteSeekTo:(NSTimeInterval)t {
-    if (!_player || _item.kind == SFItemLive) return;
+    if (!_engine || _item.kind == SFItemLive) return;
     _pendingSeek = 0;
-    [_player seekToTime:CMTimeMakeWithSeconds(MAX(0, t), 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL f) {
-        SFMain(^{ [self postState]; });
-    }];
+    [_engine seekTo:t exact:YES];
     _ended = NO;
     [self showOSD:YES autoHide:YES];
     [self postState];
@@ -516,10 +523,10 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)updatePauseState {
     [self postState];
-    BOOL paused = _player && _player.rate == 0 && !_ended && !_failed && _pitem.status == AVPlayerItemStatusReadyToPlay;
+    BOOL paused = _engine && !_engine.playing && !_ended && !_failed && _engine.status == SFEngineReady;
     SFAnimate(0.2, ^{ self->_pauseIcon.opacity = paused ? 1 : 0; });
     if (paused) { [self showOSD:YES autoHide:NO]; [self setAssertion:NO]; }
-    else if (_player.rate > 0) {
+    else if (_engine.playing) {
         [self setAssertion:YES];
         if (_osdVisible && !_osdTimer && _pendingSeek == 0)
             _osdTimer = [NSTimer scheduledTimerWithTimeInterval:4 target:self selector:@selector(autoHide) userInfo:nil repeats:NO];
@@ -528,11 +535,11 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)togglePause {
     self.startPaused = NO; _holdPaused = NO;
-    if (!_player) return;
-    if (_player.rate > 0) { [_player pause]; [self saveProgress]; }
+    if (!_engine) return;
+    if (_engine.playing) { [_engine pause]; [self saveProgress]; }
     else {
-        if (_ended) { [_player seekToTime:kCMTimeZero]; _ended = NO; }
-        [_player play];
+        if (_ended) { [_engine seekTo:0 exact:NO]; _ended = NO; }
+        [_engine play];
         [self showOSD:YES autoHide:YES];
     }
 }
@@ -540,7 +547,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 #pragma mark Seek
 
 - (void)seekBy:(NSTimeInterval)delta {
-    if (!_player || _item.kind == SFItemLive) return;
+    if (!_engine || _item.kind == SFItemLive) return;
     _pendingSeek += delta;
     [self showOSD:YES autoHide:NO];
     [self updateBar];
@@ -553,7 +560,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimeInterval target = MAX(0, MIN(d > 0 ? d - 2 : HUGE_VAL, [self current] + _pendingSeek));
     _pendingSeek = 0;
     if (_nextTimer) { [_nextTimer invalidate]; _nextTimer = nil; _nextCard.hidden = YES; }
-    [_player seekToTime:CMTimeMakeWithSeconds(target, 600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
+    [_engine seekTo:target exact:YES];
     _ended = NO;
     [self showOSD:YES autoHide:YES];
 }

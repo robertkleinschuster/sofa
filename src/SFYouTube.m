@@ -6,6 +6,7 @@
 #import "SFHome.h"
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
+#import "SFEngine.h"
 #import "SFScreen.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <sqlite3.h>
@@ -688,6 +689,12 @@ static NSSet *skipKeys(void) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
+            if (u && [r[@"dash"] isKindOfClass:[NSDictionary class]]) {   // VP9/AV1 für die mpv-Engine
+                NSMutableDictionary *d = [r[@"dash"] mutableCopy];
+                if (r[@"height"]) d[@"hlsHeight"] = r[@"height"];
+                if (r[@"fps"]) d[@"hlsFps"] = r[@"fps"];
+                SFSetMPVSource(u, d);
+            }
             done(u, e);
         }];
     });

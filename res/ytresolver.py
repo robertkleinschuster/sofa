@@ -77,10 +77,35 @@ def summarize(info):
         f = by_id.get(fid)
         if f and f.get("url") and f["url"] != url:
             alt.append(f["url"])
-    return {"url": url, "alt": alt, "height": info.get("height"),
-            "format": info.get("format_id"), "live": bool(info.get("is_live")),
-            "duration": info.get("duration"), "title": info.get("title"),
-            "expires": expires_of(url)}
+    r = {"url": url, "alt": alt, "height": info.get("height"), "fps": info.get("fps"),
+         "format": info.get("format_id"), "live": bool(info.get("is_live")),
+         "duration": info.get("duration"), "title": info.get("title"),
+         "expires": expires_of(url)}
+    d = dash_pick(info.get("formats") or [])
+    if d:
+        r["dash"] = d
+    return r
+
+def dash_pick(formats):
+    """Getrennte Video-/Audio-Streams fuer die mpv-Engine (VP9/AV1, max. 1080p60 – User-Vorgabe).
+    VP9 vor AV1 (gleiche Aufloesung): weniger CPU (gemessen 8,5x vs 6,3x Echtzeit bei 1080p60)."""
+    vids, auds = [], []
+    for f in formats:
+        if not f.get("url") or (f.get("protocol") or "").startswith("m3u8"):
+            continue
+        vc, ac = f.get("vcodec") or "none", f.get("acodec") or "none"
+        if vc != "none" and ac == "none" and (vc.startswith("vp9") or vc.startswith("vp09") or vc.startswith("av01")):
+            h, fps = f.get("height") or 0, f.get("fps") or 30
+            if h <= 1080 and fps <= 60:
+                vids.append((h, fps, 1 if vc.startswith("vp") else 0, f.get("tbr") or 0, f))
+        elif vc == "none" and ac != "none":
+            auds.append((1 if ac.startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0, f))
+    if not vids or not auds:
+        return None
+    v = max(vids, key=lambda t: t[:4])[4]
+    a = max(auds, key=lambda t: t[:2])[2]
+    return {"video": v["url"], "audio": a["url"], "height": v.get("height"), "fps": v.get("fps"),
+            "vcodec": (v.get("vcodec") or "").split(".")[0], "acodec": (a.get("acodec") or "").split(".")[0]}
 
 def resolve(vid, live):
     u = "https://www.youtube.com/watch?v=" + vid
