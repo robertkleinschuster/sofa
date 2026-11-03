@@ -9,6 +9,8 @@
 #import "SFSearch.h"
 #import "SFDownloads.h"
 #import "SFIconArt.h"
+#import "SFLounge.h"
+#import "SFPairScreen.h"
 
 @implementation SFHome
 
@@ -43,16 +45,9 @@ static NSDictionary *appInfo(void) {
         [[SFLibrary shared] whenReady:^{
             NSMutableArray *apps = [NSMutableArray new];
             for (NSString *src in @[@"youtube", @"zdf", @"ard", @"orf", @"ccc"]) [apps addObject:[self appTile:src]];
-            SFItem *kodi = [SFItem new];
-            kodi.kind = SFItemAction; kodi.identifier = @"app:kodi"; kodi.title = @"Kodi";
-            kodi.plot = @"Das bisherige Media-Center starten";
-            kodi.tint = SFHex(0x2a3442); kodi.style = SFTileStyleApp; kodi.themeName = @"home";
-            kodi.action = ^{
-                [[NSWorkspace sharedWorkspace] launchApplication:@"Kodi"];
-            };
             [apps addObject:[self downloadsTile:nil]];
             [apps addObject:[self historyTile]];
-            [apps addObject:kodi];
+            [apps addObject:[self phoneTile]];   // Kodi-Kachel entfernt (User 2026-11-03: Kodi wird nicht mehr gebraucht)
 
             NSMutableArray *shelves = [NSMutableArray new];
             [shelves addObject:[SFShelf shelf:nil style:SFTileStyleApp items:apps]];
@@ -206,6 +201,27 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x34495e);
     i.pageLoader = [self historyLoader];
+    return i;
+}
+
+#pragma mark Handy (YouTube „Mit TV verbinden“) – Einstellungen direkt vom Home erreichbar
+
++ (SFItem *)phoneTile {
+    SFLounge *l = [SFLounge shared];
+    NSArray *n = l.remoteNames;
+    SFItem *i = [SFItem new];
+    i.kind = SFItemAction;
+    i.identifier = @"phone:";
+    i.title = @"Handy";
+    i.subtitle = l.paused ? @"Pausiert" : n.count ? [@"Verbunden: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"Nicht verbunden";
+    i.plot = @"Videos vom Handy auf den Fernseher schicken. Hier verbindest du ein neues Handy, pausierst die Verbindung oder legst fest, was das Handy sehen darf.";
+    i.themeName = @"home";
+    i.style = SFTileStyleApp; i.tint = SFHex(0x2d3e50);
+    i.action = ^{
+        id d = [NSApp delegate];
+        SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
+        if (nav) [SFPairScreen showConnectionMenuOn:nav];
+    };
     return i;
 }
 

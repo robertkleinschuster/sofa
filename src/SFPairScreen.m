@@ -128,22 +128,30 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
     if (self.size.width > 0) [self layoutForSize:self.size];
 }
 
-// Optionen (Mehrbenutzer/Privatsphäre): pausieren ≠ trennen – zwei getrennte Funktionen
-- (void)showOptions {
+// Verbindungs-Einstellungen (Mehrbenutzer/Privatsphäre): pausieren ≠ trennen – zwei getrennte Funktionen.
+// Erreichbar über die Home-Kachel „Handy“ und über diese Seite (OK).
++ (void)showConnectionMenuOn:(SFNavigator *)nav {
     SFLounge *l = [SFLounge shared];
-    SFNavigator *nav = self.navigator;
-    SFTheme *t = self.theme;
+    SFTheme *t = [SFTheme themeNamed:@"home"];
     BOOL paused = l.paused, share = l.sharesAllPlayback;
+    NSArray *names = l.remoteNames;
+    NSMutableArray *opts = [NSMutableArray new];
     SFMenuOption *pause = [SFMenuOption option:paused ? @"Verbindung fortsetzen" : @"Verbindung pausieren" action:^{
         l.paused = !paused;
         [nav toast:paused ? @"Handys können Sofa wieder steuern" : @"Verbindung pausiert – Kopplung bleibt erhalten"];
     }];
     pause.detail = paused ? @"pausiert" : nil;
+    [opts addObject:pause];
     SFMenuOption *shareO = [SFMenuOption option:@"Am Handy anzeigen" action:^{
         l.sharesAllPlayback = !share;
         [nav toast:!share ? @"Alles, was am Sofa läuft, ist am Handy sichtbar" : @"Nur vom Handy gestartete Videos sind am Handy sichtbar"];
     }];
     shareO.detail = share ? @"Alles" : @"Nur vom Handy";
+    [opts addObject:shareO];
+    if (![nav.top isKindOfClass:[SFPairScreen class]])
+        [opts addObject:[SFMenuOption option:@"Neues Handy verbinden" action:^{
+            dispatch_async(dispatch_get_main_queue(), ^{ [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]]; });
+        }]];
     SFMenuOption *forget = [SFMenuOption option:@"Alle Handys trennen" action:^{
         dispatch_async(dispatch_get_main_queue(), ^{
             SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
@@ -155,8 +163,13 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
         });
     }];
     forget.detail = @"neuer Code nötig";
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Handy-Verbindung" subtitle:nil options:@[pause, shareO, forget] theme:t]];
+    [opts addObject:forget];
+    NSString *sub = paused ? @"Pausiert – Handys können Sofa gerade nicht steuern"
+                  : names.count ? [@"Verbunden: " stringByAppendingString:[names componentsJoinedByString:@", "]] : @"Gerade ist kein Handy verbunden";
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Handy" subtitle:sub options:opts theme:t]];
 }
+
+- (void)showOptions { [SFPairScreen showConnectionMenuOn:self.navigator]; }
 
 - (BOOL)handleKey:(SFKey)key {
     if (key == SFKeySelect || key == SFKeySelectHold) { [self showOptions]; return YES; }

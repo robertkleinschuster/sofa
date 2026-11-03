@@ -36,6 +36,7 @@
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
+    CALayer *_hintKey, *_phonePill, *_phoneDot;   // Statuszeile oben rechts
     CALayer *_content;           // vertikal verschobener Inhalt
     NSMutableArray *_rows;
     NSInteger _row;              // fokussierte Zeile
@@ -199,51 +200,103 @@
     [_clock sizeToFitWidth:U(300)];
     _clock.position = CGPointMake(size.width - U(96) - U(300), U(52));
     [_header addSublayer:_clock];
-    // Remote-Hinweis: Optionen gibt es nur per Halten – sonst unentdeckbar
+    // Statuszeile rechts oben (eine gemeinsame Mittellinie mit der Uhr, von rechts nach links):
+    //   [OK] halten: Optionen   ·   ● Handy: Name   ·   17:20
+    // „OK“ als Tastenkappe: liest sich sofort als Remote-Taste.
     _hint = [SFLabel labelWithFont:[t medium:26] color:t.text];
-    _hint.alignment = NSRightTextAlignment;
-    _hint.shadow = !t.light;   // lesbar auch über hellen Hintergrundbildern
-    _hint.text = @"OK halten: Optionen";
-    [_hint sizeToFitWidth:U(900)];
-    _hint.position = CGPointMake(size.width - U(96) - U(300) - U(940), U(58));
-    _hint.opacity = 0;
+    _hint.shadow = !t.light;
+    _hint.text = @"halten: Optionen";
+    _hintKey = [CALayer layer];
+    _hintKey.borderColor = t.text.CGColor; _hintKey.borderWidth = U(2); _hintKey.cornerRadius = U(8);
+    SFLabel *ok = [SFLabel labelWithFont:[t bold:20] color:t.text];
+    ok.text = @"OK"; ok.name = @"ok";
+    [_hintKey addSublayer:ok];
+    _hintKey.opacity = 0; _hint.opacity = 0;
+    [_header addSublayer:_hintKey];
     [_header addSublayer:_hint];
-    // Handy-Status: bei mehreren Nutzern soll man sehen, ob (und welches) Handy mitsteuert
-    _phone = [SFLabel labelWithFont:[t medium:24] color:t.accent];
-    _phone.alignment = NSRightTextAlignment;
-    _phone.shadow = !t.light;
-    _phone.position = CGPointMake(size.width - U(96) - U(900), U(104));
-    [_header addSublayer:_phone];
+    // Handy-Status als kompakte Pille: bei mehreren Nutzern sieht man sofort, ob ein Handy mitsteuert
+    _phonePill = [CALayer layer];
+    _phonePill.backgroundColor = [t.accent colorWithAlphaComponent:t.light ? 0.12 : 0.22].CGColor;
+    _phonePill.cornerRadius = U(20);
+    _phoneDot = [CALayer layer];
+    _phoneDot.cornerRadius = U(6);
+    _phone = [SFLabel labelWithFont:[t medium:24] color:t.text];
+    [_phonePill addSublayer:_phoneDot];
+    [_phonePill addSublayer:_phone];
+    [_header addSublayer:_phonePill];
     [self updatePhoneStatus];
     [self updateHint];
     [self updateClock];
     [self.layer addSublayer:_header];
 }
 
+static CGFloat textWidth(SFLabel *l) {
+    if (!l.text.length) return 0;
+    return ceil([[NSAttributedString alloc] initWithString:l.text attributes:@{NSFontAttributeName: l.font}].size.width) + 2;
+}
+
+// Ordnet Uhr, Handy-Pille und Tastenhinweis rechtsbündig auf eine Mittellinie
+- (void)layoutStatusRow {
+    if (!_clock) return;
+    SFNoAnimate(^{
+        CGFloat right = self.size.width - U(96);
+        CGFloat ch = self->_clock.bounds.size.height, mid = U(52) + ch / 2;
+        CGFloat cw = textWidth(self->_clock);
+        CGFloat x = right - cw;   // linke Kante der Uhr
+        if (!self->_phonePill.hidden) {
+            CGFloat lw = textWidth(self->_phone), ph = U(40);
+            [self->_phone sizeToFitWidth:lw];
+            CGFloat pw = U(18) + U(12) + U(10) + lw + U(18);
+            x -= U(28) + pw;
+            self->_phonePill.frame = CGRectMake(x, mid - ph / 2, pw, ph);
+            self->_phoneDot.frame = CGRectMake(U(18), ph / 2 - U(6), U(12), U(12));
+            self->_phone.position = CGPointMake(U(18) + U(12) + U(10), (ph - self->_phone.bounds.size.height) / 2);
+        }
+        CGFloat hw = textWidth(self->_hint);
+        [self->_hint sizeToFitWidth:hw];
+        x -= U(28) + hw;
+        self->_hint.position = CGPointMake(x, mid - self->_hint.bounds.size.height / 2);
+        SFLabel *ok = (SFLabel *)self->_hintKey.sublayers.firstObject;
+        CGFloat ow = textWidth(ok); [ok sizeToFitWidth:ow];
+        CGFloat kw = ow + U(16), kh = U(34);
+        self->_hintKey.frame = CGRectMake(x - U(10) - kw, mid - kh / 2, kw, kh);
+        ok.position = CGPointMake(U(8), (kh - ok.bounds.size.height) / 2);
+    });
+}
+
 - (void)updatePhoneStatus {
     SFLounge *l = [SFLounge shared];
     NSArray *n = l.remoteNames;
-    NSString *s = l.paused ? @"Handy-Verbindung pausiert"
-                : n.count ? [NSString stringWithFormat:@"Handy verbunden: %@", [n componentsJoinedByString:@", "]] : @"";
-    SFNoAnimate(^{ self->_phone.text = s; [self->_phone sizeToFitWidth:U(900)]; });
+    NSString *s = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : nil;
+    // Das Handy steuert nur YouTube: Status nur auf Home und in der YouTube-App zeigen
+    NSString *tid = self.theme.identifier;
+    if (![tid isEqualToString:@"home"] && ![tid isEqualToString:@"youtube"]) s = nil;
+    SFNoAnimate(^{
+        self->_phonePill.hidden = !s;
+        self->_phone.text = s ?: @"";
+        self->_phoneDot.backgroundColor = (l.paused ? [NSColor colorWithCalibratedRed:0.95 green:0.65 blue:0.15 alpha:1] : [NSColor colorWithCalibratedRed:0.25 green:0.8 blue:0.4 alpha:1]).CGColor;
+    });
+    [self layoutStatusRow];
 }
 
 - (void)updateHint {
     if (![SFNet isOnline]) {   // Offline hat Vorrang: erklärt, warum Online-Inhalte nicht laufen
         SFNoAnimate(^{ self->_hint.text = @"Keine Internetverbindung – Downloads sind verfügbar"; });
-        SFAnimate(0.2, ^{ self->_hint.opacity = 1; });
+        [self layoutStatusRow];
+        SFAnimate(0.2, ^{ self->_hint.opacity = 1; self->_hintKey.opacity = 0; });
         return;
     }
-    if (![_hint.text isEqualToString:@"OK halten: Optionen"]) SFNoAnimate(^{ self->_hint.text = @"OK halten: Optionen"; });
+    if (![_hint.text isEqualToString:@"halten: Optionen"]) { SFNoAnimate(^{ self->_hint.text = @"halten: Optionen"; }); [self layoutStatusRow]; }
     SFItem *it = [self focusedItem];
     BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it])));
-    SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.8 : 0; });
+    SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.85 : 0; self->_hintKey.opacity = show ? 0.85 : 0; });
 }
 
 - (void)updateClock {
     static NSDateFormatter *df;
     if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"HH:mm"; }
-    _clock.text = [df stringFromDate:[NSDate date]];
+    NSString *s = [df stringFromDate:[NSDate date]];
+    if (![_clock.text isEqualToString:s]) { _clock.text = s; [self layoutStatusRow]; }
 }
 
 #pragma mark Lifecycle

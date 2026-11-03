@@ -3,4 +3,5 @@
 #import "SFScreen.h"
 
 @interface SFPairScreen : SFScreen
++ (void)showConnectionMenuOn:(SFNavigator *)nav;   // Handy-Einstellungen (pausieren, teilen, verbinden, trennen)
 @end

@@ -645,6 +645,8 @@ static NSSet *skipKeys(void) {
                 [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
             };
             [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFHome downloadsTile:@"youtube"], pair]]];
+            // Kanäle alphabetisch (online + lokal gemischt), wie man sie im Kopf sucht
+            [chs sortUsingComparator:^NSComparisonResult(SFItem *x, SFItem *y) { return [x.title localizedCaseInsensitiveCompare:y.title]; }];
             if (chs.count) [shelves addObject:[SFShelf grid:@"Kanäle" style:SFTileStyleCircle items:chs]];
             SFPage *p = [SFPage page:nil theme:@"youtube" shelves:shelves];
             if (!auth || authErr) p.subtitle = authErr ? authErr.localizedDescription : @"Für deine Abos in Firefox bei YouTube anmelden.";
