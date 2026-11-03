@@ -114,6 +114,19 @@ static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictiona
             NSMutableSet *seen = [NSMutableSet new];
             for (SFItem *i in [[self eventItems:dict(p1)[@"events"]] arrayByAddingObjectsFromArray:[self eventItems:dict(p2)[@"events"]]])
                 if (![seen containsObject:i.identifier]) { [seen addObject:i.identifier]; i.themeName = @"ccc"; [items addObject:i]; }
+            // Die API sucht unscharf (gpn -> GPU, GPS, GPL): ganze Wort-Treffer nach vorne, sonst API-Reihenfolge
+            NSString *pat = [NSString stringWithFormat:@"(^|[^\\p{L}\\p{N}])%@($|[^\\p{L}\\p{N}])", [NSRegularExpression escapedPatternForString:query]];
+            NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pat options:NSRegularExpressionCaseInsensitive error:nil];
+            NSInteger (^score)(SFItem *) = ^NSInteger(SFItem *i) {
+                BOOL (^hit)(NSString *) = ^BOOL(NSString *s) { return s.length && [re firstMatchInString:s options:0 range:NSMakeRange(0, s.length)] != nil; };
+                if (hit(i.title)) return 3;
+                if (hit(i.channel) || hit(i.subtitle)) return 2;
+                if (hit(i.plot)) return 1;
+                return 0;
+            };
+            NSMutableArray *ranked = [NSMutableArray new];
+            for (NSInteger s = 3; s >= 0; s--) for (SFItem *i in items) if (score(i) == s) [ranked addObject:i];
+            items = ranked;
             SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", query] theme:@"ccc"
                              shelves:items.count ? @[[SFShelf grid:@"Vorträge" style:SFTileStyleLandscape items:items]] : @[]];
             if (!items.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];

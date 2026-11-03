@@ -187,7 +187,7 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
 - [x] Systemlautstärke per Remote (Player: +/-), keine App-interne Lautstärke.
 - [x] Dev-Viewer im Browser (Tailscale), getrennte view/test-Instanzen.
 
-- [ ] **Moderne Codecs nachrüsten** (User 2026-11-03): jede Quelle problemlos abspielen,
+- [ ] **Moderne Codecs nachrüsten** (User 2026-11-03) — RECHERCHE FERTIG: `docs/codecs-research.md` (Empfehlung libmpv als 2. Engine, Mess-Gate zuerst; 6 Entscheidungen beim User offen): jede Quelle problemlos abspielen,
   Format-Auswahl entschärfen. Heute: AVFoundation 10.9 = nur H.264/AAC in TS/MP4-HLS;
   kein VP9/AV1/HEVC/Opus, kein fMP4/DASH, HLS ≤ v6 (Proxy deckelt), sporadisch -12643.
   Optionen (VOR Umsetzung recherchieren + vorlegen, Doktrin: nativ via MacPorts):
