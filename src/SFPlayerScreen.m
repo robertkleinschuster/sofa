@@ -599,6 +599,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 // so nie in eine fremde Sendung.
 - (SFItem *)nextItem {
     if (_explicitQueue) return _index + 1 < _queue.count ? _queue[_index + 1] : nil;
+    // Aus einer Playlist gestartet: nächstes Video der Playlist (vor Empfehlungen)
+    if (_item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID]) return _queue[_index + 1];
     if (!_item.localPath || !_item.channel) return _upNext;   // gestreamtes YouTube: Empfehlung
     SFShow *show = [[SFLibrary shared] showNamed:_item.channel source:_item.source];
     NSUInteger i = NSNotFound;
@@ -652,7 +654,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     BOOL rec = next == _upNext;
     _nextCountdown = 8;
     void (^upd)(void) = ^{
-        self->_nextLabel.text = [NSString stringWithFormat:@"%@ in %ld s", rec ? @"Als Nächstes" : @"Nächste Folge", (long)self->_nextCountdown];
+        NSString *what = rec ? @"Als Nächstes" : (next.playlistID.length ? @"Nächstes in der Playlist" : @"Nächste Folge");
+        self->_nextLabel.text = [NSString stringWithFormat:@"%@ in %ld s", what, (long)self->_nextCountdown];
         CGFloat y = pad;
         y += [self->_nextLabel sizeToFitWidth:w] + U(6); self->_nextLabel.position = CGPointMake(x, pad);
         CGFloat h1 = [title sizeToFitWidth:w]; title.position = CGPointMake(x, y); y += h1 + U(6);

@@ -452,6 +452,7 @@ static NSSet *skipKeys(void) {
         [self collect:@"browse" body:@{@"browseId": [@"VL" stringByAppendingString:pid]} auth:gCookieHeader != nil cache:600 max:300
                  into:[NSMutableArray new] json:nil done:^(NSArray *items, NSError *e) {
             if (!items) { done(nil, e); return; }
+            for (SFItem *i in items) i.playlistID = pid;   // Wiedergabe folgt der Playlist-Reihenfolge
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Videos", (unsigned long)items.count] style:SFTileStyleLandscape items:items]]];
             if (!items.count) p.emptyText = @"Diese Playlist ist leer.";
             done(p, nil);
@@ -465,6 +466,7 @@ static NSSet *skipKeys(void) {
         // "UULF" = nur Langvideos (ohne Shorts); Fallback "UU" = alle Uploads
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
         __block NSString *banner = nil, *desc = nil, *meta = nil, *avatar = nil;
+        __block NSArray *playlists = nil;
         void (^build)(NSArray *, NSError *) = ^(NSArray *items, NSError *e) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
@@ -512,7 +514,10 @@ static NSSet *skipKeys(void) {
                 for (SFItem *x in local.episodes) { double pr = [[SFStore shared] progressFor:x.identifier]; if (pr > 0 && pr < 1) [started addObject:x]; }
                 if (started.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:started]];
             }
-            if (vids.count) [shelves addObject:[SFShelf grid:@"Neueste Videos" style:SFTileStyleLandscape items:vids]];
+            if (vids.count) [shelves addObject:[SFShelf shelf:@"Neueste Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(0, MIN(vids.count, (NSUInteger)12))]]];
+            if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
+            // Ältere Videos weiter unten als Raster (wie der Videos-Tab), ohne die Reihe oben zu wiederholen
+            if (vids.count > 12) [shelves addObject:[SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(12, vids.count - 12)]]];
             if (!shelves.count && !items) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:shelves];
             p.backdrop = banner;
@@ -535,6 +540,14 @@ static NSSet *skipKeys(void) {
                 for (NSDictionary *pt in arr(dict(row)[@"metadataParts"])) { NSString *t = str(path(pt, @"text.content")); if (t.length) [parts addObject:t]; }
             meta = parts.count ? [parts componentsJoinedByString:@" · "] : nil;
             desc = str(path(vm, @"description.descriptionPreviewViewModel.description.content"));
+            dispatch_group_leave(g);
+        }];
+        // Playlists-Tab des Kanals (wie bei YouTube): parallel
+        dispatch_group_enter(g);
+        [self call:@"browse" body:@{@"browseId": cid, @"params": @"EglwbGF5bGlzdHPyBgQKAkIA"} auth:NO cache:3600 done:^(id j, NSError *pe) {
+            NSMutableArray *pl = [NSMutableArray new];
+            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder) { i.style = SFTileStyleLandscape; [pl addObject:i]; }
+            playlists = pl;
             dispatch_group_leave(g);
         }];
         void (^build0)(NSArray *, NSError *) = build;

@@ -65,6 +65,7 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     i.plot = self.plot; i.style = self.style; i.resolver = self.resolver; i.pageLoader = self.pageLoader;
     i.action = self.action; i.tint = self.tint; i.themeName = self.themeName; i.badge = self.badge;
     i.playURL = self.playURL;
+    i.playlistID = self.playlistID; i.heroTitle = self.heroTitle; i.heroMeta = self.heroMeta;
     return i;
 }
 
