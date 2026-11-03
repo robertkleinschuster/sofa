@@ -97,6 +97,31 @@ static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictiona
     });
 }
 
+// /events/search?q= (Relevanz, 25 je Seite): zwei Seiten
++ (SFPageLoader)searchLoader:(NSString *)query {
+    return ^(SFPageDone done) {
+        NSString *base = [NSString stringWithFormat:@"%@/events/search?q=%@", kAPI, [SFNet escape:query]];
+        __block id p1 = nil, p2 = nil;
+        __block NSError *err = nil;
+        dispatch_group_t g = dispatch_group_create();
+        dispatch_group_enter(g);
+        [SFNet getJSON:base headers:nil cacheAge:1800 done:^(id j, NSError *e) { p1 = j; err = e; dispatch_group_leave(g); }];
+        dispatch_group_enter(g);
+        [SFNet getJSON:[base stringByAppendingString:@"&page=2"] headers:nil cacheAge:1800 done:^(id j, NSError *e) { p2 = j; dispatch_group_leave(g); }];
+        dispatch_group_notify(g, dispatch_get_main_queue(), ^{
+            if (!p1) { done(nil, err ?: SFError(@"media.ccc.de ist nicht erreichbar.")); return; }
+            NSMutableArray *items = [NSMutableArray new];
+            NSMutableSet *seen = [NSMutableSet new];
+            for (SFItem *i in [[self eventItems:dict(p1)[@"events"]] arrayByAddingObjectsFromArray:[self eventItems:dict(p2)[@"events"]]])
+                if (![seen containsObject:i.identifier]) { [seen addObject:i.identifier]; i.themeName = @"ccc"; [items addObject:i]; }
+            SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", query] theme:@"ccc"
+                             shelves:items.count ? @[[SFShelf grid:@"Vorträge" style:SFTileStyleLandscape items:items]] : @[]];
+            if (!items.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];
+            done(p, nil);
+        });
+    };
+}
+
 + (SFPageLoader)homeLoader {
     return ^(SFPageDone done) {
         dispatch_group_t g = dispatch_group_create();

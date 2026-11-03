@@ -6,6 +6,7 @@
 #import "SFProviderZDF.h"
 #import "SFProviderORF.h"
 #import "SFYouTube.h"
+#import "SFSearch.h"
 
 @implementation SFHome
 
@@ -157,6 +158,7 @@ static NSDictionary *appInfo(void) {
     else if ([source isEqualToString:@"zdf"]) online = [self withLocalShows:[SFProviderZDF homeLoader] source:source];
     else if ([source isEqualToString:@"orf"]) online = [self withLocalShows:[SFProviderORF homeLoader] source:source];
     if (online) {
+        online = SFWithSearchTile(online, source);   // Kachel „Suche“
         SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
         c.showsHero = YES;
         c.restoreKey = [@"app:" stringByAppendingString:source];

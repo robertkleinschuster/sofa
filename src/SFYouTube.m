@@ -494,18 +494,37 @@ static NSSet *skipKeys(void) {
 
 + (SFPageLoader)searchLoader:(NSString *)q {
     return ^(SFPageDone done) {
+        // Erste Seite liefert auch die Kanäle; Fortsetzungsseiten bis ~60 Treffer
         NSMutableArray *channels = [NSMutableArray new];
-        [self call:@"search" body:@{@"query": q ?: @""} auth:NO cache:600 done:^(id j, NSError *e) {
-            if (!j) { done(nil, e); return; }
-            NSArray *items = [self videosIn:j cont:NULL channels:channels];
+        [self collect:@"search" body:@{@"query": q ?: @""} auth:NO cache:600 max:60 into:[NSMutableArray new]
+                 json:^(id first) { [self videosIn:first cont:NULL channels:channels]; }
+                 done:^(NSArray *all, NSError *e) {
+            if (!all) { done(nil, e); return; }
+            // Reihenfolge von YouTube (Relevanz) behalten; Mixe (RD…) sind keine echten Playlists
+            NSMutableArray *results = [NSMutableArray new];
+            for (SFItem *i in all) if (![i.identifier hasPrefix:@"ytplaylist:RD"]) [results addObject:i];
             NSMutableArray *shelves = [NSMutableArray new];
             if (channels.count) [shelves addObject:[SFShelf shelf:@"Kanäle" style:SFTileStyleCircle items:channels]];
-            [shelves addObject:[SFShelf grid:@"Videos" style:SFTileStyleLandscape items:items]];
+            if (results.count) [shelves addObject:[SFShelf grid:@"Videos und Playlists" style:SFTileStyleLandscape items:results]];
             SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", q] theme:@"youtube" shelves:shelves];
-            if (!items.count && !channels.count) p.emptyText = @"Keine Treffer.";
+            if (!shelves.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", q];
             done(p, nil);
         }];
     };
+}
+
++ (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *))done {
+    NSString *u = [NSString stringWithFormat:@"https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&ds=yt&hl=de&gl=AT&oe=utf-8&xhr=t&q=%@",
+                   [SFNet escape:prefix]];
+    [SFNet getJSON:u headers:nil cacheAge:0 done:^(id j, NSError *e) {
+        // ["q", [["vorschlag", 0, [...]], ...], {...}]
+        NSMutableArray *out = [NSMutableArray new];
+        for (id s in arr(arr(j).count > 1 ? arr(j)[1] : nil)) {
+            NSString *t = str(arr(s).firstObject) ?: str(s);
+            if (t.length) [out addObject:t];
+        }
+        done(out);
+    }];
 }
 
 + (SFPageLoader)homeLoader {

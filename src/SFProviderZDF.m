@@ -126,9 +126,9 @@ static NSDate *isoDate(NSString *s) {
 #pragma mark Seiten
 
 + (SFPageLoader)curatedLoader:(NSString *)canonical title:(NSString *)title {
+    // items(first:) erlaubt seit 11/2026 nur 1…26 (sonst leere Cluster + Fehler)
     NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title } ... on CuratedCollection { canonical title } } } } } } } }", VIDEO_F, COLL_F];
     return ^(SFPageDone done) {
-        // items(first:) erlaubt seit 11/2026 nur 1…26 (sonst leere Cluster + Fehler)
         [self gql:q vars:@{@"canonical": canonical, @"first": @26} cache:900 done:^(id d, NSError *e) {
             NSDictionary *cc = dict(dict(d)[@"curatedCollectionByCanonical"]);
             if (!cc) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
@@ -232,6 +232,48 @@ static NSDate *isoDate(NSString *s) {
                 if ([s.title isEqualToString:@"Kategorien"] && k > 2) { [sh removeObjectAtIndex:k]; [sh insertObject:s atIndex:MIN((NSUInteger)2, sh.count)]; break; }
             }
             p.shelves = sh; p.title = nil;
+            done(p, nil);
+        });
+    };
+}
+
+#pragma mark Suche
+
+// searchDocuments: TOP_RESULTS = passende Sendungen, ALL_RESULTS_EXCLUDING_TOP_RESULTS = Videos (Seiten à 48)
++ (SFPageLoader)searchLoader:(NSString *)query {
+    NSString *q = [NSString stringWithFormat:@"query Q($query: String!, $first: Int, $mode: SearchMode) { searchDocuments(query: $query, first: $first, mode: $mode) { results { item { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } }", VIDEO_F, COLL_F];
+    return ^(SFPageDone done) {
+        __block NSArray *top = nil, *all = nil;
+        __block NSError *err = nil;
+        dispatch_group_t g = dispatch_group_create();
+        NSArray *modes = @[@"TOP_RESULTS", @"ALL_RESULTS_EXCLUDING_TOP_RESULTS"];
+        for (NSString *mode in modes) {
+            dispatch_group_enter(g);
+            [self gql:q vars:@{@"query": query ?: @"", @"first": [mode hasPrefix:@"TOP"] ? @12 : @48, @"mode": mode} cache:600 done:^(id d, NSError *e) {
+                NSMutableArray *items = [NSMutableArray new];
+                for (NSDictionary *r in arr(dict(dict(d)[@"searchDocuments"])[@"results"])) {
+                    SFItem *it = [self itemFromNode:dict(dict(r)[@"item"])];
+                    if (it) [items addObject:it];
+                }
+                if ([mode hasPrefix:@"TOP"]) top = d ? items : nil; else all = d ? items : nil;
+                if (!d) err = e;
+                dispatch_group_leave(g);
+            }];
+        }
+        dispatch_group_notify(g, dispatch_get_main_queue(), ^{
+            if (!top && !all) { done(nil, err ?: SFError(@"ZDF-Suche nicht erreichbar.")); return; }
+            NSMutableArray *shows = [NSMutableArray new], *videos = [NSMutableArray new];
+            NSMutableSet *seen = [NSMutableSet new];
+            for (SFItem *it in [(top ?: @[]) arrayByAddingObjectsFromArray:all ?: @[]]) {
+                if ([seen containsObject:it.identifier]) continue;
+                [seen addObject:it.identifier];
+                [(it.kind == SFItemFolder ? shows : videos) addObject:it];
+            }
+            NSMutableArray *shelves = [NSMutableArray new];
+            if (shows.count) [shelves addObject:[SFShelf shelf:@"Sendungen" style:SFTileStyleLandscape items:shows]];
+            if (videos.count) [shelves addObject:[SFShelf grid:@"Videos" style:SFTileStyleLandscape items:videos]];
+            SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", query] theme:@"zdf" shelves:shelves];
+            if (!shelves.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];
             done(p, nil);
         });
     };
