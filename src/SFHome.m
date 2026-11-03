@@ -47,7 +47,7 @@ static NSDictionary *appInfo(void) {
             for (NSString *src in @[@"youtube", @"zdf", @"ard", @"orf", @"ccc"]) [apps addObject:[self appTile:src]];
             [apps addObject:[self downloadsTile:nil]];
             [apps addObject:[self historyTile]];
-            [apps addObject:[self phoneTile]];   // Kodi-Kachel entfernt (User 2026-11-03: Kodi wird nicht mehr gebraucht)
+            // Kodi-Kachel entfernt (User 2026-11-03); Handy-Einstellungen gehören in die YouTube-App (Mehr → Handy)
 
             NSMutableArray *shelves = [NSMutableArray new];
             [shelves addObject:[SFShelf shelf:nil style:SFTileStyleApp items:apps]];
@@ -207,20 +207,27 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
 #pragma mark Handy (YouTube „Mit TV verbinden“) – Einstellungen direkt vom Home erreichbar
 
 + (SFItem *)phoneTile {
+    // Eine Kachel, die sich der Lage anpasst (YouTube → Mehr):
+    //  kein Handy verbunden  -> „Mit Handy verbinden“ öffnet direkt den Code (dort OK = Einstellungen)
+    //  verbunden / pausiert  -> „Handy: Name“ / „Handy pausiert“ öffnet die Einstellungen
     SFLounge *l = [SFLounge shared];
     NSArray *n = l.remoteNames;
+    BOOL active = l.paused || n.count;
     SFItem *i = [SFItem new];
     i.kind = SFItemAction;
     i.identifier = @"phone:";
-    i.title = @"Handy";
-    i.subtitle = l.paused ? @"Pausiert" : n.count ? [@"Verbunden: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"Nicht verbunden";
-    i.plot = @"Videos vom Handy auf den Fernseher schicken. Hier verbindest du ein neues Handy, pausierst die Verbindung oder legst fest, was das Handy sehen darf.";
-    i.themeName = @"home";
-    i.style = SFTileStyleApp; i.tint = SFHex(0x2d3e50);
+    i.title = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"Mit Handy verbinden";
+    i.subtitle = active ? @"Verbindung verwalten" : @"Videos vom Handy auf den Fernseher schicken";
+    i.plot = active ? @"Verbindung pausieren oder fortsetzen, festlegen was das Handy sieht, ein weiteres Handy verbinden oder alle trennen."
+                    : @"YouTube-App am Handy öffnen und mit dem TV-Code verbinden. Danach findet das Handy Sofa von selbst.";
+    i.themeName = @"youtube";
     i.action = ^{
         id d = [NSApp delegate];
         SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-        if (nav) [SFPairScreen showConnectionMenuOn:nav];
+        if (!nav) return;
+        SFLounge *ll = [SFLounge shared];
+        if (ll.paused || ll.remoteNames.count) [SFPairScreen showConnectionMenuOn:nav];
+        else [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
     };
     return i;
 }

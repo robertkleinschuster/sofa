@@ -634,16 +634,10 @@ static NSSet *skipKeys(void) {
                 };
                 [chs addObject:i];
             }
-            SFItem *pair = [SFItem new];
-            pair.kind = SFItemAction; pair.title = @"Mit Handy verbinden"; pair.identifier = @"yt:pair";
-            pair.subtitle = @"Videos vom Handy auf den Fernseher schicken";
+            // Handy (YouTube „Mit TV verbinden“): Status + Einstellungen; „Neues Handy verbinden“ steckt im Menü
+            SFItem *pair = [SFHome phoneTile];
             pair.style = SFTileStyleWide; pair.source = @"youtube"; pair.themeName = @"youtube";
             pair.image = SFIconArt(@"phone", @"youtube");
-            pair.action = ^{
-                id d = [NSApp delegate];
-                SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-                [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
-            };
             [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFHome downloadsTile:@"youtube"], pair]]];
             // Kanäle alphabetisch (online + lokal gemischt), wie man sie im Kopf sucht
             [chs sortUsingComparator:^NSComparisonResult(SFItem *x, SFItem *y) { return [x.title localizedCaseInsensitiveCompare:y.title]; }];
