@@ -113,7 +113,12 @@ def resolve(vid, live):
     last = None
     for ydl in chain:
         try:
+            t0 = time.time()
             info = ydl.extract_info(u, download=False)
+            dt = time.time() - t0
+            if dt > 6:   # langsame Auflösungen nachvollziehbar machen (Client, Formatanzahl, Laufzeit)
+                log("slow %s via %s: %.1fs, %d Formate, live=%s" % (vid, "vr" if ydl is vr else "web", dt,
+                    len(info.get("formats") or []), bool(info.get("is_live"))))
             r = summarize(info)
             if not live and ydl is vr and r.get("format") == "18":
                 r["lowq"] = True

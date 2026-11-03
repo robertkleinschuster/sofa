@@ -7,6 +7,7 @@
 #import "SFNet.h"
 #import "SFLounge.h"
 #import "SFFollows.h"
+#import "SFYTResolver.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -37,6 +38,7 @@
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
+    NSTimer *_prefetchTimer;      // YouTube vorladen bei ruhendem Fokus
     CALayer *_hintKey, *_phonePill, *_phoneDot;   // Statuszeile oben rechts
     CALayer *_content;           // vertikal verschobener Inhalt
     NSMutableArray *_rows;
@@ -265,6 +267,20 @@ static CGFloat textWidth(SFLabel *l) {
     });
 }
 
+// YouTube vorladen: ruht der Fokus 1,2 s auf einem Video, die Stream-Adresse schon auflösen
+// (Resolver-Cache) – OK startet dann fast sofort. Heruntergeladenes braucht das nicht.
+- (void)schedulePrefetch {
+    [_prefetchTimer invalidate];
+    _prefetchTimer = [NSTimer scheduledTimerWithTimeInterval:1.2 target:self selector:@selector(prefetchFocused) userInfo:nil repeats:NO];
+}
+- (void)prefetchFocused {
+    _prefetchTimer = nil;
+    SFItem *it = [self focusedItem];
+    NSString *ref = it.resolverRef ?: it.identifier;
+    if (it.kind != SFItemVideo || ![ref hasPrefix:@"yt:"] || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
+    [[SFYTResolver shared] resolve:[ref substringFromIndex:3] live:NO done:^(NSDictionary *r, NSError *e) {}];
+}
+
 - (void)updatePhoneStatus {
     SFLounge *l = [SFLounge shared];
     NSArray *n = l.remoteNames;
@@ -310,7 +326,7 @@ static CGFloat textWidth(SFLabel *l) {
         for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues) [tl refreshProgress];
     }
 }
-- (void)willDisappear { [_clockTimer invalidate]; _clockTimer = nil; }
+- (void)willDisappear { [_clockTimer invalidate]; _clockTimer = nil; [_prefetchTimer invalidate]; _prefetchTimer = nil; }
 - (void)didAppear {}
 
 - (void)reload {
@@ -560,6 +576,7 @@ static void auditImages(SFPage *page) {
     _row = row;
     r.focusCol = col;
     [self updateHint];
+    [self schedulePrefetch];
 
     // Vertikal: fokussierte Zeile an die Oberkante des Inhaltsbereichs
     CGFloat target = MAX(0, r.y - _contentTop);

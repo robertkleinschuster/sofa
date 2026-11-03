@@ -215,15 +215,23 @@ static NSDate *isoDate(NSString *s) {
     return ^(SFPageDone done) {
         // metaCollectionContent braucht die interne ID (UUID); Markenseiten (z. B. „Bares für Rares“)
         // kennen wir nur per canonical -> erst auflösen, sonst kommt eine leere Liste.
-        BOOL isID = [collectionId rangeOfString:@"^[0-9a-f]{8}-[0-9a-f]{4}-" options:NSRegularExpressionSearch].location != NSNotFound;
+        BOOL isID = [collectionId rangeOfString:@"^[0-9a-f]{8}-[0-9a-f]{4}-" options:NSRegularExpressionSearch | NSCaseInsensitiveSearch].location != NSNotFound;
         if (!isID) {
+            // Einmal auflösen, dann direkt Inhalte laden (ohne erneute Prüfung: sonst Endlosschleife,
+            // falls die ID anders aussieht – zwei Abstürze am 2026-11-03)
             [self gql:@"query M($c: String!) { metaCollectionByCanonical(canonical: $c) { id } }" vars:@{@"c": collectionId} cache:86400 done:^(id d, NSError *e) {
                 NSString *mid = str(dict(dict(d)[@"metaCollectionByCanonical"])[@"id"]);
-                if (!mid) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
-                [self categoryLoader:mid title:title](done);
+                if (!mid.length || [mid isEqualToString:collectionId]) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
+                [self categoryContent:mid title:title query:q input:input done:done];
             }];
             return;
         }
+        [self categoryContent:collectionId title:title query:q input:input done:done];
+    };
+}
+
++ (void)categoryContent:(NSString *)collectionId title:(NSString *)title query:(NSString *)q input:(NSDictionary *)input done:(SFPageDone)done {
+    {
         [self gql:q vars:@{@"collectionId": collectionId, @"input": input} cache:1800 done:^(id d, NSError *e) {
             NSArray *scs = arr(dict(dict(d)[@"metaCollectionContent"])[@"smartCollections"]);
             if (!d) { done(nil, e); return; }

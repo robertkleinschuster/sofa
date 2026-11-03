@@ -345,6 +345,10 @@ static uint16_t gPort = 8765;
         [self.nav popToRoot];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: Seiten direkt öffnen (stabiler als Tastenfolgen)
         [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF-Markenseite (Absturztest)
+        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
+        f.pageLoader = [SFProviderZDF categoryLoader:[arg substringFromIndex:8] title:@"Test"];
+        SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"quit"]) {

@@ -6,4 +6,5 @@
 + (void)registerResolver;
 + (SFPageLoader)homeLoader;
 + (SFPageLoader)searchLoader:(NSString *)q;
++ (SFPageLoader)categoryLoader:(NSString *)collectionId title:(NSString *)title;   // Rubrik/Markenseite (ID oder canonical)
 @end
