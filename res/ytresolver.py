@@ -59,9 +59,21 @@ def make_vr():
     }
     return yt_dlp.YoutubeDL(o)
 
-web = make_web()
-vr = make_vr()
-lock = threading.Lock()   # YoutubeDL ist nicht threadsicher -> seriell
+# Zwei Pools mit eigenen YoutubeDL-Instanzen (YoutubeDL ist nicht threadsicher -> je Pool seriell):
+#   fg = Wiedergabe (Klick), bg = Vorwärmen, Vorladen bei Fokus, Downloads.
+# So wartet ein Klick nie hinter einem Vorladen (vorher bis 10 s statt 3,5 s).
+pools = {"bg": (make_web(), make_vr(), threading.Lock()),
+         "fg": (make_web(), make_vr(), threading.Lock())}
+# Laufende Auflösungen je (vid, live): eine zweite Anfrage für dasselbe Video wartet auf das
+# Ergebnis statt neu aufzulösen. Eine Wiedergabe-Anfrage überholt ein noch WARTENDES Vorladen.
+jobs = {}
+jobs_lock = threading.Lock()
+
+class Job:
+    def __init__(self, key, pool):
+        self.key, self.pool = key, pool
+        self.started, self.ev = False, threading.Event()
+        self.result, self.error = None, None
 
 def expires_of(url):
     m = re.search(r"/expire/(\d+)/", url) or re.search(r"[?&]expire=(\d+)", url)
@@ -107,7 +119,8 @@ def dash_pick(formats):
     return {"video": v["url"], "audio": a["url"], "height": v.get("height"), "fps": v.get("fps"),
             "vcodec": (v.get("vcodec") or "").split(".")[0], "acodec": (a.get("acodec") or "").split(".")[0]}
 
-def resolve(vid, live):
+def resolve(vid, live, pool):
+    web, vr, _ = pools[pool]
     u = "https://www.youtube.com/watch?v=" + vid
     chain = [vr, web] if live else [web, vr]
     last = None
@@ -128,33 +141,70 @@ def resolve(vid, live):
             log("%s via %s: %s" % (vid, "vr" if ydl is vr else "web", str(e)[:200]))
     raise last or RuntimeError("unbekannter Fehler")
 
+def run(job):
+    """Job im eigenen Pool ausführen. Wurde er, solange er wartete, von einer
+    Wiedergabe-Anfrage überholt, deren Ergebnis übernehmen statt doppelt aufzulösen."""
+    other = None
+    with pools[job.pool][2]:
+        with jobs_lock:
+            job.started = True
+            cur = jobs.get(job.key)
+            if cur is not None and cur is not job:
+                other = cur
+        if other is None:
+            try:
+                job.result = resolve(job.key[0], job.key[1], job.pool)
+            except Exception as e:
+                job.error = e
+    if other is not None:
+        other.ev.wait(120)
+        job.result, job.error = other.result, other.error
+    with jobs_lock:
+        if jobs.get(job.key) is job:
+            del jobs[job.key]
+    job.ev.set()
+
 def handle(req):
     rid = req.get("rid")
     vid = req.get("vid", "")
     if not re.match(r"^[A-Za-z0-9_-]{11}$", vid):
         emit({"rid": rid, "error": "ungültige Video-ID"}); return
     t0 = time.time()
-    with lock:
-        try:
-            r = resolve(vid, bool(req.get("live")))
-            r["rid"] = rid
-            r["secs"] = round(time.time() - t0, 2)
-            emit(r)
-        except Exception as e:
-            msg = str(e)
-            m = re.search(r"ERROR: \[youtube\] [^:]+: (.*)", msg)
-            emit({"rid": rid, "error": (m.group(1) if m else msg)[:300]})
+    key, pool = (vid, bool(req.get("live"))), ("fg" if req.get("prio", True) else "bg")
+    with jobs_lock:
+        job = jobs.get(key)
+        mine = job is None or (pool == "fg" and job.pool == "bg" and not job.started)
+        if mine:
+            job = jobs[key] = Job(key, pool)
+    if mine:
+        run(job)
+    else:
+        job.ev.wait(120)
+    if job.result is not None:
+        r = dict(job.result)
+        r["rid"], r["secs"], r["pool"] = rid, round(time.time() - t0, 2), pool + ("" if mine else "+shared")
+        emit(r)
+    else:
+        msg = str(job.error or "Zeitüberschreitung")
+        m = re.search(r"ERROR: \[youtube\] [^:]+: (.*)", msg)
+        emit({"rid": rid, "error": (m.group(1) if m else msg)[:300]})
 
 def warmup():
     # Erster Lauf nach einem YouTube-Player-Rollout dauert ~20 s (JS-Vorverarbeitung):
-    # im Hintergrund vorziehen, damit der erste echte Klick schnell ist.
-    with lock:
-        t0 = time.time()
+    # im Hintergrund vorziehen, damit der erste echte Klick schnell ist. Erst bg (füllt den
+    # Platten-Cache), dann fg – aber nur, solange keine Wiedergabe den fg-Pool braucht.
+    for name in ("bg", "fg"):
+        web, _, lk = pools[name]
+        if not lk.acquire(blocking=(name == "bg")):
+            continue
         try:
+            t0 = time.time()
             web.extract_info("https://www.youtube.com/watch?v=jNQXAC9IVRw", download=False)
-            log("warm in %.1fs" % (time.time() - t0))
+            log("warm %s in %.1fs" % (name, time.time() - t0))
         except Exception as e:
-            log("warmup failed: %s" % str(e)[:200])
+            log("warmup %s failed: %s" % (name, str(e)[:200]))
+        finally:
+            lk.release()
 
 def prune_cache():
     d = os.path.join(CACHE, "challenge-solver")

@@ -10,5 +10,7 @@
 - (void)restart;               // z.B. nach Cookie-Erneuerung
 // r: url, alt (Array), height, live, duration, title
 - (void)resolve:(NSString *)videoID live:(BOOL)live done:(void (^)(NSDictionary *r, NSError *e))done;
+// Hintergrund (Vorladen bei Fokus, Downloads): eigener Resolver-Pool, blockiert nie eine Wiedergabe
+- (void)prefetch:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
 - (void)forget:(NSString *)videoID;   // Ergebnis verwerfen (Streams abgelehnt) -> nächster Aufruf löst frisch auf
 @end

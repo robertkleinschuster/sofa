@@ -312,12 +312,17 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
         BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
+        if (SFDevMode) {   // Ursache nachvollziehbar machen (Domain/Code/zugrundeliegender Fehler)
+            NSError *e = _engine.error, *u = e.userInfo[NSUnderlyingErrorKey];
+            SFLog(@"player: error %@ %ld %@ | underlying %@ %ld | %@", e.domain, (long)e.code, e.localizedFailureReason ?: @"",
+                  u.domain, (long)u.code, e.userInfo[NSLocalizedRecoverySuggestionErrorKey] ?: @"");
+        }
         // googlevideo-HLS scheitert auf 10.9 sporadisch sofort (-12643/-12939), derselbe
         // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
             SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
             NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (self->_closing || it != self->_item) return;
                 if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
                 [self playURL:u];

@@ -5,7 +5,9 @@
     NSTask *_task;
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
-    NSMutableDictionary *_pending;    // rid -> @[done, vid]
+    NSMutableDictionary *_pending;    // rid -> @[key, vid]
+    NSMutableDictionary *_waiters;    // key (vid bzw. live:vid) -> Rückrufe; eine Auflösung je Video
+    NSMutableSet *_prioKeys;          // keys, für die schon eine Wiedergabe-Anfrage läuft
     NSMutableDictionary *_cache;      // vid -> result (bis expires - 1 h)
     NSInteger _rid;
     NSInteger _crashes;
@@ -24,6 +26,8 @@
 - (instancetype)init {
     if ((self = [super init])) {
         _pending = [NSMutableDictionary new];
+        _waiters = [NSMutableDictionary new];
+        _prioKeys = [NSMutableSet new];
         _cache = [NSMutableDictionary new];
     }
     return self;
@@ -82,9 +86,8 @@
     ((NSPipe *)t.standardOutput).fileHandleForReading.readabilityHandler = nil;
     ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
     _task = nil; _in = nil;
-    NSDictionary *p = [_pending copy];
     [_pending removeAllObjects];
-    for (NSNumber *rid in p) ((void (^)(NSDictionary *, NSError *))p[rid][0])(nil, SFError(@"YouTube-Auflösung abgebrochen."));
+    for (NSString *key in [_waiters allKeys]) [self finish:key result:nil error:SFError(@"YouTube-Auflösung abgebrochen.")];
     if (!_wantRunning) return;
     _crashes++;
     double delay = MIN(60, 2 * _crashes);
@@ -109,14 +112,15 @@
         NSArray *p = rid ? _pending[rid] : nil;
         if (!p) continue;
         [_pending removeObjectForKey:rid];
-        void (^done)(NSDictionary *, NSError *) = p[0];
+        NSString *key = p[0], *vid = p[1];
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
-            SFLog(@"yt: resolved %@ -> %@p %@ in %@s", p[1], j[@"height"], j[@"format"], j[@"secs"]);
-            _cache[p[1]] = j;
-            done(j, nil);
+            SFLog(@"yt: resolved %@ -> %@p %@ in %@s (%@)", vid, j[@"height"], j[@"format"], j[@"secs"], j[@"pool"]);
+            if (![key hasPrefix:@"live:"]) _cache[vid] = j;
+            [self finish:key result:j error:nil];
         } else {
-            SFLog(@"yt: resolve %@ failed: %@", p[1], j[@"error"]);
-            done(nil, SFError([self friendly:j[@"error"]]));
+            SFLog(@"yt: resolve %@ failed: %@", vid, j[@"error"]);
+            // läuft für dasselbe Video noch eine zweite Anfrage (Vorladen + Klick), auf die warten
+            if (![self hasPending:key]) [self finish:key result:nil error:SFError([self friendly:j[@"error"]])];
         }
     }
 }
@@ -131,23 +135,56 @@
     return e;
 }
 
+- (BOOL)hasPending:(NSString *)key {
+    for (NSArray *p in _pending.allValues) if ([p[0] isEqualToString:key]) return YES;
+    return NO;
+}
+
+- (void)finish:(NSString *)key result:(NSDictionary *)r error:(NSError *)e {
+    NSArray *w = _waiters[key];
+    [_waiters removeObjectForKey:key];
+    [_prioKeys removeObject:key];
+    for (void (^done)(NSDictionary *, NSError *) in w) done(r, e);
+}
+
 - (void)resolve:(NSString *)vid live:(BOOL)live done:(void (^)(NSDictionary *, NSError *))done {
+    [self resolve:vid live:live prio:YES done:done];
+}
+- (void)prefetch:(NSString *)vid done:(void (^)(NSDictionary *, NSError *))done {
+    [self resolve:vid live:NO prio:NO done:done ?: ^(NSDictionary *r, NSError *e) {}];
+}
+
+- (void)resolve:(NSString *)vid live:(BOOL)live prio:(BOOL)prio done:(void (^)(NSDictionary *, NSError *))done {
     NSDictionary *c = _cache[vid];
     if (c && [c[@"expires"] doubleValue] - 3600 > [[NSDate date] timeIntervalSince1970] && !live) { done(c, nil); return; }
     [self start];
     if (!_in) { done(nil, SFError(@"YouTube-Wiedergabe nicht eingerichtet (yt-dlp fehlt).")); return; }
+    NSString *key = live ? [@"live:" stringByAppendingString:vid] : vid;
+    NSMutableArray *w = _waiters[key];
+    if (w) {   // dasselbe Video wird schon aufgelöst (z.B. Vorladen bei Fokus) -> mitwarten
+        [w addObject:[done copy]];
+        if (!prio || [_prioKeys containsObject:key]) return;
+        // nur Vorladen unterwegs: zusätzlich als Wiedergabe anfragen – der Resolver überholt
+        // ein noch wartendes Vorladen oder hängt sich an ein laufendes an
+    } else {
+        _waiters[key] = [NSMutableArray arrayWithObject:[done copy]];
+    }
+    if (prio) [_prioKeys addObject:key];
     NSNumber *rid = @(++_rid);
-    _pending[rid] = @[[done copy], vid];
-    NSData *line = [NSJSONSerialization dataWithJSONObject:@{@"rid": rid, @"vid": vid, @"live": @(live)} options:0 error:nil];
+    _pending[rid] = @[key, vid];
+    NSData *line = [NSJSONSerialization dataWithJSONObject:@{@"rid": rid, @"vid": vid, @"live": @(live), @"prio": @(prio)} options:0 error:nil];
     NSMutableData *m = [line mutableCopy]; [m appendBytes:"\n" length:1];
     @try { [_in writeData:m]; }
-    @catch (NSException *ex) { [_pending removeObjectForKey:rid]; done(nil, SFError(@"YouTube-Auflösung nicht erreichbar.")); return; }
+    @catch (NSException *ex) {
+        [_pending removeObjectForKey:rid];
+        if (![self hasPending:key]) [self finish:key result:nil error:SFError(@"YouTube-Auflösung nicht erreichbar.")];
+        return;
+    }
     // Zeitlimit: erster Lauf nach Player-Rollout ~25 s, danach ~3 s
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSArray *p = self->_pending[rid];
-        if (!p) return;
+        if (!self->_pending[rid]) return;
         [self->_pending removeObjectForKey:rid];
-        ((void (^)(NSDictionary *, NSError *))p[0])(nil, SFError(@"YouTube antwortet nicht."));
+        if (![self hasPending:key]) [self finish:key result:nil error:SFError(@"YouTube antwortet nicht.")];
     });
 }
 - (void)forget:(NSString *)videoID { if (videoID) [_cache removeObjectForKey:videoID]; }

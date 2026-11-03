@@ -316,7 +316,7 @@ static CGFloat textWidth(SFLabel *l) {
     SFItem *it = [self focusedItem];
     NSString *ref = it.resolverRef ?: it.identifier;
     if (it.kind != SFItemVideo || ![ref hasPrefix:@"yt:"] || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
-    [[SFYTResolver shared] resolve:[ref substringFromIndex:3] live:NO done:^(NSDictionary *r, NSError *e) {}];
+    [[SFYTResolver shared] prefetch:[ref substringFromIndex:3] done:nil];
 }
 
 - (void)updatePhoneStatus {
@@ -402,10 +402,10 @@ static void auditImages(SFPage *page) {
     auditImages(page);
     // Fokus merken (per Shelf-Titel + Item-ID)
     NSString *fShelf = nil, *fItem = nil;
-    NSInteger fRow = -1, fCol = 0;
+    NSInteger fRow = -1, fIdx = 0;
     if (keep && _row < (NSInteger)_rows.count) {
         SFRow *r = _rows[_row];
-        fRow = _row; fCol = r.focusCol;
+        fRow = _row; fIdx = r.firstIndex + r.focusCol;   // Index im Shelf (Raster: über Zeilen hinweg)
         fShelf = r.title ?: [self shelfTitleForRow:r];
         SFItem *it = [self focusedItem];
         fItem = it.identifier ?: it.title;
@@ -433,10 +433,18 @@ static void auditImages(SFPage *page) {
     // Fokussiertes Element weg (z. B. aus „Später ansehen“ entfernt): in derselben Reihe an derselben
     // Stelle bleiben (= das nächste Element); ist die Reihe ganz weg, die Reihe, die nachgerückt ist.
     if (!found && fRow >= 0 && _rows.count) {
-        NSInteger target = -1;
-        for (NSUInteger i = 0; i < _rows.count && fShelf; i++) if ([[self shelfTitleForRow:_rows[i]] isEqualToString:fShelf]) { target = i; break; }
-        if (target < 0) target = MIN(fRow, (NSInteger)_rows.count - 1);
-        [self focusRow:target col:fCol animated:NO];   // focusRow begrenzt die Spalte selbst
+        NSInteger target = -1, col = 0;
+        for (NSUInteger i = 0; i < _rows.count && fShelf; i++) {   // Rasterzeile, die jetzt den alten Index enthält (sonst die letzte des Shelfs)
+            SFRow *r = _rows[i];
+            if (![[self shelfTitleForRow:r] isEqualToString:fShelf]) continue;
+            target = i; col = fIdx - (NSInteger)r.firstIndex;
+            if (fIdx < (NSInteger)(r.firstIndex + r.items.count)) break;
+        }
+        if (target < 0) {   // Shelf ganz weg: nachgerückte Reihe an ihrer eigenen Stelle
+            target = MIN(fRow, (NSInteger)_rows.count - 1);
+            col = [_rows[target] focusCol];
+        }
+        [self focusRow:target col:MAX(0, col) animated:NO];   // focusRow begrenzt die Spalte selbst
     }
     if (hdr && _searchPill) [self focusHeaderSearch];
 }

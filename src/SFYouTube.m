@@ -34,6 +34,16 @@ static id path(id root, NSString *p) {
     }
     return nn(cur);
 }
+// Hat ein Kanal den angefragten Tab nicht (z. B. keinen „Live“), liefert YouTube still die
+// „Übersicht“ – dann wäre deren Inhalt fälschlich z. B. als „Livestreams“ zu sehen.
+static BOOL selectedTabIs(id j, NSString *suffix) {
+    for (id t in arr(path(j, @"contents.twoColumnBrowseResultsRenderer.tabs"))) {
+        NSDictionary *tr = dict(dict(t)[@"tabRenderer"]);
+        if (![tr[@"selected"] boolValue]) continue;
+        return [str(path(tr, @"endpoint.commandMetadata.webCommandMetadata.url")) hasSuffix:suffix];
+    }
+    return NO;
+}
 // Textknoten: "…" | {simpleText} | {runs:[{text}]} | {content}
 static NSString *text(id n) {
     if (str(n)) return n;
@@ -572,6 +582,7 @@ static NSSet *skipKeys(void) {
         // Playlists-Tab des Kanals (wie bei YouTube): parallel
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EglwbGF5bGlzdHPyBgQKAkIA"} auth:NO cache:3600 done:^(id j, NSError *pe) {
+            if (!selectedTabIs(j, @"/playlists")) j = nil;
             NSMutableArray *pl = [NSMutableArray new];
             for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // Mixe (RD…) sind keine Kanal-Playlists
             playlists = pl;
@@ -603,7 +614,7 @@ static NSSet *skipKeys(void) {
         // Live-Tab (wie bei YouTube): laufende + vergangene Streams; kurz gecacht, Live-Status ändert sich
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EgdzdHJlYW1z8gYECgJ6AA=="} auth:NO cache:600 done:^(id j, NSError *le) {
-            streams = j ? [self videosIn:j cont:NULL channels:nil] : nil;
+            streams = selectedTabIs(j, @"/streams") ? [self videosIn:j cont:NULL channels:nil] : nil;
             dispatch_group_leave(g);
         }];
         void (^build0)(NSArray *, NSError *) = build;
@@ -825,7 +836,7 @@ static NSSet *skipKeys(void) {
     // Downloads in 720p (wie bisher ytdl-sub): spart Platz, am TV gut genug
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
-        [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
+        [[SFYTResolver shared] prefetch:vid done:^(NSDictionary *r, NSError *e) {
             NSString *u = r[@"url"];
             for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
             done(u ? [NSURL URLWithString:u] : nil, e);
