@@ -477,7 +477,7 @@ static NSSet *skipKeys(void) {
             NSMutableSet *liveIDs = [NSMutableSet setWithArray:[live valueForKey:@"identifier"]];
             for (SFItem *i in streams) {
                 if (i.kind == SFItemLive) { if (i.identifier && ![liveIDs containsObject:i.identifier]) { [liveIDs addObject:i.identifier]; [live addObject:i]; } }
-                else if (i.kind == SFItemVideo) [pastStreams addObject:i];
+                else if (i.kind != SFItemFolder) [pastStreams addObject:i];
             }
             // Kanalkopf wie bei YouTube: kompakte Knöpfe unter Banner/Name statt großer Kachel.
             // [Folgen] (rot, solange nicht gefolgt) · [Automatisch laden: An/Aus] (nur wenn gefolgt)
@@ -594,7 +594,7 @@ static NSSet *skipKeys(void) {
             if (!tok) { dispatch_group_leave(g); return; }
             [self call:@"browse" body:@{@"continuation": tok} auth:NO cache:86400 done:^(id pj, NSError *pe) {
                 NSMutableArray *pv = [NSMutableArray new];
-                for (SFItem *i in (pj ? [self videosIn:pj cont:NULL channels:nil] : @[])) if (i.kind == SFItemVideo) [pv addObject:i];
+                for (SFItem *i in (pj ? [self videosIn:pj cont:NULL channels:nil] : @[])) if (i.kind != SFItemFolder && i.kind != SFItemLive) [pv addObject:i];   // auch heruntergeladene (lokale Kopie)
                 popular = pv;
                 dispatch_group_leave(g);
             }];

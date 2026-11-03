@@ -27,6 +27,7 @@ NSDictionary *SFMPVSourceFor(NSURL *url) {
 
 NSString *SFMPVDevFrameShotPath = nil;
 
+#if SF_HAVE_MPV
 static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
     NSMutableData *px = [NSMutableData dataWithLength:(NSUInteger)w * h * 4];
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
@@ -52,6 +53,8 @@ static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
     CGColorSpaceRelease(cs);
     SFLog(@"mpv: dev frameshot %dx%d fbo=%d glerr=0x%x -> %@", w, h, fbo, err, path);
 }
+#endif
+
 
 BOOL SFMPVAvailable(void) {
 #if SF_HAVE_MPV
@@ -84,6 +87,7 @@ static void *glProc(void *ctx, const char *name) {
 @implementation SFMPVLayer {
     mpv_render_context *_rc;
     CGLContextObj _ctx;
+    int _fbRetries;   // CA-Framebuffer noch unfertig: begrenzt erneut zeichnen (Standbild bei Pause)
 }
 
 static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „frameshot“)
@@ -117,10 +121,17 @@ static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „f
 // unabhängig davon, ob CoreAnimation das (Offscreen-)Fenster zeichnet.
 - (void)devFrameShot {
     NSString *path = SFMPVDevFrameShotPath;
+    if (!path || !_rc || !_ctx) return;   // nicht diese Ebene (z. B. Ersatz-Engine) – Anforderung bleibt für die spielende
     SFMPVDevFrameShotPath = nil;
-    if (!path || !_rc || !_ctx) { SFLog(@"mpv: dev frameshot nicht möglich (rc=%d ctx=%d)", _rc != NULL, _ctx != NULL); return; }
     CGLLockContext(_ctx);
+    CGLContextObj prev = CGLGetCurrentContext();
     CGLSetCurrentContext(_ctx);
+    // GL-Zustand sichern: der Produktiv-Pfad liest FBO-Bindung und Viewport aus dem Kontext
+    GLint oDraw = 0, oRead = 0, oTex = 0, oVP[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oDraw);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oRead);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &oTex);
+    glGetIntegerv(GL_VIEWPORT, oVP);
     GLint w = 1280, h = 720;
     GLuint tex = 0, fb = 0;
     glGenTextures(1, &tex);
@@ -130,13 +141,18 @@ static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „f
     glBindFramebuffer(GL_FRAMEBUFFER, fb);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     mpv_opengl_fbo f = { .fbo = (int)fb, .w = w, .h = h, .internal_format = GL_RGBA8 };
-    int flip = 1;
-    mpv_render_param p[] = { { MPV_RENDER_PARAM_OPENGL_FBO, &f }, { MPV_RENDER_PARAM_FLIP_Y, &flip }, { MPV_RENDER_PARAM_INVALID, NULL } };
+    int flip = 1, noBlock = 0;
+    mpv_render_param p[] = { { MPV_RENDER_PARAM_OPENGL_FBO, &f }, { MPV_RENDER_PARAM_FLIP_Y, &flip },
+                             { MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &noBlock }, { MPV_RENDER_PARAM_INVALID, NULL } };
     mpv_render_context_render(_rc, p);
     devWritePNG(path, (GLint)fb, w, h);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &fb);
     glDeleteTextures(1, &tex);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oDraw);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, oRead);
+    glBindTexture(GL_TEXTURE_2D, oTex);
+    glViewport(oVP[0], oVP[1], oVP[2], oVP[3]);
+    CGLSetCurrentContext(prev);
     CGLUnlockContext(_ctx);
 }
 
@@ -172,7 +188,9 @@ static void onUpdate(void *ctx) {
     // Ohne Größe oder mit unfertigem CA-Framebuffer (erster Aufruf vor dem Erscheinen) nicht rendern –
     // sonst meldet mpv INVALID_FRAMEBUFFER_OPERATION; der nächste Frame kommt ohnehin.
     BOOL fbOK = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    BOOL rendered = NO;
     if (_rc && fbOK && vp[2] > 0 && vp[3] > 0) {
+        rendered = YES; _fbRetries = 0;
         // Fehler-Flags von CoreAnimation (z. B. aus dem Aufbau der Ebene) sind „klebrig“ und würden
         // mpv als eigener Fehler gemeldet – vorher abholen.
         GLenum stale; int n = 0;
@@ -188,9 +206,15 @@ static void onUpdate(void *ctx) {
     } else {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
+        // Pausiert kommt kein weiterer Frame-Callback: Standbild nicht schwarz lassen, kurz erneut versuchen
+        if (_rc && _fbRetries < 30) {
+            _fbRetries++;
+            __weak SFMPVLayer *ws = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [ws setNeedsDisplay]; });
+        }
     }
     [super drawInCGLContext:ctx pixelFormat:pf forLayerTime:t displayTime:ts];
-    if (_rc) mpv_render_context_report_swap(_rc);
+    if (rendered) mpv_render_context_report_swap(_rc);
 }
 
 // Muss vor mpv_terminate_destroy laufen, mit aktivem GL-Kontext der Ebene
@@ -395,6 +419,10 @@ static void onWakeup(void *ctx) {
 #endif
 
 void SFMPVDevFrameShot(NSString *path) {
+#if SF_HAVE_MPV
     SFMPVDevFrameShotPath = path;
     dispatch_async(dispatch_get_main_queue(), ^{ [gDevLayer devFrameShot]; });
+#else
+    SFLog(@"mpv: ohne libmpv gebaut – kein frameshot");
+#endif
 }
