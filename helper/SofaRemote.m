@@ -100,9 +100,9 @@ static NSString *const kApp = @"/Applications/Sofa.app";
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) return;
     _updating = YES;
     [self log:@"Update gefunden"];
-    // Nur neu starten, wenn Sofa vorne war (sonst würde es z.B. Kodi überdecken;
-    // MENU startet es später ohnehin).
-    BOOL wasRunning = [self realSofaProcesses].count > 0 && [self sofaFrontmost];
+    // Sofa ist die TV-Oberfläche (Kodi abgelöst): lief es, wird es nach dem Update immer
+    // wieder gestartet. (Früher nur, wenn es vorne war – dann blieb es nach Updates aus.)
+    BOOL wasRunning = [self realSofaProcesses].count > 0;
     if (wasRunning) {
         CFMessagePortRef port = CFMessagePortCreateRemote(NULL, CFSTR(SF_REMOTE_APP_PORT));
         if (port) { CFMessagePortSendRequest(port, SF_MSG_PREPARE_UPDATE, NULL, 1.0, 0, NULL, NULL); CFRelease(port); }

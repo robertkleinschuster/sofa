@@ -39,6 +39,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimer *_osdTimer;
     BOOL _osdVisible;
     NSTimeInterval _pendingSeek;    // kumulierter Sprung (s), 0 = keiner
+    NSTimeInterval _seekBase;       // letztes Sprungziel, bis der Player dort angekommen ist (-1 = keins)
+    NSDate *_seekBaseAt;
     NSTimer *_seekTimer;
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
@@ -56,6 +58,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         _item = item;
         _queue = queue;
         _index = index;
+        _seekBase = -1;
     }
     return self;
 }
@@ -409,6 +412,15 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 #pragma mark Progress
 
 - (NSTimeInterval)current { return _engine.currentTime; }
+
+// Ausgangspunkt für Sprünge: während ein Sprung noch läuft, meldet der Player kurz die alte
+// Position – dann vom letzten Ziel aus rechnen (sonst springt schnelles Vor/Zurück hin und her)
+- (NSTimeInterval)seekOrigin {
+    NSTimeInterval c = [self current];
+    if (_seekBase >= 0 && _seekBaseAt && -[_seekBaseAt timeIntervalSinceNow] < 4 && fabs(c - _seekBase) > 1.5) return _seekBase;
+    _seekBase = -1;
+    return c;
+}
 - (SFItem *)item { return _item; }
 - (NSTimeInterval)currentTime { double c = [self current]; return isnan(c) ? 0 : c; }
 - (BOOL)isPaused { return _engine && !_engine.playing; }
@@ -434,7 +446,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)updateBar {
     NSTimeInterval d = [self duration];
     BOOL live = _item.kind == SFItemLive || !(d > 0);
-    NSTimeInterval c = [self current];
+    NSTimeInterval c = [self seekOrigin];
     NSTimeInterval shown = _pendingSeek != 0 ? MAX(0, MIN(d, c + _pendingSeek)) : c;
     CGFloat w = _barBg.bounds.size.width;
     double frac = live ? 1 : shown / d;
@@ -499,6 +511,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)remoteSeekTo:(NSTimeInterval)t {
     if (!_engine || _item.kind == SFItemLive) return;
     _pendingSeek = 0;
+    _seekBase = MAX(0, t); _seekBaseAt = [NSDate date];
     [_engine seekTo:t exact:YES];
     _ended = NO;
     [self showOSD:YES autoHide:YES];
@@ -560,8 +573,9 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)commitSeek {
     NSTimeInterval d = [self duration];
-    NSTimeInterval target = MAX(0, MIN(d > 0 ? d - 2 : HUGE_VAL, [self current] + _pendingSeek));
+    NSTimeInterval target = MAX(0, MIN(d > 0 ? d - 2 : HUGE_VAL, [self seekOrigin] + _pendingSeek));
     _pendingSeek = 0;
+    _seekBase = target; _seekBaseAt = [NSDate date];
     if (_nextTimer) { [_nextTimer invalidate]; _nextTimer = nil; _nextCard.hidden = YES; }
     [_engine seekTo:target exact:YES];
     _ended = NO;
