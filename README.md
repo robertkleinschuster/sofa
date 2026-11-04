@@ -62,6 +62,11 @@ Development uses an isolated dev instance (`tools/sofa-dev`) with its own data, 
 browser-based viewer/remote. See [`NOTES.md`](NOTES.md) (German) for architecture,
 decisions and the source APIs ([`docs/`](docs/): YouTube InnerTube & Lounge, Mediathek APIs, codecs).
 
+## License
+
+Sofa is free software under the [GNU General Public License v3.0](LICENSE)
+(it links libmpv, which MacPorts builds under the GPL).
+
 ## Disclaimer
 
 A personal, non-commercial project. Not affiliated with YouTube/Google, ZDF, ARD, ORF
