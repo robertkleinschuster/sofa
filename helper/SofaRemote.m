@@ -1,12 +1,12 @@
-// SofaRemote — Apple-Remote-Helper (LaunchAgent).
+// SofaRemote — Apple Remote helper (LaunchAgent).
 //
-// Hält den AppleIRController exklusiv (Seize), erkennt Kurz/Lang-Druck der
-// Aluminium-Remote (7 Tasten), und
-//   * leitet Tasten per Mach-Port an Sofa weiter (Sofa im Vordergrund),
-//   * startet Sofa mit MENU, wenn es nicht läuft (Front-Row-Prinzip),
-//   * übersetzt Tasten in Tastatur-Events, wenn eine andere App (z.B. Kodi) vorne ist,
-//   * schluckt den ersten Druck bei schlafendem Display (weckt nur).
-// Unbekannte HID-Usages werden geloggt (Kalibrierung).
+// Holds the AppleIRController exclusively (seize), detects short/long presses of the
+// aluminium remote (7 buttons), and
+//   * forwards buttons to Sofa via Mach port (Sofa in the foreground),
+//   * launches Sofa with MENU when it isn't running (Front Row principle),
+//   * translates buttons into keyboard events when another app (e.g. Kodi) is in front,
+//   * swallows the first press while the display sleeps (only wakes it).
+// Unknown HID usages are logged (calibration).
 #import <Cocoa/Cocoa.h>
 #import <IOKit/hid/IOHIDLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
@@ -27,8 +27,8 @@ typedef NS_ENUM(NSInteger, RButton) { RNone = -1, RUp, RDown, RLeft, RRight, RSe
 - (void)start;
 @end
 
-// Display-Zustand über den IODisplayWrangler (CurrentPowerState < 4 = aus/gedimmt);
-// CGDisplayIsAsleep allein ist bei "System wach, Display aus" nicht verlässlich.
+// Display state via the IODisplayWrangler (CurrentPowerState < 4 = off/dimmed);
+// CGDisplayIsAsleep alone is not reliable for "system awake, display off".
 static BOOL displayOff(void) {
     if (CGDisplayIsAsleep(CGMainDisplayID())) return YES;
     io_service_t w = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceNameMatching("IODisplayWrangler"));
@@ -39,7 +39,7 @@ static BOOL displayOff(void) {
         CFNumberRef n = CFDictionaryGetValue(pm, CFSTR("CurrentPowerState"));
         int st = 4;
         if (n) CFNumberGetValue(n, kCFNumberIntType, &st);
-        off = st < 3;   // 4 = an, 3 = gedimmt, <3 = aus
+        off = st < 3;   // 4 = on, 3 = dimmed, <3 = off
         CFRelease(pm);
     }
     IOObjectRelease(w);
@@ -47,19 +47,19 @@ static BOOL displayOff(void) {
 }
 
 static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; }
-// Liegt Sofa.app in einem Ordner, den der Helper nicht beschreiben darf (MacPorts-Port:
-// /Applications/MacPorts gehört root), legt tools/sofa-deploy das neue Bundle hier ab und
-// tauscht selbst per sudo; der Helper übernimmt nur Sichern/Beenden/Neustart.
+// If Sofa.app lives in a folder the helper may not write to (MacPorts port:
+// /Applications/MacPorts is owned by root), tools/sofa-deploy puts the new bundle here and
+// swaps it itself via sudo; the helper only handles save/quit/restart.
 static NSString *ExternalUpdateDir(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa/update"];
 }
 
-#pragma mark PO-Token-Server (nur Release-Bundle)
-// yt-dlp holt YouTube-PO-Tokens beim bgutil-Server auf 127.0.0.1:4416. Im Release-Bundle bringt
-// Sofa ihn mit (Contents/Runtime/bgutil) und der Helper betreibt ihn als Kindprozess: läuft schon
-// einer (z.B. der MacPorts-Daemon bgutil-pot-server), bleibt es bei dem. Beendet sich der Helper
-// (Update, Logout), endet der Server mit ihm -> nie ein Server aus einem alten Bundle.
-static pid_t gPotPid;   // 0 = kein eigener Server (auch nach dessen Ende: terminationHandler)
+#pragma mark PO token server (release bundle only)
+// yt-dlp fetches YouTube PO tokens from the bgutil server on 127.0.0.1:4416. The release bundle
+// ships it (Contents/Runtime/bgutil) and the helper runs it as a child process: if one is already
+// running (e.g. the MacPorts daemon bgutil-pot-server), that one is used. When the helper exits
+// (update, logout), the server ends with it -> never a server from an old bundle.
+static pid_t gPotPid;   // 0 = no server of our own (also after it ended: terminationHandler)
 static void SRStopPot(void) { pid_t p = gPotPid; gPotPid = 0; if (p > 0) kill(p, SIGTERM); }
 static BOOL SRPortOpen(uint16_t port) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -77,16 +77,16 @@ static BOOL SRPortOpen(uint16_t port) {
     NSTimer *_retry;
     NSString *_sofaPath;
     FILE *_log;
-    // Array-Felder des AppleIRController: Cookie -> Liste der Usages (Index = Wert, 1-basiert)
+    // array fields of the AppleIRController: cookie -> list of usages (index = value, 1-based)
     NSMutableDictionary *_arrays;      // @(cookie) -> @[@(page<<16|usage), ...]
-    NSMutableDictionary *_arrayDown;   // @(cookie) -> @(page<<16|usage) aktuell gedrückt
+    NSMutableDictionary *_arrayDown;   // @(cookie) -> @(page<<16|usage) currently pressed
     NSTimer *_updateTimer;
     BOOL _updating;
-    BOOL _external;     // laufendes Update: Tausch durch tools/sofa-deploy (App-Ordner nicht beschreibbar)
+    BOOL _external;     // update in progress: swap done by tools/sofa-deploy (app folder not writable)
     NSTask *_pot;
     int _potFails;
-    ino_t _selfIno;     // Datei-ID des eigenen Programms beim Start (Sofa.app ersetzt? -> neu starten)
-    BOOL _replaced;     // laufendes "Update": Bundle wurde von außen ersetzt (neue DMG), kein Tausch
+    ino_t _selfIno;     // file ID of our own executable at launch (Sofa.app replaced? -> restart)
+    BOOL _replaced;     // "update" in progress: bundle was replaced from outside (new DMG), no swap
 }
 
 
@@ -100,8 +100,8 @@ static BOOL SRPortOpen(uint16_t port) {
 - (void)start {
     NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/SofaRemote.log"];
     _log = fopen(lp.fileSystemRepresentation, "a");
-    // Sofa-Pfad = das Bundle, in dem der Helper selbst liegt (Sofa.app/Contents/MacOS/SofaRemote):
-    // egal ob /Applications, /Applications/MacPorts (Port) oder Entwicklungs-Build
+    // Sofa path = the bundle the helper itself lives in (Sofa.app/Contents/MacOS/SofaRemote):
+    // whether /Applications, /Applications/MacPorts (port) or a development build
     _sofaPath = [[NSFileManager defaultManager] fileExistsAtPath:
                  [SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]] ? SofaAppPath() : nil;
     [self log:[NSString stringWithFormat:@"SofaRemote start, Sofa=%@", _sofaPath]];
@@ -110,14 +110,14 @@ static BOOL SRPortOpen(uint16_t port) {
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
     atexit(SRStopPot);
-    // launchctl unload / Abmelden schicken SIGTERM: ohne Handler endete der Helper sofort, atexit
-    // liefe nicht und node bliebe verwaist auf 4416 (NSTask-Kinder haben eine eigene Prozessgruppe).
+    // launchctl unload / logout send SIGTERM: without a handler the helper would end at once, atexit
+    // wouldn't run and node would stay orphaned on 4416 (NSTask children have their own process group).
     static dispatch_source_t sigs[2];
     int nums[2] = {SIGTERM, SIGINT};
     for (int i = 0; i < 2; i++) {
         signal(nums[i], SIG_IGN);
         sigs[i] = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, nums[i], 0, dispatch_get_main_queue());
-        dispatch_source_set_event_handler(sigs[i], ^{ [self log:@"Signal – beende (mit PO-Token-Server)"]; exit(0); });
+        dispatch_source_set_event_handler(sigs[i], ^{ [self log:@"signal - exiting (with PO token server)"]; exit(0); });
         dispatch_resume(sigs[i]);
     }
     [self superviseServer];
@@ -125,12 +125,12 @@ static BOOL SRPortOpen(uint16_t port) {
 
 - (void)superviseServer {
     NSString *rt = SFRuntimeDir();
-    if (!rt) return;   // Port-/Entwicklungs-Build: Server kommt vom Port bgutil-pot-server
+    if (!rt) return;   // port/development build: the server comes from the port bgutil-pot-server
     if (!_pot.isRunning && !SRPortOpen(4416)) {
         NSFileManager *fm = [NSFileManager defaultManager];
         NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Sofa-potserver.log"];
         [fm createDirectoryAtPath:[lp stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
-        // Log klein halten: über 1 MB neu beginnen
+        // keep the log small: start over above 1 MB
         if ([[fm attributesOfItemAtPath:lp error:nil] fileSize] > 1024 * 1024) [fm removeItemAtPath:lp error:nil];
         if (![fm fileExistsAtPath:lp]) [fm createFileAtPath:lp contents:nil attributes:nil];
         NSFileHandle *lh = [NSFileHandle fileHandleForWritingAtPath:lp] ?: [NSFileHandle fileHandleWithNullDevice];
@@ -143,11 +143,11 @@ static BOOL SRPortOpen(uint16_t port) {
         t.standardInput = [NSFileHandle fileHandleWithNullDevice];
         t.terminationHandler = ^(NSTask *x) { if (gPotPid == x.processIdentifier) gPotPid = 0; };
         _potFails = 0;
-        @try { [t launch]; _pot = t; gPotPid = t.processIdentifier; [self log:@"PO-Token-Server gestartet"]; }
-        @catch (NSException *e) { [self log:[@"PO-Token-Server: " stringByAppendingString:e.reason]]; }
+        @try { [t launch]; _pot = t; gPotPid = t.processIdentifier; [self log:@"PO token server started"]; }
+        @catch (NSException *e) { [self log:[@"PO token server: " stringByAppendingString:e.reason]]; }
     }
     else if (_pot.isRunning) {
-        // hängt der eigene Server (antwortet 3x nicht auf /ping), neu starten
+        // if our own server hangs (3 unanswered /ping), restart it
         NSTask *t = _pot;
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSURLRequest *r = [NSURLRequest requestWithURL:[NSURL URLWithString:@"http://127.0.0.1:4416/ping"]
@@ -155,25 +155,25 @@ static BOOL SRPortOpen(uint16_t port) {
             BOOL ok = [NSURLConnection sendSynchronousRequest:r returningResponse:NULL error:NULL] != nil;
             dispatch_async(dispatch_get_main_queue(), ^{
                 self->_potFails = ok ? 0 : self->_potFails + 1;
-                if (self->_potFails >= 3 && t.isRunning) { [self log:@"PO-Token-Server hängt – Neustart"]; [t terminate]; }
+                if (self->_potFails >= 3 && t.isRunning) { [self log:@"PO token server hangs - restarting"]; [t terminate]; }
             });
         });
     }
-    // alle 30 s nachsehen (abgestürzt -> neu starten)
+    // check every 30 s (crashed -> restart)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self superviseServer]; });
 }
 
 #pragma mark Update
-// tools/sofa-deploy legt /Applications/Sofa.app.staged ab. Der Helper (läuft
-// dauerhaft, KeepAlive) bittet Sofa, Zustand zu sichern und sich zu beenden, tauscht
-// die Bundles (alt -> Sofa.app.prev), startet Sofa neu und beendet sich selbst —
-// launchd startet ihn dann aus dem neuen Bundle.
+// tools/sofa-deploy drops /Applications/Sofa.app.staged. The helper (runs
+// permanently, KeepAlive) asks Sofa to save its state and quit, swaps
+// the bundles (old -> Sofa.app.prev), relaunches Sofa and exits itself —
+// launchd then starts it from the new bundle.
 
 
 - (NSArray *)realSofaProcesses {
     NSMutableArray *a = [NSMutableArray new];
     for (NSRunningApplication *r in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"de.sofa.app"])
-        // kill(pid,0) statt r.terminated: das Flag hinkt mehrere Sekunden hinterher
+        // kill(pid,0) instead of r.terminated: the flag lags several seconds behind
         if (r.activationPolicy != NSApplicationActivationPolicyProhibited && kill(r.processIdentifier, 0) == 0) [a addObject:r];
     return a;
 }
@@ -187,14 +187,14 @@ static BOOL SRPortOpen(uint16_t port) {
 - (void)checkUpdate {
     if (_updating) return;
     [self syncRemote];
-    // Neue Version per Finder über die alte gezogen: Sofa (Zustand sichern) und Helper neu starten,
-    // sonst liefen alter Helper + alter PO-Token-Server bis zur nächsten Anmeldung weiter.
+    // New version dragged over the old one in Finder: restart Sofa (saving state) and the helper,
+    // otherwise the old helper + old PO token server would keep running until the next login.
     ino_t ino = [self selfInode];
     if (!_selfIno) _selfIno = ino;
     else if (ino && ino != _selfIno &&
              [[NSFileManager defaultManager] isExecutableFileAtPath:[SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]]) {
         _updating = YES; _replaced = YES;
-        [self log:@"Sofa.app wurde ersetzt – starte neu"];
+        [self log:@"Sofa.app was replaced - restarting"];
         BOOL wasRunning = [self realSofaProcesses].count > 0;
         if (wasRunning) {
             CFMessagePortRef port = CFMessagePortCreateRemote(NULL, CFSTR(SF_REMOTE_APP_PORT));
@@ -212,9 +212,9 @@ static BOOL SRPortOpen(uint16_t port) {
         external = YES;
     }
     _updating = YES;
-    [self log:@"Update gefunden"];
-    // Sofa ist die TV-Oberfläche (Kodi abgelöst): lief es, wird es nach dem Update immer
-    // wieder gestartet. (Früher nur, wenn es vorne war – dann blieb es nach Updates aus.)
+    [self log:@"update found"];
+    // Sofa is the TV front end (replaced Kodi): if it was running, it is always relaunched
+    // after the update. (Previously only when it was in front - then it stayed off after updates.)
     BOOL wasRunning = [self realSofaProcesses].count > 0;
     _external = external;
     if (wasRunning) {
@@ -226,25 +226,25 @@ static BOOL SRPortOpen(uint16_t port) {
 
 - (void)waitForExit:(int)tries wasRunning:(BOOL)wasRunning {
     NSArray *procs = [self realSofaProcesses];
-    if (procs.count && tries > 0 && tries % 8 == 0) {   // neu aufgetauchte Instanz erneut bitten
+    if (procs.count && tries > 0 && tries % 8 == 0) {   // ask a newly appeared instance again
         CFMessagePortRef port = CFMessagePortCreateRemote(NULL, CFSTR(SF_REMOTE_APP_PORT));
         if (port) { CFMessagePortSendRequest(port, SF_MSG_PREPARE_UPDATE, NULL, 1.0, 0, NULL, NULL); CFRelease(port); }
     }
-    if (procs.count && tries < 40) {   // bis 10 s warten
+    if (procs.count && tries < 40) {   // wait up to 10 s
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self waitForExit:tries + 1 wasRunning:wasRunning];
         });
         return;
     }
-    for (NSRunningApplication *r in procs) { [self log:@"Sofa beendet sich nicht, erzwinge"]; [r forceTerminate]; }
+    for (NSRunningApplication *r in procs) { [self log:@"Sofa does not quit, forcing"]; [r forceTerminate]; }
     NSFileManager *fm = [NSFileManager defaultManager];
-    if (_replaced) {   // nichts zu tauschen: neues Sofa starten, dann selbst aus dem neuen Bundle
+    if (_replaced) {   // nothing to swap: launch the new Sofa, then restart ourselves from the new bundle
         [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{ exit(0); }];
         return;
     }
-    if (_external) {   // Tausch macht tools/sofa-deploy (sudo); wir melden „bereit“ und warten
+    if (_external) {   // tools/sofa-deploy does the swap (sudo); we signal "ready" and wait
         [@"" writeToFile:[ExternalUpdateDir() stringByAppendingPathComponent:@"ready"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        [self log:@"Update (extern): Sofa beendet, warte auf Tausch"];
+        [self log:@"update (external): Sofa quit, waiting for the swap"];
         [self waitForExternalSwap:0 wasRunning:wasRunning];
         return;
     }
@@ -252,16 +252,16 @@ static BOOL SRPortOpen(uint16_t port) {
     NSError *e = nil;
     [fm removeItemAtPath:prev error:nil];
     if (![fm moveItemAtPath:SofaAppPath() toPath:prev error:&e] || ![fm moveItemAtPath:staged toPath:SofaAppPath() error:&e]) {
-        [self log:[NSString stringWithFormat:@"Update-Tausch fehlgeschlagen: %@ — Rollback", e]];
+        [self log:[NSString stringWithFormat:@"update swap failed: %@ — rollback", e]];
         if (![fm fileExistsAtPath:SofaAppPath()]) [fm moveItemAtPath:prev toPath:SofaAppPath() error:nil];
         [fm removeItemAtPath:staged error:nil];
         _updating = NO;
         if (wasRunning) [self launchSofa];
         return;
     }
-    [self log:@"Update installiert, starte neu"];
+    [self log:@"update installed, restarting"];
     [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{
-        // Selbst beenden: launchd (KeepAlive) startet den Helper aus dem neuen Bundle.
+        // Exit ourselves: launchd (KeepAlive) starts the helper from the new bundle.
         exit(0);
     }];
 }
@@ -269,32 +269,32 @@ static BOOL SRPortOpen(uint16_t port) {
 - (void)waitForExternalSwap:(int)tries wasRunning:(BOOL)wasRunning {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *dir = ExternalUpdateDir(), *ext = [dir stringByAppendingPathComponent:@"Sofa.app"];
-    if ([fm fileExistsAtPath:ext] && tries < 240) {   // bis 60 s
+    if ([fm fileExistsAtPath:ext] && tries < 240) {   // up to 60 s
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self waitForExternalSwap:tries + 1 wasRunning:wasRunning];
         });
         return;
     }
     [fm removeItemAtPath:[dir stringByAppendingPathComponent:@"ready"] error:nil];
-    if ([fm fileExistsAtPath:ext]) {   // niemand hat getauscht -> altes Sofa wieder starten
-        [self log:@"Update (extern): kein Tausch innerhalb 60 s – verworfen"];
+    if ([fm fileExistsAtPath:ext]) {   // nobody swapped -> relaunch the old Sofa
+        [self log:@"update (external): no swap within 60 s - discarded"];
         [fm removeItemAtPath:ext error:nil];
         _updating = NO;
         if (wasRunning) [self launchSofa];
         return;
     }
-    [self log:@"Update installiert, starte neu"];
-    [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{ exit(0); }];   // launchd startet den Helper aus dem neuen Bundle
+    [self log:@"update installed, restarting"];
+    [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{ exit(0); }];   // launchd starts the helper from the new bundle
 }
 
-// launchctl start kann ins Leere gehen, solange launchd den alten Prozess noch nicht
-// abgeräumt hat -> prüfen und wiederholen.
+// launchctl start can go nowhere while launchd hasn't reaped the old process yet
+// -> check and retry.
 - (void)ensureSofaRunning:(int)tries then:(dispatch_block_t)then {
     if (tries <= 0 || [self realSofaProcesses].count) { then(); return; }
     [self launchSofa];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([self realSofaProcesses].count) { [self log:@"Sofa läuft"]; then(); }
-        else { [self log:@"Sofa noch nicht gestartet, erneut"]; [self ensureSofaRunning:tries - 1 then:then]; }
+        if ([self realSofaProcesses].count) { [self log:@"Sofa running"]; then(); }
+        else { [self log:@"Sofa not started yet, retrying"]; [self ensureSofaRunning:tries - 1 then:then]; }
     });
 }
 
@@ -312,9 +312,9 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     dispatch_async(dispatch_get_main_queue(), ^{ [h deviceGone]; });
 }
 
-// Einstellung „Mit der Apple Remote starten“ (Sofa → Einstellungen; Preferences-Domain de.sofa.app,
-// Standard an). Aus: solange Sofa geschlossen ist, gibt der Helper den IR-Empfänger frei – die
-// Remote steuert dann wieder den Mac (iTunes, Keynote, Lautstärke).
+// Setting "Mit der Apple Remote starten" (Sofa → settings; preferences domain de.sofa.app,
+// default on). Off: while Sofa is closed, the helper releases the IR receiver - the
+// remote then controls the Mac again (iTunes, Keynote, volume).
 - (BOOL)remoteLaunch {
     CFPreferencesAppSynchronize(CFSTR("de.sofa.app"));
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("remoteLaunch"), CFSTR("de.sofa.app"));
@@ -325,12 +325,12 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 
 - (BOOL)wantsRemote { return [self remoteLaunch] || [self realSofa] != nil; }
 
-// alle 3 s (checkUpdate): IR übernehmen bzw. freigeben, wenn sich Lage oder Einstellung ändern
+// every 3 s (checkUpdate): seize or release IR when the situation or the setting changes
 - (void)syncRemote {
     BOOL want = [self wantsRemote];
     if (want && !_dev && !_retry.isValid) [self open];
     else if (!want && _dev) {
-        [self log:@"Sofa geschlossen, Start per Remote aus – Apple Remote freigegeben"];
+        [self log:@"Sofa closed, launch via remote off - Apple Remote released"];
         [self closeDevice];
     }
 }
@@ -344,18 +344,18 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 }
 
 - (void)open {
-    if (![self wantsRemote]) return;   // syncRemote holt das nach, sobald Sofa läuft
+    if (![self wantsRemote]) return;   // syncRemote catches up as soon as Sofa runs
     io_service_t s = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleIRController"));
-    // Macs ohne IR-Empfänger: einmal melden, nicht alle 5 s (Sofa läuft dann mit Tastatur/Handy)
+    // Macs without an IR receiver: report once, not every 5 s (Sofa then runs with keyboard/phone)
     static BOOL saidNoIR;
-    if (!s) { if (!saidNoIR) [self log:@"kein AppleIRController (kein IR-Empfänger?) – suche weiter"]; saidNoIR = YES; [self scheduleRetry]; return; }
+    if (!s) { if (!saidNoIR) [self log:@"no AppleIRController (no IR receiver?) - still looking"]; saidNoIR = YES; [self scheduleRetry]; return; }
     _dev = IOHIDDeviceCreate(kCFAllocatorDefault, s);
     IOObjectRelease(s);
     if (!_dev) { [self scheduleRetry]; return; }
     IOReturn r = IOHIDDeviceOpen(_dev, kIOHIDOptionsTypeSeizeDevice);
     if (r != kIOReturnSuccess) {
         static IOReturn lastErr;
-        if (r != lastErr) [self log:[NSString stringWithFormat:@"Seize fehlgeschlagen 0x%x (XBMCHelper aktiv?) — neuer Versuch alle 5 s", r]];
+        if (r != lastErr) [self log:[NSString stringWithFormat:@"seize failed 0x%x (XBMCHelper active?) — retrying every 5 s", r]];
         lastErr = r;
         CFRelease(_dev); _dev = NULL;
         [self scheduleRetry];
@@ -365,12 +365,12 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     IOHIDDeviceRegisterInputValueCallback(_dev, inputCallback, (__bridge void *)self);
     IOHIDDeviceRegisterRemovalCallback(_dev, removalCallback, (__bridge void *)self);
     IOHIDDeviceScheduleWithRunLoop(_dev, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
-    [self log:@"Apple IR exklusiv geöffnet"];
+    [self log:@"Apple IR opened exclusively"];
 }
 
-// Auf 10.9 meldet die Aluminium-Remote Tasten über Array-Elemente (Usage 0xFFFFFFFF):
-// der Wert n>0 ist der Index in die direkt folgenden Usage-Elemente derselben Page,
-// 0 = losgelassen. Die Zuordnung wird beim Öffnen aus der Elementliste gebaut.
+// On 10.9 the aluminium remote reports buttons via array elements (usage 0xFFFFFFFF):
+// the value n>0 is the index into the directly following usage elements of the same page,
+// 0 = released. The mapping is built from the element list when opening.
 - (void)buildArrayMap {
     _arrays = [NSMutableDictionary new];
     _arrayDown = [NSMutableDictionary new];
@@ -387,7 +387,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         if (cur && page == curPage) [_arrays[cur] addObject:@(page << 16 | u)];
         else cur = nil;
     }
-    [self log:[NSString stringWithFormat:@"Array-Map: %@", _arrays]];
+    [self log:[NSString stringWithFormat:@"array map: %@", _arrays]];
 }
 
 - (void)scheduleRetry {
@@ -396,7 +396,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 }
 
 - (void)deviceGone {
-    [self log:@"Gerät entfernt"];
+    [self log:@"device removed"];
     [self closeDevice];
     [self scheduleRetry];
 }
@@ -446,15 +446,15 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         }
         return;
     }
-    // Direkte Usage-Elemente spiegeln die Array-Werte -> nicht doppelt auswerten
+    // direct usage elements mirror the array values -> don't evaluate twice
     if (_arrays.count) return;
     [self decoded:(page << 16 | usage) down:v != 0];
 }
 
-// Kalibriert 2026-11-03 (Aluminium-Remote, 10.9): Drücken+Loslassen kommen innerhalb
-// ~2 ms — es gibt KEINEN Halte-Zustand. "Lang" erkennt man nur an eigenen Codes,
-// die die Remote selbst schickt (Mitte lang 0x82, Links/Rechts lang 0xB4/0xB3).
-// MENU lang ist nicht unterscheidbar. Ausgewertet wird daher nur DOWN.
+// Calibrated 2026-11-03 (aluminium remote, 10.9): press+release arrive within
+// ~2 ms — there is NO hold state. "Long" is only recognisable by dedicated codes
+// the remote sends itself (centre long 0x82, left/right long 0xB4/0xB3).
+// MENU long cannot be distinguished. Hence only DOWN is evaluated.
 - (void)decoded:(uint32_t)pu down:(BOOL)down {
     if (!down) return;
     uint32_t page = pu >> 16, usage = pu & 0xFFFF;
@@ -471,19 +471,19 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         case 0x000C00B4: k = SFKeyPrev; b = RLeft; break;
         case 0x000C00B3: k = SFKeyNext; b = RRight; break;
         default:
-            [self log:[NSString stringWithFormat:@"unbekannt page=0x%x usage=0x%x", page, usage]];
+            [self log:[NSString stringWithFormat:@"unknown page=0x%x usage=0x%x", page, usage]];
             return;
     }
     [self log:[NSString stringWithFormat:@"key page=0x%x usage=0x%x -> %ld", page, usage, (long)k]];
     BOOL wasOff = displayOff();
     static IOPMAssertionID act = kIOPMNullAssertionID;
     IOPMAssertionDeclareUserActivity(CFSTR("Apple Remote"), kIOPMUserActiveLocal, &act);
-    if (wasOff) { [self log:@"Display war aus: Druck nur zum Wecken"]; [self bringSofaFront]; return; }
+    if (wasOff) { [self log:@"display was off: press only wakes it"]; [self bringSofaFront]; return; }
     BOOL hold = (k == SFKeySelectHold || k == SFKeyPrev || k == SFKeyNext);
     [self dispatch:k button:b hold:hold];
 }
 
-#pragma mark Weiterleitung
+#pragma mark Forwarding
 
 - (BOOL)sofaFrontmost {
     NSRunningApplication *f = [NSWorkspace sharedWorkspace].frontmostApplication;
@@ -499,51 +499,51 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 }
 
 - (void)launchSofa {
-    if (!_sofaPath) { [self log:@"Sofa nicht gefunden"]; return; }
-    [self log:@"starte Sofa"];
-    // Über LaunchServices wie ein Klick im Finder. Nicht über den Agent de.sofa.app: der startet
-    // mit --autostart, und bei ausgeschaltetem Autostart beendete sich Sofa dann sofort.
+    if (!_sofaPath) { [self log:@"Sofa not found"]; return; }
+    [self log:@"launching Sofa"];
+    // Via LaunchServices like a click in Finder. Not via the agent de.sofa.app: it launches
+    // with --autostart, and with autostart switched off Sofa would then quit immediately.
     NSError *e = nil;
     if (![[NSWorkspace sharedWorkspace] launchApplicationAtURL:[NSURL fileURLWithPath:_sofaPath]
                                                        options:NSWorkspaceLaunchDefault configuration:@{} error:&e]) {
-        [self log:[NSString stringWithFormat:@"LaunchServices: %@ – starte direkt", e.localizedDescription]];
+        [self log:[NSString stringWithFormat:@"LaunchServices: %@ - launching directly", e.localizedDescription]];
         NSTask *t = [NSTask new];
         t.launchPath = [_sofaPath stringByAppendingPathComponent:@"Contents/MacOS/Sofa"];
-        @try { [t launch]; } @catch (NSException *x) { [self log:[@"Start fehlgeschlagen: " stringByAppendingString:x.reason]]; }
+        @try { [t launch]; } @catch (NSException *x) { [self log:[@"launch failed: " stringByAppendingString:x.reason]]; }
     }
 }
 
-// Sofa ist die TV-Shell: die Remote bedient IMMER Sofa (Kodi-Kompatibilität entfällt,
-// User 2026-11-03). Läuft Sofa nicht -> jede Taste startet es ("Fernseher an");
-// ist eine andere App vorne -> erster Druck holt Sofa nach vorne (wird geschluckt).
+// Sofa is the TV shell: the remote ALWAYS controls Sofa (Kodi compatibility dropped,
+// user 2026-11-03). If Sofa isn't running -> any button launches it ("TV on");
+// if another app is in front -> the first press brings Sofa to the front (swallowed).
 - (NSRunningApplication *)realSofa {
     for (NSRunningApplication *a in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"de.sofa.app"])
-        if (a.activationPolicy != NSApplicationActivationPolicyProhibited) return a;   // nie Dev-Instanzen
+        if (a.activationPolicy != NSApplicationActivationPolicyProhibited) return a;   // never dev instances
     return nil;
 }
 
 - (void)bringSofaFront {
     NSRunningApplication *a = [self realSofa];
-    if (a && !a.active) { [self log:@"Sofa nach vorne"]; [a activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }
+    if (a && !a.active) { [self log:@"Sofa to front"]; [a activateWithOptions:NSApplicationActivateIgnoringOtherApps]; }
 }
 
 - (void)dispatch:(SFKey)k button:(RButton)b hold:(BOOL)hold {
-    if (_updating) { [self log:@"Taste während Update ignoriert"]; return; }
-    if (![self realSofa]) {   // Sofa geschlossen: jede Taste startet es (Einstellung „Mit der Apple Remote starten“)
+    if (_updating) { [self log:@"button ignored during update"]; return; }
+    if (![self realSofa]) {   // Sofa closed: any button launches it (setting "Mit der Apple Remote starten")
         if ([self remoteLaunch]) [self launchSofa];
         return;
     }
     if (![self sofaFrontmost]) { [self bringSofaFront]; return; }
-    if (![self sendToSofa:k]) [self log:@"Sofa-Port nicht erreichbar"];
+    if (![self sendToSofa:k]) [self log:@"Sofa port unreachable"];
 }
 @end
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
         SFRuntimeSetup();
-        // Kein NSApplication: sonst meldet sich der Helper bei LaunchServices als App „Sofa“
-        // (gleiche Bundle-ID de.sofa.app) an, und Finder/open/NSWorkspace aktivierten nur ihn,
-        // statt Sofa zu starten. Ein reiner Hintergrunddienst braucht nur die RunLoop.
+        // No NSApplication: otherwise the helper registers with LaunchServices as app "Sofa"
+        // (same bundle ID de.sofa.app), and Finder/open/NSWorkspace would only activate it
+        // instead of launching Sofa. A pure background service only needs the run loop.
         SRHelper *h = [SRHelper new];
         [h start];
         while (1) CFRunLoopRun();

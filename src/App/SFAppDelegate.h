@@ -1,11 +1,11 @@
-// SFAppDelegate – privater Header für main.m und seine Kategorien
-// (SFAppDelegate+Lounge.m: Handy-Befehle, +Update.m: Zustand über App-Updates, +Dev.m: Dev-FIFO).
+// SFAppDelegate – private header for main.m and its categories
+// (SFAppDelegate+Lounge.m: phone commands, +Update.m: state across app updates, +Dev.m: dev FIFO).
 #import "SFCore.h"
 #import "SFScreen.h"
 @class SFPlayerScreen, SFRemote, SFDevServer;
 
-extern NSString *gInstance;   // Dev-Instanzname (--instance)
-void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
+extern NSString *gInstance;   // dev instance name (--instance)
+void SFClearRunningMarker(void);   // autostart crash detection, see main()
 
 @interface SFWindow : NSWindow @end
 
@@ -13,7 +13,7 @@ void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
 @property (nonatomic, strong) SFWindow *window;
 @property (nonatomic, strong) SFNavigator *nav;
 @property (nonatomic) NSSize devSize;
-// intern (von den Kategorien genutzt)
+// internal (used by the categories)
 @property (nonatomic, strong) dispatch_source_t fifoSrc;
 @property (nonatomic, strong) NSMutableString *fifoBuf;
 @property (nonatomic) NSUInteger loungeGen;

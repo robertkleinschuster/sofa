@@ -46,7 +46,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     if (self.localPath) d[@"localPath"] = self.localPath;
     if (self.showRef) d[@"showRef"] = self.showRef;
     if (self.externalID) d[@"externalID"] = self.externalID;
-    else if (self.playURL) d[@"url"] = self.playURL.absoluteString;   // YouTube-URLs laufen ab -> nur ohne externalID speichern
+    else if (self.playURL) d[@"url"] = self.playURL.absoluteString;   // YouTube URLs expire -> only store without externalID
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
     if (self.drm) d[@"drm"] = @YES;
     return d;
@@ -67,8 +67,8 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     i.duration = [d[@"duration"] doubleValue];
     i.localPath = d[@"localPath"];
     i.externalID = d[@"externalID"];
-    // Gespeicherte Einträge (Weiterschauen, Verlauf) können auf einen inzwischen gelöschten Download
-    // zeigen: dann online abspielen und das Online-Bild nehmen (sonst fehlt das Vorschaubild)
+    // Stored entries (continue watching, history) may point to a download deleted in the meantime:
+    // then play online and use the online image (otherwise the thumbnail is missing)
     NSFileManager *fm = [NSFileManager defaultManager];
     if (i.localPath && ![fm fileExistsAtPath:i.localPath]) i.localPath = nil;
     BOOL (^gone)(NSString *) = ^BOOL(NSString *p) { return [p hasPrefix:@"/"] && ![fm fileExistsAtPath:p]; };
@@ -132,7 +132,7 @@ void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [loo
 }
 @end
 
-static NSMutableDictionary *gAlternates;   // URL-String -> nächster URL-String
+static NSMutableDictionary *gAlternates;   // URL string -> next URL string
 void SFSetAlternateURLs(NSURL *primary, NSArray *alts) {
     if (!primary) return;
     if (!gAlternates) gAlternates = [NSMutableDictionary new];

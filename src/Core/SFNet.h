@@ -1,13 +1,13 @@
-// HTTP/JSON für alle Online-Quellen: NSURLSession, Timeout, optionaler SQLite-Cache.
+// HTTP/JSON for all online sources: NSURLSession, timeout, optional SQLite cache.
 #import "SFCore.h"
 
-typedef void (^SFJSONDone)(id json, NSError *error);   // Main-Thread
+typedef void (^SFJSONDone)(id json, NSError *error);   // main thread
 
-// Netzstatus (SystemConfiguration-Reachability; Dev: SOFA_OFFLINE=1 simuliert offline)
+// Network status (SystemConfiguration reachability; dev: SOFA_OFFLINE=1 simulates offline)
 extern NSString *const SFNetOnlineDidChangeNotification;
 
-// Sitzungs-Delegate ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04: Sofa lädt nur Daten
-// ungeprüft; Code – App-Updates, yt-dlp – ist eigens signiert). Für jede NSURLSession der App.
+// Session delegate without TLS certificate verification (user decision 2026-11-04: Sofa only loads data
+// unverified; code – app updates, yt-dlp – is signed separately). For every NSURLSession of the app.
 id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 
 @interface SFNet : NSObject
@@ -16,9 +16,9 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 + (void)getJSON:(NSString *)url headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (NSString *)userAgent;
-// Prozent-Kodierung für Pfad-/Query-Teile (alles außer A-Z a-z 0-9 - . _ ~)
+// Percent-encoding for path/query parts (everything except A-Z a-z 0-9 - . _ ~)
 + (NSString *)escape:(NSString *)s;
-// Geo-Prüfung (z.B. ARD regionCheckUrl): YES wenn die URL den erwarteten Text liefert.
-// Ergebnis pro URL 1 h gecacht.
+// Geo check (e.g. ARD regionCheckUrl): YES if the URL returns the expected text.
+// Result cached per URL for 1 h.
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect done:(void (^)(BOOL allowed))done;
 @end

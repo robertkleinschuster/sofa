@@ -34,7 +34,7 @@
 
 @implementation SFAppDelegate (Dev)
 
-#pragma mark Dev-FIFO
+#pragma mark Dev FIFO
 
 - (void)startFifo {
     NSString *p = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
@@ -79,38 +79,38 @@
         id eng = [self topPlayer].engineForDiagnostics;
         NSArray *kv = [arg componentsSeparatedByString:@" "];
         if ([eng isKindOfClass:[SFMPVEngine class]] && kv.count == 2) [(SFMPVEngine *)eng setProp:kv[0] value:kv[1]];
-    } else if ([cmd isEqualToString:@"mpvprop"] && arg) {   // Dev: mpv-Eigenschaften loggen, z.B. mpvprop time-pos,sub-start,sub-text
+    } else if ([cmd isEqualToString:@"mpvprop"] && arg) {   // Dev: log mpv properties, e.g. mpvprop time-pos,sub-start,sub-text
         id eng = [self topPlayer].engineForDiagnostics;
         if ([eng isKindOfClass:[SFMPVEngine class]])
             for (NSString *k in [arg componentsSeparatedByString:@","]) SFLog(@"dev: mpv %@ = %@", k, [(SFMPVEngine *)eng prop:k]);
-    } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: echtes mpv-Bild aus dem GL-Framebuffer
+    } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: real mpv frame from the GL framebuffer
         SFMPVDevFrameShot(arg);
     } else if ([cmd isEqualToString:@"home"]) {
         [self.nav popToRoot];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: Seiten direkt öffnen (stabiler als Tastenfolgen)
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: open pages directly (more stable than key sequences)
         [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF-Markenseite (Absturztest)
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF brand page (crash test)
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
         f.pageLoader = [SFProviderZDF categoryLoader:[arg substringFromIndex:8] title:@"Test"];
         SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: beliebige YouTube-Kanalseite
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: any YouTube channel page
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
-        // ytchannel:<ID> oder ytchannel:<ID>|<Titel>
+        // ytchannel:<ID> or ytchannel:<ID>|<title>
         NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
         f.pageLoader = [SFYouTube channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: YouTube-Video von vorn abspielen (Starttests)
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: play a YouTube video from the start (startup tests)
         SFItem *it = [SFYouTube itemForVideoID:[arg substringFromIndex:3]];
         [SFYouTube fillDetails:it done:^{
             SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
             ps.startFromBeginning = YES;
             [self presentPlayer:ps];
         }];
-    } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
+    } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek video by resolver ref (orf:…, ard:…, zdf:…)
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.title = arg;
-        if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg];   // direkte URL: Ausweich-Kette testen
-        else if ([arg hasPrefix:@"/"]) {   // „/datei.mp4|orf:…“: wie ein Download mit Online-Gegenstück
+        if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg];   // direct URL: test the fallback chain
+        else if ([arg hasPrefix:@"/"]) {   // "/file.mp4|orf:…": like a download with an online counterpart
             NSArray *pt = [arg componentsSeparatedByString:@"|"];
             it.localPath = pt[0]; it.playURL = [NSURL fileURLWithPath:pt[0]];
             if (pt.count > 1) { it.resolverRef = pt[1]; it.identifier = pt[1]; }
@@ -139,15 +139,15 @@
         [self presentPlayer:ps];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/screenshots: app page
         [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
         SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
         [SFHome showSettingsOn:self.nav];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // Ersteinrichtung ab Begrüßung
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
-    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // Dev: Handy-Befehl simulieren: lounge <cmd> <json>
+    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // Dev: simulate a phone command: lounge <cmd> <json>
         NSRange sp = [arg rangeOfString:@" "];
         NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
         id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
@@ -177,10 +177,10 @@
 }
 
 - (void)screenshot:(NSString *)path {
-    // Kurz warten, damit laufende Animationen/Bildladungen abgeschlossen sind.
+    // Wait briefly so running animations/image loads have finished.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        // Ebenenbaum direkt in eine Bitmap rendern (unabhängig vom Window-Server,
-        // funktioniert für das Offscreen-Fenster; Videoebenen bleiben schwarz).
+        // Render the layer tree straight into a bitmap (independent of the window server,
+        // works for the offscreen window; video layers stay black).
         CALayer *root = self.nav.layer;
         CGSize sz = root.bounds.size;
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();

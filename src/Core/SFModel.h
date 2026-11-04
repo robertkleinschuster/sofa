@@ -1,18 +1,18 @@
-// Einheitliches Datenmodell aller Quellen: Item (Video, Ordner, Live, Aktion),
-// Shelf (Reihe/Raster von Items) und Page (ein Bildschirm voller Shelves).
+// Unified data model of all sources: item (video, folder, live, action),
+// shelf (row/grid of items) and page (a screen full of shelves).
 #import "SFCore.h"
 #import "SFTheme.h"
 
 typedef NS_ENUM(NSInteger, SFItemKind) {
-    SFItemVideo,     // abspielbar
-    SFItemLive,      // Livestream (keine Fortsetzen-Position)
-    SFItemFolder,    // öffnet eine Page (Sendung, Kanal, Rubrik)
-    SFItemAction,    // führt Block aus (App starten, Einstellung, ...)
+    SFItemVideo,     // playable
+    SFItemLive,      // live stream (no resume position)
+    SFItemFolder,    // opens a page (show, channel, category)
+    SFItemAction,    // runs a block (launch app, setting, ...)
 };
 
 typedef NS_ENUM(NSInteger, SFShelfLayout) {
-    SFShelfRail,     // horizontale Reihe
-    SFShelfGrid,     // umbrechendes Raster
+    SFShelfRail,     // horizontal row
+    SFShelfGrid,     // wrapping grid
 };
 
 @class SFPage, SFItem;
@@ -23,44 +23,44 @@ typedef void (^SFResolver)(SFURLDone done);
 
 @interface SFItem : NSObject <NSCopying>
 @property (nonatomic) SFItemKind kind;
-@property (nonatomic, copy) NSString *identifier;      // stabil, für Fortsetzen/Verlauf
+@property (nonatomic, copy) NSString *identifier;      // stable, for resume/history
 @property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *subtitle;        // z.B. Kanal · Datum
+@property (nonatomic, copy) NSString *subtitle;        // e.g. channel · date
 @property (nonatomic, copy) NSString *plot;
-@property (nonatomic, copy) NSString *image;           // Pfad oder URL
-@property (nonatomic, copy) NSString *backdrop;        // großes Hintergrundbild
-@property (nonatomic, copy) NSString *channel;         // Sendung / Kanal
-@property (nonatomic, copy) NSString *source;          // Theme-ID der Herkunft
+@property (nonatomic, copy) NSString *image;           // path or URL
+@property (nonatomic, copy) NSString *backdrop;        // large background image
+@property (nonatomic, copy) NSString *channel;         // show / channel
+@property (nonatomic, copy) NSString *source;          // theme ID of the origin
 @property (nonatomic, copy) NSString *badge;           // "LIVE", "NEU", "UT", ...
-@property (nonatomic) BOOL drm;                        // kopiergeschützt: auf 10.9 nicht abspielbar (kein „Abspielen“, Auswahl → Hinweis)
+@property (nonatomic) BOOL drm;                        // copy-protected: not playable on 10.9 (no "Abspielen", selecting → notice)
 @property (nonatomic, strong) NSDate *date;
 @property (nonatomic) NSTimeInterval duration;
 @property (nonatomic) SFTileStyle style;
 @property (nonatomic, strong) NSURL *playURL;
-@property (nonatomic, copy) SFResolver resolver;       // falls URL erst ermittelt werden muss
-@property (nonatomic, copy) NSString *resolverRef;     // "provider:ref" (persistierbar)
-@property (nonatomic, copy) SFPageLoader pageLoader;   // für Folder
-@property (nonatomic, copy) dispatch_block_t action;   // für Action
-@property (nonatomic, strong) NSColor *tint;           // Kachelfarbe (App-Kacheln)
-@property (nonatomic, copy) NSString *themeName;       // Theme der geöffneten Page
-@property (nonatomic, copy) NSString *localPath;       // heruntergeladene Datei
-@property (nonatomic) BOOL streamOnly;                 // online abspielen, auch wenn ein Download existiert („Online abspielen“); nicht gespeichert
-@property (nonatomic) BOOL inDownloadsList;            // Kachel der Downloads-Seite (dort kein „Offline“-Chip nötig); nicht gespeichert
-@property (nonatomic, copy) NSString *playlistID;      // aus einer Playlist geöffnet: „Als Nächstes“ = nächstes Video der Playlist
-@property (nonatomic, copy) NSString *heroTitle;       // Hero-Titel statt title (z. B. Kanalname über einer Aktions-Kachel)
-@property (nonatomic, copy) NSString *heroMeta;        // Hero-Metazeile statt Kanal/Datum/Dauer
-@property (nonatomic, copy) NSString *externalID;      // ID bei der Quelle (YouTube-Video-ID)
-@property (nonatomic, copy) NSString *showRef;         // Sendung/Kanal der Folge („ytchannel:UC…“, „zdfshow:…“) → „Zur Sendung“
+@property (nonatomic, copy) SFResolver resolver;       // if the URL must be determined first
+@property (nonatomic, copy) NSString *resolverRef;     // "provider:ref" (persistable)
+@property (nonatomic, copy) SFPageLoader pageLoader;   // for folders
+@property (nonatomic, copy) dispatch_block_t action;   // for actions
+@property (nonatomic, strong) NSColor *tint;           // tile colour (app tiles)
+@property (nonatomic, copy) NSString *themeName;       // theme of the opened page
+@property (nonatomic, copy) NSString *localPath;       // downloaded file
+@property (nonatomic) BOOL streamOnly;                 // play online even if a download exists ("Online abspielen"); not saved
+@property (nonatomic) BOOL inDownloadsList;            // tile on the Downloads page (no "Offline" chip needed there); not saved
+@property (nonatomic, copy) NSString *playlistID;      // opened from a playlist: "Als Nächstes" = next video of the playlist
+@property (nonatomic, copy) NSString *heroTitle;       // hero title instead of title (e.g. channel name above an action tile)
+@property (nonatomic, copy) NSString *heroMeta;        // hero meta line instead of channel/date/duration
+@property (nonatomic, copy) NSString *externalID;      // ID at the source (YouTube video ID)
+@property (nonatomic, copy) NSString *showRef;         // show/channel of the episode ("ytchannel:UC…", "zdfshow:…") → "Zur Sendung"
 @property (nonatomic) BOOL imageFit;
-@property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (App-Kacheln)
-@property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // Bild einpassen statt füllen (Logos)
+@property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
+@property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // fit the image instead of filling (logos)
 
 - (NSDictionary *)dictionaryRepresentation;
 + (instancetype)itemWithDictionary:(NSDictionary *)d;
-- (void)resolveURL:(SFURLDone)done;    // playURL oder resolver oder Provider-Registry
+- (void)resolveURL:(SFURLDone)done;    // playURL or resolver or provider registry
 @end
 
-extern NSString *const SFDRMNotice;   // einheitlicher Hinweistext für DRM-Inhalte
+extern NSString *const SFDRMNotice;   // uniform notice text for DRM content
 
 @interface SFShelf : NSObject
 @property (nonatomic, copy) NSString *title;
@@ -79,23 +79,23 @@ extern NSString *const SFDRMNotice;   // einheitlicher Hinweistext für DRM-Inha
 @property (nonatomic, copy) NSString *backdrop;
 @property (nonatomic, copy) NSArray *shelves;
 @property (nonatomic, copy) NSString *emptyText;
-@property (nonatomic) NSUInteger focusShelf;       // Startfokus (z. B. Folgen statt der Staffelauswahl darüber)
+@property (nonatomic) NSUInteger focusShelf;       // initial focus (e.g. episodes instead of the season picker above)
 + (instancetype)page:(NSString *)title theme:(NSString *)theme shelves:(NSArray *)shelves;
 @end
 
-// Provider registrieren sich mit Präfix; löst "prefix:ref" zu Abspiel-URLs auf.
+// Providers register with a prefix; resolves "prefix:ref" to playback URLs.
 typedef void (^SFRefResolver)(NSString *ref, SFURLDone done);
 void SFRegisterResolver(NSString *prefix, SFRefResolver r);
 void SFResolveRef(NSString *ref, SFURLDone done);
-// Resolver, die selbst lokale Downloads bevorzugen (YouTube), registrieren zusätzlich eine reine
-// Online-Variante; Items mit streamOnly („Online abspielen“) lösen darüber auf.
+// Resolvers that prefer local downloads themselves (YouTube) additionally register a pure
+// online variant; items with streamOnly ("Online abspielen") resolve through it.
 void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r);
 void SFResolveRefOnline(NSString *ref, SFURLDone done);
 
 NSError *SFError(NSString *msg);
-// Ausweich-URLs (z.B. YouTube: 1080p-HLS -> 720p-HLS -> 360p-MP4), falls AVFoundation die
-// erste URL wiederholt nicht öffnet.
+// Fallback URLs (e.g. YouTube: 1080p HLS -> 720p HLS -> 360p MP4) in case AVFoundation repeatedly
+// fails to open the first URL.
 void SFSetAlternateURLs(NSURL *primary, NSArray *alternates);
-// Offline-Kopie zu einer Quell-ID (von SFDownloads gesetzt): resolveURL spielt dann lokal.
+// Offline copy for a source ID (set by SFDownloads): resolveURL then plays locally.
 void SFSetLocalFileLookup(NSString *(^lookup)(NSString *identifier));
 NSURL *SFNextAlternateURL(NSURL *failed);

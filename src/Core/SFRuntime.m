@@ -1,7 +1,7 @@
 #import "SFRuntime.h"
 #import <signal.h>
 
-static NSString *const kPrefix = @"/opt/local";   // Port: reinplace auf ${prefix}
+static NSString *const kPrefix = @"/opt/local";   // port: reinplace to ${prefix}
 
 NSString *SFRuntimeDir(void) {
     static NSString *dir;
@@ -32,31 +32,31 @@ NSString *SFCABundle(void) {
 }
 
 void SFRuntimeSetup(void) {
-    unsetenv("DYLD_INSERT_LIBRARIES");   // Entwicklungs-Shell-Shim nie an Werkzeuge vererben
+    unsetenv("DYLD_INSERT_LIBRARIES");   // never pass the development shell shim on to tools
     NSString *rt = SFRuntimeDir();
     NSString *bin = [(rt ?: kPrefix) stringByAppendingPathComponent:@"bin"];
     setenv("PATH", [bin stringByAppendingString:@":/usr/bin:/bin:/usr/sbin:/sbin"].UTF8String, 1);
     setenv("SOFA_NODE", SFTool(@"node").UTF8String, 1);
-    // node (PO-Token-Server) ohne TLS-Zertifikatsprüfung wie alle Daten-Abrufe der App
-    // (User-Entscheidung 2026-11-04; Code ist eigens signiert, siehe SFCurlNew)
+    // node (PO token server) without TLS certificate verification like all data fetches of the app
+    // (user decision 2026-11-04; code is signed separately, see SFCurlNew)
     setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0", 1);
     if (!rt) return;
-    // CA-Liste aus dem Bundle für alles, was doch prüft (Python-Standardbibliothek u. a.)
+    // CA list from the bundle for anything that does verify (Python standard library etc.)
     setenv("SSL_CERT_FILE", SFCABundle().UTF8String, 1);
     setenv("NODE_EXTRA_CA_CERTS", SFCABundle().UTF8String, 1);
-    // fontconfig (librsvg/pango, canvas im PO-Token-Server): Systemschriften, Cache im Benutzer-Cache
+    // fontconfig (librsvg/pango, canvas in the PO token server): system fonts, cache in the user cache
     setenv("FONTCONFIG_FILE", [rt stringByAppendingPathComponent:@"etc/fonts/fonts.conf"].UTF8String, 1);
     setenv("FONTCONFIG_PATH", [rt stringByAppendingPathComponent:@"etc/fonts"].UTF8String, 1);
-    // Eingebaute MacPorts-Pfade der Bibliotheken neutralisieren: sonst lüden die Bundle-Kopien von
-    // glib/gdk-pixbuf/OpenSSL auf einem Mac MIT MacPorts dessen Module bzw. Konfiguration
-    // (zwei glib-Kopien in einem Prozess).
+    // Neutralise the libraries' built-in MacPorts paths: otherwise the bundle copies of
+    // glib/gdk-pixbuf/OpenSSL on a Mac WITH MacPorts would load its modules or configuration
+    // (two glib copies in one process).
     setenv("GIO_MODULE_DIR", [rt stringByAppendingPathComponent:@"lib/gio/modules"].UTF8String, 1);
     setenv("GDK_PIXBUF_MODULE_FILE", [rt stringByAppendingPathComponent:@"etc/gdk-pixbuf-loaders.cache"].UTF8String, 1);
     setenv("OPENSSL_CONF", [rt stringByAppendingPathComponent:@"etc/openssl.cnf"].UTF8String, 1);
 }
 
-// Version des Bundles im Agent: ändert sie sich (neue DMG über die alte gezogen), lädt Sofa den
-// Helper neu -- sonst liefe der alte Helper samt altem PO-Token-Server bis zur nächsten Anmeldung.
+// Bundle version in the agent: when it changes (new DMG dragged over the old one), Sofa reloads the
+// helper -- otherwise the old helper plus the old PO token server would run until the next login.
 static NSString *SFBuildID(void) {
     NSDictionary *i = [[NSBundle mainBundle] infoDictionary];
     return [NSString stringWithFormat:@"%@ (%@)", i[@"CFBundleShortVersionString"], i[@"CFBundleVersion"]];
@@ -69,7 +69,7 @@ static NSString *SFAgentPath(NSString *label) {
 
 static BOOL SFWriteAgent(NSString *label, NSString *exe, BOOL keepAlive) {
     NSString *path = SFAgentPath(label);
-    // gleiche Werte wie res/launchd/*.plist (Port)
+    // same values as res/launchd/*.plist (port)
     NSDictionary *want = @{
         @"Label": label,
         @"ProgramArguments": keepAlive ? @[exe] : @[exe, @"--autostart"],
@@ -93,9 +93,9 @@ BOOL SFRuntimeMisplaced(void) {
     NSURL *u = [[NSBundle mainBundle] bundleURL];
     NSNumber *ro = nil;
     [u getResourceValue:&ro forKey:NSURLVolumeIsReadOnlyKey error:NULL];
-    if (ro.boolValue) return YES;   // direkt aus der DMG gestartet
+    if (ro.boolValue) return YES;   // launched straight from the DMG
     NSString *p = u.path;
-    if (![p hasSuffix:@".app"]) return YES;   // Sofa.app.staged/.prev: Zwischenstände eines Updates
+    if (![p hasSuffix:@".app"]) return YES;   // Sofa.app.staged/.prev: intermediate states of an update
     NSString *dir = [p stringByDeletingLastPathComponent];
     return !([dir isEqualToString:@"/Applications"] ||
              [dir isEqualToString:[NSHomeDirectory() stringByAppendingPathComponent:@"Applications"]]);
@@ -104,15 +104,15 @@ BOOL SFRuntimeMisplaced(void) {
 void SFInstallAgents(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray *labels = @[@"de.sofa.remote", @"de.sofa.app"];
-    // MacPorts-Port installiert (gleiche Labels in /Library/LaunchAgents): der Port gewinnt, eigene
-    // Benutzer-Agents weg -- sonst entschiede die Ladereihenfolge, welches Sofa läuft.
+    // MacPorts port installed (same labels in /Library/LaunchAgents): the port wins, our own
+    // user agents go -- otherwise the load order would decide which Sofa runs.
     if ([fm fileExistsAtPath:@"/Library/LaunchAgents/org.macports.sofa-remote.plist"]) {
         for (NSString *l in labels) {
             NSString *p = SFAgentPath(l);
             if (![fm fileExistsAtPath:p]) continue;
             SFLaunchctl(@[@"unload", p]);
             [fm removeItemAtPath:p error:nil];
-            NSLog(@"Sofa: Benutzer-Agent %@ entfernt (MacPorts-Port aktiv)", l);
+            NSLog(@"Sofa: user agent %@ removed (MacPorts port active)", l);
         }
         return;
     }
@@ -120,11 +120,11 @@ void SFInstallAgents(void) {
     NSString *app = [[NSBundle mainBundle] bundlePath];
     if (SFWriteAgent(@"de.sofa.remote", [app stringByAppendingPathComponent:@"Contents/MacOS/SofaRemote"], YES)) {
         NSString *p = SFAgentPath(@"de.sofa.remote");
-        SFLaunchctl(@[@"unload", p]);   // alter Helper beendet sich samt PO-Token-Server (SIGTERM)
+        SFLaunchctl(@[@"unload", p]);   // the old helper exits along with the PO token server (SIGTERM)
         SFLaunchctl(@[@"load", @"-w", p]);
-        NSLog(@"Sofa: Fernbedienungs-Helper eingerichtet (%@, %@)", app, SFBuildID());
+        NSLog(@"Sofa: remote helper set up (%@, %@)", app, SFBuildID());
     }
-    // Autostart: erst ab der nächsten Anmeldung aktiv (jetzt laden startete ein zweites Sofa)
+    // autostart: only active from the next login (loading it now would start a second Sofa)
     SFWriteAgent(@"de.sofa.app", [app stringByAppendingPathComponent:@"Contents/MacOS/Sofa"], NO);
 }
 

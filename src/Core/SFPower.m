@@ -20,9 +20,9 @@ static __weak SFNavigator *gNav;
 
 + (void)displayOff {
     [self announceOff];
-    if (SFDevMode) { SFLog(@"power: (dev) Bildschirm aus simuliert"); [gNav toast:@"(Dev) Bildschirm aus"]; return; }
-    SFLog(@"power: Bildschirm aus");
-    // Wie "pmset displaysleepnow": IODisplayWrangler in den Idle-Zustand schicken
+    if (SFDevMode) { SFLog(@"power: (dev) display off simulated"); [gNav toast:@"(Dev) Bildschirm aus"]; return; }
+    SFLog(@"power: display off");
+    // Like "pmset displaysleepnow": send the IODisplayWrangler into the idle state
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         io_registry_entry_t r = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/IOResources/IODisplayWrangler");
         if (r) {
@@ -36,8 +36,8 @@ static __weak SFNavigator *gNav;
 
 + (void)systemSleep {
     [self announceOff];
-    if (SFDevMode) { SFLog(@"power: (dev) Ruhezustand simuliert"); [gNav toast:@"(Dev) Ruhezustand"]; return; }
-    SFLog(@"power: Ruhezustand");
+    if (SFDevMode) { SFLog(@"power: (dev) sleep simulated"); [gNav toast:@"(Dev) Ruhezustand"]; return; }
+    SFLog(@"power: sleep");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [NSTask launchedTaskWithLaunchPath:@"/usr/bin/pmset" arguments:@[@"sleepnow"]];
     });
@@ -49,13 +49,13 @@ static __weak SFNavigator *gNav;
     [gSleepTimer invalidate]; gSleepTimer = nil;
     [gWarnTimer invalidate]; gWarnTimer = nil;
     gFireDate = nil;
-    if (minutes <= 0) { SFLog(@"power: Sleep-Timer aus"); return; }
+    if (minutes <= 0) { SFLog(@"power: sleep timer off"); return; }
     NSTimeInterval secs = minutes * 60;
     gFireDate = [NSDate dateWithTimeIntervalSinceNow:secs];
     gSleepTimer = [NSTimer scheduledTimerWithTimeInterval:secs target:self selector:@selector(sleepTimerFired) userInfo:nil repeats:NO];
     if (secs > 90)
         gWarnTimer = [NSTimer scheduledTimerWithTimeInterval:secs - 60 target:self selector:@selector(sleepTimerWarn) userInfo:nil repeats:NO];
-    SFLog(@"power: Sleep-Timer %ld min", (long)minutes);
+    SFLog(@"power: sleep timer %ld min", (long)minutes);
 }
 
 + (void)sleepTimerWarn { [gNav toast:@"Sleep-Timer: Bildschirm geht in 1 Minute aus"]; }

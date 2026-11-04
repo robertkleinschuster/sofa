@@ -1,5 +1,5 @@
-// Typsichere Zugriffe auf geparstes JSON (Provider-APIs): liefern nil statt NSNull oder eines
-// falschen Typs, damit z.B. [dict(x)[@"a"] length] nie auf einem NSNumber landet.
+// Type-safe access to parsed JSON (provider APIs): return nil instead of NSNull or a
+// wrong type, so that e.g. [dict(x)[@"a"] length] never lands on an NSNumber.
 #import <Foundation/Foundation.h>
 
 static inline id nn(id v) { return (v == [NSNull null]) ? nil : v; }

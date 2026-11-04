@@ -1,7 +1,7 @@
 #import "SFStore.h"
 #import <sqlite3.h>
 
-// Dev-Instanzen: eigene Datenbank sofa-dev.db (siehe -init)
+// Dev instances: their own database sofa-dev.db (see -init)
 
 @implementation SFStore {
     sqlite3 *_db;
@@ -19,9 +19,9 @@
     if ((self = [super init])) {
         _q = dispatch_queue_create("sofa.store", DISPATCH_QUEUE_SERIAL);
         _progressCache = [NSMutableDictionary new];
-        // Dev-Instanzen haben eine eigene Datenbank: Tests können Fortschritt, Folgen, Downloads,
-        // Merkliste und Einstellungen der echten App nicht berühren (früher: Tabellen-Umbenennung
-        // per Textersetzung in jeder Datei – fehleranfällig)
+        // Dev instances have their own database: tests cannot touch the real app's progress, follows,
+        // downloads, watch-later list and settings (previously: renaming tables
+        // via text replacement in every file – error-prone)
         NSString *p = [SFAppSupportDir() stringByAppendingPathComponent:SFDevMode ? @"sofa-dev.db" : @"sofa.db"];
         if (sqlite3_open(p.fileSystemRepresentation, &_db) != SQLITE_OK) {
             SFLog(@"store: open failed %s", sqlite3_errmsg(_db));
@@ -112,8 +112,8 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 - (void)savePosition:(NSTimeInterval)pos duration:(NSTimeInterval)dur forItem:(SFItem *)item {
     if (item.kind == SFItemLive) return;
     BOOL w = dur > 0 && (pos >= dur * 0.94 || dur - pos < MIN(30, dur * 0.1));
-    if (w == NO && [self watched:item.identifier] && pos < 30) return;   // Wiederansehen: Status behalten
-    if (pos < 10 && !w) {   // kaum angesehen: nur Verlauf ohne Position
+    if (w == NO && [self watched:item.identifier] && pos < 30) return;   // rewatching: keep the status
+    if (pos < 10 && !w) {   // barely watched: history only, without position
         pos = 0;
     }
     BOOL old = [self watched:item.identifier];
@@ -154,7 +154,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 - (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source {
     return [self query:@"1=1" limit:limit source:source];
 }
-// Verlauf: zuletzt abgespielte Inhalte mit Zeitpunkt (@{item, updated, watched, pos})
+// History: recently played content with timestamp (@{item, updated, watched, pos})
 - (NSArray *)history:(NSInteger)limit {
     NSMutableArray *out = [NSMutableArray new];
     dispatch_sync(_q, ^{
@@ -241,7 +241,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     });
 }
 
-#pragma mark Generisch
+#pragma mark Generic
 
 static void bindAny(sqlite3_stmt *st, int idx, id v) {
     if ([v isKindOfClass:[NSString class]]) sqlite3_bind_text(st, idx, [v UTF8String], -1, SQLITE_TRANSIENT);
@@ -292,7 +292,7 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
     return out;
 }
 
-// Migration: Fortschritt unter neue Identität stellen (inkl. gespeichertem Item, "updated" bleibt)
+// Migration: put progress under a new identity (incl. the stored item, "updated" stays)
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item {
     NSString *to = item.identifier;
     if (!from || !to || [from isEqualToString:to]) return NO;

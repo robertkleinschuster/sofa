@@ -1,10 +1,10 @@
-// Energie-Menü (MENU auf Home): Sofa ist das Smart-TV-Overlay dieses iMac. Bildschirm aus,
-// Ruhezustand, Sleep-Timer. macOS-Timeouts (pmset displaysleep 5, sleep 0) bleiben der
-// Leerlauf-Rückfall; das hier ist die aktive Steuerung. Wecken: jede Remote-Taste
-// (SofaRemote: erster Druck weckt nur und holt Sofa nach vorne).
+// Power menu (MENU on home): Sofa is the smart-TV overlay of this iMac. Display off,
+// sleep, sleep timer. macOS timeouts (pmset displaysleep 5, sleep 0) remain the
+// idle fallback; this is the active control. Wake: any remote button
+// (SofaRemote: the first press only wakes and brings Sofa to the front).
 #import "SFCore.h"
 
-// Vor Bildschirm-aus/Ruhezustand: Player pausieren + Fortschritt sichern.
+// Before display off/sleep: pause the player + save progress.
 extern NSString *const SFPowerWillTurnOffNotification;
 
 @class SFNavigator;
@@ -12,8 +12,8 @@ extern NSString *const SFPowerWillTurnOffNotification;
 @interface SFPower : NSObject
 + (void)displayOff;
 + (void)systemSleep;
-+ (void)setSleepTimerMinutes:(NSInteger)minutes;   // 0 = aus
++ (void)setSleepTimerMinutes:(NSInteger)minutes;   // 0 = off
 + (NSDate *)sleepTimerFireDate;
-+ (void)showPowerMenuOn:(SFNavigator *)nav;       // MENU auf dem Home-Screen
-+ (void)setNavigator:(SFNavigator *)nav;          // für Hinweise (Sleep-Timer)
++ (void)showPowerMenuOn:(SFNavigator *)nav;       // MENU on the home screen
++ (void)setNavigator:(SFNavigator *)nav;          // for notices (sleep timer)
 @end

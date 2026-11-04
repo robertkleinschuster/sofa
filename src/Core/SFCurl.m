@@ -12,7 +12,7 @@
 static NSMutableSet *curlHosts(void) {
     static NSMutableSet *s; static dispatch_once_t o;
     dispatch_once(&o, ^{
-        // bekannt: ORF (API, Bilder, Video-CDNs) — nur AES-GCM/TLS 1.3
+        // known: ORF (API, images, video CDNs) — AES-GCM/TLS 1.3 only
         s = [NSMutableSet setWithArray:@[@"api-tvthek.orf.at", @"apasfiis.sf.apa.at", @"apasfpd.sf.apa.at",
                                          @"vod-at.mdn.ors.at", @"vod-ww.mdn.ors.at", @"orf1.mdn.ors.at", @"orf2.mdn.ors.at",
                                          @"orf2w.mdn.ors.at", @"orf3.mdn.ors.at", @"orfs.mdn.ors.at"]];
@@ -45,9 +45,9 @@ static void curlInit(void) {
     dispatch_once(&o, ^{ curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
-// Ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04): ein veraltetes CA-Bundle auf dem
-// eingefrorenen 10.9 soll nie etwas brechen. Echtheit von Code sichern Signaturen (SFUpdater:
-// Sofa-DMG, SFYTResolver: yt-dlp), nicht TLS.
+// Without TLS certificate verification (user decision 2026-11-04): an outdated CA bundle on the
+// frozen 10.9 must never break anything. Code authenticity is ensured by signatures (SFUpdater:
+// Sofa DMG, SFYTResolver: yt-dlp), not TLS.
 void *SFCurlNew(void) {
     CURL *c = curl_easy_init();
     if (c) {
@@ -115,10 +115,10 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
     if (!f) { if (error) *error = SFError(@"Datei nicht schreibbar."); return NO; }
     CURL *c = SFCurlNew();
     curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);          // GitHub-Assets leiten auf ihr CDN um
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);          // GitHub assets redirect to their CDN
     curl_easy_setopt(c, CURLOPT_MAXREDIRS, 8L);
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);      // < 1 KB/s für 60 s -> abbrechen
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);      // < 1 KB/s for 60 s -> abort
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 60L);
     curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
     curl_easy_setopt(c, CURLOPT_USERAGENT, [SFNet userAgent].UTF8String);
@@ -135,33 +135,33 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
     return ok;
 }
 
-#pragma mark - Stream-Proxy
+#pragma mark - Stream proxy
 
-// YouTube-HLS auf 10.9: CoreMedia holt die Playlist von manifest.googlevideo.com selbst und
-// scheitert dabei sporadisch sofort (≈1/6 bis 1/3 der Starts: -12939 auf der Playlist-URL,
-// -11800/-12643 bzw. -1102), obwohl der Server 200 liefert. Dieselbe Playlist von 127.0.0.1
-// scheiterte in 25 Versuchen nie (Messung 2026-11-04, docs/youtube.md §6). Darum: Playlists
-// dieses Hosts über den Proxy (VOD-Playlists zwischengespeichert und nach der Auflösung
-// vorgeladen), die Segmente (rr*.googlevideo.com) holt AVFoundation weiter direkt.
+// YouTube HLS on 10.9: CoreMedia fetches the playlist from manifest.googlevideo.com itself and
+// sporadically fails right away (≈1/6 to 1/3 of starts: -12939 on the playlist URL,
+// -11800/-12643 or -1102), although the server returns 200. The same playlist from 127.0.0.1
+// never failed in 25 attempts (measured 2026-11-04, docs/youtube.md §6). Hence: playlists
+// of this host go through the proxy (VOD playlists cached and preloaded after
+// resolving), AVFoundation keeps fetching the segments (rr*.googlevideo.com) directly.
 static BOOL SFIsPlaylistURL(NSString *abs) {
     NSString *ext = [[NSURL URLWithString:abs] path].pathExtension.lowercaseString;
     return [ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"];
 }
 static BOOL SFProxyPlaylistHost(NSString *host) {
-    static BOOL off; static dispatch_once_t o;   // Dev-A/B-Test: SOFA_NO_PLAYLIST_PROXY=1
+    static BOOL off; static dispatch_once_t o;   // dev A/B test: SOFA_NO_PLAYLIST_PROXY=1
     dispatch_once(&o, ^{ off = SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_NO_PLAYLIST_PROXY"] length] > 0; });
     return !off && [host isEqualToString:@"manifest.googlevideo.com"];
 }
 
-static const NSTimeInterval kPlaylistTTL = 600;   // VOD-Playlist ändert sich nicht; URLs gelten Stunden
+static const NSTimeInterval kPlaylistTTL = 600;   // a VOD playlist doesn't change; URLs are valid for hours
 static const NSUInteger kPlaylistCacheMax = 8;
 
 @implementation SFStreamProxy {
     int _fd;
     uint16_t _port;
     dispatch_source_t _src;
-    NSMutableDictionary *_plCache;      // target -> @[NSDate, NSData (umgeschriebene Playlist)]
-    NSMutableDictionary *_plInflight;   // target -> dispatch_group_t (ein Abruf je Playlist)
+    NSMutableDictionary *_plCache;      // target -> @[NSDate, NSData (rewritten playlist)]
+    NSMutableDictionary *_plInflight;   // target -> dispatch_group_t (one fetch per playlist)
 }
 
 + (instancetype)shared {
@@ -196,12 +196,12 @@ static const NSUInteger kPlaylistCacheMax = 8;
 
 - (NSString *)proxyStringFor:(NSString *)abs {
     NSString *enc = [abs stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet alphanumericCharacterSet]];
-    // Endung erhalten: AVFoundation erkennt HLS u.a. an ".m3u8"
+    // keep the extension: AVFoundation recognises HLS by ".m3u8", among others
     NSString *ext = [[[NSURL URLWithString:abs] path] pathExtension];
     return [NSString stringWithFormat:@"http://127.0.0.1:%d/p/%@%@", _port, enc, ext.length ? [@"." stringByAppendingString:ext] : @""];
 }
 
-// Über den Proxy: alles von curl-Hosts (TLS-Brücke) und Playlists von SFProxyPlaylistHost.
+// Via the proxy: everything from curl hosts (TLS bridge) and playlists from SFProxyPlaylistHost.
 - (BOOL)shouldProxy:(NSString *)abs {
     NSURL *u = [NSURL URLWithString:abs];
     if (![u.scheme isEqualToString:@"https"] || !_port) return NO;
@@ -219,8 +219,8 @@ static const NSUInteger kPlaylistCacheMax = 8;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ [self playlistFor:t status:NULL]; });
 }
 
-// Umgeschriebene Playlist: aus dem Cache, aus einem laufenden Abruf (mitwarten) oder frisch.
-// Gecacht wird nur VOD (#EXT-X-ENDLIST); Live-Playlists ändern sich laufend.
+// Rewritten playlist: from the cache, from a running fetch (wait for it) or fresh.
+// Only VOD is cached (#EXT-X-ENDLIST); live playlists change constantly.
 - (NSData *)playlistFor:(NSString *)target status:(NSInteger *)status {
     dispatch_group_t wait = nil, mine = nil;
     @synchronized (self) {
@@ -232,7 +232,7 @@ static const NSUInteger kPlaylistCacheMax = 8;
     if (wait) {
         dispatch_group_wait(wait, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)));
         @synchronized (self) { NSArray *c = _plCache[target]; if (c) { if (status) *status = 200; return c[1]; } }
-        // Vorgänger lieferte nichts Cachebares (Live/Fehler) -> selbst holen, ohne Cache
+        // the predecessor delivered nothing cacheable (live/error) -> fetch ourselves, without cache
     }
     NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
     NSData *d = fetchFull(target, @"GET", nil, nil, &st, &eff, &e);
@@ -242,7 +242,7 @@ static const NSUInteger kPlaylistCacheMax = 8;
     else SFLog(@"proxy: playlist %ld %@", (long)st, e.localizedDescription ?: @"");
     @synchronized (self) {
         if (body && [pl rangeOfString:@"#EXT-X-ENDLIST"].location != NSNotFound) {
-            if (_plCache.count >= kPlaylistCacheMax) {   // ältesten Eintrag verwerfen
+            if (_plCache.count >= kPlaylistCacheMax) {   // drop the oldest entry
                 NSString *old = nil; NSDate *oldest = nil;
                 for (NSString *k in _plCache) { NSDate *t = _plCache[k][0]; if (!oldest || [t compare:oldest] == NSOrderedAscending) { oldest = t; old = k; } }
                 if (old) [_plCache removeObjectForKey:old];
@@ -280,7 +280,7 @@ static const int kMaxHLSVersion = 6;
 
 - (NSString *)rewritePlaylist:(NSString *)pl base:(NSString *)base {
     NSURL *b = [NSURL URLWithString:base];
-    BOOL all = SFHostNeedsCurl(b.host);   // TLS-Brücke: alles Weitere ebenfalls über den Proxy (wie bisher)
+    BOOL all = SFHostNeedsCurl(b.host);   // TLS bridge: everything else through the proxy as well (as before)
     NSMutableArray *out = [NSMutableArray new];
     for (NSString *raw in [pl componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
         NSString *line = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
@@ -290,8 +290,8 @@ static const int kMaxHLSVersion = 6;
             [out addObject:abs ? ((all || [self shouldProxy:abs]) ? [self proxyStringFor:abs] : abs) : line];
             continue;
         }
-        // CoreMedia von 10.9 lehnt neuere Playlist-Versionen ab ("Unsupported version: 7"),
-        // obwohl TS-Streams keine v7-Features brauchen -> Version deckeln.
+        // 10.9's CoreMedia rejects newer playlist versions ("Unsupported version: 7"),
+        // although TS streams need no v7 features -> cap the version.
         if ([line hasPrefix:@"#EXT-X-VERSION:"]) {
             if ([[line substringFromIndex:15] integerValue] > kMaxHLSVersion)
                 line = [NSString stringWithFormat:@"#EXT-X-VERSION:%d", kMaxHLSVersion];
@@ -324,7 +324,7 @@ static size_t hdrCB(char *p, size_t sz, size_t n, void *ud) {
     StreamCtx *c = ud;
     NSString *line = [[NSString alloc] initWithBytes:p length:sz * n encoding:NSISOLatin1StringEncoding];
     if ([line hasPrefix:@"HTTP/"]) {
-        [c->hdrs removeAllObjects];   // Redirect-Zwischenantworten verwerfen
+        [c->hdrs removeAllObjects];   // discard intermediate redirect responses
         NSArray *parts = [line componentsSeparatedByString:@" "];
         c->status = parts.count > 1 ? [parts[1] integerValue] : 502;
     } else {
@@ -353,7 +353,7 @@ static void sendHeaders(StreamCtx *c) {
 static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
     StreamCtx *c = ud;
     sendHeaders(c);
-    if (c->failed || !writeAll(c->fd, p, sz * n)) { c->failed = YES; return 0; }   // Abbruch, wenn AVPlayer schließt
+    if (c->failed || !writeAll(c->fd, p, sz * n)) { c->failed = YES; return 0; }   // abort when AVPlayer closes
     return sz * n;
 }
 
@@ -377,7 +377,7 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
     if (![path hasPrefix:@"/p/"]) { close(fd); return; }
     NSString *enc = [path substringFromIndex:3];
     NSRange dot = [enc rangeOfString:@"." options:NSBackwardsSearch];
-    if (dot.location != NSNotFound) enc = [enc substringToIndex:dot.location];   // angehängte Endung entfernen
+    if (dot.location != NSNotFound) enc = [enc substringToIndex:dot.location];   // strip the appended extension
     NSString *target = [enc stringByRemovingPercentEncoding];
     if (!target) { close(fd); return; }
 
@@ -396,7 +396,7 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
         return;
     }
 
-    // Segmente / Dateien: durchreichen (inkl. Range), ohne alles zu puffern
+    // segments / files: pass through (incl. Range) without buffering everything
     curlInit();
     CURL *c = SFCurlNew();
     NSMutableDictionary *hdrs = [NSMutableDictionary new];

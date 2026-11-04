@@ -8,7 +8,7 @@
 #import "SFPlayerScreen.h"
 
 static NSString *const kReleasesAPI = @"https://api.github.com/repos/robertkleinschuster/sofa/releases/latest";
-// Nur für Tests (tools/test-updater): andere Release-Quelle; erlaubt den Updater auch in Dev-Instanzen.
+// Tests only (tools/test-updater): different release source; also allows the updater in dev instances.
 static NSString *SFTestAPI(void) { return [NSProcessInfo processInfo].environment[@"SOFA_UPDATE_API"]; }
 static const NSTimeInterval kFirstCheck = 5 * 60, kCheckEvery = 6 * 3600, kIdleFor = 15 * 60;
 
@@ -18,7 +18,7 @@ static NSString *SFAppVersion(NSString *bundle) {
     return i[@"CFBundleShortVersionString"];
 }
 
-// "0.10.1" > "0.9.3"; fehlende Stellen = 0
+// "0.10.1" > "0.9.3"; missing components = 0
 static NSComparisonResult SFCompareVersions(NSString *a, NSString *b) {
     NSArray *x = [a componentsSeparatedByString:@"."], *y = [b componentsSeparatedByString:@"."];
     for (NSUInteger i = 0; i < MAX(x.count, y.count); i++) {
@@ -49,8 +49,8 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
 }
 
 - (NSString *)appPath { return [[NSBundle mainBundle] bundlePath]; }
-- (NSString *)readyPath { return [[self appPath] stringByAppendingString:@".update"]; }     // geprüft, wartet auf Ruhe
-- (NSString *)stagedPath { return [[self appPath] stringByAppendingString:@".staged"]; }    // Übergabe an den Helper
+- (NSString *)readyPath { return [[self appPath] stringByAppendingString:@".update"]; }     // verified, waiting for idle
+- (NSString *)stagedPath { return [[self appPath] stringByAppendingString:@".staged"]; }    // hand-over to the helper
 - (NSString *)workDir { return [SFCacheDir() stringByAppendingPathComponent:@"update"]; }
 
 - (BOOL)available {
@@ -62,7 +62,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
 - (void)startWithNavigator:(SFNavigator *)nav {
     _nav = nav;
     if (!self.available) return;
-    // Reste: ein bereitliegendes Update, das nicht (mehr) neuer ist, verwerfen
+    // leftovers: discard a ready update that is not (or no longer) newer
     NSString *v = SFAppVersion([self readyPath]);
     if (v && SFCompareVersions(v, SFAppVersion(nil)) != NSOrderedDescending)
         [[NSFileManager defaultManager] removeItemAtPath:[self readyPath] error:nil];
@@ -83,12 +83,12 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     [self check:^(NSString *m) {
         SFLog(@"update-check: %@", m);
         if (!self.updateAvailable || !SFAutoUpdateEnabled()) return;
-        if (SFCompareVersions(SFAppVersion([self readyPath]) ?: @"0", self->_latest) == NSOrderedSame) return;   // liegt schon bereit
+        if (SFCompareVersions(SFAppVersion([self readyPath]) ?: @"0", self->_latest) == NSOrderedSame) return;   // already ready
         [self fetch:NO done:^(NSString *m2) { SFLog(@"update: %@", m2); }];
     }];
 }
 
-// Ruhe = keine Wiedergabe und 15 min keine Taste (oder Sofa gar nicht vorne)
+// idle = no playback and no key for 15 min (or Sofa not in front at all)
 - (BOOL)idle {
     SFNavigator *nav = _nav;
     for (id s in nav.stack) if ([s isKindOfClass:[SFPlayerScreen class]]) return NO;
@@ -103,12 +103,12 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
 }
 
 - (void)handOver {
-    SFLog(@"update: %@ bereit – übergebe an den Helper", SFAppVersion([self readyPath]));
+    SFLog(@"update: %@ ready – handing over to the helper", SFAppVersion([self readyPath]));
     if (![[NSFileManager defaultManager] moveItemAtPath:[self readyPath] toPath:[self stagedPath] error:nil])
-        SFLog(@"update: Übergabe fehlgeschlagen");
+        SFLog(@"update: hand-over failed");
 }
 
-// Nur nachsehen, was GitHub als neueste Version hat (merkt sich die Download-Adressen)
+// Only look up what GitHub has as the latest version (remembers the download URLs)
 - (void)check:(void (^)(NSString *))done {
     if (!self.available) {
         done(SFRuntimeDir() ? @"Updates gehen nur, wenn Sofa im Ordner „Programme“ liegt"
@@ -137,7 +137,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
         SFMain(^{
             self->_busy = NO;
             self->_lastCheck = [NSDate date];
-            // Release ohne DMG/Signatur (z.B. nur Quellcode, oder vor 0.3) zählt nicht als installierbares Update
+            // a release without DMG/signature (e.g. source only, or before 0.3) doesn't count as an installable update
             self->_latest = (dmgURL && sigURL) ? ver : self.installedVersion;
             self->_dmgURL = dmgURL; self->_sigURL = sigURL;
             self->_notes = [rel[@"body"] isKindOfClass:[NSString class]] ? rel[@"body"] : nil;
@@ -157,7 +157,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     [self fetch:YES done:progress];
 }
 
-// Laden + prüfen (Hintergrund); now = danach sofort installieren
+// download + verify (background); now = install right afterwards
 - (void)fetch:(BOOL)now done:(void (^)(NSString *))done {
     if (_busy) { done(@"Update wird bereits geladen"); return; }
     _busy = YES;
@@ -174,9 +174,9 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     });
 }
 
-// Hintergrund: DMG laden, Signatur prüfen, Bundle nach <App>.update. nil = ok, sonst Fehlermeldung.
-// Geladen wird ohne TLS-Zertifikatsprüfung (SFCurlNew); die Echtheit belegt allein die Signatur
-// (SFSignature, öffentlicher Schlüssel im Bundle) – unabhängig von CA-Listen, auch in Jahren.
+// Background: download the DMG, verify the signature, bundle to <App>.update. nil = ok, else an error message.
+// Downloads skip TLS certificate verification (SFCurlNew); authenticity is proven by the signature alone
+// (SFSignature, public key in the bundle) – independent of CA lists, even years from now.
 - (NSString *)downloadAndStage:(NSString *)dmgURL sig:(NSString *)sigURL version:(NSString *)ver {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *work = [self workDir], *dmg = [work stringByAppendingPathComponent:@"Sofa.dmg"];
@@ -187,15 +187,15 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     NSInteger st = 0;
     NSData *sig = SFCurlFetch(sigURL, @"GET", nil, nil, &st, &e);
     if (st != 200 || sig.length < 64) return @"Update: Signatur nicht ladbar";
-    SFLog(@"update: lade %@", dmgURL);
+    SFLog(@"update: downloading %@", dmgURL);
     if (!SFCurlDownload(dmgURL, dmg, &e)) return [@"Update-Download fehlgeschlagen: " stringByAppendingString:e.localizedDescription ?: @"?"];
     if (!SFVerifyFileSignature(dmg, sig, [[NSBundle mainBundle] pathForResource:@"sofa-release-public" ofType:@"pem"])) {
         [fm removeItemAtPath:work error:nil];
-        SFLog(@"update: Signatur von %@ ungültig – verworfen", dmgURL);
+        SFLog(@"update: signature of %@ invalid – discarded", dmgURL);
         return @"Update verworfen: Signatur ungültig";
     }
 
-    // DMG einhängen (unsichtbar, nur lesen), Bundle kopieren, aushängen
+    // mount the DMG (invisible, read-only), copy the bundle, unmount
     NSString *result = nil;
     if (SFRun(@"/usr/bin/hdiutil", @[@"attach", @"-nobrowse", @"-readonly", @"-noautoopen", @"-mountpoint", mnt, dmg], NULL) != 0)
         result = @"Update: DMG lässt sich nicht öffnen";
@@ -208,7 +208,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     [fm removeItemAtPath:dmg error:nil];
     if (result) { [fm removeItemAtPath:tmp error:nil]; return result; }
 
-    // Plausibel? Richtige App, richtige Version, vollständige Laufzeit
+    // plausible? right app, right version, complete runtime
     NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[tmp stringByAppendingPathComponent:@"Contents/Info.plist"]];
     BOOL ok = [info[@"CFBundleIdentifier"] isEqual:@"de.sofa.app"] && [info[@"CFBundleShortVersionString"] isEqual:ver] &&
               [fm isExecutableFileAtPath:[tmp stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]] &&
@@ -218,7 +218,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     [fm removeItemAtPath:[self readyPath] error:nil];
     if (![fm moveItemAtPath:tmp toPath:[self readyPath] error:nil]) return @"Update: Ablegen fehlgeschlagen";
     [fm removeItemAtPath:work error:nil];
-    SFLog(@"update: Sofa %@ geprüft und bereit", ver);
+    SFLog(@"update: Sofa %@ verified and ready", ver);
     return nil;
 }
 @end

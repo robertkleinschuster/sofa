@@ -1,28 +1,28 @@
-// Persistenz (SQLite): Wiedergabe-Positionen, Gesehen-Status, Verlauf und App-Zustand
-// (-setting:/-setSetting:). Nutzer-Einstellungen gehören in SFSettings – Regel siehe SFSettings.h.
+// Persistence (SQLite): playback positions, watched status, history and app state
+// (-setting:/-setSetting:). User settings belong in SFSettings – see the rule in SFSettings.h.
 #import "SFModel.h"
 
 
 @interface SFStore : NSObject
 + (instancetype)shared;
 - (NSTimeInterval)positionFor:(NSString *)identifier;
-- (double)progressFor:(NSString *)identifier;        // 0..1, 1 = gesehen
+- (double)progressFor:(NSString *)identifier;        // 0..1, 1 = watched
 - (BOOL)watched:(NSString *)identifier;
 - (void)savePosition:(NSTimeInterval)pos duration:(NSTimeInterval)dur forItem:(SFItem *)item;
 - (void)setWatched:(BOOL)w forItem:(SFItem *)item;
-- (void)flush;   // ausstehende Schreibvorgänge abschließen (Beenden)
+- (void)flush;   // complete pending writes (quit)
 - (NSArray *)continueWatching:(NSInteger)limit source:(NSString *)source;  // SFItem
 - (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source;
-- (NSArray *)history:(NSInteger)limit;   // Verlauf: @{item, updated, watched, pos}, neueste zuerst
+- (NSArray *)history:(NSInteger)limit;   // history: @{item, updated, watched, pos}, newest first
 - (void)removeFromContinue:(NSString *)identifier;
 - (NSString *)setting:(NSString *)key;
 - (void)setSetting:(NSString *)value forKey:(NSString *)key;
-// Einfacher JSON-Cache für Provider (z.B. Mediathek-Antworten), mit Alter.
+// Simple JSON cache for providers (e.g. Mediathek responses), with age.
 - (id)cachedJSON:(NSString *)key maxAge:(NSTimeInterval)age;
 - (void)cacheJSON:(id)obj forKey:(NSString *)key;
-// Generischer Zugriff für andere Module (Downloads). Werte: NSString/NSNumber/NSData/NSNull.
-- (void)run:(NSString *)sql args:(NSArray *)args;                // asynchron (Schreiben)
-- (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchron, Array von Dictionaries
-// Fortschritt/Verlauf auf neue ID umschlüsseln (Migration local:… -> yt:…); nur wenn Ziel frei
-- (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // Migration: id + Item ersetzen
+// Generic access for other modules (downloads). Values: NSString/NSNumber/NSData/NSNull.
+- (void)run:(NSString *)sql args:(NSArray *)args;                // asynchronous (writes)
+- (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchronous, array of dictionaries
+// Re-key progress/history to a new ID (migration local:… -> yt:…); only if the target is free
+- (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // migration: replace id + item
 @end

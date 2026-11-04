@@ -1,29 +1,29 @@
-// Nutzer-Einstellungen (macOS-Preferences, auch vom Helper SofaRemote lesbar).
-// Domain de.sofa.app (Dev-Instanzen: de.sofa.dev, nie die echte App beeinflussen).
+// User settings (macOS preferences, also readable by the helper SofaRemote).
+// Domain de.sofa.app (dev instances: de.sofa.dev, never affect the real app).
 //
-// REGEL: Hier steht, was der Nutzer bewusst wählt (Einstellungsmenü, Rückfragen, Schalter in
-// Bildschirmen). Zustand, den Sofa selbst führt (Handy-Kopplung, letzte Suchen, zuletzt benutztes
-// Tastatur-Layout, Migrations-Marker, Zeitstempel), gehört in SFStore (-setting:/-setSetting:).
+// RULE: this holds what the user deliberately chooses (settings menu, prompts, switches on
+// screens). State that Sofa keeps itself (phone pairing, recent searches, last used
+// keyboard layout, migration markers, timestamps) belongs in SFStore (-setting:/-setSetting:).
 #import <Foundation/Foundation.h>
 
-BOOL SFAutostartEnabled(void);            // beim Anmelden starten (Standard: an)
+BOOL SFAutostartEnabled(void);            // launch at login (default: on)
 void SFSetAutostartEnabled(BOOL on);
-BOOL SFRemoteLaunchEnabled(void);         // geschlossenes Sofa mit jeder Taste der Apple Remote starten (Standard: an)
+BOOL SFRemoteLaunchEnabled(void);         // launch a closed Sofa with any Apple Remote button (default: on)
 void SFSetRemoteLaunchEnabled(BOOL on);
-BOOL SFAutoUpdateEnabled(void);           // Updates von GitHub automatisch laden + in Ruhe installieren (Standard: an)
+BOOL SFAutoUpdateEnabled(void);           // download updates from GitHub automatically + install when idle (default: on)
 void SFSetAutoUpdateEnabled(BOOL on);
-BOOL SFStartupQuestionsAsked(void);       // Ersteinrichtung hat beides abgefragt
+BOOL SFStartupQuestionsAsked(void);       // first-run setup has asked both
 void SFSetStartupQuestionsAsked(void);
-// mpv ist der Standard-Player; YES = alte Wahl (H.264 über AVFoundation). Nur per defaults, Notschalter.
+// mpv is the default player; YES = old choice (H.264 via AVFoundation). Only via defaults, emergency switch.
 BOOL SFPreferAVFoundation(void);
-// Gesehene Abo-Folgen einen Tag nach dem Ansehen löschen (Standard: an)
+// Delete watched subscription episodes one day after watching (default: on)
 BOOL SFDeleteWatchedDownloads(void);
 void SFSetDeleteWatchedDownloads(BOOL on);
-// Bevorzugte Untertitelsprache (z.B. "de"); nil = Untertitel aus (Standard). Wird bei jeder
-// Auswahl im Player gemerkt und beim nächsten Video angewandt, wenn die Sprache verfügbar ist.
+// Preferred subtitle language (e.g. "de"); nil = subtitles off (default). Remembered on every
+// choice in the player and applied to the next video when the language is available.
 NSString *SFSubtitleLanguage(void);
 void SFSetSubtitleLanguage(NSString *lang);
-// Untertitel auch bei gleicher Sprache wie der Ton (Hörgeschädigten-Untertitel); subtitleLanguage
-// gilt dagegen nur für fremdsprachigen Ton (Übersetzung).
+// Subtitles even when in the same language as the audio (hard-of-hearing subtitles); subtitleLanguage,
+// by contrast, only applies to foreign-language audio (translation).
 BOOL SFSubtitlesSameLanguage(void);
 void SFSetSubtitlesSameLanguage(BOOL on);

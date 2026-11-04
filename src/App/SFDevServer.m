@@ -32,7 +32,7 @@
     return self;
 }
 
-// Tailscale vergibt Adressen aus 100.64.0.0/10.
+// Tailscale assigns addresses from 100.64.0.0/10.
 static NSArray *bindAddresses(void) {
     NSMutableArray *a = [NSMutableArray arrayWithObject:@"127.0.0.1"];
     struct ifaddrs *ifs = NULL;
@@ -117,7 +117,7 @@ static BOOL writeAll(int fd, const void *buf, size_t len) {
         dispatch_async(dispatch_get_main_queue(), ^{ if (self.keyHandler && k) self.keyHandler(k); });
         [self respond:fd type:@"text/plain" body:[@"ok" dataUsingEncoding:NSUTF8StringEncoding]];
     } else if ([path isEqualToString:@"/frame.jpg"]) {
-        // asynchron: Main rendert, Schreiben im Hintergrund (kein sync-Kreuz mit _io)
+        // asynchronous: main renders, writing in the background (no sync cross with _io)
         dispatch_async(dispatch_get_main_queue(), ^{
             CGImageRef img = [self renderFrame:1.0];
             SFBackground(^{
@@ -177,9 +177,9 @@ static BOOL writeAll(int fd, const void *buf, size_t len) {
     __block NSUInteger n;
     dispatch_sync(_io, ^{ n = self->_streams.count; });
     if (!n) { [_frameTimer invalidate]; _frameTimer = nil; return; }
-    if (_encoding) return;   // Encoder hinterher: Frame auslassen
+    if (_encoding) return;   // encoder behind: skip the frame
     _encoding = YES;
-    CGImageRef img = [self renderFrame:2.0 / 3.0];   // 1280x720 bei 1920x1080
+    CGImageRef img = [self renderFrame:2.0 / 3.0];   // 1280x720 at 1920x1080
     dispatch_async(_io, ^{
         NSData *jpg = [self jpeg:img quality:0.7];
         CGImageRelease(img);
@@ -195,8 +195,8 @@ static BOOL writeAll(int fd, const void *buf, size_t len) {
 #pragma mark Page
 
 - (NSString *)page {
-    return @"<!doctype html><html lang=de><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>Sofa Dev-Viewer</title><style>"
+    return @"<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+    "<title>Sofa dev viewer</title><style>"
     "body{margin:0;background:#0b0c10;color:#ddd;font:15px -apple-system,Helvetica,Arial,sans-serif;display:flex;flex-direction:column;align-items:center;padding:16px}"
     "img{width:min(100%,1280px);aspect-ratio:16/9;background:#000;border-radius:8px;box-shadow:0 10px 40px #0008}"
     ".pad{display:grid;grid-template-columns:repeat(3,64px);gap:8px;margin:18px auto}"
@@ -209,10 +209,10 @@ static BOOL writeAll(int fd, const void *buf, size_t len) {
     "<button data-k=left>&#9664;</button><button data-k=select>&#9679;</button><button data-k=right>&#9654;</button>"
     "<span></span><button data-k=down>&#9660;</button><span></span></div>"
     "<div class=row><button data-k=menu>MENU</button><button data-k=play>&#9654;&#10074;&#10074;</button></div>"
-    "<div class=row style='margin-top:10px'><button data-k=menuhold>MENU lang</button><button data-k=selecthold>&#9679; lang</button>"
-    "<button data-k=prev>&#9664; lang</button><button data-k=next>&#9654; lang</button>"
-    "<button data-k=uphold>&#9650; lang</button><button data-k=downhold>&#9660; lang</button></div>"
-    "<p>Tastatur: Pfeile, Enter = Mitte, Esc = MENU, Leertaste = Play/Pause; lang: I = Mitte, H = MENU, ,/. = links/rechts.</p>"
+    "<div class=row style='margin-top:10px'><button data-k=menuhold>MENU long</button><button data-k=selecthold>&#9679; long</button>"
+    "<button data-k=prev>&#9664; long</button><button data-k=next>&#9654; long</button>"
+    "<button data-k=uphold>&#9650; long</button><button data-k=downhold>&#9660; long</button></div>"
+    "<p>Keyboard: arrows, Enter = centre, Esc = MENU, Space = play/pause; long: I = centre, H = MENU, ,/. = left/right.</p>"
     "<script>"
     "function k(x){fetch('/key?k='+x)}"
     "document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>k(b.dataset.k));"

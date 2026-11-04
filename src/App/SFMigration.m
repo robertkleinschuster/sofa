@@ -4,11 +4,11 @@
 #import "SFYouTube.h"
 
 static NSString *norm(NSString *s) {
-    s = [s stringByReplacingOccurrencesOfString:@"：" withString:@":"];   // ytdl-sub ersetzt ":" im Ordnernamen
+    s = [s stringByReplacingOccurrencesOfString:@"：" withString:@":"];   // ytdl-sub replaces ":" in folder names
     return [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]].precomposedStringWithCanonicalMapping;
 }
 
-// subscriptions-kodi.yaml: "profil:" auf Spalte 0, darunter "  Name: URL"
+// subscriptions-kodi.yaml: "profile:" in column 0, below it "  Name: URL"
 static NSDictionary *readYAML(void) {
     NSString *y = [NSString stringWithContentsOfFile:[NSHomeDirectory() stringByAppendingPathComponent:@"ytdl-sub/subscriptions-kodi.yaml"] encoding:NSUTF8StringEncoding error:nil];
     NSMutableDictionary *out = [NSMutableDictionary new];   // norm(name) -> @{name, profile, url}
@@ -57,7 +57,7 @@ static BOOL isVideo(NSString *f) {
     return ![f hasPrefix:@"."] && ([e isEqualToString:@"mp4"] || [e isEqualToString:@"m4v"] || [e isEqualToString:@"mkv"] || [e isEqualToString:@"mov"]);
 }
 
-// Ein Video aus NFO + Datei; Identität so wie die Online-Provider sie vergeben
+// One video from NFO + file; identity as the online providers assign it
 static SFItem *episodeItem(NSString *vp, NSDictionary *n, NSString *source, NSString *channel) {
     static NSDateFormatter *df;
     if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd"; df.timeZone = [NSTimeZone localTimeZone]; }
@@ -99,7 +99,7 @@ static SFItem *episodeItem(NSString *vp, NSDictionary *n, NSString *source, NSSt
     return e;
 }
 
-// Abo-Ziel aus der ytdl-sub-URL; @handles brauchen eine Anfrage (done: id oder nil)
+// Subscription target from the ytdl-sub URL; @handles need a request (done: id or nil)
 static void subscriptionID(NSString *source, NSString *url, void (^done)(NSString *sid)) {
     if ([source isEqualToString:@"zdf"]) { done([@"zdfshow:" stringByAppendingString:lastPathPart(url)]); return; }
     if ([source isEqualToString:@"ard"]) { done([@"ardshow:" stringByAppendingString:lastPathPart(url)]); return; }
@@ -125,9 +125,9 @@ void SFMigrateLibraryIfNeeded(void) {
         if (!SFDevMode) [[SFStore shared] setSetting:@"none" forKey:@"migration.tvshows"];
         return;
     }
-    SFLog(@"migration: übernehme %@", root);
+    SFLog(@"migration: importing %@", root);
     SFBackground(^{
-        // 1) Bestand lesen (NFOs) – Hintergrund
+        // 1) read the existing library (NFOs) – background
         NSFileManager *fm = [NSFileManager defaultManager];
         NSDictionary *yaml = readYAML();
         NSMutableArray *shows = [NSMutableArray new];
@@ -155,7 +155,7 @@ void SFMigrateLibraryIfNeeded(void) {
             if (y) { s[@"url"] = y[@"url"]; s[@"key"] = norm(y[@"name"]); }
             [shows addObject:s];
         }
-        // Abos ohne vorhandenen Ordner (nur echte Übernahme, nicht beim Dev-Test)
+        // subscriptions without an existing folder (real import only, not in the dev test)
         if (!SFDevMode) {
             NSSet *have = [NSSet setWithArray:[shows valueForKey:@"key"]];
             for (NSString *k in yaml) if (![have containsObject:k]) {
@@ -163,7 +163,7 @@ void SFMigrateLibraryIfNeeded(void) {
                 [shows addObject:@{@"dir": @"", @"source": sourceFor(y[@"profile"], nil), @"channel": y[@"name"], @"eps": @[], @"url": y[@"url"], @"key": k}];
             }
         }
-        // 2) Übernehmen – Main-Thread (SFDownloads/SFStore), Verschieben = Umbenennen
+        // 2) import – main thread (SFDownloads/SFStore), moving = renaming
         SFMain(^{
             SFDownloads *dl = [SFDownloads shared];
             SFStore *st = [SFStore shared];
@@ -178,13 +178,13 @@ void SFMigrateLibraryIfNeeded(void) {
                     unsigned long long sz = [[fm attributesOfItemAtPath:ep[@"path"] error:nil] fileSize];
                     if ([dl adoptFile:ep[@"path"] item:e thumb:ep[@"thumb"] subscription:nil error:&err]) { moved++; bytes += sz; }
                     else if ([dl fileFor:e.identifier]) dup++;
-                    else { failed++; SFLog(@"migration: FEHLER %@: %@", ep[@"path"], err.localizedDescription); continue; }
+                    else { failed++; SFLog(@"migration: ERROR %@: %@", ep[@"path"], err.localizedDescription); continue; }
                     if (!newest || [e.date compare:newest] == NSOrderedDescending) newest = e.date;
-                    // Fortschritt/gesehen wandert mit (Dev: gemeinsame DB -> nicht anfassen)
+                    // progress/watched moves along (dev: shared DB -> don't touch)
                     if (!SFDevMode) { if ([st moveProgress:ep[@"old"] toItem:e]) prog++; }
                     else if ([st watched:ep[@"old"]]) prog++;
                 }
-                // Poster/Fanart der Sendung in deren Sofa-Ordner
+                // the show's poster/fanart into its Sofa folder
                 NSString *target = [dl folderForSource:s[@"source"] channel:s[@"channel"]];
                 if ([s[@"dir"] length]) for (NSString *img in @[@"poster.jpg", @"fanart.jpg"]) {
                     NSString *src = [s[@"dir"] stringByAppendingPathComponent:img], *dst = [target stringByAppendingPathComponent:img];
@@ -192,31 +192,31 @@ void SFMigrateLibraryIfNeeded(void) {
                 }
                 if (s[@"url"]) [subs addObject:@{@"show": s, @"newest": newest ?: [NSDate date]}];
             }
-            SFLog(@"migration: %lu Videos übernommen (%.1f GB), %lu doppelt, %lu Fehler, Fortschritt %lu%@",
-                  (unsigned long)moved, bytes / 1e9, (unsigned long)dup, (unsigned long)failed, (unsigned long)prog, SFDevMode ? @" (Dev: Fortschritt nur gezählt)" : @"");
+            SFLog(@"migration: %lu videos imported (%.1f GB), %lu duplicates, %lu errors, progress %lu%@",
+                  (unsigned long)moved, bytes / 1e9, (unsigned long)dup, (unsigned long)failed, (unsigned long)prog, SFDevMode ? @" (dev: progress only counted)" : @"");
             [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsDidChangeNotification object:nil];
-            // 3) Abos (ohne Bestand: ab jetzt; mit Bestand: nur Neueres als die neueste Folge)
+            // 3) subscriptions (no existing videos: from now on; with existing videos: only newer than the newest episode)
             __block NSUInteger okSubs = 0;
             NSMutableArray *unresolved = [NSMutableArray new];
             dispatch_block_t finish = ^{
-                SFLog(@"migration: %lu Abos übernommen%@", (unsigned long)okSubs,
-                      unresolved.count ? [@", nicht auflösbar: " stringByAppendingString:[unresolved componentsJoinedByString:@", "]] : @"");
+                SFLog(@"migration: %lu subscriptions imported%@", (unsigned long)okSubs,
+                      unresolved.count ? [@", unresolvable: " stringByAppendingString:[unresolved componentsJoinedByString:@", "]] : @"");
                 if (SFDevMode) return;
                 [st setSetting:[NSString stringWithFormat:@"%lu/%lu/%lu", (unsigned long)moved, (unsigned long)failed, (unsigned long)okSubs] forKey:@"migration.tvshows"];
                 if (unresolved.count) [st setSetting:[unresolved componentsJoinedByString:@"\n"] forKey:@"migration.unresolved"];
-                // 4) Rest in den Papierkorb – nur wenn kein Video zurückgeblieben ist
+                // 4) the rest to the trash – only if no video was left behind
                 NSUInteger left = 0;
                 for (NSString *rel in [fm enumeratorAtPath:root]) if (isVideo(rel.lastPathComponent)) left++;
-                if (left) { SFLog(@"migration: %lu Videos verbleiben in %@ – Ordner bleibt", (unsigned long)left, root); return; }
+                if (left) { SFLog(@"migration: %lu videos remain in %@ – folder stays", (unsigned long)left, root); return; }
                 NSError *te = nil;
-                if ([fm trashItemAtURL:[NSURL fileURLWithPath:root] resultingItemURL:nil error:&te]) SFLog(@"migration: %@ in den Papierkorb", root);
-                else SFLog(@"migration: Papierkorb fehlgeschlagen: %@", te.localizedDescription);
+                if ([fm trashItemAtURL:[NSURL fileURLWithPath:root] resultingItemURL:nil error:&te]) SFLog(@"migration: %@ moved to the trash", root);
+                else SFLog(@"migration: trash failed: %@", te.localizedDescription);
             };
-            // nacheinander (je eine kleine Anfrage für @handles)
+            // one after another (one small request each for @handles)
             __block NSUInteger idx = 0;
             __block void (^next)(void);
             next = ^{
-                if (idx >= subs.count) { dispatch_block_t f = finish; next = nil; f(); return; }   // next=nil gibt diesen Block frei
+                if (idx >= subs.count) { dispatch_block_t f = finish; next = nil; f(); return; }   // next=nil releases this block
                 NSDictionary *x = subs[idx++];
                 NSDictionary *s = x[@"show"];
                 subscriptionID(s[@"source"], s[@"url"], ^(NSString *sid) {

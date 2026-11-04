@@ -1,9 +1,9 @@
-// Sofa — Einstiegspunkt, Fenster/Kiosk und Dev-Modus.
+// Sofa — entry point, window/kiosk and dev mode.
 //
-// Dev-Modus (`Sofa --dev [--size WxH]`): Fenster außerhalb des sichtbaren
-// Bildschirms, keine Dock-Präsenz, kein Fokus, stumm. Steuerung über die FIFO
-// ~/Library/Caches/Sofa/dev.fifo (Zeilen: "key <up|down|left|right|select|menu|play|
-// selecthold|menuhold|next|prev>", "shot <pfad.png>", "home", "quit").
+// Dev mode (`Sofa --dev [--size WxH]`): window outside the visible
+// screen, no Dock presence, no focus, muted. Controlled via the FIFO
+// ~/Library/Caches/Sofa/dev.fifo (lines: "key <up|down|left|right|select|menu|play|
+// selecthold|menuhold|next|prev>", "shot <path.png>", "home", "quit").
 #import "SFCore.h"
 #import "SFScreen.h"
 #import "SFHome.h"
@@ -84,9 +84,9 @@ static uint16_t gPort = 8765;
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
-    [[SFFollows shared] start];   // nach SFYouTube setup (Seiten/Feeds registriert)
+    [[SFFollows shared] start];   // after SFYouTube setup (pages/feeds registered)
     [[SFDownloads shared] start];
-    // Handy-Koppeln: echte App immer; Dev-Instanz nur mit SOFA_LOUNGE=1 (eigene screenId)
+    // phone pairing: real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
         __weak SFAppDelegate *wl = self;
         [SFLounge shared].commandHandler = ^(NSString *cmd, NSDictionary *args) { [wl loungeCommand:cmd args:args]; };
@@ -96,13 +96,13 @@ static uint16_t gPort = 8765;
     if (!SFDevMode) [self restoreAfterUpdate];
     [self welcomeIfFirstRun];
     [self askToMoveIfMisplaced];
-    if (!SFDevMode) SFBackground(^{ SFInstallAgents(); });   // nur Release-Bundle (SFRuntime)
-    [[SFUpdater shared] startWithNavigator:self.nav];        // nur Release-Bundle in „Programme“
+    if (!SFDevMode) SFBackground(^{ SFInstallAgents(); });   // release bundle only (SFRuntime)
+    [[SFUpdater shared] startWithNavigator:self.nav];        // release bundle in /Applications only
 
     if (SFDevMode) {
         [self.window setFrame:frame display:YES];
-        [self.window orderFront:nil];      // sichtbar für den Window-Server, aber außerhalb
-        SFLog(@"dev: window %ld", (long)self.window.windowNumber);   // für screencapture -l (inkl. OpenGL-Inhalt)
+        [self.window orderFront:nil];      // visible to the window server, but off-screen
+        SFLog(@"dev: window %ld", (long)self.window.windowNumber);   // for screencapture -l (incl. OpenGL content)
         [self startFifo];
         _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:gPort];
         __weak SFAppDelegate *ws = self;
@@ -116,7 +116,7 @@ static uint16_t gPort = 8765;
         [self.window makeFirstResponder:self.nav];
         [NSApp activateIgnoringOtherApps:YES];
         [self hideCursor:YES];
-        // TV-Shell: nach dem Aufwachen des Bildschirms ist Sofa vorne
+        // TV shell: Sofa is in front after the display wakes up
         [[[NSWorkspace sharedWorkspace] notificationCenter] addObserverForName:NSWorkspaceScreensDidWakeNotification object:nil
             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) { [NSApp activateIgnoringOtherApps:YES]; }];
         __weak SFAppDelegate *ws = self;
@@ -126,7 +126,7 @@ static uint16_t gPort = 8765;
         [_remote start];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(screensChanged:)
                                                      name:NSApplicationDidChangeScreenParametersNotification object:nil];
-        // Browser-Viewer + Fernbedienung (nur Tailscale-IP/localhost), rendert nur bei Zuschauer
+        // browser viewer + remote control (Tailscale IP/localhost only), renders only while watched
         _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:8765];
         _dev.keyHandler = ^(NSString *k) { [ws devCommand:[@"key " stringByAppendingString:k]]; };
         [_dev start];
@@ -139,19 +139,19 @@ static uint16_t gPort = 8765;
     [self.window setFrame:f display:YES];
 }
 
-// Mauszeiger hat in der 10-Fuß-UI keinen Sinn: unsichtbar, solange Sofa vorne ist.
-// Drei Schichten, weil das System den Zeiger in vielen Lagen wieder einblendet (Display-Wake,
-// App-Wechsel, Cursor-Setzen anderer Prozesse) und Hide/Show-Zählung dabei auseinanderläuft:
-//  1. transparenter Cursor für das ganze Fenster (Cursor-Rects in SFNavigator + set)
-//  2. Wächter (1 s): ist der Zeiger sichtbar, obwohl Sofa vorne ist -> wieder ausblenden (+ Log)
-//  3. beim Verlassen (andere App vorne) zuverlässig wieder einblenden
+// The mouse pointer makes no sense in the 10-foot UI: invisible while Sofa is in front.
+// Three layers, because the system shows the pointer again in many situations (display wake,
+// app switch, other processes setting the cursor) and the hide/show count drifts apart:
+//  1. transparent cursor for the whole window (cursor rects in SFNavigator + set)
+//  2. watchdog (1 s): pointer visible although Sofa is in front -> hide again (+ log)
+//  3. reliably show it again when leaving (another app in front)
 - (void)enforceCursorHidden {
     if (SFDevMode || ![NSApp isActive]) return;
     [SFBlankCursor() set];
     if (CGCursorIsVisible()) {
         CGDisplayHideCursor(kCGNullDirectDisplay);
         static NSDate *lastLog;
-        if (!lastLog || -[lastLog timeIntervalSinceNow] > 60) { lastLog = [NSDate date]; SFLog(@"cursor: war sichtbar -> ausgeblendet"); }
+        if (!lastLog || -[lastLog timeIntervalSinceNow] > 60) { lastLog = [NSDate date]; SFLog(@"cursor: was visible -> hidden"); }
     }
 }
 - (void)hideCursor:(BOOL)hide {
@@ -174,16 +174,16 @@ static uint16_t gPort = 8765;
 - (void)applicationWillTerminate:(NSNotification *)n {
     SFClearRunningMarker();
     [[SFDownloads shared] stopForExit];
-    [[SFLounge shared] stop];   // Handy: "getrennt" (best effort, max 1,5 s). Nicht beim Update – da sind wir in 1 s zurück.
+    [[SFLounge shared] stop];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
 }
 
-#pragma mark Erster Start
+#pragma mark First launch
 
-// Einmalige Begrüßung mit der Tastenbelegung (7-Tasten-Apple-Remote): nur bei wirklich neuer
-// Installation – wer schon Sendungen/Kanälen folgt oder Fortschritt hat, kennt Sofa.
-// Dev: SOFA_WELCOME=1 zeigt sie immer (Test), sonst nie.
+// One-time welcome with the button layout (7-button Apple Remote): only on a truly new
+// installation – anyone already following shows/channels or with progress knows Sofa.
+// Dev: SOFA_WELCOME=1 always shows it (test), otherwise never.
 - (void)welcomeIfFirstRun {
     SFStore *st = [SFStore shared];
     BOOL force = SFDevMode && getenv("SOFA_WELCOME");
@@ -192,7 +192,7 @@ static uint16_t gPort = 8765;
         [st setSetting:@"1" forKey:@"welcome.shown"];
         if ([[SFFollows shared] follows:nil].count || [st continueWatching:1 source:nil].count) return;
     }
-    // danach: Start-Einstellungen abfragen (nur Neuinstallation; änderbar unter „Einstellungen“)
+    // afterwards: ask for the startup settings (new installation only; changeable under "Einstellungen")
     __weak SFAppDelegate *ws = self;
     SFMenuOption *go = [SFMenuOption option:@"Weiter" action:^{
         dispatch_async(dispatch_get_main_queue(), ^{ [ws askAutostart]; });
@@ -209,11 +209,11 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
-// Release direkt aus der DMG (oder einem anderen Ordner) gestartet: Fernbedienung und Autostart
-// werden dann bewusst nicht eingerichtet (sie zeigten auf die DMG) -- sagen, was zu tun ist.
+// Release launched directly from the DMG (or another folder): remote and autostart are
+// deliberately not set up then (they would point at the DMG) -- tell the user what to do.
 - (void)askToMoveIfMisplaced {
     if (SFDevMode || !SFRuntimeMisplaced()) return;
-    SFLog(@"start: Sofa läuft nicht aus „Programme“ (%@)", [[NSBundle mainBundle] bundlePath]);
+    SFLog(@"start: Sofa is not running from /Applications (%@)", [[NSBundle mainBundle] bundlePath]);
     SFMenuOption *quit = [SFMenuOption option:@"Sofa beenden" action:^{ [NSApp terminate:nil]; }];
     SFMenuOption *look = [SFMenuOption option:@"Trotzdem umsehen" action:^{}];
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Bitte Sofa in „Programme“ ziehen"
@@ -225,7 +225,7 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
-// Ersteinrichtung, Frage 1/2: beim Anmelden starten?
+// First-run setup, question 1/2: launch at login?
 - (void)askAutostart {
     __weak SFAppDelegate *ws = self;
     void (^next)(BOOL) = ^(BOOL on) {
@@ -243,13 +243,13 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
-// Ersteinrichtung, Frage 2/2: mit der Apple Remote starten?
+// First-run setup, question 2/2: launch with the Apple Remote?
 - (void)askRemoteLaunch {
     __weak SFAppDelegate *ws = self;
     void (^done)(BOOL) = ^(BOOL on) {
         SFSetRemoteLaunchEnabled(on);
         SFSetStartupQuestionsAsked();
-        SFLog(@"start: Ersteinrichtung autostart=%d remoteLaunch=%d", SFAutostartEnabled(), on);
+        SFLog(@"start: first-run setup autostart=%d remoteLaunch=%d", SFAutostartEnabled(), on);
         dispatch_async(dispatch_get_main_queue(), ^{
             [ws.nav toast:@"Fertig – viel Spaß mit Sofa!"];
         });
@@ -267,10 +267,10 @@ static uint16_t gPort = 8765;
 
 @end
 
-#pragma mark Autostart (Einstellung „Beim Anmelden starten“)
-// Der Autostart-Agent (de.sofa.app) startet Sofa mit --autostart und startet es nach einem Absturz
-// neu (KeepAlive). Ist Autostart aus, beendet sich Sofa beim Anmelden sofort still – nach einem
-// Absturz (Marker „running“ noch da) läuft es aber weiter.
+#pragma mark Autostart (setting "Beim Anmelden starten")
+// The autostart agent (de.sofa.app) launches Sofa with --autostart and relaunches it after a crash
+// (KeepAlive). If autostart is off, Sofa quits silently right away at login – but after a
+// crash (marker "running" still present) it keeps running.
 static NSString *SFRunningMarker(void) { return [SFAppSupportDir() stringByAppendingPathComponent:@"running"]; }
 void SFClearRunningMarker(void) {
     if (!SFDevMode) [[NSFileManager defaultManager] removeItemAtPath:SFRunningMarker() error:nil];
@@ -298,13 +298,13 @@ int main(int argc, const char *argv[]) {
         for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--autostart")) autostart = YES;
         if (autostart && !SFDevMode && !SFAutostartEnabled()) {
             if (![[NSFileManager defaultManager] fileExistsAtPath:SFRunningMarker()]) {
-                SFLog(@"start: Autostart ist aus – beende");
-                return 0;   // exit 0: launchd (KeepAlive SuccessfulExit=false) startet nicht neu
+                SFLog(@"start: autostart is off – quitting");
+                return 0;   // exit 0: launchd (KeepAlive SuccessfulExit=false) doesn't relaunch
             }
-            SFLog(@"start: Autostart aus, aber letzter Lauf endete unerwartet – starte trotzdem");
+            SFLog(@"start: autostart off, but the last run ended unexpectedly – starting anyway");
         }
         SFSetRunningMarker();
-        // Dev: nie im Dock, nie im Vordergrund (stört Kodi nicht).
+        // Dev: never in the Dock, never in the foreground (doesn't disturb Kodi).
         app.activationPolicy = SFDevMode ? NSApplicationActivationPolicyProhibited : NSApplicationActivationPolicyRegular;
         app.delegate = del;
         [app run];

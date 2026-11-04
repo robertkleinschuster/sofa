@@ -1,5 +1,5 @@
-// Dev-Viewer: kleiner HTTP-Server (nur Tailscale-IP + localhost) mit MJPEG-Livebild
-// der Oberfläche und Fernsteuerung im Browser. Nur im Dev-Modus aktiv.
+// Dev viewer: small HTTP server (Tailscale IP + localhost only) with an MJPEG live view
+// of the UI and remote control in the browser. Only active in dev mode.
 #import "SFScreen.h"
 
 @interface SFDevServer : NSObject

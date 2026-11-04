@@ -1,23 +1,23 @@
-// Laufzeit-Werkzeuge (ffmpeg, node, python, rsvg-convert, PO-Token-Server) finden.
+// Locate runtime tools (ffmpeg, node, python, rsvg-convert, PO token server).
 //
-// Release-Bundle (tools/make-release): alles liegt in Sofa.app/Contents/Runtime
-// (bin/, Python.framework/, bgutil/, etc/; Bibliotheken in Contents/Frameworks), die Bibliotheken sind @loader_path-relativ
-// umgelinkt -> Sofa braucht kein MacPorts. Entwicklungs-/Port-Build ohne Runtime-Ordner:
-// Werkzeuge aus dem MacPorts-Prefix.
+// Release bundle (tools/make-release): everything lives in Sofa.app/Contents/Runtime
+// (bin/, Python.framework/, bgutil/, etc/; libraries in Contents/Frameworks), the libraries are relinked
+// @loader_path-relative -> Sofa needs no MacPorts. Development/port build without a Runtime folder:
+// tools from the MacPorts prefix.
 #import <Foundation/Foundation.h>
 
-NSString *SFRuntimeDir(void);              // .../Contents/Runtime oder nil (Port/Dev)
-NSString *SFTool(NSString *name);          // Runtime/bin/<name> oder /opt/local/bin/<name>
-NSString *SFPythonPath(void);              // Basis-Python für das yt-dlp-venv
-NSString *SFCABundle(void);                // CA-Zertifikate für libcurl (nil = libcurl-Default)
-// Release-Bundle: ~/Library/LaunchAgents/de.sofa.{remote,app}.plist auf dieses Bundle
-// einrichten (Fernbedienungs-Helper sofort laden, Autostart ab nächster Anmeldung).
-// Nicht, wenn der MacPorts-Port seine Agents installiert hat. Nur aus der echten App aufrufen.
+NSString *SFRuntimeDir(void);              // .../Contents/Runtime or nil (port/dev)
+NSString *SFTool(NSString *name);          // Runtime/bin/<name> or /opt/local/bin/<name>
+NSString *SFPythonPath(void);              // base Python for the yt-dlp venv
+NSString *SFCABundle(void);                // CA certificates for libcurl (nil = libcurl default)
+// Release bundle: set up ~/Library/LaunchAgents/de.sofa.{remote,app}.plist for this bundle
+// (load the remote helper right away, autostart from the next login).
+// Not if the MacPorts port installed its agents. Only call from the real app.
 void SFInstallAgents(void);
-// Release-Bundle läuft nicht aus /Applications bzw. ~/Applications (z.B. direkt aus der DMG):
-// dann keine Agents einrichten, sondern den Nutzer bitten, Sofa in „Programme“ zu ziehen.
+// Release bundle not running from /Applications or ~/Applications (e.g. straight from the DMG):
+// then don't set up agents, but ask the user to drag Sofa into /Applications.
 BOOL SFRuntimeMisplaced(void);
-// Einmal früh in main(): PATH, SSL_CERT_FILE, FONTCONFIG_*, SOFA_NODE für Kindprozesse.
+// Once, early in main(): PATH, SSL_CERT_FILE, FONTCONFIG_*, SOFA_NODE for child processes.
 void SFRuntimeSetup(void);
 
 // Run a tool synchronously and return its exit status (-1 = could not launch, -2 = timed out and

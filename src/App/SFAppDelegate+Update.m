@@ -32,13 +32,13 @@
 
 @implementation SFAppDelegate (Update)
 
-#pragma mark Update (Helper tauscht die App; Zustand überlebt)
+#pragma mark Update (helper swaps the app; state survives)
 
 - (NSString *)resumePath { return [SFAppSupportDir() stringByAppendingPathComponent:@"resume.json"]; }
 
 - (void)prepareForUpdate {
-    SFLog(@"update: Zustand sichern und beenden");
-    SFClearRunningMarker();   // geplantes Ende, kein Absturz
+    SFLog(@"update: saving state and quitting");
+    SFClearRunningMarker();   // planned exit, not a crash
     NSMutableDictionary *st = [NSMutableDictionary new];
     st[@"t"] = @([NSDate date].timeIntervalSince1970);
     NSMutableArray *keys = [NSMutableArray new];
@@ -49,7 +49,7 @@
         SFPlayerScreen *p = (SFPlayerScreen *)s;
         if (p.item) {
             st[@"item"] = [p.item dictionaryRepresentation];
-            if (p.remoteListID) {   // Handy-Sitzung: Liste + Queue überleben das Update
+            if (p.remoteListID) {   // phone session: list + queue survive the update
                 st[@"remoteList"] = p.remoteListID;
                 NSMutableArray *q = [NSMutableArray new];
                 for (SFItem *it in p.queue) [q addObject:[it dictionaryRepresentation]];
@@ -61,7 +61,7 @@
         break;
     }
     [[NSJSONSerialization dataWithJSONObject:st options:0 error:nil] writeToFile:[self resumePath] atomically:YES];
-    // "Wird aktualisiert"-Bildschirm über allem
+    // "updating" screen above everything
     CALayer *ov = [CALayer layer];
     ov.frame = self.nav.layer.bounds;
     ov.backgroundColor = [NSColor colorWithDeviceWhite:0.04 alpha:0.94].CGColor;
@@ -74,14 +74,14 @@
     [ov addSublayer:l];
     SFNoAnimate(^{ [self.nav.layer addSublayer:ov]; });
     [CATransaction flush];
-    for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // Positionen speichern
+    for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // save positions
     [[SFDownloads shared] stopForExit];   // _exit below skips cleanup: ffmpeg would survive as an orphan
     [[SFStore shared] flush];
-    [[SFYTResolver shared] saveCache];   // fortgesetztes YouTube-Video startet ohne neue Auflösung
-    SFLog(@"update: gesichert, beende");
-    // _exit statt exit: alles ist gespeichert; exit() blieb in Framework-Aufräumhandlern hängen.
-    // Auf einer Hintergrund-Queue: ein Main-Queue-Block lief nicht, solange der Main-Runloop
-    // in einem anderen Modus steckte -> Helper musste nach 5 s hart beenden (Log „erzwinge“).
+    [[SFYTResolver shared] saveCache];   // a resumed YouTube video starts without a new resolve
+    SFLog(@"update: saved, quitting");
+    // _exit instead of exit: everything is saved; exit() used to hang in framework cleanup handlers.
+    // On a background queue: a main-queue block didn't run while the main run loop was stuck
+    // in another mode -> the helper had to force-quit after 5 s (log "forcing").
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                    dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{ _exit(0); });
 }
@@ -91,14 +91,14 @@
     [[NSFileManager defaultManager] removeItemAtPath:[self resumePath] error:nil];
     NSDictionary *st = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
     if (![st isKindOfClass:[NSDictionary class]] || [NSDate date].timeIntervalSince1970 - [st[@"t"] doubleValue] > 300) return;
-    SFLog(@"update: Wiederherstellung %@", st[@"screens"]);
+    SFLog(@"update: restoring %@", st[@"screens"]);
     for (NSString *k in st[@"screens"]) {
         if ([k hasPrefix:@"app:"]) [self.nav push:[SFHome appScreen:[k substringFromIndex:4]]];
     }
     if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
         SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
-        // Stream-Adresse des alten Prozesses (lokaler Proxy) nicht wiederverwenden (scheiterte mit -1102)
-        // -> über den Resolver, der seine Ergebnisse aus dem alten Prozess übernommen hat
+        // Don't reuse the old process's stream address (local proxy) (failed with -1102)
+        // -> go through the resolver, which took over its results from the old process
         if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
         NSMutableArray *queue = [NSMutableArray new];
         for (NSDictionary *d in ([st[@"queue"] isKindOfClass:[NSArray class]] ? st[@"queue"] : @[])) {
@@ -108,7 +108,7 @@
         }
         NSUInteger qi = [st[@"queueIndex"] unsignedIntegerValue];
         BOOL lounge = [st[@"remoteList"] isKindOfClass:[NSString class]] && qi < queue.count;
-        if (lounge) queue[qi] = it;   // laufendes Video = Queue-Eintrag (ohne alte Stream-Adresse)
+        if (lounge) queue[qi] = it;   // current video = queue entry (without the old stream address)
         SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:lounge ? queue : nil index:lounge ? qi : 0];
         if (lounge) p.remoteListID = st[@"remoteList"];
         if ([st[@"pos"] doubleValue] > 2) p.startPosition = [st[@"pos"] doubleValue] - 2;

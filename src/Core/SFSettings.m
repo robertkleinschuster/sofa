@@ -12,7 +12,7 @@ static BOOL SFGetBool(CFStringRef key, BOOL dflt) {
 
 static void SFSetBool(CFStringRef key, BOOL on) {
     CFPreferencesSetAppValue(key, on ? kCFBooleanTrue : kCFBooleanFalse, SFDomain());
-    CFPreferencesAppSynchronize(SFDomain());   // sofort auf Platte: der Helper liest mit
+    CFPreferencesAppSynchronize(SFDomain());   // straight to disk: the helper reads it too
 }
 
 BOOL SFAutostartEnabled(void) { return SFGetBool(CFSTR("autostart"), YES); }
@@ -23,7 +23,7 @@ BOOL SFAutoUpdateEnabled(void) { return SFGetBool(CFSTR("autoUpdate"), YES); }
 void SFSetAutoUpdateEnabled(BOOL on) { SFSetBool(CFSTR("autoUpdate"), on); }
 BOOL SFStartupQuestionsAsked(void) { return SFGetBool(CFSTR("startupAsked"), NO); }
 void SFSetStartupQuestionsAsked(void) { SFSetBool(CFSTR("startupAsked"), YES); }
-// Versteckter Notschalter (keine Oberfläche): defaults write de.sofa.app preferAVFoundation -bool YES
+// Hidden emergency switch (no UI): defaults write de.sofa.app preferAVFoundation -bool YES
 BOOL SFPreferAVFoundation(void) { return SFGetBool(CFSTR("preferAVFoundation"), NO); }
 
 NSString *SFSubtitleLanguage(void) {

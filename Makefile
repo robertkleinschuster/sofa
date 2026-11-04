@@ -1,10 +1,10 @@
-# Sofa — Build mit clang-22 gegen die 10.9-System-Frameworks (kein SDK/Xcode nötig).
-# ARC nur beim Kompilieren: der Link mit -fobjc-arc verlangt libarclite (fehlt, auf
-# 10.9 unnötig, die Runtime kann ARC nativ).
-# MP = MacPorts-Prefix (Port: MP=${prefix}); PREFIX = Zielordner für Sofa.app
-# (Port: ${applications_dir}). CC = clang-22 (Doktrin); ?= greift bei CC nicht
-# (make setzt CC=cc), daher := und Übergabe auf der Kommandozeile (make CC=...).
-# Kommentare nie hinter Werte schreiben: make übernähme die Leerzeichen davor.
+# Sofa — built with clang-22 against the 10.9 system frameworks (no SDK/Xcode needed).
+# ARC only when compiling: linking with -fobjc-arc requires libarclite (missing, unneeded
+# on 10.9, the runtime supports ARC natively).
+# MP = MacPorts prefix (port: MP=${prefix}); PREFIX = target folder for Sofa.app
+# (port: ${applications_dir}). CC = clang-22 (doctrine); ?= doesn't take effect for CC
+# (make sets CC=cc), hence := and passing it on the command line (make CC=...).
+# Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
 PREFIX  ?= /Applications
@@ -13,29 +13,29 @@ BUILD   := build
 APP     := $(BUILD)/Sofa.app
 BIN     := $(APP)/Contents/MacOS/Sofa
 HBIN    := $(APP)/Contents/MacOS/SofaRemote
-SRCDIRS := $(wildcard src/*/)   # Quellen nach Zuständigkeit: App Core UI Player Providers YouTube Library
+SRCDIRS := $(wildcard src/*/)   # sources by responsibility: App Core UI Player Providers YouTube Library
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
            -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl
-# libmpv (Overlay-Port multimedia/mpv) optional + schwach gelinkt: fehlt sie, laeuft Sofa nur mit AVFoundation
+# libmpv (overlay port multimedia/mpv) optional + weakly linked: without it Sofa runs with AVFoundation only
 ifneq ($(wildcard $(MP)/lib/libmpv.dylib),)
 LDFLAGS += -framework OpenGL -weak-lmpv
 endif
 SRC     := $(wildcard src/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)
-# der Helper teilt sich die Laufzeit-Pfade (SFRuntime) mit Sofa
+# the helper shares the runtime paths (SFRuntime) with Sofa
 HOBJ    := $(patsubst helper/%.m,$(BUILD)/hobj/%.o,$(HSRC)) $(BUILD)/hobj/SFRuntime.o
 
 DEVAPP  := $(BUILD)/SofaDev.app
 DEVBIN  := $(DEVAPP)/Contents/MacOS/Sofa
 
-# Ziele sind DATEIEN (Verzeichnis-mtime ändert sich beim Relink nicht)
+# targets are FILES (directory mtime doesn't change on relink)
 LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard res/logos/*.png))
 
-# yt-dlp-Grundausstattung (res/ytdlp.lock, tools/fetch-ytdlp) + Prüfer und öffentliche Schlüssel
-# für Updates (yt-dlp: GPG der Maintainer; Sofa: eigener RSA-Schlüssel, siehe SFSignature.h)
+# yt-dlp baseline (res/ytdlp.lock, tools/fetch-ytdlp) + verifier and public keys
+# for updates (yt-dlp: maintainers' GPG; Sofa: its own RSA key, see SFSignature.h)
 YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.pem
 YTFILES := $(foreach b,$(APP) $(DEVAPP),$(addprefix $(b)/Contents/Resources/,$(YTRES)) $(b)/Contents/Resources/yt-dlp/VERSION)
 VENDOR  := $(BUILD)/vendor/yt-dlp
@@ -60,9 +60,9 @@ $(APP)/Contents/Resources/yt-dlp/VERSION $(DEVAPP)/Contents/Resources/yt-dlp/VER
 	@rm -rf $(dir $@) && mkdir -p $(dir $@)
 	cp -R $(VENDOR)/ $(dir $@)
 
-# Dev-Bundle mit eigener Bundle-ID (de.sofa.dev): unsichtbare Test-/Vorschau-
-# Instanzen dürfen nie mit der echten App (de.sofa.app) verwechselt werden
-# (LaunchServices/open, Remote-Helper).
+# Dev bundle with its own bundle ID (de.sofa.dev): invisible test/preview
+# instances must never be confused with the real app (de.sofa.app)
+# (LaunchServices/open, remote helper).
 $(DEVBIN): $(BIN) res/Info.plist
 	@mkdir -p $(DEVAPP)/Contents/MacOS
 	@cp $(APP)/Contents/MacOS/Sofa $(DEVAPP)/Contents/MacOS/Sofa

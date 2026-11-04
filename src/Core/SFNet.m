@@ -82,7 +82,7 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
     void (^handle)(NSData *, NSInteger, NSError *) = ^(NSData *data, NSInteger code, NSError *err) {
         if (err || code >= 400 || !data.length) {
             SFLog(@"net: %@ %@ -> %ld %@", req.HTTPMethod, req.URL.host, (long)code, err.localizedDescription ?: @"");
-            // Bei Fehler notfalls veralteten Cache liefern (offline-tauglich)
+            // on error, fall back to a stale cache if need be (works offline)
             id stale = key ? [[SFStore shared] cachedJSON:key maxAge:30 * 86400] : nil;
             finish(stale, stale ? nil : (err ?: SFError(code == 403 ? @"In deinem Land nicht verfügbar." : @"Server nicht erreichbar.")));
             return;
@@ -94,7 +94,7 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
         SFLog(@"net: %@ %@%@ %.2fs", req.HTTPMethod, req.URL.host, req.URL.path.length > 60 ? [req.URL.path substringToIndex:60] : req.URL.path, -[t0 timeIntervalSinceNow]);
         finish(json, nil);
     };
-    // TLS-Brücke: Hosts, die 10.9-SecureTransport nicht kann -> libcurl
+    // TLS bridge: hosts that 10.9 SecureTransport can't handle -> libcurl
     if (SFSimulatedOffline()) { SFBackground(^{ handle(nil, 0, SFError(@"Keine Internetverbindung.")); }); return; }
     void (^viaCurl)(void) = ^{
         SFBackground(^{
@@ -141,15 +141,15 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
     if (hit && [hit[1] timeIntervalSinceNow] > -3600) { done([hit[0] boolValue]); return; }
     NSURL *u = [NSURL URLWithString:url];
     if (!u) { done(YES); return; }
-    // Ohne erwarteten Text: Medien-URL -> nur HEAD (nicht die ganze Datei laden)
+    // without expected text: media URL -> HEAD only (don't download the whole file)
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
     if (!expect) req.HTTPMethod = @"HEAD";
     [[[self session] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
         NSInteger code = [(NSHTTPURLResponse *)r statusCode];
         NSString *body = d ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : nil;
-        BOOL ok = e ? YES : (code < 400 && (!expect || [body isEqualToString:expect]));   // Netzfehler: nicht blockieren
+        BOOL ok = e ? YES : (code < 400 && (!expect || [body isEqualToString:expect]));   // network error: don't block
         if (!e) @synchronized (cache) { cache[url] = @[@(ok), [NSDate date]]; }
-        SFLog(@"geo: %@ -> %@", u.path, ok ? @"erlaubt" : @"gesperrt");
+        SFLog(@"geo: %@ -> %@", u.path, ok ? @"allowed" : @"blocked");
         SFMain(^{ done(ok); });
     }] resume];
 }
