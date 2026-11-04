@@ -103,6 +103,13 @@ def summarize(info):
     if d:
         d["audios"] = audio_tracks(info.get("formats") or [])
         r["dash"] = d
+    # Diagnose „falsche Tonspur“: was hat YouTube an Tonspuren geliefert (Sprache/Rang je Spur)?
+    # Ohne audioTrack fehlt die Sprache (yt-dlp: language None) -> „Ton ?“ im Player-Log.
+    tracks = sorted({"%s:%s" % (f.get("language") or "?", f.get("language_preference"))
+                     for f in info.get("formats") or []
+                     if (f.get("vcodec") or "none") == "none" and (f.get("acodec") or "none") != "none"})
+    log("audio %s: %s -> %s (Video-Sprache %s, Format %s)" % (info.get("id"), " ".join(tracks) or "nur gemuxt",
+        (d or {}).get("alang"), info.get("language"), info.get("format_id")))
     r["subs"] = subtitle_tracks(info)
     return r
 
@@ -154,7 +161,12 @@ def subtitle_tracks(info):
             u = vtt(fmts)
             if u:
                 out.append({"lang": lang[:-5], "url": u, "kind": "auto"})
-    if "de" not in have and auto.get("de"):
+    # Übersetzung ins Deutsche nur bei fremdsprachigem Video: bei deutschem Ton wäre „de“ nur eine
+    # schlechtere Kopie der automatischen deutschen Untertitel (Kurzgesagt-Meldung 2026-11-04)
+    spoken = (info.get("language") or "").split("-")[0]
+    if any(t["lang"].split("-")[0] == "de" for t in out):
+        have.add("de")
+    if "de" not in have and spoken != "de" and auto.get("de"):
         u = vtt(auto["de"])
         if u:
             out.append({"lang": "de", "url": u, "kind": "translated"})

@@ -8,6 +8,7 @@
 @property (nonatomic) NSTimeInterval startPosition;
 @property (nonatomic) BOOL startPaused;               // nach Update pausiert lassen   // >0: exakt hier starten (Update-Wiederaufnahme)
 @property (nonatomic, readonly) SFItem *item;
+@property (nonatomic, readonly) id engineForDiagnostics;   // Dev: aktuelle Engine
 - (NSTimeInterval)currentTime;
 - (BOOL)isPaused;
 - (NSTimeInterval)duration;

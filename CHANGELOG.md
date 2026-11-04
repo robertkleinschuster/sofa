@@ -4,6 +4,19 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.5
+
+- **Vorschaubilder bleiben:** Wurde ein heruntergeladenes Video gelöscht, fehlte unter
+  „Weiterschauen“ das Bild – jetzt erscheint das Online-Vorschaubild, und das Video läuft
+  online weiter statt aus der gelöschten Datei.
+- **Untertitel:** Bei deutschen Videos gibt es keine sinnlose „automatisch übersetzte“ deutsche
+  Spur mehr neben den automatischen deutschen Untertiteln.
+- **Verständliche Fehlermeldungen:** Lässt YouTube vorübergehend keine Wiedergabe zu oder
+  scheitert ein Video, sagt Sofa jetzt auf Deutsch, was los ist und wie es weitergeht.
+- **Handy:** Ein fehlgeschlagenes Video, das erneut vom Handy gesendet wird, lädt neu.
+- **Abo-Downloads:** Bei vorübergehenden YouTube-Sperren versucht Sofa es über mehrere Stunden
+  verteilt erneut, statt die Folge nach wenigen Minuten aufzugeben.
+
 ## 0.3.4
 
 - **Untertitel in den Einstellungen:** „Untertitel zum Mitlesen“ (Untertitel in der Sprache des

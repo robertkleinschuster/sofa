@@ -74,6 +74,10 @@
         if (k) [self.nav sendKey:k.integerValue];
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
+    } else if ([cmd isEqualToString:@"mpvprop"] && arg) {   // Dev: mpv-Eigenschaften loggen, z.B. mpvprop time-pos,sub-start,sub-text
+        id eng = [self topPlayer].engineForDiagnostics;
+        if ([eng isKindOfClass:[SFMPVEngine class]])
+            for (NSString *k in [arg componentsSeparatedByString:@","]) SFLog(@"dev: mpv %@ = %@", k, [(SFMPVEngine *)eng prop:k]);
     } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: echtes mpv-Bild aus dem GL-Framebuffer
         SFMPVDevFrameShot(arg);
     } else if ([cmd isEqualToString:@"home"]) {

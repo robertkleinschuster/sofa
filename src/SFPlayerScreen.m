@@ -335,6 +335,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     else [self setAssertion:YES];
 }
 
+- (id)engineForDiagnostics { return _engine; }
+
 #pragma mark SFEngineDelegate
 
 // Fehlertext für den Fernseher: Ursache auf Deutsch statt Systemmeldung („unknown error“)

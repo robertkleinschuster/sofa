@@ -55,6 +55,15 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     i.duration = [d[@"duration"] doubleValue];
     i.localPath = d[@"localPath"];
     i.externalID = d[@"externalID"];
+    // Gespeicherte Einträge (Weiterschauen, Verlauf) können auf einen inzwischen gelöschten Download
+    // zeigen: dann online abspielen und das Online-Bild nehmen (sonst fehlt das Vorschaubild)
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (i.localPath && ![fm fileExistsAtPath:i.localPath]) i.localPath = nil;
+    BOOL (^gone)(NSString *) = ^BOOL(NSString *p) { return [p hasPrefix:@"/"] && ![fm fileExistsAtPath:p]; };
+    if (gone(i.backdrop)) i.backdrop = nil;
+    if (gone(i.image)) i.image = [i.backdrop hasPrefix:@"http"] ? i.backdrop : nil;
+    if (!i.image && [i.identifier hasPrefix:@"yt:"] && i.identifier.length > 3)
+        i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", [i.identifier substringFromIndex:3]];
     i.showRef = d[@"showRef"];
     if (i.localPath) i.playURL = [NSURL fileURLWithPath:i.localPath];
     else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
