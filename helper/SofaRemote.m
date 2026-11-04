@@ -13,9 +13,9 @@
 #import <sys/socket.h>
 #import <sys/stat.h>
 #import <netinet/in.h>
-#import "../src/SFCore.h"
-#import "../src/SFRemote.h"
-#import "../src/SFRuntime.h"
+#import "../src/Core/SFCore.h"
+#import "../src/App/SFRemote.h"
+#import "../src/Core/SFRuntime.h"
 
 BOOL SFDevMode = NO;
 CGFloat SFScale = 1;
