@@ -462,6 +462,13 @@ static uint16_t gPort = 8765;
         NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
         f.pageLoader = [SFYouTube channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(self.nav, f, nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: YouTube-Video von vorn abspielen (Starttests)
+        SFItem *it = [SFYouTube itemForVideoID:[arg substringFromIndex:3]];
+        [SFYouTube fillDetails:it done:^{
+            SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
+            ps.startFromBeginning = YES;
+            if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
+        }];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite

@@ -132,10 +132,31 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
 
 #pragma mark - Stream-Proxy
 
+// YouTube-HLS auf 10.9: CoreMedia holt die Playlist von manifest.googlevideo.com selbst und
+// scheitert dabei sporadisch sofort (≈1/6 bis 1/3 der Starts: -12939 auf der Playlist-URL,
+// -11800/-12643 bzw. -1102), obwohl der Server 200 liefert. Dieselbe Playlist von 127.0.0.1
+// scheiterte in 25 Versuchen nie (Messung 2026-11-04, docs/youtube.md §6). Darum: Playlists
+// dieses Hosts über den Proxy (VOD-Playlists zwischengespeichert und nach der Auflösung
+// vorgeladen), die Segmente (rr*.googlevideo.com) holt AVFoundation weiter direkt.
+static BOOL SFIsPlaylistURL(NSString *abs) {
+    NSString *ext = [[NSURL URLWithString:abs] path].pathExtension.lowercaseString;
+    return [ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"];
+}
+static BOOL SFProxyPlaylistHost(NSString *host) {
+    static BOOL off; static dispatch_once_t o;   // Dev-A/B-Test: SOFA_NO_PLAYLIST_PROXY=1
+    dispatch_once(&o, ^{ off = SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_NO_PLAYLIST_PROXY"] length] > 0; });
+    return !off && [host isEqualToString:@"manifest.googlevideo.com"];
+}
+
+static const NSTimeInterval kPlaylistTTL = 600;   // VOD-Playlist ändert sich nicht; URLs gelten Stunden
+static const NSUInteger kPlaylistCacheMax = 8;
+
 @implementation SFStreamProxy {
     int _fd;
     uint16_t _port;
     dispatch_source_t _src;
+    NSMutableDictionary *_plCache;      // target -> @[NSDate, NSData (umgeschriebene Playlist)]
+    NSMutableDictionary *_plInflight;   // target -> dispatch_group_t (ein Abruf je Playlist)
 }
 
 + (instancetype)shared {
@@ -145,6 +166,8 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
 }
 
 - (void)start {
+    _plCache = [NSMutableDictionary new];
+    _plInflight = [NSMutableDictionary new];
     _fd = socket(AF_INET, SOCK_STREAM, 0);
     int one = 1;
     setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
@@ -173,9 +196,59 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
     return [NSString stringWithFormat:@"http://127.0.0.1:%d/p/%@%@", _port, enc, ext.length ? [@"." stringByAppendingString:ext] : @""];
 }
 
+// Über den Proxy: alles von curl-Hosts (TLS-Brücke) und Playlists von SFProxyPlaylistHost.
+- (BOOL)shouldProxy:(NSString *)abs {
+    NSURL *u = [NSURL URLWithString:abs];
+    if (![u.scheme isEqualToString:@"https"] || !_port) return NO;
+    return SFHostNeedsCurl(u.host) || (SFProxyPlaylistHost(u.host) && SFIsPlaylistURL(abs));
+}
+
 - (NSURL *)playableURLFor:(NSURL *)url {
-    if (![url.scheme isEqualToString:@"https"] || !SFHostNeedsCurl(url.host) || !_port) return url;
+    if (![self shouldProxy:url.absoluteString]) return url;
     return [NSURL URLWithString:[self proxyStringFor:url.absoluteString]];
+}
+
+- (void)warmPlaylist:(NSURL *)url {
+    if (!url || !SFProxyPlaylistHost(url.host) || !SFIsPlaylistURL(url.absoluteString)) return;
+    NSString *t = url.absoluteString;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ [self playlistFor:t status:NULL]; });
+}
+
+// Umgeschriebene Playlist: aus dem Cache, aus einem laufenden Abruf (mitwarten) oder frisch.
+// Gecacht wird nur VOD (#EXT-X-ENDLIST); Live-Playlists ändern sich laufend.
+- (NSData *)playlistFor:(NSString *)target status:(NSInteger *)status {
+    dispatch_group_t wait = nil, mine = nil;
+    @synchronized (self) {
+        NSArray *c = _plCache[target];
+        if (c && -[c[0] timeIntervalSinceNow] < kPlaylistTTL) { if (status) *status = 200; return c[1]; }
+        wait = _plInflight[target];
+        if (!wait) { mine = dispatch_group_create(); dispatch_group_enter(mine); _plInflight[target] = mine; }
+    }
+    if (wait) {
+        dispatch_group_wait(wait, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)));
+        @synchronized (self) { NSArray *c = _plCache[target]; if (c) { if (status) *status = 200; return c[1]; } }
+        // Vorgänger lieferte nichts Cachebares (Live/Fehler) -> selbst holen, ohne Cache
+    }
+    NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
+    NSData *d = fetchFull(target, @"GET", nil, nil, &st, &eff, &e);
+    NSString *pl = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+    NSData *body = nil;
+    if (pl && st < 400) body = [[self rewritePlaylist:pl base:eff ?: target] dataUsingEncoding:NSUTF8StringEncoding];
+    else SFLog(@"proxy: playlist %ld %@", (long)st, e.localizedDescription ?: @"");
+    @synchronized (self) {
+        if (body && [pl rangeOfString:@"#EXT-X-ENDLIST"].location != NSNotFound) {
+            if (_plCache.count >= kPlaylistCacheMax) {   // ältesten Eintrag verwerfen
+                NSString *old = nil; NSDate *oldest = nil;
+                for (NSString *k in _plCache) { NSDate *t = _plCache[k][0]; if (!oldest || [t compare:oldest] == NSOrderedAscending) { oldest = t; old = k; } }
+                if (old) [_plCache removeObjectForKey:old];
+            }
+            _plCache[target] = @[[NSDate date], body];
+        }
+        if (mine) { [_plInflight removeObjectForKey:target]; }
+    }
+    if (mine) dispatch_group_leave(mine);
+    if (status) *status = body ? 200 : (st ?: 502);
+    return body;
 }
 
 static BOOL writeAll(int fd, const void *buf, size_t len) {
@@ -202,13 +275,14 @@ static const int kMaxHLSVersion = 6;
 
 - (NSString *)rewritePlaylist:(NSString *)pl base:(NSString *)base {
     NSURL *b = [NSURL URLWithString:base];
+    BOOL all = SFHostNeedsCurl(b.host);   // TLS-Brücke: alles Weitere ebenfalls über den Proxy (wie bisher)
     NSMutableArray *out = [NSMutableArray new];
     for (NSString *raw in [pl componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
         NSString *line = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (!line.length) { [out addObject:line]; continue; }
         if (![line hasPrefix:@"#"]) {
             NSString *abs = [[NSURL URLWithString:line relativeToURL:b] absoluteString];
-            [out addObject:abs ? [self proxyStringFor:abs] : line];
+            [out addObject:abs ? ((all || [self shouldProxy:abs]) ? [self proxyStringFor:abs] : abs) : line];
             continue;
         }
         // CoreMedia von 10.9 lehnt neuere Playlist-Versionen ab ("Unsupported version: 7"),
@@ -226,7 +300,7 @@ static const int kMaxHLSVersion = 6;
             if (e.location != NSNotFound) {
                 NSString *ref = [line substringWithRange:NSMakeRange(s, e.location - s)];
                 NSString *abs = [[NSURL URLWithString:ref relativeToURL:b] absoluteString];
-                if (abs && ![ref hasPrefix:@"skd:"]) line = [line stringByReplacingCharactersInRange:NSMakeRange(s, e.location - s) withString:[self proxyStringFor:abs]];
+                if (abs && ![ref hasPrefix:@"skd:"]) line = [line stringByReplacingCharactersInRange:NSMakeRange(s, e.location - s) withString:(all || [self shouldProxy:abs]) ? [self proxyStringFor:abs] : abs];
             }
         }
         [out addObject:line];
@@ -304,15 +378,12 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
 
     NSString *ext = [[NSURL URLWithString:target] path].pathExtension.lowercaseString;
     if ([ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"]) {
-        NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
-        NSData *d = fetchFull(target, @"GET", nil, nil, &st, &eff, &e);
-        NSString *pl = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
-        if (!pl || st >= 400) {
-            SFLog(@"proxy: playlist %ld %@", (long)st, e.localizedDescription ?: @"");
+        NSInteger st = 0;
+        NSData *body = [self playlistFor:target status:&st];
+        if (!body) {
             NSString *h = [NSString stringWithFormat:@"HTTP/1.1 %ld Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", (long)(st ?: 502)];
             writeAll(fd, h.UTF8String, strlen(h.UTF8String)); close(fd); return;
         }
-        NSData *body = [[self rewritePlaylist:pl base:eff ?: target] dataUsingEncoding:NSUTF8StringEncoding];
         NSString *h = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: %lu\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", (unsigned long)body.length];
         writeAll(fd, h.UTF8String, strlen(h.UTF8String));
         if (![method isEqualToString:@"HEAD"]) writeAll(fd, body.bytes, body.length);

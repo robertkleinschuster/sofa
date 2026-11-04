@@ -23,5 +23,8 @@ BOOL SFIsTLSError(NSError *e);
 @interface SFStreamProxy : NSObject
 + (instancetype)shared;
 // Liefert für https-URLs eines curl-Hosts eine lokale Proxy-URL, sonst die URL selbst.
+// YouTube-HLS-Playlists laufen ebenfalls über den Proxy (Segmente bleiben direkt), siehe .m.
 - (NSURL *)playableURLFor:(NSURL *)url;
+// YouTube-Playlist im Hintergrund vorladen (nach der Auflösung), damit der Start sofort lokal kommt.
+- (void)warmPlaylist:(NSURL *)url;
 @end

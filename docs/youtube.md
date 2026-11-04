@@ -560,6 +560,16 @@ the next attempt and curl always gets 200 with identical content. Independent of
 `AVPlayerItemStatusFailed` within the first 2 s, create a new `AVURLAsset`/`AVPlayerItem`
 (same URL) up to 3×, then fall back 96 → 95 → 18 → re-resolve.
 
+**Update 2026-11-04 — two distinct failure modes** (probe + dev A/B, see NOTES.md backlog):
+1. `-11800 / -12643`, errorLog `-12939` on the **playlist** URI after 0.1 s: CoreMedia's own
+   fetch of `manifest.googlevideo.com` fails (curl: always 200, IPv4 and IPv6). The *same*
+   playlist served from 127.0.0.1 failed 0/25 (direct: 4/25). → Sofa serves YouTube playlists
+   through its local proxy (`SFStreamProxy`, VOD playlists cached 10 min, warmed right after
+   resolution); segments stay direct.
+2. `NSURLErrorDomain -1102 / -12660` = **HTTP 403 on segments** (rr*.googlevideo.com). Hits
+   mpv's DASH URLs too, comes in bursts (heavy testing: dozens of resolutions in minutes),
+   curl on the same URLs mostly 200. Server-side; retry / re-resolve is the only remedy.
+
 **Player recipe:** `AVURLAsset` of the **variant media playlist URL** (`info["url"]` of
 itag 96, or 95 when user setting = 720p / weak network), `AVPlayerItem`, `AVPlayer`,
 `AVPlayerLayer` in the layer-hosting view. Don't pass the master. For quality switching,

@@ -1,4 +1,5 @@
 #import "SFYTResolver.h"
+#import "SFCurl.h"
 #import "SFModel.h"
 #import "SFStore.h"
 #import "SFRuntime.h"
@@ -349,6 +350,8 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
             SFLog(@"yt: resolved %@ -> %@p %@ in %@s (%@)", vid, j[@"height"], j[@"format"], j[@"secs"], j[@"pool"]);
             if (![key hasPrefix:@"live:"]) _cache[vid] = j;
+            // Playlist schon jetzt in den lokalen Proxy (auch beim Vorladen bei Fokus): Start ohne Netz-Abruf
+            if ([j[@"url"] isKindOfClass:[NSString class]]) [[SFStreamProxy shared] warmPlaylist:[NSURL URLWithString:j[@"url"]]];
             [self finish:key result:j error:nil];
         } else {
             SFLog(@"yt: resolve %@ failed: %@", vid, j[@"error"]);
@@ -390,7 +393,10 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
 
 - (void)resolve:(NSString *)vid live:(BOOL)live prio:(BOOL)prio done:(void (^)(NSDictionary *, NSError *))done {
     NSDictionary *c = _cache[vid];
-    if (c && [c[@"expires"] doubleValue] - 3600 > [[NSDate date] timeIntervalSince1970] && !live) { done(c, nil); return; }
+    if (c && [c[@"expires"] doubleValue] - 3600 > [[NSDate date] timeIntervalSince1970] && !live) {
+        if (prio) [[SFStreamProxy shared] warmPlaylist:[NSURL URLWithString:c[@"url"]]];
+        done(c, nil); return;
+    }
     [self start];
     if (!_in) {
         done(nil, SFError(_settingUp ? @"YouTube wird eingerichtet (einmalig, etwa eine Minute) – bitte gleich noch einmal versuchen."
