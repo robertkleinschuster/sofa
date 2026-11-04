@@ -1,4 +1,5 @@
-// Persistenz (SQLite): Wiedergabe-Positionen, Gesehen-Status, Verlauf, Einstellungen.
+// Persistenz (SQLite): Wiedergabe-Positionen, Gesehen-Status, Verlauf und App-Zustand
+// (-setting:/-setSetting:). Nutzer-Einstellungen gehören in SFSettings – Regel siehe SFSettings.h.
 #import "SFModel.h"
 
 

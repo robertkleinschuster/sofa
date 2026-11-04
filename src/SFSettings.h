@@ -1,5 +1,9 @@
-// Start-Einstellungen, die auch der Helper (SofaRemote) liest: macOS-Preferences statt SQLite.
+// Nutzer-Einstellungen (macOS-Preferences, auch vom Helper SofaRemote lesbar).
 // Domain de.sofa.app (Dev-Instanzen: de.sofa.dev, nie die echte App beeinflussen).
+//
+// REGEL: Hier steht, was der Nutzer bewusst wählt (Einstellungsmenü, Rückfragen, Schalter in
+// Bildschirmen). Zustand, den Sofa selbst führt (Handy-Kopplung, letzte Suchen, zuletzt benutztes
+// Tastatur-Layout, Migrations-Marker, Zeitstempel), gehört in SFStore (-setting:/-setSetting:).
 #import <Foundation/Foundation.h>
 
 BOOL SFAutostartEnabled(void);            // beim Anmelden starten (Standard: an)
@@ -12,6 +16,9 @@ BOOL SFStartupQuestionsAsked(void);       // Ersteinrichtung hat beides abgefrag
 void SFSetStartupQuestionsAsked(void);
 // mpv ist der Standard-Player; YES = alte Wahl (H.264 über AVFoundation). Nur per defaults, Notschalter.
 BOOL SFPreferAVFoundation(void);
+// Gesehene Abo-Folgen einen Tag nach dem Ansehen löschen (Standard: an)
+BOOL SFDeleteWatchedDownloads(void);
+void SFSetDeleteWatchedDownloads(BOOL on);
 // Bevorzugte Untertitelsprache (z.B. "de"); nil = Untertitel aus (Standard). Wird bei jeder
 // Auswahl im Player gemerkt und beim nächsten Video angewandt, wenn die Sprache verfügbar ist.
 NSString *SFSubtitleLanguage(void);

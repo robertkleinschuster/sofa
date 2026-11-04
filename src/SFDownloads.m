@@ -1,4 +1,5 @@
 #import "SFDownloads.h"
+#import "SFSettings.h"
 #import "SFStore.h"
 #import "SFCurl.h"
 #import "SFNet.h"
@@ -613,10 +614,20 @@ static NSString *gb(unsigned long long b) {
     next();
 }
 
-static NSString *deleteWatchedKey(void) { return @"downloads.deleteWatched"; }
-- (BOOL)deletesWatched { return ![[[SFStore shared] setting:deleteWatchedKey()] isEqualToString:@"0"]; }
+// Nutzer-Einstellung -> SFSettings; früher in SQLite (downloads.deleteWatched): einmalig übernehmen
+- (BOOL)deletesWatched {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *old = [[SFStore shared] setting:@"downloads.deleteWatched"];
+        if (old.length) {
+            SFSetDeleteWatchedDownloads(![old isEqualToString:@"0"]);
+            [[SFStore shared] setSetting:@"" forKey:@"downloads.deleteWatched"];
+        }
+    });
+    return SFDeleteWatchedDownloads();
+}
 - (void)setDeletesWatched:(BOOL)on {
-    [[SFStore shared] setSetting:on ? @"1" : @"0" forKey:deleteWatchedKey()];
+    SFSetDeleteWatchedDownloads(on);
     _generation++;
     [self changed:nil];
     SFLog(@"downloads: gesehene Abo-Folgen löschen %@", on ? @"an" : @"aus");
