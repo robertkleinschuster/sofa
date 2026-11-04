@@ -26,6 +26,8 @@ RT="$APP/Contents/Runtime"
 
 echo "==> Sofa $VER bauen"
 make -C "$SRC" >/dev/null
+# regression suites first: never ship a build that fails one (SKIP_TESTS=1 only for emergencies)
+[ "${SKIP_TESTS:-0}" = 1 ] || "$SRC/tools/test-all" || { echo "FEHLER: Regressionstests fehlgeschlagen"; exit 1; }
 rm -rf "$DIST"; mkdir -p "$DIST"
 cp -R "$SRC/build/Sofa.app" "$APP"
 mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
