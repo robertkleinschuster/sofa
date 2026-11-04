@@ -1,3 +1,4 @@
+#import "SFDownloads+Private.h"
 #import "SFCore.h"
 #import "SFScreen.h"
 #import "SFHome.h"
@@ -132,6 +133,16 @@
         NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
         id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
         [self loungeCommand:lc args:[j isKindOfClass:[NSDictionary class]] ? j : @{}];
+    } else if ([cmd isEqualToString:@"dlverify"] && arg) {   // Dev: run the download verifier on a file
+        NSString *path = arg;
+        SFBackground(^{
+            NSString *p = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:[SFDownloads ffmpegToolPath]];
+            SFLog(@"dev: dlverify %@ -> %@", path.lastPathComponent, p ?: @"ok");
+        });
+    } else if ([cmd isEqualToString:@"dlget"] && arg) {     // Dev: download a resolver ref (orf:…) like the context menu
+        SFItem *it = [SFItem new];
+        it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
+        [[SFDownloads shared] download:it];
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }

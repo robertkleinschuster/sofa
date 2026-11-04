@@ -173,6 +173,7 @@ static uint16_t gPort = 8765;
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)a { return YES; }
 - (void)applicationWillTerminate:(NSNotification *)n {
     SFClearRunningMarker();
+    [[SFDownloads shared] stopForExit];
     [[SFLounge shared] stop];   // Handy: "getrennt" (best effort, max 1,5 s). Nicht beim Update – da sind wir in 1 s zurück.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];

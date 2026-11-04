@@ -1,6 +1,7 @@
 // SFDownloads – Kern: Persistenz (Tabelle downloads), Abfragen, Warteschlange, ffmpeg-Lauf,
 // Aktionen und Migration. Abos: SFDownloads+Subscriptions.m; gemeinsame Ivars: +Private.h.
 #import "SFDownloads+Private.h"
+#import <signal.h>
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
@@ -35,6 +36,8 @@ static NSString *ffmpegPath(void) {
 }
 
 @implementation SFDownloads
+
++ (NSString *)ffmpegToolPath { return ffmpegPath(); }
 
 + (instancetype)shared {
     static SFDownloads *s; static dispatch_once_t o;
@@ -296,9 +299,23 @@ static NSString *gb(unsigned long long b) {
 
 #pragma mark Worker
 
+- (void)stopForExit {
+    NSTask *t = _task;
+    if (!t.isRunning) return;
+    SFLog(@"downloads: stopping ffmpeg before exit (%@ resumes on the next start)", _runningID);
+    pid_t pid = t.processIdentifier;
+    [t terminate];
+    for (int i = 0; i < 20 && t.isRunning; i++) usleep(50 * 1000);
+    if (t.isRunning) kill(pid, SIGKILL);
+}
+
+
 - (void)start {
     if (_started) return;
     _started = YES;
+    [self reapOrphans];        // before anything writes: no second writer may survive from an earlier run
+    [self sweepStaleParts];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self auditExistingDownloads]; });
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
@@ -360,7 +377,7 @@ static NSString *gb(unsigned long long b) {
 
 - (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(NSMutableDictionary *)r item:(SFItem *)item {
     NSString *target = [self targetPathFor:r item:item];
-    NSString *part = [[target stringByDeletingPathExtension] stringByAppendingString:@".part.mp4"];
+    NSString *part = [[target stringByDeletingPathExtension] stringByAppendingString:[self partSuffix]];
     [[NSFileManager defaultManager] createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
     NSURL *src = [[SFStreamProxy shared] playableURLFor:url];   // ORF & Co. über die TLS-Brücke
     NSTask *t = [NSTask new];
@@ -409,12 +426,20 @@ static NSString *gb(unsigned long long b) {
             if (![ident isEqualToString:self->_runningID]) { [[NSFileManager defaultManager] removeItemAtPath:part error:nil]; return; }
             NSFileManager *fm = [NSFileManager defaultManager];
             if (code == 0 && [fm fileExistsAtPath:part]) {
-                [fm removeItemAtPath:target error:nil];
-                [fm moveItemAtPath:part toPath:target error:nil];
-                r[@"path"] = target;
-                r[@"bytes"] = @([[fm attributesOfItemAtPath:target error:nil] fileSize]);
-                [self fetchThumb:item rec:r];
-                [self finish:ident ok:YES error:nil];
+                // verify before the file replaces anything (off the main thread, a few seconds)
+                SFBackground(^{
+                    NSString *problem = [SFDownloads problemWithFile:part expectedDuration:dur ffmpeg:ff];
+                    SFMain(^{
+                        if (![ident isEqualToString:self->_runningID]) { [fm removeItemAtPath:part error:nil]; return; }
+                        if (problem) {
+                            SFLog(@"downloads: %@ failed verification (%@)", ident, problem);
+                            [fm removeItemAtPath:part error:nil];
+                            [self finish:ident ok:NO error:@"Datei war beschädigt – wird erneut geladen"];
+                            return;
+                        }
+                        [self installPart:part target:target rec:r item:item];
+                    });
+                });
             } else {
                 [fm removeItemAtPath:part error:nil];
                 NSString *msg; @synchronized (errData) { msg = [[NSString alloc] initWithData:errData encoding:NSUTF8StringEncoding]; }
@@ -427,6 +452,18 @@ static NSString *gb(unsigned long long b) {
     @catch (NSException *ex) { [self finish:ident ok:NO error:ex.reason]; return; }
     _task = t;
     SFLog(@"downloads: lade %@", item.title);
+}
+
+- (void)installPart:(NSString *)part target:(NSString *)target rec:(NSMutableDictionary *)r item:(SFItem *)item {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *old = r[@"path"];   // repair of an earlier file whose name changed: drop the old one
+    if (old.length && ![old isEqualToString:target]) [fm removeItemAtPath:old error:nil];
+    [fm removeItemAtPath:target error:nil];
+    [fm moveItemAtPath:part toPath:target error:nil];
+    r[@"path"] = target;
+    r[@"bytes"] = @([[fm attributesOfItemAtPath:target error:nil] fileSize]);
+    [self fetchThumb:item rec:r];
+    [self finish:r[@"id"] ok:YES error:nil];
 }
 
 - (void)fetchThumb:(SFItem *)item rec:(NSMutableDictionary *)r {
@@ -448,7 +485,12 @@ static NSString *gb(unsigned long long b) {
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
     NSMutableDictionary *r = _recs[ident];
     _task = nil; _runningID = nil;
-    if (r) {
+    if (r && !ok && [r[@"path"] length] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) {
+        // a repair download failed: keep the existing file instead of losing it
+        r[@"state"] = @(SFDLDone); r[@"progress"] = @1.0;
+        [self save:r];
+        SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file", ident, error);
+    } else if (r) {
         r[@"state"] = @(ok ? SFDLDone : SFDLFailed);
         r[@"progress"] = @(ok ? 1.0 : 0.0);
         if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970); }

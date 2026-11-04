@@ -32,6 +32,7 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 @interface SFDownloads : NSObject
 + (instancetype)shared;
 - (void)start;                                   // Warteschlange + Abo-Prüfung
+- (void)stopForExit;                             // terminate the running ffmpeg before the app exits (no orphans)
 
 // Einzelne Inhalte
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress;

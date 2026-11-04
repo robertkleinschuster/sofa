@@ -26,4 +26,17 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
 - (void)save:(NSDictionary *)r;
 - (void)changed:(NSString *)identifier;
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = schon vorhanden/abgelehnt
+- (void)pump;
+- (SFItem *)itemFromRec:(NSDictionary *)r;
++ (NSString *)ffmpegToolPath;
++ (NSString *)root;
+@end
+
+// Integrity layer (SFDownloads+Integrity.m): orphan reaping, unique part files, verification, audit
+@interface SFDownloads (Integrity)
+- (NSUInteger)reapOrphans;
+- (void)sweepStaleParts;
+- (NSString *)partSuffix;
+- (void)auditExistingDownloads;
++ (NSString *)problemWithFile:(NSString *)path expectedDuration:(double)expected ffmpeg:(NSString *)ff;
 @end

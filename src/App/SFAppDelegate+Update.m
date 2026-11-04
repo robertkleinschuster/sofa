@@ -75,6 +75,7 @@
     SFNoAnimate(^{ [self.nav.layer addSublayer:ov]; });
     [CATransaction flush];
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // Positionen speichern
+    [[SFDownloads shared] stopForExit];   // _exit below skips cleanup: ffmpeg would survive as an orphan
     [[SFStore shared] flush];
     [[SFYTResolver shared] saveCache];   // fortgesetztes YouTube-Video startet ohne neue Auflösung
     SFLog(@"update: gesichert, beende");
