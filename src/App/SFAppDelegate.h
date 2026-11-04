@@ -23,6 +23,7 @@ void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
 
 @interface SFAppDelegate (Lounge)
 - (SFPlayerScreen *)topPlayer;
+- (void)presentPlayer:(SFPlayerScreen *)ps;   // replaces the visible player (and overlays above it) or pushes
 - (void)wakeAndFront;
 - (void)loungeCommand:(NSString *)cmd args:(NSDictionary *)args;
 @end

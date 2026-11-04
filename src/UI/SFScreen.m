@@ -147,6 +147,33 @@ NSCursor *SFBlankCursor(void) {
     [self pop];
 }
 
+- (void)removeScreen:(SFScreen *)s {
+    NSUInteger i = [_stack indexOfObjectIdenticalTo:s];
+    if (i == NSNotFound) return;
+    BOOL wasTop = s == self.top;
+    [_stack removeObjectAtIndex:i];
+    [s willDisappear];   // leaves for good (a covered player has not been told yet)
+    SFNoAnimate(^{ [s.layer removeFromSuperlayer]; });
+    if (wasTop && self.top) {
+        SFScreen *under = self.top;
+        [under willAppear];
+        SFNoAnimate(^{
+            if (!under.layer.superlayer) {
+                if (self->_toastLayer) [self->_root insertSublayer:under.layer below:self->_toastLayer];
+                else [self->_root addSublayer:under.layer];
+            }
+            under.layer.opacity = 1;
+            under.layer.transform = CATransform3DIdentity;
+        });
+        [under didAppear];
+    }
+}
+
+- (void)popAbove:(SFScreen *)s {
+    if ([_stack indexOfObjectIdenticalTo:s] == NSNotFound) return;
+    while (self.top && self.top != s) [self removeScreen:self.top];
+}
+
 - (void)replaceTop:(SFScreen *)s {
     SFScreen *old = self.top;
     if (!old) { [self push:s]; return; }

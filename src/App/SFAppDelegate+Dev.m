@@ -104,7 +104,7 @@
         [SFYouTube fillDetails:it done:^{
             SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
             ps.startFromBeginning = YES;
-            if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
+            [self presentPlayer:ps];
         }];
     } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
         SFItem *it = [SFItem new];
@@ -114,10 +114,29 @@
             NSArray *pt = [arg componentsSeparatedByString:@"|"];
             it.localPath = pt[0]; it.playURL = [NSURL fileURLWithPath:pt[0]];
             if (pt.count > 1) { it.resolverRef = pt[1]; it.identifier = pt[1]; }
-        } else it.resolverRef = arg;
+        } else {
+            it.resolverRef = arg;
+            SFItem *dl = [[SFDownloads shared] itemFor:arg];   // downloaded: with its metadata, as from the Downloads page
+            if (dl) it = dl;
+        }
         SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
         ps.startFromBeginning = YES;
-        if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
+        [self presentPlayer:ps];
+    } else if ([cmd isEqualToString:@"playlist"] && arg) {   // Dev: local files as a playlist ("/a.mp4,/b.mp4,…"), starts at the 2nd
+        NSMutableArray *q = [NSMutableArray new];
+        for (NSString *path in [arg componentsSeparatedByString:@","]) {
+            SFItem *it = [SFItem new];
+            it.kind = SFItemVideo; it.localPath = path; it.playURL = [NSURL fileURLWithPath:path];
+            it.identifier = [@"devlist:" stringByAppendingString:path];
+            it.title = [NSString stringWithFormat:@"Testvideo %lu", (unsigned long)q.count + 1];
+            it.channel = @"Sofa Dev"; it.playlistID = @"devlist"; it.style = SFTileStyleLandscape;
+            [q addObject:it];
+        }
+        if (!q.count) return;
+        NSUInteger start = MIN((NSUInteger)1, q.count - 1);
+        SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:q[start] queue:q index:start];
+        ps.startFromBeginning = YES;
+        [self presentPlayer:ps];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite

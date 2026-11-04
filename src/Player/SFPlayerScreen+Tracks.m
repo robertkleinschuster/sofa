@@ -21,11 +21,6 @@ static void SFPostSubtitles(SFPlayerScreen *p, NSDictionary *state) {
     return [_engine respondsToSelector:@selector(tracksOfType:)] && _engine.status == SFEngineReady;
 }
 
-- (void)updateTrackHint {
-    float op = [self tracksAvailable] ? 1 : 0;
-    SFNoAnimate(^{ self->_trackHint.opacity = op; self->_trackKey.opacity = op; });
-}
-
 // „en-US“ -> „Englisch“ (Region weglassen; Schrift bleibt: „Chinesisch (Vereinfacht)“);
 // ISO 639-2 („deu“) wird ebenfalls verstanden
 static NSString *SFLanguageName(NSString *code) {
@@ -121,32 +116,10 @@ static NSString *SFBaseLanguage(NSString *code) {
     return choices.count ? [choices.firstObject[@"title"] isEqual:@"Aus"] ? @"Aus" : @"Standard" : @"–";
 }
 
-- (void)showTrackMenu {
-    SFNavigator *nav = self.navigator;
-    NSArray *audio = [self trackChoices:@"audio"], *subs = [self trackChoices:@"sub"];
-    NSMutableArray *opts = [NSMutableArray new];
-    __weak SFPlayerScreen *ws = self;
-    SFMenuOption *a = [SFMenuOption option:@"Ton" action:^{
-        dispatch_async(dispatch_get_main_queue(), ^{ [ws showChoices:audio type:@"audio" title:@"Ton" on:nav]; });
-    }];
-    a.detail = audio.count > 1 ? [self currentChoice:audio] : (audio.count ? [self currentChoice:audio] : @"nur eine Tonspur");
-    SFMenuOption *u = [SFMenuOption option:@"Untertitel" action:^{
-        dispatch_async(dispatch_get_main_queue(), ^{ [ws showChoices:subs type:@"sub" title:@"Untertitel" on:nav]; });
-    }];
-    u.detail = subs.count > 1 ? [self currentChoice:subs] : @"keine vorhanden";
-    if (audio.count > 1) [opts addObject:a];
-    if (subs.count > 1) [opts addObject:u];
-    // Heruntergeladen: die Datei hat nur die geladene Tonspur – online gibt es alle Ton- und
-    // Untertitelspuren (User-Wunsch 2026-11-04: auf den Stream wechseln können)
-    if (_openURL.isFileURL && (_item.resolverRef || _item.externalID)) {
-        SFMenuOption *o = [SFMenuOption option:@"Online abspielen" action:^{
-            dispatch_async(dispatch_get_main_queue(), ^{ [ws switchToStream]; });
-        }];
-        o.detail = @"alle Spuren";
-        [opts addObject:o];
-    }
-    if (!opts.count) { [nav toast:@"Dieses Video hat nur eine Tonspur und keine Untertitel"]; return; }
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Ton & Untertitel" subtitle:_item.title options:opts theme:self.theme]];
+// Downloaded: the file only has the downloaded audio track - online there are all audio and
+// subtitle tracks (user request 2026-11-04: be able to switch to the stream)
+- (BOOL)canSwitchToStream {
+    return _openURL.isFileURL && (_item.resolverRef || _item.externalID) && _item.kind == SFItemVideo;
 }
 
 // Vom Download auf den Online-Stream wechseln, an derselben Stelle
@@ -161,7 +134,9 @@ static NSString *SFBaseLanguage(NSString *code) {
     NSTimeInterval t = [self currentTime];
     if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
     SFLog(@"player: Download -> online bei %.0f s", t);
-    [self.navigator replaceTop:ps];
+    SFNavigator *nav = self.navigator;
+    [nav popAbove:self];   // chosen in the info panel: replace the player, not the panel
+    [nav replaceTop:ps];
 }
 
 - (void)showChoices:(NSArray *)choices type:(NSString *)type title:(NSString *)title on:(SFNavigator *)nav {

@@ -60,41 +60,11 @@
                 }]];
             }
         }
-        // Zur Sendung / zum Kanal der Folge (online, wie bei der Quelle) – nicht, wenn man schon dort ist
-        SFPageLoader showPage = it.showRef && ![it.showRef isEqualToString:self.folderIdentifier] ? SFShowPageLoader(it.showRef, it.channel) : nil;
-        if (showPage) {
-            BOOL yt = [it.showRef hasPrefix:@"ytchannel:"];
-            NSString *name = it.channel.length ? it.channel : nil;
-            [opts addObject:[SFMenuOption option:name ? [NSString stringWithFormat:@"%@ „%@“", yt ? @"Zum Kanal" : @"Zur Sendung", name] : (yt ? @"Zum Kanal" : @"Zur Sendung") action:^{
-                SFItem *f = [SFItem new];
-                f.kind = SFItemFolder; f.identifier = it.showRef; f.title = it.channel; f.themeName = it.themeName ?: it.source;
-                f.pageLoader = showPage;
-                SFOpenItem(nav, f, nil, 0);
-            }]];
-        }
-        // ohne gespeicherte Kennung: beim Auswählen bei der Quelle nachschlagen (nicht auf der Kanalseite selbst)
-        SFShowRefLookup lookup = !showPage && !it.showRef && ![self.folderIdentifier hasPrefix:@"ytchannel:"] ? SFShowRefLookupFor(it.source) : nil;
-        if (lookup && it.kind == SFItemVideo) {
-            NSString *name = it.channel.length ? it.channel : nil;
-            [opts addObject:[SFMenuOption option:name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal" action:^{
-                lookup(it, ^(NSString *ref) {
-                    if (nav.top != ws) return;   // inzwischen woanders (z. B. Wiedergabe gestartet)
-                    SFPageLoader pl = ref ? SFShowPageLoader(ref, it.channel) : nil;
-                    if (!pl) { [nav toast:@"Kanal nicht gefunden"]; return; }
-                    SFItem *f = [SFItem new];
-                    f.kind = SFItemFolder; f.identifier = ref; f.title = it.channel; f.themeName = it.themeName ?: it.source;
-                    f.pageLoader = pl;
-                    SFOpenItem(nav, f, nil, 0);
-                });
-            }]];
-        }
-        SFShow *show = !showPage && !lookup && it.channel ? [[SFLibrary shared] showNamed:it.channel source:it.source] : nil;
-        if (show && ![_page.title isEqualToString:show.name]) {
-            [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Zu „%@“", show.name] action:^{
-                SFItem *f = [SFItem new];
-                f.kind = SFItemFolder; f.themeName = show.source;
-                f.pageLoader = [SFHome showLoader:show.name source:show.source];
-                SFOpenItem(nav, f, nil, 0);
+        // Zur Sendung / zum Kanal der Folge (SFShowLink: online page, looked up channel, or downloaded show)
+        SFShowLink *link = [SFShowLink linkFor:it here:self.folderIdentifier pageTitle:_page.title];
+        if (link) {
+            [opts addObject:[SFMenuOption option:link.title action:^{
+                [link openOn:nav stillValid:^BOOL { return nav.top == ws; } present:nil];   // lookup is async: only if still here
             }]];
         }
     } else if (it.kind == SFItemFolder) {
@@ -167,4 +137,71 @@
     for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues) [tl refreshProgress];
 }
 
+@end
+
+
+#pragma mark - Show / channel link
+
+@implementation SFShowLink {
+    SFItem *_episode;
+    SFShowRefLookup _lookup;     // channel has to be looked up first
+    SFShow *_local;              // downloaded show
+}
+
+static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
+    SFItem *f = [SFItem new];
+    f.kind = SFItemFolder; f.identifier = ref; f.title = it.channel;
+    f.source = it.source; f.themeName = it.themeName ?: it.source;
+    f.pageLoader = page;
+    return f;
+}
+
++ (instancetype)linkFor:(SFItem *)it here:(NSString *)here pageTitle:(NSString *)pageTitle {
+    if (it.kind != SFItemVideo && it.kind != SFItemLive) return nil;
+    SFShowLink *l = [SFShowLink new];
+    l->_episode = it;
+    NSString *name = it.channel.length ? it.channel : nil;
+    // Online page of the show/channel (as at the source) - not when one is already there
+    SFPageLoader page = it.showRef && ![it.showRef isEqualToString:here] ? SFShowPageLoader(it.showRef, it.channel) : nil;
+    if (page) {
+        BOOL yt = [it.showRef hasPrefix:@"ytchannel:"];
+        l->_folder = SFShowFolder(it, it.showRef, page);
+        l->_title = name ? [NSString stringWithFormat:@"%@ „%@“", yt ? @"Zum Kanal" : @"Zur Sendung", name] : (yt ? @"Zum Kanal" : @"Zur Sendung");
+        return l;
+    }
+    // No stored reference: look it up at the source when chosen (not on the channel page itself)
+    SFShowRefLookup lookup = !it.showRef && ![here hasPrefix:@"ytchannel:"] && it.kind == SFItemVideo ? SFShowRefLookupFor(it.source) : nil;
+    if (lookup) {
+        l->_lookup = lookup;
+        l->_title = name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal";
+        return l;
+    }
+    SFShow *show = name ? [[SFLibrary shared] showNamed:name source:it.source] : nil;
+    if (show && ![pageTitle isEqualToString:show.name]) {
+        l->_local = show;
+        l->_title = [NSString stringWithFormat:@"Zu „%@“", show.name];
+        return l;
+    }
+    return nil;
+}
+
+- (void)openOn:(SFNavigator *)nav stillValid:(BOOL (^)(void))stillValid present:(void (^)(SFScreen *))present {
+    void (^show)(SFScreen *) = present ?: ^(SFScreen *s) { [nav push:s]; };
+    if (_folder) { show(SFBrowseScreenForFolder(_folder, nav.top.theme)); return; }
+    if (_local) {
+        SFItem *f = [SFItem new];
+        f.kind = SFItemFolder; f.themeName = _local.source;
+        f.pageLoader = [SFHome showLoader:_local.name source:_local.source];
+        show(SFBrowseScreenForFolder(f, nav.top.theme));
+        return;
+    }
+    if (!_lookup) return;
+    SFItem *it = _episode;
+    _lookup(it, ^(NSString *ref) {
+        if (stillValid && !stillValid()) return;   // the user has moved on (e.g. started playback)
+        SFPageLoader pl = ref ? SFShowPageLoader(ref, it.channel) : nil;
+        if (!pl) { [nav toast:@"Kanal nicht gefunden"]; return; }
+        show(SFBrowseScreenForFolder(SFShowFolder(it, ref, pl), nav.top.theme));
+    });
+}
 @end

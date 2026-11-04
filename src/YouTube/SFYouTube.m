@@ -608,17 +608,60 @@ static NSSet *skipKeys(void) {
 
 #pragma mark - Setup
 
-+ (void)upNextFor:(NSString *)vid done:(void (^)(SFItem *))done {
+// Watch page ("next", docs/youtube.md §3.4): related videos + metadata the browse lists lack
+// (description, channel ID and avatar). One cached call serves the info panel and autoplay.
++ (void)watchPageFor:(NSString *)vid done:(void (^)(NSArray *, NSDictionary *))done {
+    if (vid.length != 11) { SFMain(^{ done(@[], nil); }); return; }
     [self call:@"next" body:@{@"videoId": vid} cache:1800 done:^(id j, NSError *e) {
+        NSMutableArray *related = [NSMutableArray new];
         id sec = path(j, @"contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results");
-        SFItem *pick = nil;
         for (SFItem *i in (sec ? [self videosIn:sec cont:NULL channels:nil] : @[])) {
             if (i.kind != SFItemVideo || !i.identifier || [i.externalID isEqualToString:vid]) continue;
             if (i.duration > 0 && i.duration < 90) continue;                 // keine Shorts
-            if ([[SFStore shared] watched:i.identifier]) continue;           // schon gesehen
-            pick = i; break;
+            [related addObject:i];
         }
-        SFMain(^{ done(pick); });
+        NSMutableDictionary *d = nil;
+        if (dict(j)) {
+            d = [NSMutableDictionary new];
+            for (id c in arr(path(j, @"contents.twoColumnWatchNextResults.results.results.contents")) ?: @[]) {
+                NSDictionary *pri = dict(dict(c)[@"videoPrimaryInfoRenderer"]);
+                NSDictionary *secr = dict(dict(c)[@"videoSecondaryInfoRenderer"]);
+                if (pri) {   // "02.11.2026", also "Premiere am 02.11.2026" / "Live übertragen am …"
+                    NSString *dt = text(pri[@"dateText"]);
+                    NSRange r = dt ? [dt rangeOfString:@"[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{4}" options:NSRegularExpressionSearch] : NSMakeRange(NSNotFound, 0);
+                    if (r.location != NSNotFound) {
+                        NSDateFormatter *f = [NSDateFormatter new];
+                        f.dateFormat = @"d.M.yyyy"; f.locale = [NSLocale localeWithLocaleIdentifier:@"de_AT"];
+                        NSDate *date = [f dateFromString:[dt substringWithRange:r]];
+                        if (date) d[@"date"] = date;
+                    }
+                }
+                if (secr) {
+                    NSString *desc = str(path(secr, @"attributedDescription.content")) ?: text(secr[@"description"]);
+                    if (desc.length) d[@"description"] = desc;
+                    NSDictionary *own = dict(path(secr, @"owner.videoOwnerRenderer"));
+                    NSString *name = text(own[@"title"]);
+                    NSString *cid = str(path(own, @"navigationEndpoint.browseEndpoint.browseId"));
+                    NSString *avatar = lastURL(path(own, @"thumbnail.thumbnails"));
+                    if (name.length) d[@"channel"] = name;
+                    if ([cid hasPrefix:@"UC"]) d[@"channelID"] = cid;
+                    if (avatar.length) d[@"avatar"] = avatar;
+                }
+            }
+        }
+        SFMain(^{ done(related, d); });
+    }];
+}
+
++ (void)relatedFor:(NSString *)vid done:(void (^)(NSArray *))done {
+    [self watchPageFor:vid done:^(NSArray *related, NSDictionary *details) { done(related); }];
+}
+
++ (void)upNextFor:(NSString *)vid done:(void (^)(SFItem *))done {
+    [self relatedFor:vid done:^(NSArray *items) {
+        SFItem *pick = nil;
+        for (SFItem *i in items) if (![[SFStore shared] watched:i.identifier]) { pick = i; break; }   // schon gesehen
+        done(pick);
     }];
 }
 

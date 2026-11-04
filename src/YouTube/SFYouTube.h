@@ -14,6 +14,12 @@
 + (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;
 + (SFItem *)itemForVideoID:(NSString *)vid;                     // Platzhalter (lokale Kopie, falls vorhanden)
 + (void)upNextFor:(NSString *)videoID done:(void (^)(SFItem *next))done;   // „Als Nächstes“ (Empfehlung, ohne Shorts/Live/Gesehenes)
+// Related videos of the watch page (no Shorts < 90 s, not the video itself); done on main, never nil
++ (void)relatedFor:(NSString *)videoID done:(void (^)(NSArray *items))done;
+// Watch page in one request (the same cached InnerTube "next" call as related/up next):
+// related = as relatedFor; details = description, channel, channelID (UC…), avatar, date (NSDate) –
+// keys only present when found. done on main; related empty + details nil = request failed.
++ (void)watchPageFor:(NSString *)videoID done:(void (^)(NSArray *related, NSDictionary *details))done;
 + (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *channelID))done;   // @handle-URL -> UC…
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done; // Titel/Kanal/Dauer per InnerTube "player"
 @end

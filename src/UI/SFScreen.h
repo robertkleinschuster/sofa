@@ -28,6 +28,12 @@
 - (void)pop;
 - (void)popToRoot;
 - (void)replaceTop:(SFScreen *)s;
+// Remove a screen from anywhere in the stack for good, without animation (it gets willDisappear,
+// also when it was covered). Used for overlays whose base went away (player info panel after the
+// player closed) and for a player left behind under a covered overlay.
+- (void)removeScreen:(SFScreen *)s;
+// Remove every screen above s (overlays such as menus or the player info panel), s becomes top.
+- (void)popAbove:(SFScreen *)s;
 - (void)sendKey:(SFKey)key;
 @property (nonatomic, readonly) NSTimeInterval lastInput;   // Zeitpunkt der letzten Taste (Updater: nur in Ruhe tauschen)
 // Kurze Einblendung unten (Hinweise, Fehler)

@@ -15,6 +15,7 @@
 NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #import "SFPlayerScreen+Private.h"
+#import "SFPlayerInfoScreen.h"
 
 @implementation SFPlayerScreen
 
@@ -67,9 +68,10 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_channel = [SFLabel labelWithFont:[t medium:28] color:[NSColor colorWithDeviceWhite:1 alpha:0.75]];
         self->_channel.position = CGPointMake(x, U(70));
         [self->_osd addSublayer:self->_channel];
-        // rechts oben wie in den Listen: „[OK] halten: Ton & Untertitel“ (Geste sichtbar machen)
+        // top right as in the lists: "[OK] halten: Info" (makes the gesture visible). The info panel
+        // always has something (description, channel, audio/subtitles, up next), so always shown.
         self->_trackHint = [SFLabel labelWithFont:[t medium:26] color:[NSColor colorWithDeviceWhite:1 alpha:0.85]];
-        self->_trackHint.text = @"halten: Ton & Untertitel";
+        self->_trackHint.text = @"halten: Info";
         self->_trackHint.alignment = NSRightTextAlignment;
         [self->_trackHint sizeToFitWidth:U(420)];
         self->_trackHint.position = CGPointMake(x + w - U(420), U(72));
@@ -85,7 +87,6 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [self->_trackKey addSublayer:ok];
         [self->_osd addSublayer:self->_trackKey];
         [self->_osd addSublayer:self->_trackHint];
-        [self updateTrackHint];
         self->_title = [SFLabel labelWithFont:[t bold:50] color:[NSColor whiteColor]];
         self->_title.maxLines = 2;
         [self->_osd addSublayer:self->_title];
@@ -199,6 +200,19 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)didAppear {
     if (!_engine && !_closing) [self startItem];
+    else if (_engine && !_engine.playing && !_ended && !_failed) [self showOSD:YES autoHide:NO];   // back from the info panel, paused: show where we are
+    // Ended without a successor while an overlay (info panel) was open: the player stayed so the
+    // panel was not pulled away; back on the video now -> leave as an ending video does
+    else if (_ended && !_nextTimer && ![self nextItem]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ if (self.navigator.top == self && self->_ended && !self->_nextTimer) [self.navigator pop]; });
+    }
+}
+
+// Leave the player even when an overlay (menu, info panel) is on top of it
+- (void)close {
+    SFNavigator *nav = self.navigator;
+    [nav popAbove:self];
+    if (nav.top == self) [nav pop];
 }
 
 - (void)willDisappear {
@@ -398,7 +412,6 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         [self postState];
     } else if (_engine.status == SFEngineReady) {
         [self showMessage:@""];   // z. B. „Verbindung unterbrochen“ nach erfolgreichem Ausweichen
-        [self updateTrackHint];
         if (!_subsApplied) { _subsApplied = YES; [self applyPreferredSubtitles]; }
         if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
         [self postState];
@@ -665,7 +678,10 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self saveProgress];
     [self setAssertion:NO];
     SFItem *next = [self nextItem];
-    if (!next) { [self.navigator pop]; return; }
+    if (!next) {
+        if (self.navigator.top == self) [self.navigator pop];   // else: an overlay is open, see didAppear
+        return;
+    }
     [self showNextCard:next];
 }
 
@@ -724,6 +740,28 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     SFNoAnimate(t.userInfo);
 }
 
+// Play another item in this player (info panel: recommendation, other episode) - like autoplay
+- (void)playItem:(SFItem *)item {
+    if (!item || _closing) return;
+    [_nextTimer invalidate]; _nextTimer = nil; _nextCard.hidden = YES;
+    [self saveProgress];
+    [self teardownPlayer];
+    _ended = NO;
+    NSUInteger q = [_queue indexOfObjectIdenticalTo:item];
+    if (q != NSNotFound) _index = q;
+    _item = item;
+    _lastSaved = 0;
+    _upNext = nil; _upNextAsked = NO;
+    [self startItem];
+}
+
+- (BOOL)hasExplicitQueue { return _explicitQueue; }
+
+- (void)showInfo {
+    [self showOSD:NO autoHide:NO];
+    [self.navigator push:[[SFPlayerInfoScreen alloc] initWithPlayer:self]];
+}
+
 - (void)playNext {
     [_nextTimer invalidate]; _nextTimer = nil;
     _nextCard.hidden = YES;
@@ -755,12 +793,8 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
             if (!_osdVisible) [self showOSD:YES autoHide:YES];
             else [self togglePause];
             return YES;
-        case SFKeySelectHold:
-            if ([self tracksAvailable]) [self showTrackMenu];
-            else {
-                SFLog(@"player: Ton/Untertitel nicht wählbar (Engine %@, Status %ld)", _engine.engineName, (long)_engine.status);
-                [self.navigator toast:@"Ton und Untertitel sind bei diesem Video nicht wählbar"];
-            }
+        case SFKeySelectHold:   // info panel: description, channel, follow, audio/subtitles, up next
+            [self showInfo];
             return YES;
         case SFKeyLeft: [self seekBy:-10]; return YES;
         case SFKeyRight: [self seekBy:30]; return YES;
