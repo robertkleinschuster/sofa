@@ -180,8 +180,9 @@ def audio_tracks(formats):
     out = []
     for lang, f in best.items():
         lp = audio_pref(f)
+        # „synchronisiert“ nur bei Kennzeichnung (acont=dubbed* / yt-dlp -1), nicht bei unbekannt (0)
         out.append({"lang": lang, "url": f["url"], "original": lp == 10,
-                    "dubbed": -10 < lp < 5, "described": lp == -10})
+                    "dubbed": -10 < lp < 0, "described": lp == -10})
     out.sort(key=lambda t: (not t["original"], t["described"], t["lang"]))
     return out
 

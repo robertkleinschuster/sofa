@@ -117,6 +117,14 @@ class AudioTracks(unittest.TestCase):
         self.assertEqual([t["lang"] for t in tr], ["sv", "de-DE", "sv-x-desc"])
         self.assertTrue(tr[2]["described"]); self.assertFalse(tr[2]["dubbed"])
 
+    def test_unknown_not_dubbed(self):
+        # ohne Kennzeichnung (weder xtags noch language_preference) nicht als „synchronisiert“ anzeigen
+        tr = R["audio_tracks"]([aud("a", lang="de"), aud("b", lang="en"), aud("c", lang="fr", lp=5)])
+        self.assertEqual([(t["lang"], t["dubbed"], t["original"]) for t in tr],
+                         [("de", False, False), ("en", False, False), ("fr", False, False)])
+        tr = R["audio_tracks"]([aud("a", lang="de", lp=10), aud("b", lang="en", lp=-1)])
+        self.assertEqual([(t["lang"], t["dubbed"]) for t in tr], [("de", False), ("en", True)])
+
     def test_single_language(self):
         fm = [aud("251", xt="acont=original:lang=de"), aud("140", acodec="mp4a.40.2", xt="acont=original:lang=de")]
         self.assertEqual(R["audio_tracks"](fm), [])
