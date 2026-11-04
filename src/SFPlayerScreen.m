@@ -337,6 +337,42 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark SFEngineDelegate
 
+// Fehlertext für den Fernseher: Ursache auf Deutsch statt Systemmeldung („unknown error“)
+static NSString *SFFriendlyPlaybackError(NSError *e) {
+    NSError *u = e.userInfo[NSUnderlyingErrorKey];
+    for (NSError *x in @[e ?: [NSNull null], u ?: [NSNull null]]) {
+        if (![x isKindOfClass:[NSError class]]) continue;
+        if ([x.domain isEqualToString:NSURLErrorDomain]) switch (x.code) {
+            case NSURLErrorNotConnectedToInternet: case NSURLErrorNetworkConnectionLost:
+                return @"Keine Internetverbindung.";
+            case NSURLErrorTimedOut: case NSURLErrorCannotConnectToHost: case NSURLErrorCannotFindHost:
+            case NSURLErrorDNSLookupFailed:
+                return @"Der Server des Anbieters antwortet nicht.";
+            default: break;
+        }
+        if ([x.domain isEqualToString:NSOSStatusErrorDomain] && (x.code == -12660 || x.code == -12938))   // HTTP 403 / 404
+            return @"Der Anbieter liefert dieses Video gerade nicht aus.";
+    }
+    return @"Das Video ließ sich nicht laden – bitte später noch einmal versuchen.";
+}
+
+// Wo nach einem Fehlschlag weitermachen: Abbruch mitten im Video -> dort, sonst am Startpunkt
+- (NSTimeInterval)failurePosition {
+    return MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
+}
+
+// Ausweich-Stufe: dieselbe (oder andere) URL kurz verzögert neu öffnen, an der Fehlerposition.
+// Verworfen, wenn inzwischen geschlossen oder ein anderes Video läuft.
+- (void)reopen:(NSURL *)url forceMPV:(BOOL)forceMPV after:(double)delay resetTries:(BOOL)reset {
+    SFItem *it = _item; NSTimeInterval pos = [self failurePosition];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_closing || it != self->_item) return;
+        if (reset) self->_openTries = 0;
+        if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+        [self playURL:url forceMPV:forceMPV];
+    });
+}
+
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
         BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
@@ -349,12 +385,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
             SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
-            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (self->_closing || it != self->_item) return;
-                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                [self playURL:u];
-            });
+            [self reopen:_openURL forceMPV:NO after:0.1 resetTries:NO];
             return;
         }
         // YouTube lehnt die DASH-Streams gelegentlich sofort ab (HTTP 403), der HLS-Stream derselben
@@ -362,25 +393,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         if (viaMPV && _openedDash && _openURL && ![_openURL isEqual:_dashFailedURL]) {
             SFLog(@"player: DASH abgelehnt -> mpv mit HLS");
             _dashFailedURL = _openURL;
-            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (self->_closing || it != self->_item) return;
-                self->_openTries = 0;
-                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                [self playURL:u forceMPV:YES];
-            });
+            [self reopen:_openURL forceMPV:YES after:0.1 resetTries:YES];
             return;
         }
         if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv scheitert -> AVFoundation
             SFLog(@"player: mpv scheitert -> AVFoundation");
             _mpvFailedURL = _openURL;
-            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (self->_closing || it != self->_item) return;
-                self->_openTries = 0;
-                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                [self playURL:u forceMPV:NO];
-            });
+            [self reopen:_openURL forceMPV:NO after:0.2 resetTries:YES];
             return;
         }
         NSURL *alt = viaMPV ? nil : SFNextAlternateURL(_openURL);
@@ -389,13 +408,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         if (tryMPV || alt) {
             NSURL *next = tryMPV ? _openURL : alt;
             SFLog(@"player: %@", tryMPV ? @"AVFoundation scheitert -> mpv" : @"switching to alternate stream");
-            SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (self->_closing || it != self->_item) return;
-                self->_openTries = 0;
-                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-                [self playURL:next forceMPV:tryMPV];
-            });
+            [self reopen:next forceMPV:tryMPV after:0.2 resetTries:YES];
             return;
         }
         // YouTube-URLs werden sporadisch komplett abgelehnt (403/-1102): einmal frisch auflösen
@@ -406,7 +419,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
             _mpvFailedURL = nil;
             self.startPaused = self.startPaused || _holdPaused;   // „pausiert starten“ übersteht das Neu-Auflösen
-            NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);   // Abbruch mitten im Video: dort weiter
+            NSTimeInterval pos = [self failurePosition];
             if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
             [self teardownPlayer];
             [self startItem];
@@ -415,7 +428,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [self showSpinner:NO];
         _failed = YES;
         SFLog(@"player: failed (%@) %@", _engine.engineName, _engine.error);
-        [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@", _engine.error.localizedDescription ?: @""]];
+        [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@\n\nOK – zurück", SFFriendlyPlaybackError(_engine.error)]];
         [self postState];
     } else if (_engine.status == SFEngineReady) {
         [self showMessage:@""];   // z. B. „Verbindung unterbrochen“ nach erfolgreichem Ausweichen

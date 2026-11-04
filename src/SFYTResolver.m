@@ -324,8 +324,12 @@ static NSString *YTActiveDir(void) {
     if ([l rangeOfString:@"private"].location != NSNotFound) return @"Dieses Video ist privat.";
     if ([l rangeOfString:@"age"].location != NSNotFound && [l rangeOfString:@"confirm"].location != NSNotFound) return @"Dieses Video ist altersbeschränkt und kann hier nicht abgespielt werden.";
     if ([l rangeOfString:@"premiere"].location != NSNotFound || [l rangeOfString:@"live event will begin"].location != NSNotFound) return @"Dieser Livestream hat noch nicht begonnen.";
+    // YouTube drosselt zeitweise („Sign in to confirm you're not a bot“) – vorübergehend, nicht umgehen
+    if ([l rangeOfString:@"not a bot"].location != NSNotFound) return @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
+    if ([l rangeOfString:@"playback on other websites has been disabled"].location != NSNotFound) return @"Der Kanal erlaubt dieses Video nur auf youtube.com.";
     if ([l rangeOfString:@"unavailable"].location != NSNotFound || [l rangeOfString:@"nicht verfügbar"].location != NSNotFound) return @"Video nicht verfügbar.";
-    return e;
+    if ([l hasPrefix:@"youtube startet"]) return e;   // eigene Meldung
+    return @"YouTube liefert dieses Video gerade nicht aus.";   // Originaltext steht im Log (yt: resolve … failed)
 }
 
 - (BOOL)hasPending:(NSString *)key {

@@ -99,7 +99,8 @@
         }];
     } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
         SFItem *it = [SFItem new];
-        it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg;
+        it.kind = SFItemVideo; it.identifier = arg; it.title = arg;
+        if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg]; else it.resolverRef = arg;   // direkte URL: Ausweich-Kette testen
         SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
         ps.startFromBeginning = YES;
         if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
