@@ -202,21 +202,21 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
         `SOFA_YTDLP_DIR`, 20 s, Resolve 1080p ok).
   - [x] Makefile: `MP` (MacPorts-Prefix), `PREFIX`, `DESTDIR`; SofaRemote findet Sofa.app über das
         eigene Bundle (kein fester /Applications-Pfad mehr).
-  - [ ] Port `net/bgutil-pot-server` (Overlay): bgutil-ytdlp-pot-provider 1.3.1 server (node26,
+  - [x] (2026-11-04, 2.0.2, läuft als nobody nur auf 127.0.0.1; Plugin per /ping-Pinning automatisch nachgezogen) Port `net/bgutil-pot-server` (Overlay): bgutil-ytdlp-pot-provider 1.3.1 server (node26,
         node_modules als vendor-Tarball am toolkit-Release `distfiles`, `canvas` nativ gegen
         MacPorts-cairo), LaunchDaemon per startupitem. Ersetzt den Handaufbau
         `~/bgutil-ytdlp-pot-provider` + `/Library/LaunchDaemons/com.bgutil.potserver.plist`.
-  - [ ] Port `multimedia/sofa` (Overlay): Quelle = GitHub-Tag; build mit clang-22 (`make CC= MP=`),
+  - [x] (2026-11-04, destroot verifiziert) Port `multimedia/sofa` (Overlay): Quelle = GitHub-Tag; build mit clang-22 (`make CC= MP=`),
         depends_lib curl sqlite3 mpv ffmpeg quickjs librsvg python314, depends_run bgutil-pot-server;
         `reinplace /opt/local -> ${prefix}`; Sofa.app nach ${applications_dir}; zwei LaunchAgents
         (de.sofa.remote, de.sofa.app) via `startupitems … location LaunchAgents custom_file`.
         Erst `port -n destroot` testen (echte App nicht anfassen).
-  - [ ] Tag v0.1.0 + GitHub-Release.
+  - [~] Tag v0.1.0 gesetzt (Port baut daraus); GitHub-Release-Seite + Lizenz (fehlt noch, User entscheidet) offen.
   - [ ] Diese Maschine auf den Port umstellen (manuelles /Applications/Sofa.app, ~/Library/LaunchAgents/de.sofa.*,
         Hand-Daemon ablösen); Dev-Kreislauf bleibt `sofa-dev` auf build/; klären, wie `sofa-deploy`
         (Live-Update) mit port-verwalteten Dateien zusammenspielt.
   - [ ] `port mdmg sofa` → .dmg mit allen Laufzeit-Abhängigkeiten als Release-Asset (für Macs ohne MacPorts).
-  - [ ] README: Voraussetzungen/Installation auf Port-Weg aktualisieren.
+  - [x] README: Installation über `sudo port -n install sofa` + `port load`.
   - [ ] Ersteinrichtung in der App (YouTube-Login über Firefox erklären, Apple-Remote prüfen) – nichts im Terminal.
 - [ ] Periodisch Background-Review-Agents (User-Wunsch) — nach jedem größeren Baustein.
 - [ ] Video-Frames im Dev-Stream (AVPlayerItemVideoOutput), sonst schwarz.
