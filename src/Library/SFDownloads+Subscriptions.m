@@ -116,6 +116,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
 }
 
 - (void)checkSubscriptionsNow {
+    [self retryDueRepairs];
     if (_checking || ![SFNet isOnline]) return;
     _checking = YES;
     [self cleanup];

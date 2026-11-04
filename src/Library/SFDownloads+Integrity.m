@@ -108,7 +108,11 @@ static NSString *SFRunFF(NSString *ff, NSArray *args, double timeout) {
     NSData *d = nil;
     int st = SFRunProcess(@"/usr/bin/nice", [@[@"-n", @"15", ff, @"-nostdin", @"-hide_banner"] arrayByAddingObjectsFromArray:args], timeout, YES, &d);
     if (st == -1 || st == -2) return nil;
-    return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
+    // ffmpeg prints metadata (e.g. a YouTube description) cut at a byte boundary, so the output is
+    // often not valid UTF-8 -> fall back to Latin-1, which decodes any byte sequence. (Returning ""
+    // here flagged healthy files as "unreadable" and re-downloaded them, 2026-11-04.)
+    return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]
+        ?: [[NSString alloc] initWithData:d encoding:NSISOLatin1StringEncoding] ?: @"";
 }
 
 static double SFParseDuration(NSString *s) {

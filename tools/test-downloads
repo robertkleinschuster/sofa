@@ -7,6 +7,7 @@
 #   1. an orphaned ffmpeg writing into the download folder is killed at start, its part file swept
 #   2. the verifier accepts a healthy file and rejects a corrupted one
 #   3. quitting during a download leaves no ffmpeg behind, and the download resumes on the next start
+#   4. a failed repair keeps the old file and is retried later (YouTube's bot check blocks for hours)
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -19,6 +20,7 @@ DEVDB="$HOME/Library/Application Support/Sofa/sofa-dev.db"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 REF=orf:14345720   # any ORF ON episode (replace when it expires)
+BADREF=orf:1       # an episode id that does not exist: its download always fails
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1
@@ -35,7 +37,7 @@ ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the de
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
   for p in $(ffpids); do kill $p 2>/dev/null; done
-  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$REF';" 2>/dev/null
+  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF');" 2>/dev/null
   for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
   rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/orphan-test."*
 }
@@ -66,7 +68,11 @@ S=$(stat -f %z "$T/bad.mp4")
 for f in 0.2 0.5; do   # overwrite chunks of payload with garbage (container stays readable)
   dd if=/dev/urandom of="$T/bad.mp4" bs=1 count=200000 seek=$(python3 -c "print(int($S*$f))") conv=notrunc 2>/dev/null
 done
-cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; sleep 8
+# metadata cut inside a UTF-8 sequence (ffmpeg does that with long YouTube descriptions): healthy
+# files were reported "unreadable" and downloaded again (2026-11-04)
+"$FF" -hide_banner -loglevel error -y -i "$T/good.mp4" -c copy -metadata comment="$(printf 'ab\xc3')" "$T/latin.mp4"
+cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; sleep 10
+grep -q "dlverify latin.mp4 -> ok" "$LOG" && ok "invalid UTF-8 in metadata is no reason to reject" || bad "latin.mp4 rejected: $(grep 'dlverify latin' "$LOG")"
 grep -q "dlverify good.mp4 -> ok" "$LOG" && ok "healthy file accepted" || bad "healthy file rejected: $(grep 'dlverify good' "$LOG")"
 grep -q "dlverify bad.mp4 -> .*\(decode errors\|duration\|unreadable\|bitrate\)" "$LOG" && ok "corrupted file rejected ($(grep -o 'dlverify bad.mp4 -> .*' "$LOG" | cut -c20-))" \
   || bad "corrupted file accepted"
@@ -93,6 +99,22 @@ start
 for i in $(seq 1 60); do grep -q "downloads: lade" "$LOG" && break; sleep 0.5; done
 grep -q "downloads: lade" "$LOG" && ok "download resumed on the next start" || bad "download not resumed"
 quit
+
+echo "==> 4. a failed repair keeps the file and is retried"
+# nothing else in the dev queue may run first (dev database only)
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
+mkdir -p "$ROOT/dev/Dev"; cp "$T/good.mp4" "$ROOT/dev/Dev/repair.mp4"
+/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('$BADREF','dev','Dev','{\"id\":\"$BADREF\",\"kind\":0,\"title\":\"Repair\",\"ref\":\"$BADREF\",\"source\":\"dev\"}','$ROOT/dev/Dev/repair.mp4',0,0,strftime('%s','now'));"
+start
+for i in $(seq 1 60); do grep -q "repair of $BADREF failed" "$LOG" && break; sleep 0.5; done
+grep -q "repair of $BADREF failed.*retry in 15 min" "$LOG" && ok "failed repair scheduled for a retry" || bad "no retry scheduled: $(grep "$BADREF" "$LOG" | tail -2)"
+[ -s "$ROOT/dev/Dev/repair.mp4" ] && ok "existing file kept" || bad "existing file lost"
+cmd dlretry
+for i in $(seq 1 60); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
+grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in 30 min" "$LOG" && ok "retried with a longer backoff" || bad "not retried: $(grep "$BADREF" "$LOG" | tail -2)"
+quit
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")
+[ "$st" = "2 2 repair:" ] && ok "marker persisted (state done, 2 tries)" || bad "unexpected record: $st"
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

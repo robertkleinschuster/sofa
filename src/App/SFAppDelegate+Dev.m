@@ -168,6 +168,9 @@
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
         [[SFDownloads shared] download:it];
+    } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
+        [[SFDownloads shared] expireRepairBackoffForTesting];
+        [[SFDownloads shared] retryDueRepairs];
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }

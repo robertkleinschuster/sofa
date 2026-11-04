@@ -90,6 +90,31 @@ static NSString *ffmpegPath(void) {
 static const NSInteger kSubMaxTries = 6;
 static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0, MIN(tries, 10) - 1)); }
 
+// Marks a finished file whose repair download failed and is to be retried (error column).
+static NSString *const kRepairPrefix = @"repair: ";
+
+// Re-queues repairs whose backoff has elapsed. Called at start and with every subscription check.
+- (void)retryDueRepairs {
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    BOOL any = NO;
+    for (NSMutableDictionary *r in _recs.allValues) {
+        if ([r[@"state"] integerValue] != SFDLDone || ![r[@"error"] hasPrefix:kRepairPrefix]) continue;
+        NSInteger n = [r[@"tries"] integerValue];
+        if (n >= kSubMaxTries || now - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) continue;
+        if (![[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) continue;
+        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)n + 1);
+        [r removeObjectForKey:@"error"];
+        r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
+        [self save:r]; [self changed:r[@"id"]];
+        any = YES;
+    }
+    if (any) [self pump];
+}
+
+- (void)expireRepairBackoffForTesting {
+    for (NSMutableDictionary *r in _recs.allValues) if ([r[@"error"] hasPrefix:kRepairPrefix]) r[@"failedAt"] = @0;
+}
+
 - (BOOL)willRetry:(NSString *)identifier {
     NSDictionary *r = _recs[identifier];
     return r[@"sub"] && [r[@"state"] integerValue] == SFDLFailed && [r[@"tries"] integerValue] < kSubMaxTries;
@@ -315,7 +340,10 @@ static NSString *gb(unsigned long long b) {
     _started = YES;
     [self reapOrphans];        // before anything writes: no second writer may survive from an earlier run
     [self sweepStaleParts];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self auditExistingDownloads]; });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self retryDueRepairs];
+        [self auditExistingDownloads];
+    });
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
@@ -487,13 +515,20 @@ static NSString *gb(unsigned long long b) {
     NSMutableDictionary *r = _recs[ident];
     _task = nil; _runningID = nil;
     if (r && !ok && [r[@"path"] length] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) {
-        // a repair download failed: keep the existing file instead of losing it
+        // a repair download failed: keep the existing file instead of losing it, and remember the
+        // repair (error prefix kRepairPrefix, persisted) so retryDueRepairs tries again with backoff -
+        // YouTube's bot check often blocks for hours, a single attempt would leave the file broken
+        NSInteger n = [r[@"tries"] integerValue] + 1;
         r[@"state"] = @(SFDLDone); r[@"progress"] = @1.0;
+        r[@"tries"] = @(n); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970);
+        r[@"error"] = [kRepairPrefix stringByAppendingString:error ?: @""];
         [self save:r];
-        SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file", ident, error);
+        SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file, %@", ident, error,
+              n < kSubMaxTries ? [NSString stringWithFormat:@"retry in %.0f min", SFRetryDelay(n) / 60] : @"giving up");
     } else if (r) {
         r[@"state"] = @(ok ? SFDLDone : SFDLFailed);
         r[@"progress"] = @(ok ? 1.0 : 0.0);
+        if (ok) { [r removeObjectForKey:@"error"]; r[@"tries"] = @0; }
         if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970); }
         [self save:r];
         SFLog(@"downloads: %@ %@%@", ok ? @"fertig" : @"FEHLER", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);

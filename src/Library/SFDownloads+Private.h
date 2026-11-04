@@ -27,6 +27,8 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
 - (void)changed:(NSString *)identifier;
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = schon vorhanden/abgelehnt
 - (void)pump;
+- (void)retryDueRepairs;
+- (void)expireRepairBackoffForTesting;   // dev command dlretry
 - (SFItem *)itemFromRec:(NSDictionary *)r;
 + (NSString *)ffmpegToolPath;
 + (NSString *)root;
