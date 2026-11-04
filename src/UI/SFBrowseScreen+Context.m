@@ -10,15 +10,20 @@
     SFNavigator *nav = self.navigator;
     if (it.kind == SFItemVideo || it.kind == SFItemLive) {
         double p = [[SFStore shared] progressFor:it.identifier];
-        [opts addObject:[SFMenuOption option:(p > 0 && p < 1) ? @"Fortsetzen" : @"Abspielen" action:^{ SFOpenItem(nav, it, items, idx); }]];
-        if (p > 0 && p < 1) {
+        // Kopiergeschützt: kein irreführendes „Abspielen“/Merken/Laden, nur die ehrliche Erklärung (Auswahl schließt)
+        if (it.drm) {
+            SFMenuOption *o = [SFMenuOption option:@"Kopiergeschützt (DRM)" action:nil];
+            o.detail = @"nicht abspielbar";
+            [opts addObject:o];
+        } else [opts addObject:[SFMenuOption option:(p > 0 && p < 1) ? @"Fortsetzen" : @"Abspielen" action:^{ SFOpenItem(nav, it, items, idx); }]];
+        if (p > 0 && p < 1 && !it.drm) {
             [opts addObject:[SFMenuOption option:@"Von Anfang abspielen" action:^{
                 SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:items index:idx];
                 ps.startFromBeginning = YES;
                 [nav push:ps];
             }]];
         }
-        if (it.kind == SFItemVideo && it.identifier && p < 1) {   // eigene Merkliste, für alle Apps
+        if (it.kind == SFItemVideo && !it.drm && it.identifier && p < 1) {   // eigene Merkliste, für alle Apps
             SFWatchLater *wl = [SFWatchLater shared];
             BOOL in = [wl contains:it.identifier];
             [opts addObject:[SFMenuOption option:in ? @"Aus „Später ansehen“ entfernen" : @"Später ansehen" action:^{
@@ -26,7 +31,7 @@
                 else { [wl add:it]; [nav toast:@"Gemerkt – steht unter „Später ansehen“"]; }
             }]];
         }
-        if (it.kind == SFItemVideo) {   // Offline-Schicht: Download ist eine Option des Inhalts
+        if (it.kind == SFItemVideo && !it.drm) {   // Offline-Schicht: Download ist eine Option des Inhalts
             SFDownloads *dl = [SFDownloads shared];
             double dp = 0;
             SFDLState ds = [dl stateFor:it.identifier progress:&dp];
@@ -41,7 +46,7 @@
                 [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it]; [nav toast:@"Wird heruntergeladen – auch offline verfügbar"]; }]];
             }
         }
-        if (it.kind == SFItemVideo) {
+        if (it.kind == SFItemVideo && !it.drm) {
             BOOL w = p >= 1;
             [opts addObject:[SFMenuOption option:w ? @"Als ungesehen markieren" : @"Als gesehen markieren" action:^{
                 [[SFStore shared] setWatched:!w forItem:it];

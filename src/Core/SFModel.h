@@ -32,6 +32,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *channel;         // Sendung / Kanal
 @property (nonatomic, copy) NSString *source;          // Theme-ID der Herkunft
 @property (nonatomic, copy) NSString *badge;           // "LIVE", "NEU", "UT", ...
+@property (nonatomic) BOOL drm;                        // kopiergeschützt: auf 10.9 nicht abspielbar (kein „Abspielen“, Auswahl → Hinweis)
 @property (nonatomic, strong) NSDate *date;
 @property (nonatomic) NSTimeInterval duration;
 @property (nonatomic) SFTileStyle style;
@@ -58,6 +59,8 @@ typedef void (^SFResolver)(SFURLDone done);
 + (instancetype)itemWithDictionary:(NSDictionary *)d;
 - (void)resolveURL:(SFURLDone)done;    // playURL oder resolver oder Provider-Registry
 @end
+
+extern NSString *const SFDRMNotice;   // einheitlicher Hinweistext für DRM-Inhalte
 
 @interface SFShelf : NSObject
 @property (nonatomic, copy) NSString *title;

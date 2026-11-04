@@ -74,7 +74,8 @@ static NSArray *listItems(id j) {
     i.duration = [nn(e[@"duration_seconds"]) doubleValue];
     i.source = @"orf"; i.themeName = @"orf";
     i.style = SFTileStyleLandscape;
-    if ([nn(e[@"is_drm_protected"]) boolValue]) i.badge = @"DRM";
+    i.drm = [nn(e[@"is_drm_protected"]) boolValue];
+    if (i.drm) i.badge = @"DRM";
     NSMutableArray *sub = [NSMutableArray new];
     if (str(e[@"genre_title"])) [sub addObject:str(e[@"genre_title"])];
     if (i.date) [sub addObject:SFFormatDateShort(i.date)];
@@ -182,8 +183,8 @@ static NSArray *listItems(id j) {
             i.image = [self image:it big:NO];
             i.backdrop = [self image:it big:YES];
             i.source = @"orf"; i.themeName = @"orf"; i.style = SFTileStyleLandscape;
-            BOOL drm = [nn(it[@"is_drm_protected"]) boolValue];
-            i.badge = drm ? @"DRM" : @"LIVE";
+            i.drm = [nn(it[@"is_drm_protected"]) boolValue];
+            i.badge = i.drm ? @"DRM" : @"LIVE";
             [a addObject:i];
         }
         done(a);
