@@ -43,6 +43,12 @@ static BOOL displayOff(void) {
 }
 
 static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; }
+// Liegt Sofa.app in einem Ordner, den der Helper nicht beschreiben darf (MacPorts-Port:
+// /Applications/MacPorts gehört root), legt tools/sofa-deploy das neue Bundle hier ab und
+// tauscht selbst per sudo; der Helper übernimmt nur Sichern/Beenden/Neustart.
+static NSString *ExternalUpdateDir(void) {
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa/update"];
+}
 
 @implementation SRHelper {
     IOHIDDeviceRef _dev;
@@ -54,6 +60,7 @@ static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; 
     NSMutableDictionary *_arrayDown;   // @(cookie) -> @(page<<16|usage) aktuell gedrückt
     NSTimer *_updateTimer;
     BOOL _updating;
+    BOOL _external;     // laufendes Update: Tausch durch tools/sofa-deploy (App-Ordner nicht beschreibbar)
 }
 
 
@@ -95,13 +102,19 @@ static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; 
 - (void)checkUpdate {
     if (_updating) return;
     NSString *staged = [SofaAppPath() stringByAppendingString:@".staged"];
-    NSString *bin = [staged stringByAppendingPathComponent:@"Contents/MacOS/Sofa"];
-    if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) return;
+    NSString *ext = [ExternalUpdateDir() stringByAppendingPathComponent:@"Sofa.app"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    BOOL external = NO;
+    if (![fm isExecutableFileAtPath:[staged stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]]) {
+        if (![fm isExecutableFileAtPath:[ext stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]]) return;
+        external = YES;
+    }
     _updating = YES;
     [self log:@"Update gefunden"];
     // Sofa ist die TV-Oberfläche (Kodi abgelöst): lief es, wird es nach dem Update immer
     // wieder gestartet. (Früher nur, wenn es vorne war – dann blieb es nach Updates aus.)
     BOOL wasRunning = [self realSofaProcesses].count > 0;
+    _external = external;
     if (wasRunning) {
         CFMessagePortRef port = CFMessagePortCreateRemote(NULL, CFSTR(SF_REMOTE_APP_PORT));
         if (port) { CFMessagePortSendRequest(port, SF_MSG_PREPARE_UPDATE, NULL, 1.0, 0, NULL, NULL); CFRelease(port); }
@@ -123,6 +136,12 @@ static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; 
     }
     for (NSRunningApplication *r in procs) { [self log:@"Sofa beendet sich nicht, erzwinge"]; [r forceTerminate]; }
     NSFileManager *fm = [NSFileManager defaultManager];
+    if (_external) {   // Tausch macht tools/sofa-deploy (sudo); wir melden „bereit“ und warten
+        [@"" writeToFile:[ExternalUpdateDir() stringByAppendingPathComponent:@"ready"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [self log:@"Update (extern): Sofa beendet, warte auf Tausch"];
+        [self waitForExternalSwap:0 wasRunning:wasRunning];
+        return;
+    }
     NSString *prev = [SofaAppPath() stringByAppendingString:@".prev"], *staged = [SofaAppPath() stringByAppendingString:@".staged"];
     NSError *e = nil;
     [fm removeItemAtPath:prev error:nil];
@@ -139,6 +158,27 @@ static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; 
         // Selbst beenden: launchd (KeepAlive) startet den Helper aus dem neuen Bundle.
         exit(0);
     }];
+}
+
+- (void)waitForExternalSwap:(int)tries wasRunning:(BOOL)wasRunning {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = ExternalUpdateDir(), *ext = [dir stringByAppendingPathComponent:@"Sofa.app"];
+    if ([fm fileExistsAtPath:ext] && tries < 240) {   // bis 60 s
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self waitForExternalSwap:tries + 1 wasRunning:wasRunning];
+        });
+        return;
+    }
+    [fm removeItemAtPath:[dir stringByAppendingPathComponent:@"ready"] error:nil];
+    if ([fm fileExistsAtPath:ext]) {   // niemand hat getauscht -> altes Sofa wieder starten
+        [self log:@"Update (extern): kein Tausch innerhalb 60 s – verworfen"];
+        [fm removeItemAtPath:ext error:nil];
+        _updating = NO;
+        if (wasRunning) [self launchSofa];
+        return;
+    }
+    [self log:@"Update installiert, starte neu"];
+    [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{ exit(0); }];   // launchd startet den Helper aus dem neuen Bundle
 }
 
 // launchctl start kann ins Leere gehen, solange launchd den alten Prozess noch nicht
