@@ -455,10 +455,20 @@ static uint16_t gPort = 8765;
         SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: beliebige YouTube-Kanalseite
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
-        f.pageLoader = [SFYouTube channelLoader:[arg substringFromIndex:10] title:@"Kanal"];
+        // ytchannel:<ID> oder ytchannel:<ID>|<Titel>
+        NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
+        f.pageLoader = [SFYouTube channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite
+        [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
+        SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
+        [SFHome showSettingsOn:self.nav];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // Ersteinrichtung ab Begrüßung
+        setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }

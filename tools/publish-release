@@ -2,7 +2,7 @@
 # publish-release -- dist/Sofa-<version>.dmg (+ .sha256) als GitHub-Release v<version> veröffentlichen.
 # Release-Text = Abschnitt "## <version>" aus CHANGELOG.md (erscheint in Sofa beim manuellen Update).
 # Vorher: Version in res/Info.plist erhöht, CHANGELOG ergänzt, alles committet,
-#         tools/make-release und tools/test-release erfolgreich.
+#         tools/make-release und tools/test-release erfolgreich, Screenshots aktuell (tools/screenshots).
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"

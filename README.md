@@ -13,9 +13,16 @@ browser and no Electron.
 
 | | |
 |---|---|
-| ![YouTube: hero for the focused video, Continue watching row](docs/screenshots/youtube.jpg) | ![ZDF Mediathek in ZDF colors](docs/screenshots/zdf.jpg) |
-| ![ORF ON in its light theme](docs/screenshots/orf.jpg) | ![media.ccc.de: newly published talks](docs/screenshots/media-ccc.jpg) |
-| ![On-screen keyboard with live search suggestions, operated with the Apple Remote](docs/screenshots/search.jpg) | Everything is operated with the 7-button Apple Remote: arrows, OK, MENU and Play/Pause. Holding OK opens options; holding MENU goes home. |
+| ![YouTube: hero for the focused video, Continue watching](docs/screenshots/youtube.jpg)<br>**YouTube** – channels, playlists, live, no account | ![A YouTube channel page with Follow button](docs/screenshots/youtube-channel.jpg)<br>**Channel pages** – follow with one click |
+| ![Options menu: continue, play from start, watch later, download, mark as watched](docs/screenshots/youtube-options.jpg)<br>**Hold OK for options** – watch later, download, go to channel | ![On-screen keyboard operated with the Apple Remote](docs/screenshots/search.jpg)<br>**Search** with the remote, live suggestions |
+| ![ZDF Mediathek in ZDF colors](docs/screenshots/zdf.jpg)<br>**ZDF** | ![ARD Mediathek](docs/screenshots/ard.jpg)<br>**ARD** |
+| ![ORF ON in its light theme](docs/screenshots/orf.jpg)<br>**ORF ON** | ![media.ccc.de: newly published talks](docs/screenshots/media-ccc.jpg)<br>**media.ccc.de** |
+| ![Downloads: recently fetched episodes, disk usage](docs/screenshots/downloads.jpg)<br>**Downloads** – automatic for followed shows, offline | ![History grouped by day](docs/screenshots/history.jpg)<br>**History** across all sources |
+| ![Pair the YouTube app on a phone with a TV code](docs/screenshots/pair.jpg)<br>**Phone pairing** – cast from the YouTube app | ![Settings: start at login, open with the Apple Remote, updates](docs/screenshots/settings.jpg)<br>**Settings** – autostart, remote, updates |
+| ![Welcome screen explaining the Apple Remote](docs/screenshots/welcome.jpg)<br>**First start** – the remote explained | ![First start question: start Sofa automatically?](docs/screenshots/first-start.jpg)<br>**Setup questions** on a fresh install |
+
+Everything is operated with the 7-button Apple Remote: arrows, OK, MENU and Play/Pause.
+Holding OK opens options; holding MENU goes home. Screenshots: `tools/screenshots`.
 
 - **Sources:** YouTube (channels, playlists, search, live streams; no account needed),
   ZDF, ARD, ORF and media.ccc.de, each with its own look.
