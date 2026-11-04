@@ -495,7 +495,7 @@ static void auditImages(SFPage *page) {
     CGFloat y = U(150);
     if (self.showsHero) {
         [self buildHero:size];
-        y = U(560);
+        y = self.overlay ? U(590) : U(560);   // overlay: no logo row -> room for more description
     }
     _contentTop = y;
     NSUInteger si = 0;
@@ -888,7 +888,7 @@ static void auditImages(SFPage *page) {
             NSString *plot = [it.plot stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
             self->_heroPlot.text = plot;
             // Plot-Zeilen an den verfügbaren Platz bis zu den Shelves anpassen
-            CGFloat y = self.overlay ? U(130) : U(190);   // overlay: no logo row above
+            CGFloat y = self.overlay ? U(120) : U(190);   // overlay: no logo row above
             CGFloat avail = self->_contentTop - U(40) - (y + h1 + h2 + U(26));
             // first line incl. descender/shadow padding, each further line only its line height
             self->_heroPlot.maxLines = 1;
