@@ -67,6 +67,7 @@ extern NSString *const SFDRMNotice;   // einheitlicher Hinweistext für DRM-Inha
 @property (nonatomic) SFShelfLayout layout;
 @property (nonatomic) SFTileStyle style;
 @property (nonatomic, copy) NSArray *items;
+@property (nonatomic) NSUInteger focusIndex;       // rail: initially focused entry (e.g. the running video of a playlist)
 + (instancetype)shelf:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items;
 + (instancetype)grid:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items;
 @end

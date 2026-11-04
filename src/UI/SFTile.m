@@ -15,6 +15,12 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
     }
 }
 
+CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
+    CGFloat tw = item.title.length ? ceil([item.title sizeWithAttributes:@{NSFontAttributeName: [theme bold:26]}].width) : 0;
+    if (minWidth <= 0) minWidth = U(SFMetricsForStyle(SFTileStyleButton).width);
+    return MIN(U(760), MAX(minWidth, tw + U(36) + U(48)));
+}
+
 @implementation SFTileLayer {
     SFTileStyle _style;
     SFTheme *_theme;
@@ -32,10 +38,14 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
 }
 
 - (instancetype)initWithItem:(SFItem *)item style:(SFTileStyle)st theme:(SFTheme *)theme {
+    return [self initWithItem:item style:st theme:theme width:0];
+}
+
+- (instancetype)initWithItem:(SFItem *)item style:(SFTileStyle)st theme:(SFTheme *)theme width:(CGFloat)width {
     if ((self = [super init])) {
         _item = item; _style = st; _theme = theme;
         SFTileMetrics m = SFMetricsForStyle(st);
-        CGFloat w = U(m.width), ih = U(m.imageHeight), th = U(m.textHeight);
+        CGFloat w = width > 0 ? width : U(m.width), ih = U(m.imageHeight), th = U(m.textHeight);
         self.anchorPoint = CGPointMake(0.5, 0);    // skaliert von oben-mitte
         self.bounds = CGRectMake(0, 0, w, ih + (th ? U(14) + th : 0));
         CGFloat corner = (st == SFTileStyleCircle || st == SFTileStyleButton) ? ih / 2 : U(theme.corner);

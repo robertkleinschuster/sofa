@@ -44,6 +44,7 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:SFLoungeRemotesDidChangeNotification object:nil];
 }
 - (SFPage *)page { return _page; }
+- (BOOL)isOpaque { return !self.overlay; }
 
 - (void)setReloadNotification:(NSString *)name {
     if (_reloadNotification) [[NSNotificationCenter defaultCenter] removeObserver:self name:_reloadNotification object:nil];
@@ -59,10 +60,15 @@
     SFTheme *t = self.theme;
     SFNoAnimate(^{
         [self->_bg removeFromSuperlayer];
-        self->_bg = SFGradientBackground(t.backgroundTop, t.background, L.bounds);
+        if (self.overlay) {   // the video below stays visible, dimmed enough for text on a TV
+            self->_bg = SFGradientBackground([NSColor colorWithDeviceWhite:0 alpha:0.72], [NSColor colorWithDeviceWhite:0 alpha:0.92], L.bounds);
+            L.backgroundColor = NULL;
+        } else {
+            self->_bg = SFGradientBackground(t.backgroundTop, t.background, L.bounds);
+            L.backgroundColor = t.background.CGColor;
+        }
         self->_bg.zPosition = -10;
         [L addSublayer:self->_bg];
-        L.backgroundColor = t.background.CGColor;
 
         if (!self->_backdrop) {
             // Bild + Verläufe in einem Container, dessen Deckkraft gemeinsam animiert
@@ -112,8 +118,10 @@
     NSSize ws = [t.wordmark sizeWithAttributes:@{NSFontAttributeName: _wordmark.font}];
     [_wordmark sizeToFitWidth:ceil(ws.width) + 4];
     CGFloat x = U(96);
-    CGImageRef logo = t.logo ? SFLogoImage(t.logo, t.logoVariant) : NULL;
-    if (logo) {
+    BOOL brand = !self.overlay;   // overlay: only clock + key hint (the hero says what this is about)
+    CGImageRef logo = brand && t.logo ? SFLogoImage(t.logo, t.logoVariant) : NULL;
+    if (!brand) {
+    } else if (logo) {
         CGFloat aspect = (CGFloat)CGImageGetWidth(logo) / CGImageGetHeight(logo);
         CGFloat lh = aspect < 2.5 ? U(66) : U(50), lw = lh * aspect;
         if (lw > U(420)) { lw = U(420); lh = lw * CGImageGetHeight(logo) / CGImageGetWidth(logo); }
@@ -148,7 +156,7 @@
         [_header addSublayer:bar];
         x += bar.frame.size.width + U(16);
     }
-    if (!logo) {
+    if (!logo && brand) {
         _wordmark.position = CGPointMake(x, U(44));
         [_header addSublayer:_wordmark];
         x += _wordmark.bounds.size.width + U(28);
@@ -157,7 +165,7 @@
     // „Suche“ als sichtbarer Knopf neben dem Logo (wie die Suche oben in TV-Apps): Hoch aus der
     // ersten Reihe fokussiert ihn – die Suche ist so nie mehr als ein, zwei Tasten entfernt.
     _searchPill = nil;
-    if (self.searchSource) {
+    if (self.searchSource && brand) {
         _searchPill = [CALayer layer];
         _searchPill.cornerRadius = U(26);
         _searchPill.borderWidth = U(2);
@@ -188,14 +196,14 @@
     _pageTitle.text = _page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", _page.title ?: @"", _page.subtitle] : _page.title;
     [_pageTitle sizeToFitWidth:size.width - x - U(960)];
     _pageTitle.position = CGPointMake(x, U(52));
-    [_header addSublayer:_pageTitle];
+    if (brand) [_header addSublayer:_pageTitle];
 
     // Kopfband: sanfter Verlauf in Hintergrundfarbe, damit Uhr/Hinweis über jedem Bild lesbar sind
     CAGradientLayer *scrim = [CAGradientLayer layer];
     NSColor *top = t.backgroundTop ?: t.background;
     scrim.colors = @[(id)[top colorWithAlphaComponent:0.85].CGColor, (id)[top colorWithAlphaComponent:0].CGColor];
     scrim.frame = CGRectMake(0, 0, size.width, U(190));
-    [_header insertSublayer:scrim atIndex:0];
+    if (brand) [_header insertSublayer:scrim atIndex:0];
     _clock = [SFLabel labelWithFont:[t medium:32] color:t.light ? t.text : t.textDim];
     _clock.alignment = NSRightTextAlignment;
     _clock.shadow = !t.light;
@@ -355,7 +363,7 @@ static void auditImages(SFPage *page) {
     if (!SFDevMode) return;
     for (SFShelf *sh in page.shelves) {
         NSMutableArray *miss = [NSMutableArray new];
-        for (SFItem *i in sh.items) if (!i.image.length && !i.logo.length && i.style != SFTileStyleApp) [miss addObject:[NSString stringWithFormat:@"%@<%@>", i.title ?: @"?", i.identifier ?: @""]];
+        for (SFItem *i in sh.items) if (!i.image.length && !i.logo.length && i.style != SFTileStyleApp && i.style != SFTileStyleButton) [miss addObject:[NSString stringWithFormat:@"%@<%@>", i.title ?: @"?", i.identifier ?: @""]];
         if (miss.count) SFLog(@"noimg: [%@] %@ / %@: %@", page.themeName, page.title ?: @"(Start)", sh.title ?: @"-", [miss componentsJoinedByString:@", "]);
     }
 }
@@ -409,6 +417,36 @@ static void auditImages(SFPage *page) {
         [self focusRow:target col:MAX(0, col) animated:NO];   // focusRow begrenzt die Spalte selbst
     }
     if (hdr && _searchPill) [self focusHeaderSearch];
+}
+
+- (void)replaceItemsOfShelf:(SFShelf *)shelf with:(NSArray *)items {
+    NSUInteger si = [_page.shelves indexOfObjectIdenticalTo:shelf];
+    if (si == NSNotFound) return;
+    SFRow *row = nil;
+    for (SFRow *r in _rows) if (r.shelf == si) { row = r; break; }
+    BOOL inPlace = row && row.rail && shelf.layout == SFShelfRail && items.count == shelf.items.count && items.count > 0;
+    shelf.items = items;
+    if (!inPlace || !_laidOut) { if (_laidOut) [self setPage:_page keepFocus:YES]; return; }
+    row.items = items;
+    if (row.widths) {
+        NSMutableArray *ws = [NSMutableArray new];
+        for (SFItem *it in items) [ws addObject:@(SFButtonTileWidth(it, self.theme, self.overlay ? U(250) : 0))];
+        row.widths = ws;
+    }
+    BOOL focusedHere = !_headerFocus && _row < (NSInteger)_rows.count && _rows[_row] == row;
+    if (row.layer) {
+        SFNoAnimate(^{ for (CALayer *l in row.tiles.allValues) [l removeFromSuperlayer]; });
+        [row.tiles removeAllObjects];
+        if (row.widths) row.scrollCol = [self scrollColForRow:row col:row.focusCol];
+        SFNoAnimate(^{ row.strip.position = CGPointMake(-[self scrollOffsetForRow:row col:row.scrollCol], row.titleHeight); });
+        [self updateTilesInRow:row];
+    }
+    if (focusedHere) {
+        SFTileLayer *tl = row.tiles[@(row.focusCol)];
+        tl.focused = YES;
+        [self updateHint];
+        if (self.showsHero) [self updateHeroFor:[self focusedItem]];
+    }
 }
 
 - (NSString *)shelfTitleForRow:(SFRow *)r {
@@ -471,6 +509,15 @@ static void auditImages(SFPage *page) {
             r.shelf = si; r.items = sh.items; r.style = sh.style; r.rail = YES;
             r.title = sh.title; r.titleHeight = titleH;
             r.y = y; r.height = titleH + tileH;
+            if (sh.style == SFTileStyleButton) {   // pills sized to their label (long channel names, track names); overlay: compact, the whole action row fits
+                NSMutableArray *ws = [NSMutableArray new];
+                for (SFItem *it in sh.items) [ws addObject:@(SFButtonTileWidth(it, t, self.overlay ? U(250) : 0))];
+                r.widths = ws;
+            }
+            if (sh.focusIndex > 0 && sh.focusIndex < sh.items.count) {
+                r.focusCol = sh.focusIndex;
+                r.scrollCol = [self scrollColForRow:r col:r.focusCol];
+            }
             [_rows addObject:r];
             y += r.height + U(64);
         } else {
@@ -530,10 +577,7 @@ static void auditImages(SFPage *page) {
     strip.anchorPoint = CGPointZero;
     strip.frame = CGRectMake(0, r.titleHeight, self.size.width, r.height - r.titleHeight);
     [rl addSublayer:strip];
-    if (r.rail && r.scrollCol > 0) {
-        SFTileMetrics m = SFMetricsForStyle(r.style);
-        strip.position = CGPointMake(-r.scrollCol * (U(m.width) + U(m.gap)), r.titleHeight);
-    }
+    if (r.rail && r.scrollCol > 0) strip.position = CGPointMake(-[self scrollOffsetForRow:r col:r.scrollCol], r.titleHeight);
     r.layer = rl; r.strip = strip;
     r.tiles = [NSMutableDictionary new];
     SFNoAnimate(^{ [self->_content addSublayer:rl]; });
@@ -542,7 +586,41 @@ static void auditImages(SFPage *page) {
 
 - (CGFloat)xForCol:(NSInteger)c inRow:(SFRow *)r {
     SFTileMetrics m = SFMetricsForStyle(r.style);
+    if (r.widths) {
+        CGFloat x = U(96);
+        for (NSInteger k = 0; k < c && k < (NSInteger)r.widths.count; k++) x += [r.widths[k] doubleValue] + U(m.gap);
+        return x;
+    }
     return U(96) + c * (U(m.width) + U(m.gap));
+}
+- (CGFloat)widthForCol:(NSInteger)c inRow:(SFRow *)r {
+    if (r.widths && c >= 0 && c < (NSInteger)r.widths.count) return [r.widths[c] doubleValue];
+    return U(SFMetricsForStyle(r.style).width);
+}
+// Horizontal shift of a rail's strip when column sc is the first visible one
+- (CGFloat)scrollOffsetForRow:(SFRow *)r col:(NSInteger)sc { return [self xForCol:sc inRow:r] - U(96); }
+
+// First visible column so that col is visible: focus stays in column 1 while possible (one tile of
+// context to the left), the row never scrolls past its end.
+- (NSInteger)scrollColForRow:(SFRow *)r col:(NSInteger)col {
+    NSInteger n = (NSInteger)r.items.count;
+    CGFloat avail = self.size.width - U(192);
+    if (r.widths) {   // variable widths: smallest shift that shows col fully, at most to the row's end
+        CGFloat total = [self xForCol:n - 1 inRow:r] + [self widthForCol:n - 1 inRow:r] - U(96);
+        if (total <= avail) return 0;
+        NSInteger sc = MIN(r.scrollCol, MAX(0, col - 1));
+        while (sc < col && [self xForCol:col inRow:r] + [self widthForCol:col inRow:r] - [self xForCol:sc inRow:r] > avail) sc++;
+        return sc;
+    }
+    SFTileMetrics m = SFMetricsForStyle(r.style);
+    CGFloat step = U(m.width) + U(m.gap);
+    NSInteger fit = MAX(1, (NSInteger)floor((avail + U(m.gap)) / step));
+    NSInteger maxScroll = MAX(0, n - fit);
+    NSInteger sc = MIN(maxScroll, MAX(0, col - 1));
+    if (col >= r.scrollCol + 1 && col < r.scrollCol + fit - 1 && r.scrollCol <= maxScroll) sc = r.scrollCol;
+    if (col < r.scrollCol + 1) sc = MAX(0, col - 1);
+    if (col > r.scrollCol + fit - 2) sc = MIN(maxScroll, col - fit + 2);
+    return sc;
 }
 
 - (void)updateTilesInRow:(SFRow *)r {
@@ -551,6 +629,7 @@ static void auditImages(SFPage *page) {
     CGFloat step = U(m.width) + U(m.gap);
     NSInteger visible = (NSInteger)ceil(self.size.width / step) + 1;
     NSInteger from = MAX(0, r.scrollCol - 2), to = MIN((NSInteger)r.items.count - 1, r.scrollCol + visible + 2);
+    if (r.widths) { from = 0; to = (NSInteger)r.items.count - 1; }   // button rows are short
     // Entfernen außerhalb
     for (NSNumber *k in r.tiles.allKeys) {
         NSInteger c = k.integerValue;
@@ -561,7 +640,7 @@ static void auditImages(SFPage *page) {
     }
     for (NSInteger c = from; c <= to; c++) {
         if (r.tiles[@(c)]) continue;
-        SFTileLayer *tl = [[SFTileLayer alloc] initWithItem:r.items[c] style:r.style theme:self.theme];
+        SFTileLayer *tl = [[SFTileLayer alloc] initWithItem:r.items[c] style:r.style theme:self.theme width:r.widths ? [self widthForCol:c inRow:r] : 0];
         SFNoAnimate(^{
             tl.position = CGPointMake([self xForCol:c inRow:r] + tl.bounds.size.width / 2, 0);
             [r.strip addSublayer:tl];
@@ -614,17 +693,10 @@ static void auditImages(SFPage *page) {
 
     // Horizontal (Rail): Fokus bleibt in Spalte 1, solange möglich
     if (r.rail) {
-        SFTileMetrics m = SFMetricsForStyle(r.style);
-        CGFloat step = U(m.width) + U(m.gap);
-        NSInteger fit = MAX(1, (NSInteger)floor((self.size.width - U(192) + U(m.gap)) / step));
-        NSInteger maxScroll = MAX(0, (NSInteger)r.items.count - fit);
-        NSInteger sc = MIN(maxScroll, MAX(0, col - 1));
-        if (col >= r.scrollCol + 1 && col < r.scrollCol + fit - 1 && r.scrollCol <= maxScroll) sc = r.scrollCol;
-        if (col < r.scrollCol + 1) sc = MAX(0, col - 1);
-        if (col > r.scrollCol + fit - 2) sc = MIN(maxScroll, col - fit + 2);
+        NSInteger sc = [self scrollColForRow:r col:col];
         r.scrollCol = sc;
         [self updateTilesInRow:r];
-        CGFloat dx = -sc * step;
+        CGFloat dx = -[self scrollOffsetForRow:r col:sc];
         void (^move)(void) = ^{ r.strip.position = CGPointMake(dx, r.titleHeight); };
         if (anim) SFAnimate(0.3, move); else SFNoAnimate(move);
     }
@@ -725,7 +797,7 @@ static void auditImages(SFPage *page) {
             else if (n.rail) col = n.focusCol;                                // Rail: dort weiter, wo man war
             else {
                 // nächstliegende Spalte zur x-Position
-                CGFloat x = [self xForCol:r.focusCol - r.scrollCol inRow:r];
+                CGFloat x = [self xForCol:r.focusCol inRow:r] - [self scrollOffsetForRow:r col:r.scrollCol];
                 SFTileMetrics m = SFMetricsForStyle(n.style);
                 col = (NSInteger)round((x - U(96)) / (U(m.width) + U(m.gap)));
             }
@@ -772,6 +844,7 @@ static void auditImages(SFPage *page) {
 #pragma mark Hero / Backdrop
 
 - (void)updateBackdropFor:(SFItem *)it {
+    if (self.overlay) return;   // the video itself is the backdrop
     NSString *src = it.backdrop ?: _page.backdrop;
     if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) return;
     if (!src.length) { SFAnimate(0.4, ^{ self->_backdropBox.opacity = 0; }); return; }
@@ -800,7 +873,7 @@ static void auditImages(SFPage *page) {
     NSUInteger seq = ++_heroSeq;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (seq != self->_heroSeq) return;
-        CGFloat w = self.size.width * 0.5;
+        CGFloat w = self.size.width * (self.overlay ? 0.6 : 0.5);
         SFNoAnimate(^{
             self->_heroTitle.text = it.heroTitle ?: it.title ?: self->_page.title;
             CGFloat h1 = [self->_heroTitle sizeToFitWidth:w];
@@ -815,12 +888,15 @@ static void auditImages(SFPage *page) {
             NSString *plot = [it.plot stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
             self->_heroPlot.text = plot;
             // Plot-Zeilen an den verfügbaren Platz bis zu den Shelves anpassen
-            CGFloat y = U(190);
+            CGFloat y = self.overlay ? U(130) : U(190);   // overlay: no logo row above
             CGFloat avail = self->_contentTop - U(40) - (y + h1 + h2 + U(26));
-            CGFloat lh = [self->_heroPlot sizeToFitWidth:w] > 0 ? 0 : 0;
+            // first line incl. descender/shadow padding, each further line only its line height
             self->_heroPlot.maxLines = 1;
-            lh = [self->_heroPlot sizeToFitWidth:w];
-            NSInteger lines = MAX(0, MIN(3, (NSInteger)floor(avail / MAX(1, lh))));
+            CGFloat lh = [self->_heroPlot sizeToFitWidth:w];
+            self->_heroPlot.maxLines = 2;
+            CGFloat step = MAX(1, [self->_heroPlot sizeToFitWidth:w] - lh);
+            NSInteger fit = avail < lh ? 0 : 1 + (NSInteger)floor((avail - lh) / step);
+            NSInteger lines = MAX(0, MIN(self.heroPlotLines > 0 ? self.heroPlotLines : 3, fit));
             self->_heroPlot.hidden = lines == 0;
             self->_heroPlot.maxLines = MAX(1, lines);
             [self->_heroPlot sizeToFitWidth:w];
@@ -839,6 +915,16 @@ static void auditImages(SFPage *page) {
 
 #pragma mark - Öffnen
 
+SFBrowseScreen *SFBrowseScreenForFolder(SFItem *item, SFTheme *fallback) {
+    SFTheme *t = [SFTheme themeNamed:item.themeName ?: fallback.identifier ?: @"home"];
+    SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
+    b.folderIdentifier = item.identifier;
+    // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
+    if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
+    if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // Kanalkopf (Banner, Abonnenten, Beschreibung)
+    return b;
+}
+
 void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index) {
     // Kopiergeschützt: sofort ehrlich sagen statt Spinner + Fehlerbildschirm
     if (item.drm && (item.kind == SFItemVideo || item.kind == SFItemLive)) { [nav toast:SFDRMNotice]; return; }
@@ -849,16 +935,9 @@ void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index
             [nav push:p];
             break;
         }
-        case SFItemFolder: {
-            SFTheme *t = [SFTheme themeNamed:item.themeName ?: nav.top.theme.identifier ?: @"home"];
-            SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
-            b.folderIdentifier = item.identifier;
-            // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
-            if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
-            if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // Kanalkopf (Banner, Abonnenten, Beschreibung)
-            [nav push:b];
+        case SFItemFolder:
+            [nav push:SFBrowseScreenForFolder(item, nav.top.theme)];
             break;
-        }
         case SFItemAction:
             if (item.action) item.action();
             break;

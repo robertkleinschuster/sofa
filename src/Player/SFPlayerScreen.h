@@ -25,6 +25,7 @@ typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnd
 - (void)remoteSeekTo:(NSTimeInterval)t;
 - (void)remoteNext;                                   // wie Autoplay (Queue bzw. nächste Folge)
 - (void)remotePrevious;
+- (void)close;                                        // leave the player, also from below an overlay (menu, info panel)
 - (BOOL)hasNext;
 - (BOOL)hasPrevious;
 - (void)playQueueIndex:(NSUInteger)i at:(NSTimeInterval)t;

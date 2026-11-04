@@ -22,7 +22,7 @@
     NSURL *_dashFailedURL; // DASH-Streams dieser Quelle abgelehnt (YouTube 403) -> mpv mit dem HLS-Stream
     BOOL _openedDash;      // aktueller Versuch: mpv mit getrennten DASH-Streams
     BOOL _subsApplied;     // bevorzugte Untertitel für diesen Inhalt schon angewandt
-    CALayer *_trackKey; SFLabel *_trackHint;   // OSD: „[OK] halten: Ton & Untertitel“
+    CALayer *_trackKey; SFLabel *_trackHint;   // OSD: "[OK] halten: Info"
     NSUInteger _index;
     id<SFEngine> _engine;        // AVFoundation oder mpv (SFEngine.h)
     CALayer *_videoHost;         // trägt die Video-Ebene der aktiven Engine
@@ -59,12 +59,19 @@
     __weak SFItem *_lastStartedItem;
 }
 - (NSTimeInterval)currentTime;
+- (void)togglePause;
+- (SFItem *)nextItem;                 // what autoplay plays next (queue, playlist, episode, recommendation)
+- (void)playItem:(SFItem *)item;      // play another item in this player, like autoplay
+- (BOOL)hasExplicitQueue;             // queue from the phone: next = next queue entry
+- (void)showInfo;                     // info panel (OK hold)
 @end
 
 @interface SFPlayerScreen (Tracks)
 - (BOOL)tracksAvailable;
-- (void)updateTrackHint;
-- (void)showTrackMenu;
+- (NSArray *)trackChoices:(NSString *)type;      // title, selected, apply, lang (+ kind)
+- (NSString *)currentChoice:(NSArray *)choices;
+- (void)showChoices:(NSArray *)choices type:(NSString *)type title:(NSString *)title on:(SFNavigator *)nav;
+- (BOOL)canSwitchToStream;                       // downloaded file with an online counterpart
 - (void)applyPreferredSubtitles;
 - (void)switchToStream;
 @end

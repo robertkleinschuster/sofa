@@ -34,7 +34,22 @@
 
 #pragma mark Handy-Koppeln
 
-- (SFPlayerScreen *)topPlayer { return [self.nav.top isKindOfClass:[SFPlayerScreen class]] ? (SFPlayerScreen *)self.nav.top : nil; }
+// The visible player: the top screen, or the one right below overlays (menu, info panel) - the
+// video keeps playing under them and stays controllable from the phone
+- (SFPlayerScreen *)topPlayer {
+    for (SFScreen *s in [self.nav.stack reverseObjectEnumerator]) {
+        if ([s isKindOfClass:[SFPlayerScreen class]]) return (SFPlayerScreen *)s;
+        if (s.isOpaque) return nil;
+    }
+    return nil;
+}
+
+// Show a new player in place of the visible one (overlays above it go away) or on top
+- (void)presentPlayer:(SFPlayerScreen *)ps {
+    SFPlayerScreen *cur = [self topPlayer];
+    if (cur) { [self.nav popAbove:cur]; [self.nav replaceTop:ps]; }
+    else [self.nav push:ps];
+}
 
 - (void)wakeAndFront {
     if (SFDevMode) return;
@@ -88,7 +103,7 @@
                 SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:items[idx] queue:items index:idx];
                 ps.remoteListID = list;
                 if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
-                if (cur) [self.nav replaceTop:ps]; else [self.nav push:ps];
+                [self presentPlayer:ps];
             }
             for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
         }];
@@ -99,7 +114,7 @@
     } else if ([cmd isEqualToString:@"seekTo"]) { [p remoteSeekTo:[args[@"newTime"] doubleValue]];
     } else if ([cmd isEqualToString:@"next"]) { [p remoteNext];
     } else if ([cmd isEqualToString:@"previous"]) { [p remotePrevious];
-    } else if ([cmd isEqualToString:@"stopVideo"]) { [self.nav pop];
+    } else if ([cmd isEqualToString:@"stopVideo"]) { [p close];
     } else if ([cmd isEqualToString:@"setSubtitlesTrack"]) {
         // Handy wählt Untertitel: languageCode („“ = aus), vss_id „.de“ = echte, „a.de“ = automatische
         NSString *vid = args[@"videoId"], *lang = args[@"languageCode"] ?: @"";

@@ -31,6 +31,7 @@
 @property (nonatomic, strong) CALayer *layer;        // Zeilencontainer
 @property (nonatomic, strong) CALayer *strip;        // verschiebbarer Kachelstreifen
 @property (nonatomic, strong) NSMutableDictionary *tiles; // @(col) -> SFTileLayer
+@property (nonatomic, strong) NSArray *widths;       // content-sized button pills: width per column (points), else nil
 @end
 
 @interface SFBrowseScreen () {
