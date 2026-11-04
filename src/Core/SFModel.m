@@ -75,7 +75,7 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     SFItem *i = [SFItem itemWithDictionary:[self dictionaryRepresentation]];
     i.plot = self.plot; i.style = self.style; i.resolver = self.resolver; i.pageLoader = self.pageLoader;
     i.action = self.action; i.tint = self.tint; i.themeName = self.themeName; i.badge = self.badge;
-    i.playURL = self.playURL;
+    i.playURL = self.playURL; i.inDownloadsList = self.inDownloadsList; i.streamOnly = self.streamOnly;
     i.playlistID = self.playlistID; i.heroTitle = self.heroTitle; i.heroMeta = self.heroMeta;
     return i;
 }
@@ -85,7 +85,7 @@ void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [loo
 
 - (void)resolveURL:(SFURLDone)done {
     void (^main)(NSURL *, NSError *) = ^(NSURL *u, NSError *e) { SFMain(^{ done(u, e); }); };
-    NSString *offline = (!self.localPath && gLocalLookup && self.identifier) ? gLocalLookup(self.identifier) : nil;
+    NSString *offline = (!self.localPath && !self.streamOnly && gLocalLookup && self.identifier) ? gLocalLookup(self.identifier) : nil;
     if (offline) { main([NSURL fileURLWithPath:offline], nil); return; }
     if (self.localPath) {
         if ([[NSFileManager defaultManager] fileExistsAtPath:self.localPath]) {

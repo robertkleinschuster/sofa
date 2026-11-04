@@ -179,6 +179,7 @@ static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0
     if (r[@"thumb"] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"thumb"]]) { i.image = r[@"thumb"]; i.backdrop = i.backdrop ?: r[@"thumb"]; }
     if (!i.date && [r[@"published"] doubleValue] > 0) i.date = [NSDate dateWithTimeIntervalSince1970:[r[@"published"] doubleValue]];
     i.style = SFTileStyleLandscape;
+    i.inDownloadsList = YES;
     return i;
 }
 

@@ -4,6 +4,13 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.6
+
+- **„Online abspielen“ funktioniert:** Bei heruntergeladenen Videos startete der Wechsel bisher
+  wieder die Datei – jetzt läuft wirklich der Online-Stream, an derselben Stelle.
+- **„Offline“-Hinweis überall:** Heruntergeladene Videos zeigen das Zeichen „↓ Offline“ jetzt
+  zuverlässig – auch unter „Weiterschauen“ und im Verlauf, wenn sie dort schon einmal liefen.
+
 ## 0.3.5
 
 - **Vorschaubilder bleiben:** Wurde ein heruntergeladenes Video gelöscht, fehlte unter

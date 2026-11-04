@@ -43,6 +43,8 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, strong) NSColor *tint;           // Kachelfarbe (App-Kacheln)
 @property (nonatomic, copy) NSString *themeName;       // Theme der geöffneten Page
 @property (nonatomic, copy) NSString *localPath;       // heruntergeladene Datei
+@property (nonatomic) BOOL streamOnly;                 // online abspielen, auch wenn ein Download existiert („Online abspielen“); nicht gespeichert
+@property (nonatomic) BOOL inDownloadsList;            // Kachel der Downloads-Seite (dort kein „Offline“-Chip nötig); nicht gespeichert
 @property (nonatomic, copy) NSString *playlistID;      // aus einer Playlist geöffnet: „Als Nächstes“ = nächstes Video der Playlist
 @property (nonatomic, copy) NSString *heroTitle;       // Hero-Titel statt title (z. B. Kanalname über einer Aktions-Kachel)
 @property (nonatomic, copy) NSString *heroMeta;        // Hero-Metazeile statt Kanal/Datum/Dauer

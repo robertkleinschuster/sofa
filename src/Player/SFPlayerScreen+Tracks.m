@@ -139,7 +139,7 @@ static NSString *SFBaseLanguage(NSString *code) {
 // Vom Download auf den Online-Stream wechseln, an derselben Stelle
 - (void)switchToStream {
     SFItem *it = [_item copy];
-    it.localPath = nil; it.playURL = nil;
+    it.localPath = nil; it.playURL = nil; it.streamOnly = YES;   // sonst findet die Download-Suche die Datei wieder
     if (!it.resolverRef && it.externalID) it.resolverRef = [@"yt:" stringByAppendingString:it.externalID];
     NSMutableArray *q = [_queue mutableCopy];
     if (_index < q.count) q[_index] = it;

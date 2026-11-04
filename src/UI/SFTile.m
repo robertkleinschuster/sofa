@@ -228,7 +228,10 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
     NSString *t = nil;
     if (s == SFDLRunning) t = [NSString stringWithFormat:@"\u2193 %d %%", (int)round(p * 100)];
     else if (s == SFDLQueued) t = @"\u2193 wartet";
-    else if (s == SFDLDone && !self.item.localPath) t = @"\u2193 Offline";
+    // Überall, wo ein geladenes Video auftaucht (Kanal, Weiterschauen, Verlauf …) – nur auf der
+    // Downloads-Seite selbst nicht. Früher: !localPath, aber gespeicherte Einträge erben den Pfad,
+    // wenn das Video einmal aus den Downloads lief -> Chip fehlte dort (WBS-Legal-Meldung 2026-11-04)
+    else if (s == SFDLDone && !self.item.inDownloadsList) t = @"\u2193 Offline";
     else if (s == SFDLFailed) t = [[SFDownloads shared] willRetry:self.item.identifier] ? @"\u2193 später erneut" : @"Download fehlgeschlagen";
     SFNoAnimate(^{
         self->_dlChip.hidden = (t == nil);
