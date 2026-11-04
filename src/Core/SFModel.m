@@ -10,12 +10,21 @@ static NSMutableDictionary *resolvers(void) {
     return d;
 }
 void SFRegisterResolver(NSString *prefix, SFRefResolver r) { resolvers()[prefix] = [r copy]; }
-void SFResolveRef(NSString *ref, SFURLDone done) {
+static void resolveWith(NSDictionary *table, NSString *ref, SFURLDone done) {
     NSRange c = [ref rangeOfString:@":"];
-    SFRefResolver r = c.location == NSNotFound ? nil : resolvers()[[ref substringToIndex:c.location]];
+    NSString *prefix = c.location == NSNotFound ? nil : [ref substringToIndex:c.location];
+    SFRefResolver r = prefix ? (table[prefix] ?: resolvers()[prefix]) : nil;
     if (!r) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
     r([ref substringFromIndex:c.location + 1], done);
 }
+static NSMutableDictionary *onlineResolvers(void) {
+    static NSMutableDictionary *d; static dispatch_once_t o;
+    dispatch_once(&o, ^{ d = [NSMutableDictionary new]; });
+    return d;
+}
+void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r) { onlineResolvers()[prefix] = [r copy]; }
+void SFResolveRef(NSString *ref, SFURLDone done) { resolveWith(resolvers(), ref, done); }
+void SFResolveRefOnline(NSString *ref, SFURLDone done) { resolveWith(onlineResolvers(), ref, done); }
 
 @implementation SFItem
 
@@ -95,7 +104,7 @@ void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [loo
         if (!self.resolverRef && !self.resolver) { main(nil, SFError(@"Die Datei wurde gelöscht.")); return; }
     }
     if (self.resolver) { self.resolver(main); return; }
-    if (self.resolverRef) { SFResolveRef(self.resolverRef, main); return; }
+    if (self.resolverRef) { (self.streamOnly ? SFResolveRefOnline : SFResolveRef)(self.resolverRef, main); return; }
     if (self.playURL) { main(self.playURL, nil); return; }
     main(nil, SFError(@"Kein Stream verfügbar."));
 }

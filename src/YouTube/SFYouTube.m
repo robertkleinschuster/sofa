@@ -630,9 +630,7 @@ static NSSet *skipKeys(void) {
 }
 
 + (void)setup {
-    SFRegisterResolver(@"yt", ^(NSString *vid, SFURLDone done) {
-        SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
-        if (local.localPath && [[NSFileManager defaultManager] fileExistsAtPath:local.localPath]) { done([NSURL fileURLWithPath:local.localPath], nil); return; }
+    SFRefResolver online = ^(NSString *vid, SFURLDone done) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
@@ -645,6 +643,12 @@ static NSSet *skipKeys(void) {
             }
             done(u, e);
         }];
+    };
+    SFRegisterOnlineResolver(@"yt", online);   // „Online abspielen“: Downloads überspringen
+    SFRegisterResolver(@"yt", ^(NSString *vid, SFURLDone done) {
+        SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
+        if (local.localPath && [[NSFileManager defaultManager] fileExistsAtPath:local.localPath]) { done([NSURL fileURLWithPath:local.localPath], nil); return; }
+        online(vid, done);
     });
     // Abo-Feed: Langvideos eines Kanals, neueste zuerst (immer als Online-Items)
     SFRegisterShowPage(@"ytchannel", ^SFPageLoader(NSString *cid, NSString *title) { return [self channelLoader:cid title:title]; });

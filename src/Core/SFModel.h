@@ -83,6 +83,10 @@ typedef void (^SFResolver)(SFURLDone done);
 typedef void (^SFRefResolver)(NSString *ref, SFURLDone done);
 void SFRegisterResolver(NSString *prefix, SFRefResolver r);
 void SFResolveRef(NSString *ref, SFURLDone done);
+// Resolver, die selbst lokale Downloads bevorzugen (YouTube), registrieren zusätzlich eine reine
+// Online-Variante; Items mit streamOnly („Online abspielen“) lösen darüber auf.
+void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r);
+void SFResolveRefOnline(NSString *ref, SFURLDone done);
 
 NSError *SFError(NSString *msg);
 // Ausweich-URLs (z.B. YouTube: 1080p-HLS -> 720p-HLS -> 360p-MP4), falls AVFoundation die
