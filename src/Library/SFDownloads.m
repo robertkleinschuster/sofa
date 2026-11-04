@@ -384,12 +384,13 @@ static NSString *gb(unsigned long long b) {
     t.launchPath = @"/usr/bin/nice";
     NSMutableArray *args = [@[@"-n", @"10", ff, @"-nostdin", @"-hide_banner", @"-loglevel", @"error", @"-y", @"-progress", @"pipe:1",
                               // Bandbreite schonen: höchstens 3x Abspielgeschwindigkeit (Hintergrund-Downloads sollen
-                              // Streaming am TV und andere Verbindungen nicht ausbremsen); kurzer Anlauf ungedrosselt
-                              @"-readrate", @"3", @"-readrate_initial_burst", @"10",
+                              // Streaming am TV und andere Verbindungen nicht ausbremsen); kurzer Anlauf ungedrosselt.
+                              // -rw_timeout: a dead connection must end the run (30 s), never hang the queue forever
+                              @"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000",
                               @"-i", src.absoluteString] mutableCopy];
     if (audio) {   // eigene Tonspur (Originalton): Bild aus dem Stream, Ton aus der zweiten Quelle
         NSURL *asrc = [[SFStreamProxy shared] playableURLFor:audio];
-        [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-i", asrc.absoluteString,
+        [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000", @"-i", asrc.absoluteString,
                                     @"-map", @"0:v:0", @"-map", @"1:a:0", @"-shortest"]];
         SFLog(@"downloads: %@ mit eigener Tonspur (Originalton)", item.title);
     }

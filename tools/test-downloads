@@ -36,6 +36,7 @@ cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
   for p in $(ffpids); do kill $p 2>/dev/null; done
   /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$REF';" 2>/dev/null
+  for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
   rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/orphan-test."*
 }
 trap cleanup EXIT
@@ -43,12 +44,18 @@ mkdir -p "$ROOT"
 
 echo "==> 1. orphaned ffmpeg from an earlier run"
 ( "$FF" -nostdin -v error -re -f lavfi -i testsrc=size=320x240:rate=10 -t 300 -c:v mpeg4 -y "$ROOT/orphan-test.part999.mp4" & )
+# a second orphan that ignores SIGTERM like ffmpeg stuck in a dead network read (copy of perl named ffmpeg)
+PERL=$(ls /usr/bin/perl5.* 2>/dev/null | head -1); cp "$PERL" "$T/ffmpeg"
+( "$T/ffmpeg" -e '$SIG{TERM}="IGNORE"; sleep 300' "$ROOT/orphan-test.part998.mp4" & )
 sleep 1
-O=$(ffpids | head -1)
+S=$(pgrep -f "part998")
+O=$(pgrep -f "orphan-test.part999")
 [ -n "$O" ] && [ "$(ps -o ppid= -p $O | tr -d ' ')" = 1 ] && ok "orphan running (pid $O, parent launchd)" || bad "could not create the orphan"
 start; sleep 2
 kill -0 $O 2>/dev/null && bad "orphan still alive" || ok "orphan killed at start"
 grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
+[ -n "$S" ] && ! kill -0 $S 2>/dev/null && grep -q "ffmpeg $S ignored SIGTERM - SIGKILL" "$LOG" && ok "SIGTERM-ignoring orphan escalated to SIGKILL" \
+  || bad "SIGTERM-ignoring orphan survived (pid ${S:-none})"
 [ -e "$ROOT/orphan-test.part999.mp4" ] && bad "stale part file left" || ok "stale part file swept"
 
 echo "==> 2. verifier"

@@ -54,6 +54,7 @@ static NSArray *SFProcessArgs(pid_t pid) {
     struct kinfo_proc *procs = malloc(size);
     if (!procs || sysctl(mib, 4, procs, &size, NULL, 0) != 0) { free(procs); return 0; }
     NSUInteger n = size / sizeof(struct kinfo_proc), reaped = 0;
+    NSMutableArray *victims = [NSMutableArray array];
     pid_t own = _task.isRunning ? _task.processIdentifier : 0;
     for (NSUInteger i = 0; i < n; i++) {
         struct kinfo_proc *kp = &procs[i];
@@ -67,9 +68,17 @@ static NSArray *SFProcessArgs(pid_t pid) {
         SFLog(@"downloads: killing orphaned ffmpeg %d (left over from an earlier run): %@", pid, [(NSString *)args.lastObject lastPathComponent]);
         kill(pid, SIGTERM);
         reaped++;
+        [victims addObject:@(pid)];
     }
     free(procs);
-    if (reaped) usleep(300 * 1000);   // let them exit before their part files are swept
+    // ffmpeg only honours SIGTERM between packets; one stuck in a dead network read ignores it
+    // (seen 2026-11-04) -> escalate to SIGKILL after a short grace period
+    for (int i = 0; i < 20 && victims.count; i++) {
+        usleep(50 * 1000);
+        for (NSNumber *v in [victims copy]) if (kill(v.intValue, 0) != 0) [victims removeObject:v];
+    }
+    for (NSNumber *v in victims) { SFLog(@"downloads: ffmpeg %@ ignored SIGTERM - SIGKILL", v); kill(v.intValue, SIGKILL); }
+    if (reaped) usleep(100 * 1000);
     return reaped;
 }
 
