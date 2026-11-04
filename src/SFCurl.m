@@ -1,6 +1,7 @@
 #import "SFCurl.h"
 #import "SFNet.h"
 #import "SFModel.h"
+#import "SFRuntime.h"
 #include <curl/curl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -44,6 +45,13 @@ static void curlInit(void) {
     dispatch_once(&o, ^{ curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
+void *SFCurlNew(void) {
+    CURL *c = curl_easy_init();
+    NSString *ca = SFCABundle();
+    if (c && ca) curl_easy_setopt(c, CURLOPT_CAINFO, ca.UTF8String);
+    return c;
+}
+
 static size_t appendData(char *p, size_t sz, size_t n, void *ud) {
     [(__bridge NSMutableData *)ud appendBytes:p length:sz * n];
     return sz * n;
@@ -52,7 +60,7 @@ static size_t appendData(char *p, size_t sz, size_t n, void *ud) {
 static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                          NSInteger *status, NSString **effective, NSError **error) {
     curlInit();
-    CURL *c = curl_easy_init();
+    CURL *c = SFCurlNew();
     if (!c) return nil;
     NSMutableData *out = [NSMutableData new];
     struct curl_slist *hl = NULL;
@@ -284,7 +292,7 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
 
     // Segmente / Dateien: durchreichen (inkl. Range), ohne alles zu puffern
     curlInit();
-    CURL *c = curl_easy_init();
+    CURL *c = SFCurlNew();
     NSMutableDictionary *hdrs = [NSMutableDictionary new];
     StreamCtx ctx = {fd, NO, NO, 0, hdrs};
     struct curl_slist *hl = NULL;

@@ -1,11 +1,13 @@
 #import "SFYTResolver.h"
 #import "SFModel.h"
 #import "SFStore.h"
+#import "SFRuntime.h"
 
 // yt-dlp + Plugins leben in einem eigenen venv (nicht im App-Bundle): yt-dlp muss oft
 // aktualisiert werden, schneller als jede Sofa-/MacPorts-Version. Sofa legt das venv beim
 // ersten Bedarf selbst an und hält es täglich aktuell (pip install -U).
-static NSString *const kBasePython = @"/opt/local/bin/python3.14";   // MacPorts python314 (Port-Abhängigkeit)
+// Basis-Python: im Release-Bundle Contents/Runtime/python, sonst MacPorts python314 (SFRuntime)
+#define kBasePython SFPythonPath()
 static NSString *const kPotPlugin = @"bgutil-ytdlp-pot-provider";
 // Plugin-Version muss zur Version des PO-Token-Servers passen (Port bgutil-pot-server) ->
 // wird an dessen /ping-Antwort gepinnt; Server nicht erreichbar -> neueste Version.
@@ -32,7 +34,6 @@ static int YTRun(NSString *path, NSArray *args, NSString **out, NSTimeInterval t
     t.launchPath = path; t.arguments = args;
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    env[@"PATH"] = @"/opt/local/bin:/usr/bin:/bin";
     env[@"PIP_DISABLE_PIP_VERSION_CHECK"] = @"1";
     t.environment = env;
     NSPipe *p = [NSPipe pipe];
@@ -75,6 +76,20 @@ static NSInteger YTPendingChanges(NSString *py, NSArray *pkgs) {
     }
     [[NSFileManager defaultManager] removeItemAtPath:report error:nil];
     return n;
+}
+// Stammt das venv vom aktuellen Basis-Python? (Wechsel MacPorts <-> Release-Bundle oder
+// neue Python-Version im Bundle: das alte venv zeigt dann ins Leere bzw. aufs falsche Python.)
+static BOOL YTVenvMatchesBase(NSString *dir) {
+    NSString *cfg = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"pyvenv.cfg"]
+                                              encoding:NSUTF8StringEncoding error:NULL];
+    NSString *want = [kBasePython stringByResolvingSymlinksInPath];
+    for (NSString *l in [cfg componentsSeparatedByString:@"\n"]) {
+        NSRange eq = [l rangeOfString:@"="];
+        if (![l hasPrefix:@"executable"] || eq.location == NSNotFound) continue;
+        NSString *have = [[l substringFromIndex:NSMaxRange(eq)] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        return [[have stringByResolvingSymlinksInPath] isEqualToString:want];
+    }
+    return NO;
 }
 // Frisches venv in `tmp` bauen; gepinnte Plugin-Version nicht installierbar -> neueste.
 static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
@@ -158,7 +173,6 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
     t.arguments = @[script, cache];
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    env[@"PATH"] = @"/opt/local/bin:/usr/bin:/bin";
     env[@"PYTHONUNBUFFERED"] = @"1";
     t.environment = env;
     NSPipe *pin = [NSPipe pipe], *pout = [NSPipe pipe], *perr = [NSPipe pipe];
@@ -203,7 +217,7 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
     BOOL custom = [(NSString *)[NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"] length] > 0;
     if (SFDevMode && !custom) return;
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:kBasePython]) {
-        SFLog(@"yt: %@ fehlt – YouTube-Wiedergabe nicht möglich (MacPorts-Port python314)", kBasePython);
+        SFLog(@"yt: %@ fehlt – YouTube-Wiedergabe nicht möglich", kBasePython);
         return;
     }
     _settingUp = YES;
@@ -223,7 +237,9 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
             });
         };
         NSString *before = nil;
-        if (exists) {
+        BOOL foreign = exists && !YTVenvMatchesBase(dir);
+        if (foreign) SFLog(@"yt: venv stammt von anderem Python – neu anlegen");
+        if (exists && !foreign) {
             // Server (noch) nicht erreichbar: lieber warten als ein unpassendes Plugin holen
             if (!server) { SFMain(^{ self->_settingUp = NO; }); return; }
             before = YTVersion(py);

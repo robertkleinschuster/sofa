@@ -24,7 +24,8 @@ endif
 SRC     := $(wildcard src/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)
-HOBJ    := $(patsubst helper/%.m,$(BUILD)/hobj/%.o,$(HSRC))
+# der Helper teilt sich die Laufzeit-Pfade (SFRuntime) mit Sofa
+HOBJ    := $(patsubst helper/%.m,$(BUILD)/hobj/%.o,$(HSRC)) $(BUILD)/hobj/SFRuntime.o
 
 DEVAPP  := $(BUILD)/SofaDev.app
 DEVBIN  := $(DEVAPP)/Contents/MacOS/Sofa
@@ -51,6 +52,10 @@ $(DEVBIN): $(BIN) res/Info.plist
 	@sed -e 's/<string>de.sofa.app<\/string>/<string>de.sofa.dev<\/string>/' -e 's/<string>Sofa<\/string><\/dict>/&/' res/Info.plist > $(DEVAPP)/Contents/Info.plist
 
 $(BUILD)/obj/%.o: src/%.m $(wildcard src/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/hobj/SFRuntime.o: src/SFRuntime.m src/SFRuntime.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

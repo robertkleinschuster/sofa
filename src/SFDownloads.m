@@ -3,6 +3,7 @@
 #import "SFCurl.h"
 #import "SFNet.h"
 #import "SFFollows.h"
+#import "SFRuntime.h"
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
@@ -53,7 +54,7 @@ static NSString *idHash(NSString *s) {   // FNV-1a 64 bit, stabil
 }
 
 static NSString *ffmpegPath(void) {
-    for (NSString *p in @[@"/opt/local/bin/ffmpeg", @"/usr/local/bin/ffmpeg"])
+    for (NSString *p in @[SFTool(@"ffmpeg"), @"/usr/local/bin/ffmpeg"])
         if ([[NSFileManager defaultManager] isExecutableFileAtPath:p]) return p;
     return nil;
 }

@@ -37,7 +37,7 @@ def base_opts():
     return {
         "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
         "noplaylist": True, "cachedir": CACHE,
-        "js_runtimes": {"node": {"path": "/opt/local/bin/node"}},
+        "js_runtimes": {"node": {"path": os.environ.get("SOFA_NODE", "/opt/local/bin/node")}},
         "format": FMT_VOD,
     }
 

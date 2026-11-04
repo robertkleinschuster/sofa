@@ -1,0 +1,84 @@
+#!/bin/bash
+# make-release -- eigenständiges Sofa.app + DMG bauen (für GitHub-Releases).
+#
+# MacPorts ist hier nur die Werkbank: Sofa wird gegen die MacPorts-Bibliotheken gebaut,
+# danach kommen alle Laufzeit-Teile ins Bundle und werden @loader_path-relativ umgelinkt.
+# Der Nutzer braucht nur die DMG -- kein MacPorts, keine Xcode-Tools.
+#
+#   Contents/MacOS/{Sofa,SofaRemote}
+#   Contents/Frameworks/*.dylib           alle Bibliotheken (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
+#   Contents/Runtime/bin/{ffmpeg,node,rsvg-convert}
+#   Contents/Runtime/Python.framework     Basis-Python für das yt-dlp-venv (gekürzt)
+#   Contents/Runtime/bgutil               YouTube-PO-Token-Server (vom Helper betrieben)
+#   Contents/Runtime/etc/{cert.pem,fonts/}
+#
+# Voraussetzung (Build-Maschine): Ports sofa-Abhängigkeiten + bgutil-pot-server installiert.
+# Aufruf: tools/make-release            -> dist/Sofa-<version>.dmg
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+MP=/opt/local
+PY="$MP/bin/python3.14"
+VER=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SRC/res/Info.plist")
+DIST="$SRC/dist"
+APP="$DIST/Sofa.app"
+RT="$APP/Contents/Runtime"
+
+echo "==> Sofa $VER bauen"
+make -C "$SRC" >/dev/null
+rm -rf "$DIST"; mkdir -p "$DIST"
+cp -R "$SRC/build/Sofa.app" "$APP"
+mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
+
+echo "==> Werkzeuge"
+for t in ffmpeg node rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
+
+echo "==> Python (gekürzt)"
+PF="$MP/Library/Frameworks/Python.framework/Versions/3.14"
+mkdir -p "$RT/Python.framework/Versions"
+rsync -a --exclude '__pycache__/*.opt-*.pyc' \
+  --exclude 'lib/python3.14/test/' --exclude 'lib/python3.14/idlelib/' \
+  --exclude 'lib/python3.14/tkinter/' --exclude 'lib/python3.14/turtledemo/' \
+  --exclude 'lib/python3.14/lib-dynload/_tkinter*' \
+  --exclude 'lib/python3.14/site-packages/*' --exclude 'share/' \
+  "$PF/" "$RT/Python.framework/Versions/3.14/"
+
+echo "==> PO-Token-Server"
+cp -R "$MP/libexec/bgutil-pot-server" "$RT/bgutil"
+
+echo "==> CA-Zertifikate + fontconfig"
+cp "$MP/share/curl/curl-ca-bundle.crt" "$RT/etc/cert.pem"
+cat > "$RT/etc/fonts/fonts.conf" <<'XML'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<!-- Sofa-Release: nur macOS-Systemschriften, Cache im Benutzer-Cache -->
+<fontconfig>
+  <dir>/System/Library/Fonts</dir>
+  <dir>/Library/Fonts</dir>
+  <dir prefix="xdg">fonts</dir>
+  <dir>~/Library/Fonts</dir>
+  <cachedir>~/Library/Caches/Sofa/fontconfig</cachedir>
+  <alias><family>sans-serif</family><prefer><family>Helvetica Neue</family></prefer></alias>
+  <alias><family>serif</family><prefer><family>Times</family></prefer></alias>
+  <alias><family>monospace</family><prefer><family>Menlo</family></prefer></alias>
+</fontconfig>
+XML
+
+echo "==> Bibliotheken einsammeln und umlinken"
+"$PY" -I "$SRC/tools/relink.py" "$APP/Contents" "$APP/Contents/Frameworks"
+
+echo "==> Symbole strippen (Werkzeuge + Bibliotheken; Sofa selbst behält sie für Absturzberichte)"
+strip -x "$RT"/bin/* "$APP"/Contents/Frameworks/*.dylib 2>/dev/null || true
+
+echo "==> Prüfen: kein Mach-O darf noch nach $MP zeigen"
+bad=$(find "$APP" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' -o -name '*.node' \) -print0 \
+      | xargs -0 otool -L 2>/dev/null | /usr/bin/grep -c "^[[:space:]]*$MP/" || true)
+[ "$bad" = 0 ] || { echo "FEHLER: $bad Verweise nach $MP"; exit 1; }
+
+echo "==> DMG"
+STAGE="$DIST/dmg"; mkdir -p "$STAGE"
+mv "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Programme"
+hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -format UDBZ -ov "$DIST/Sofa-$VER.dmg"
+mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"
+du -sh "$APP" "$DIST/Sofa-$VER.dmg"
+shasum -a 256 "$DIST/Sofa-$VER.dmg"

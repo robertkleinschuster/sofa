@@ -10,8 +10,11 @@
 #import <Cocoa/Cocoa.h>
 #import <IOKit/hid/IOHIDLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
+#import <sys/socket.h>
+#import <netinet/in.h>
 #import "../src/SFCore.h"
 #import "../src/SFRemote.h"
+#import "../src/SFRuntime.h"
 
 BOOL SFDevMode = NO;
 CGFloat SFScale = 1;
@@ -50,6 +53,24 @@ static NSString *ExternalUpdateDir(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa/update"];
 }
 
+#pragma mark PO-Token-Server (nur Release-Bundle)
+// yt-dlp holt YouTube-PO-Tokens beim bgutil-Server auf 127.0.0.1:4416. Im Release-Bundle bringt
+// Sofa ihn mit (Contents/Runtime/bgutil) und der Helper betreibt ihn als Kindprozess: läuft schon
+// einer (z.B. der MacPorts-Daemon bgutil-pot-server), bleibt es bei dem. Beendet sich der Helper
+// (Update, Logout), endet der Server mit ihm -> nie ein Server aus einem alten Bundle.
+static pid_t gPotPid;
+static void SRStopPot(void) { if (gPotPid > 0) kill(gPotPid, SIGTERM); gPotPid = 0; }
+static BOOL SRPortOpen(uint16_t port) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return NO;
+    struct sockaddr_in a = {0};
+    a.sin_len = sizeof a; a.sin_family = AF_INET; a.sin_port = htons(port);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    BOOL ok = connect(s, (struct sockaddr *)&a, sizeof a) == 0;
+    close(s);
+    return ok;
+}
+
 @implementation SRHelper {
     IOHIDDeviceRef _dev;
     NSTimer *_retry;
@@ -61,6 +82,7 @@ static NSString *ExternalUpdateDir(void) {
     NSTimer *_updateTimer;
     BOOL _updating;
     BOOL _external;     // laufendes Update: Tausch durch tools/sofa-deploy (App-Ordner nicht beschreibbar)
+    NSTask *_pot;
 }
 
 
@@ -82,6 +104,29 @@ static NSString *ExternalUpdateDir(void) {
     [self open];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
+    atexit(SRStopPot);
+    [self superviseServer];
+}
+
+- (void)superviseServer {
+    NSString *rt = SFRuntimeDir();
+    if (!rt) return;   // Port-/Entwicklungs-Build: Server kommt vom Port bgutil-pot-server
+    if (!_pot.isRunning && !SRPortOpen(4416)) {
+        NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Sofa-potserver.log"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:lp]) [[NSFileManager defaultManager] createFileAtPath:lp contents:nil attributes:nil];
+        NSFileHandle *lh = [NSFileHandle fileHandleForWritingAtPath:lp];
+        [lh seekToEndOfFile];
+        NSTask *t = [NSTask new];
+        t.launchPath = SFTool(@"node");
+        t.arguments = @[[rt stringByAppendingPathComponent:@"bgutil/build/main.js"], @"--host", @"127.0.0.1"];
+        t.currentDirectoryPath = [rt stringByAppendingPathComponent:@"bgutil"];
+        t.standardOutput = lh; t.standardError = lh;
+        t.standardInput = [NSFileHandle fileHandleWithNullDevice];
+        @try { [t launch]; _pot = t; gPotPid = t.processIdentifier; [self log:@"PO-Token-Server gestartet"]; }
+        @catch (NSException *e) { [self log:[@"PO-Token-Server: " stringByAppendingString:e.reason]]; }
+    }
+    // alle 30 s nachsehen (abgestürzt -> neu starten)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self superviseServer]; });
 }
 
 #pragma mark Update
@@ -394,6 +439,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 @end
 
 int main(int argc, const char **argv) {
+    SFRuntimeSetup();
     @autoreleasepool {
         [NSApplication sharedApplication].activationPolicy = NSApplicationActivationPolicyProhibited;
         SRHelper *h = [SRHelper new];

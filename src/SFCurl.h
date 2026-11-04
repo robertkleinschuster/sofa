@@ -8,6 +8,10 @@
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                     NSInteger *status, NSError **error);
 
+// curl_easy_init() + CA-Liste aus dem Release-Bundle (libcurls eingebauter Pfad zeigt
+// nach /opt/local). Rückgabe ist ein CURL * (void *, damit dieser Header ohne curl.h auskommt).
+void *SFCurlNew(void);
+
 // Hosts, die den curl-Weg brauchen (wird bei SSL-Fehlern automatisch gelernt).
 BOOL SFHostNeedsCurl(NSString *host);
 void SFMarkHostNeedsCurl(NSString *host);

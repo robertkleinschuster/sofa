@@ -43,28 +43,39 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 
 ## Requirements
 
-- An Intel Mac on OS X 10.9.5 (developed on an iMac12,2).
-- [MacPorts](https://www.macports.org) with the
-  [backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay.
+- An Intel Mac on OS X 10.9.5 (developed on an iMac12,2). Nothing else to install.
 - An Apple Remote (IR) is recommended; the `SofaRemote` helper takes over the IR receiver.
 
 ## Install
 
+1. Download `Sofa-<version>.dmg` from the [latest release](https://github.com/robertkleinschuster/sofa/releases/latest).
+2. Open it and drag **Sofa** onto **Programme** (Applications).
+3. First start: right-click Sofa → **Open** → **Open** (the app is not signed by Apple).
+
+Sofa brings everything it needs inside the app (libmpv/ffmpeg, curl/OpenSSL, Python, Node.js,
+the YouTube PO token service). On first start it sets up the Apple Remote helper and starts
+with the next login; it explains the remote, and on first use of YouTube it creates its own
+yt-dlp environment (`~/Library/Application Support/Sofa/ytdlp`, under a minute), updated daily.
+
+Alternatively, with [MacPorts](https://www.macports.org) and the
+[backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay:
+
 ```sh
-sudo port -n install sofa   # Sofa.app + all dependencies (mpv, ffmpeg, curl, python, node, PO token service)
+sudo port -n install sofa   # Sofa.app + dependencies as MacPorts ports
 sudo port load sofa         # Apple Remote helper + start Sofa at login (run in Terminal on the Mac)
 ```
-
-The local YouTube PO token service (`bgutil-pot-server`, 127.0.0.1 only) starts automatically.
-On first start Sofa explains the remote; on first use of YouTube it sets up its own yt-dlp environment
-(`~/Library/Application Support/Sofa/ytdlp`, about a minute) and keeps it updated daily.
 
 ## Build from source
 
 ```sh
 make            # build/Sofa.app (+ SofaRemote helper, + SofaDev.app for testing)
 make install    # copies Sofa.app to /Applications (PREFIX=..., DESTDIR=... supported)
+tools/make-release   # self-contained Sofa.app + dist/Sofa-<version>.dmg (needs the MacPorts build deps)
 ```
+
+The release bundle is built on a MacPorts machine: `tools/make-release` copies the runtime
+(tools, Python, PO token server, every dylib) into `Sofa.app/Contents` and relinks it
+`@loader_path`-relative, then checks that nothing points to `/opt/local` any more.
 
 Development uses an isolated dev instance (`tools/sofa-dev`) with its own data, plus a
 browser-based viewer/remote. See [`NOTES.md`](NOTES.md) (German) for architecture,

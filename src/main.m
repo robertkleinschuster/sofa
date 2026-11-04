@@ -28,6 +28,7 @@
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFPlayerScreen.h"
 #import "SFLayers.h"
+#import "SFRuntime.h"
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 
@@ -98,6 +99,7 @@ static uint16_t gPort = 8765;
     }
     if (!SFDevMode) [self restoreAfterUpdate];
     [self welcomeIfFirstRun];
+    if (!SFDevMode) SFBackground(^{ SFInstallAgents(); });   // nur Release-Bundle (SFRuntime)
 
     if (SFDevMode) {
         [self.window setFrame:frame display:YES];
@@ -422,6 +424,7 @@ static uint16_t gPort = 8765;
 @end
 
 int main(int argc, const char *argv[]) {
+    SFRuntimeSetup();
     @autoreleasepool {
         NSApplication *app = [NSApplication sharedApplication];
         SFAppDelegate *del = [SFAppDelegate new];

@@ -28,9 +28,20 @@ as_root() {
 make -C "$SRC" >/dev/null
 echo "Ziel: $APP"
 
+# Release-Bundle (tools/make-release, mit Contents/Runtime): Runtime + Bibliotheken des Ziels
+# übernehmen und nur die neuen Programme dagegen umlinken (Sekunden statt Neubau des Releases).
+NEW="$SRC/build/Sofa.app"
+if [ -d "$APP/Contents/Runtime" ]; then
+  NEW="$SRC/build/Sofa-release.app"
+  rm -rf "$NEW"; cp -R "$SRC/build/Sofa.app" "$NEW"
+  cp -R "$APP/Contents/Runtime" "$APP/Contents/Frameworks" "$NEW/Contents/"
+  /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" "$NEW/Contents/MacOS" "$NEW/Contents/Frameworks" >/dev/null
+  echo "Release-Bundle: Runtime übernommen, Programme umgelinkt"
+fi
+
 if [ -w "$(dirname "$APP")" ]; then
   rm -rf "$APP.staged.tmp"
-  cp -R "$SRC/build/Sofa.app" "$APP.staged.tmp"
+  cp -R "$NEW" "$APP.staged.tmp"
   rm -rf "$APP.staged"                     # nie in ein altes .staged verschachteln
   mv "$APP.staged.tmp" "$APP.staged"       # atomar sichtbar
   echo "bereitgestellt; warte auf Übernahme durch SofaRemote ..."
@@ -40,7 +51,7 @@ else
   U="$HOME/Library/Application Support/Sofa/update"
   mkdir -p "$U"
   rm -rf "$U/Sofa.app" "$U/Sofa.app.tmp" "$U/ready"
-  cp -R "$SRC/build/Sofa.app" "$U/Sofa.app.tmp"
+  cp -R "$NEW" "$U/Sofa.app.tmp"
   mv "$U/Sofa.app.tmp" "$U/Sofa.app"
   echo "bereitgestellt (extern); warte, bis SofaRemote Sofa beendet hat ..."
   for i in $(seq 1 60); do [ -e "$U/ready" ] && break; sleep 0.5; done

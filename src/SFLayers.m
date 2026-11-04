@@ -2,6 +2,7 @@
 #import <ImageIO/ImageIO.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "SFCurl.h"
+#import "SFRuntime.h"
 
 #pragma mark - SFLabel
 
@@ -148,7 +149,7 @@ static BOOL looksLikeSVG(NSData *d) {
     return [head rangeOfString:@"<svg" options:NSCaseInsensitiveSearch].location != NSNotFound;
 }
 static NSData *rasterizeSVG(NSData *svg) {
-    NSString *tool = @"/opt/local/bin/rsvg-convert";
+    NSString *tool = SFTool(@"rsvg-convert");
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:tool]) return nil;
     NSString *tmp = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     NSString *in = [tmp stringByAppendingPathExtension:@"svg"], *out = [tmp stringByAppendingPathExtension:@"png"];

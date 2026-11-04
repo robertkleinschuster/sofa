@@ -274,7 +274,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
                kAPI, [self commonParams], self->_sid, formEncode(self->_gsid), (long)self->_aid, zx()];
         self->_frameBuf = [NSMutableData new];
     });
-    CURL *c = curl_easy_init();
+    CURL *c = SFCurlNew();
     if (!c) return -1;
     curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, lpWrite);
