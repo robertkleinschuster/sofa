@@ -74,6 +74,10 @@
         if (k) [self.nav sendKey:k.integerValue];
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
+    } else if ([cmd isEqualToString:@"mpvset"] && arg) {   // dev: set an mpv property, e.g. "mpvset vid no" (tests self-healing)
+        id eng = [self topPlayer].engineForDiagnostics;
+        NSArray *kv = [arg componentsSeparatedByString:@" "];
+        if ([eng isKindOfClass:[SFMPVEngine class]] && kv.count == 2) [(SFMPVEngine *)eng setProp:kv[0] value:kv[1]];
     } else if ([cmd isEqualToString:@"mpvprop"] && arg) {   // Dev: mpv-Eigenschaften loggen, z.B. mpvprop time-pos,sub-start,sub-text
         id eng = [self topPlayer].engineForDiagnostics;
         if ([eng isKindOfClass:[SFMPVEngine class]])

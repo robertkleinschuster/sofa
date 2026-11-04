@@ -9,5 +9,6 @@ extern NSString *SFMPVDevFrameShotPath;
 void SFMPVDevFrameShot(NSString *path);
 
 @interface SFMPVEngine : NSObject <SFEngine>
-- (NSString *)prop:(NSString *)name;   // mpv-Eigenschaft als Text (Diagnose)
+- (NSString *)prop:(NSString *)name;   // mpv property as text (diagnostics)
+- (void)setProp:(NSString *)name value:(NSString *)value;   // dev diagnostics only
 @end

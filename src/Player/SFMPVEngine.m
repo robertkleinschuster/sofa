@@ -81,6 +81,8 @@ static void *glProc(void *ctx, const char *name) {
 
 @interface SFMPVLayer : CAOpenGLLayer
 @property (nonatomic) mpv_handle *mpv;
+@property (nonatomic, readonly) BOOL hasRenderContext;
+@property (nonatomic, copy) dispatch_block_t onRenderContext;   // called once on main when the render context exists
 - (void)freeRenderContext;
 @end
 
@@ -89,6 +91,8 @@ static void *glProc(void *ctx, const char *name) {
     CGLContextObj _ctx;
     int _fbRetries;   // CA-Framebuffer noch unfertig: begrenzt erneut zeichnen (Standbild bei Pause)
 }
+
+- (BOOL)hasRenderContext { return _rc != NULL; }
 
 static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „frameshot“)
 
@@ -180,7 +184,11 @@ static void onUpdate(void *ctx) {
         };
         int r = mpv_render_context_create(&_rc, _mpv, p);
         if (r < 0) { SFLog(@"mpv: render context: %s", mpv_error_string(r)); _rc = NULL; }
-        else mpv_render_context_set_update_callback(_rc, onUpdate, (__bridge void *)self);
+        else {
+            mpv_render_context_set_update_callback(_rc, onUpdate, (__bridge void *)self);
+            dispatch_block_t ready = self.onRenderContext; self.onRenderContext = nil;
+            if (ready) dispatch_async(dispatch_get_main_queue(), ready);
+        }
     }
     GLint fbo = 0, vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
@@ -239,6 +247,8 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
     double _time, _dur, _cacheTime;
     BOOL _paused, _waiting, _eof, _loaded;
     NSTimer *_tick;
+    dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
+    NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
 }
 @synthesize delegate = _delegate, muted = _muted;
 
@@ -304,7 +314,23 @@ static void onWakeup(void *ctx) {
     mpv_set_property_string(_mpv, "mute", _muted ? "yes" : "no");
     [self command:@[@"change-list", @"audio-files", @"clr", @""]];
     if (audioURL) [self command:@[@"change-list", @"audio-files", @"append", audioURL.absoluteString]];
-    [self command:@[@"loadfile", url.isFileURL ? url.path : url.absoluteString, @"replace"]];
+    _voHeals = 0; _voDownTicks = 0;
+    // mpv must not open the file before the render context exists: otherwise libmpv's vo fails
+    // ("No render context set"), mpv drops the video track and plays audio only (seen 2026-11-04
+    // after an update restart, when the local file resumed within 30 ms of launch).
+    NSString *target = url.isFileURL ? url.path : url.absoluteString;
+    __weak SFMPVEngine *ws = self;
+    _pendingLoad = [^{ [ws command:@[@"loadfile", target, @"replace"]]; } copy];
+    if (_layer.hasRenderContext) [self flushPendingLoad];
+    else {
+        _layer.onRenderContext = ^{ [ws flushPendingLoad]; };
+        [_layer setNeedsDisplay];
+        // Fallback: never stay silent – load after 3 s anyway (the tick below heals the video later)
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SFMPVEngine *s = ws;
+            if (s && s->_pendingLoad) { SFLog(@"mpv: no render context after 3 s - loading anyway"); [s flushPendingLoad]; }
+        });
+    }
     [_tick invalidate];
     _tick = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(onTick) userInfo:nil repeats:YES];
 }
@@ -347,7 +373,35 @@ static void onWakeup(void *ctx) {
     [self command:@[[type isEqualToString:@"sub"] ? @"sub-add" : @"audio-add", url.absoluteString, @"select", title ?: @"", lang ?: @""]];
 }
 
-- (void)onTick { if (_loaded) [self.delegate engineTick]; }
+- (void)setProp:(NSString *)name value:(NSString *)value { if (_mpv) mpv_set_property_string(_mpv, name.UTF8String, value.UTF8String); }
+
+- (void)flushPendingLoad {
+    dispatch_block_t b = _pendingLoad; _pendingLoad = nil;
+    if (b) b();
+}
+
+- (void)onTick {
+    if (!_loaded) return;
+    [self healVideoOutput];
+    [self.delegate engineTick];
+}
+
+// Self-healing: the file has a video track but no video output is configured (vo init failed,
+// e.g. a render-context race) -> re-select the video track so mpv re-creates the vo. Up to 3 tries.
+- (void)healVideoOutput {
+    if (_voHeals >= 3 || !_layer.hasRenderContext) return;
+    BOOL hasVideo = NO;
+    NSInteger n = [[self prop:@"track-list/count"] integerValue];
+    for (NSInteger i = 0; i < n && !hasVideo; i++)
+        hasVideo = [[self prop:[NSString stringWithFormat:@"track-list/%ld/type", (long)i]] isEqualToString:@"video"]
+                   && ![[self prop:[NSString stringWithFormat:@"track-list/%ld/albumart", (long)i]] isEqualToString:@"yes"];
+    if (!hasVideo || [[self prop:@"vo-configured"] isEqualToString:@"yes"]) { _voDownTicks = 0; return; }
+    if (++_voDownTicks < 3) return;   // allow ~1.5 s for normal vo start-up
+    _voDownTicks = 0; _voHeals++;
+    SFLog(@"mpv: video output missing although the file has video - re-selecting video track (attempt %ld)", (long)_voHeals);
+    mpv_set_property_string(_mpv, "vid", "no");
+    mpv_set_property_string(_mpv, "vid", "auto");
+}
 
 - (void)drainEvents {
     while (_mpv) {
