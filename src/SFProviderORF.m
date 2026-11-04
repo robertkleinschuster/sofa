@@ -2,6 +2,7 @@
 #import "SFFollows.h"
 #import "SFIconArt.h"
 #import "SFProviderORF.h"
+#import "SFEngine.h"
 #import "SFNet.h"
 #import "SFStore.h"
 
@@ -300,12 +301,18 @@ static NSArray *listItems(id j) {
             NSDictionary *ep = dict(j);
             if (!ep) { done(nil, e); return; }
             BOOL drm = NO;
+            NSDictionary *src = ep;
             NSString *u = [self hlsFrom:ep drm:&drm];
             if (!u) {   // segmentierte Sendung: ersten Teil spielen
                 NSDictionary *seg = dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject);
-                if (seg) u = [self hlsFrom:seg drm:&drm];
+                if (seg) { u = [self hlsFrom:seg drm:&drm]; src = seg; }
             }
             if (!u) { done(nil, SFError(drm ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
+            // Untertitel: _embedded.subtitle.vtt_url (des tatsächlich gespielten Objekts);
+            // ai_subtitles = maschinell erzeugt -> als „automatisch“ kennzeichnen
+            NSString *vtt = str(dict(dict(src[@"_embedded"])[@"subtitle"])[@"vtt_url"]);
+            NSArray *subs = vtt ? @[@{@"lang": @"de", @"url": vtt, @"kind": [nn(src[@"ai_subtitles"]) boolValue] ? @"auto" : @"manual"}] : @[];
+            SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});
             done([NSURL URLWithString:u], nil);
         }];
     });

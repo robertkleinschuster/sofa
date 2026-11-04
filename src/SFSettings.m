@@ -36,3 +36,10 @@ void SFSetSubtitleLanguage(NSString *lang) {
     CFPreferencesSetAppValue(CFSTR("subtitleLanguage"), (__bridge CFStringRef)(lang.length ? lang : nil), SFDomain());
     CFPreferencesAppSynchronize(SFDomain());
 }
+BOOL SFSubtitlesSameLanguage(void) {
+    return CFPreferencesGetAppBooleanValue(CFSTR("subtitlesSameLanguage"), SFDomain(), NULL);
+}
+void SFSetSubtitlesSameLanguage(BOOL on) {
+    CFPreferencesSetAppValue(CFSTR("subtitlesSameLanguage"), on ? kCFBooleanTrue : NULL, SFDomain());
+    CFPreferencesAppSynchronize(SFDomain());
+}

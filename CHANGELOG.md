@@ -4,6 +4,14 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.3
+
+- **Untertitel für ZDF, ARD und ORF:** Sendungen mit Untertiteln (meist für Hörgeschädigte)
+  lassen sich jetzt über „Ton & Untertitel“ (OK gedrückt halten) einschalten.
+- **Untertitel merken sich den Zweck:** Wer Untertitel in der Sprache des Tons einschaltet,
+  bekommt sie künftig bei allen solchen Sendungen. Deutsche Untertitel zu einem englischen Video
+  gelten dagegen nur für fremdsprachige Videos – deutsche Sendungen bleiben ohne.
+
 ## 0.3.2
 
 - **Ton & Untertitel wählbar:** Während der Wiedergabe **OK gedrückt halten** öffnet das Menü

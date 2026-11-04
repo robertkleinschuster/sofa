@@ -1,6 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFProviderZDF.h"
+#import "SFEngine.h"
 #import "SFNet.h"
 #import "SFStore.h"
 
@@ -350,6 +351,13 @@ static NSDate *isoDate(NSString *s) {
                     }
                     NSString *u = best ?: hls;
                     if (!u) { done(nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
+                    // Untertitel: PTMD captions[] (class hoh = für Hörgeschädigte), WebVTT für mpv
+                    NSMutableArray *subs = [NSMutableArray new];
+                    for (NSDictionary *c in arr(dict(p)[@"captions"])) {
+                        if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
+                        [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
+                    }
+                    SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // gewählt ist immer die Hauptspur (deutsch)
                     // Geo: /de/-Pfade liefern außerhalb DE 403 -> vorab prüfen statt Fehlstart
                     if ([u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"]) {
                         [SFNet checkRegion:u expect:nil done:^(BOOL ok) {

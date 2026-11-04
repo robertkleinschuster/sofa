@@ -2,6 +2,7 @@
 #import "SFFollows.h"
 #import "SFIconArt.h"
 #import "SFProviderARD.h"
+#import "SFEngine.h"
 #import "SFNet.h"
 #import "SFStore.h"
 
@@ -250,6 +251,17 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             NSString *url = best ? str(best[@"url"]) : hls;
             if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
             if (!url) { done(nil, SFError(@"Kein abspielbares Format (nur H.265/DRM).")); return; }
+            // Untertitel: mediaCollection.subtitles[].sources[] (kind webvtt), meist Closed Captions
+            NSMutableArray *subs = [NSMutableArray new];
+            for (NSDictionary *st in arr(mc[@"subtitles"])) {
+                for (NSDictionary *so in arr(dict(st)[@"sources"])) {
+                    NSString *su = str(dict(so)[@"url"]);
+                    if (![str(so[@"kind"]) isEqualToString:@"webvtt"] || !su) continue;
+                    if ([su hasPrefix:@"//"]) su = [@"https:" stringByAppendingString:su];
+                    [subs addObject:@{@"lang": str(st[@"languageCode"]) ?: @"deu", @"url": su, @"kind": @"manual"}];
+                }
+            }
+            SFSetMPVSource([NSURL URLWithString:url], @{@"subs": subs, @"alang": @"de"});   // gewählt ist immer die Standard-Tonspur (deutsch)
             // Geo: gesperrte Inhalte liefern sonst einen 30-s-Platzhalterclip
             NSDictionary *geo = dict(mc[@"geoBlocking"]);
             NSString *check = str(geo[@"regionCheckUrl"]);

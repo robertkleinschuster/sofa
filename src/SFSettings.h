@@ -16,3 +16,7 @@ BOOL SFPreferAVFoundation(void);
 // Auswahl im Player gemerkt und beim nächsten Video angewandt, wenn die Sprache verfügbar ist.
 NSString *SFSubtitleLanguage(void);
 void SFSetSubtitleLanguage(NSString *lang);
+// Untertitel auch bei gleicher Sprache wie der Ton (Hörgeschädigten-Untertitel); subtitleLanguage
+// gilt dagegen nur für fremdsprachigen Ton (Übersetzung).
+BOOL SFSubtitlesSameLanguage(void);
+void SFSetSubtitlesSameLanguage(BOOL on);

@@ -493,6 +493,12 @@ static uint16_t gPort = 8765;
             ps.startFromBeginning = YES;
             if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
         }];
+    } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
+        SFItem *it = [SFItem new];
+        it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg;
+        SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
+        ps.startFromBeginning = YES;
+        if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite

@@ -886,7 +886,7 @@ static NSString *SFBaseLanguage(NSString *code) {
         NSString *t = c[@"title"], *lang = c[@"lang"];
         SFMenuOption *o = [SFMenuOption option:t action:^{
             apply();
-            if ([type isEqualToString:@"sub"]) SFSetSubtitleLanguage(lang.length ? SFBaseLanguage(lang) : nil);   // für die nächsten Videos merken
+            if ([type isEqualToString:@"sub"]) [self rememberSubtitle:lang choices:choices];   // für die nächsten Videos merken
             [nav toast:[NSString stringWithFormat:@"%@: %@", title, t]];
         }];
         if ([c[@"selected"] boolValue]) o.detail = @"✓";
@@ -898,9 +898,41 @@ static NSString *SFBaseLanguage(NSString *code) {
 }
 
 // Gemerkte Untertitelsprache anwenden (echte vor automatischen vor übersetzten Untertiteln)
+// Sprache des laufenden Tons (Basis-Code, z.B. "de"); nil = unbekannt
+- (NSString *)audioLanguage {
+    for (NSDictionary *t in [_engine tracksOfType:@"audio"])
+        if ([t[@"selected"] boolValue] && [t[@"lang"] length] && ![t[@"lang"] isEqualToString:@"und"]) return SFBaseLanguage(t[@"lang"]);
+    NSDictionary *src = SFMPVSourceFor(_openURL);
+    if (_openedDash && src[@"alang"]) return SFBaseLanguage(src[@"alang"]);
+    for (NSDictionary *t in src[@"audios"] ?: @[]) if ([t[@"original"] boolValue]) return SFBaseLanguage(t[@"lang"]);
+    return SFBaseLanguage(src[@"alang"]);
+}
+
+// Wahl merken – getrennt nach Zweck: Untertitel in der Tonsprache (Hörgeschädigte) gelten für alle
+// Videos dieser Art; eine andere Sprache ist eine Übersetzung und gilt nur bei fremdsprachigem Ton.
+// So schaltet „Deutsch“ zu einem englischen Video nicht auch bei jeder ZDF-Sendung Untertitel ein.
+- (void)rememberSubtitle:(NSString *)lang choices:(NSArray *)choices {
+    NSString *audio = [self audioLanguage], *base = SFBaseLanguage(lang);
+    if (base) {
+        if (audio && [base isEqualToString:audio]) SFSetSubtitlesSameLanguage(YES);
+        else SFSetSubtitleLanguage(base);
+        return;
+    }
+    // „Aus“: nur die Vorliebe abschalten, die hier gerade gegriffen hat
+    NSString *was = nil;
+    for (NSDictionary *c in choices) if ([c[@"selected"] boolValue]) was = SFBaseLanguage(c[@"lang"]);
+    if (!was) return;
+    if (audio && [was isEqualToString:audio]) SFSetSubtitlesSameLanguage(NO);
+    else SFSetSubtitleLanguage(nil);
+}
+
 - (void)applyPreferredSubtitles {
+    if (![self tracksAvailable]) return;
+    NSString *audio = [self audioLanguage];
     NSString *want = SFSubtitleLanguage();
-    if (!want || ![self tracksAvailable]) return;
+    if (audio && [want isEqualToString:audio]) want = nil;   // Übersetzung nicht nötig
+    if (audio && SFSubtitlesSameLanguage()) want = audio;
+    if (!want) return;
     NSDictionary *pick = nil; int best = 0;
     for (NSDictionary *c in [self trackChoices:@"sub"]) {
         if (![SFBaseLanguage(c[@"lang"]) isEqualToString:want]) continue;
@@ -910,7 +942,7 @@ static NSString *SFBaseLanguage(NSString *code) {
     }
     if (!pick) return;
     ((dispatch_block_t)pick[@"apply"])();
-    SFLog(@"player: Untertitel %@ (gemerkte Sprache)", pick[@"title"]);
+    SFLog(@"player: Untertitel %@ (gemerkte Sprache, Ton %@)", pick[@"title"], audio ?: @"?");
 }
 
 #pragma mark Input
