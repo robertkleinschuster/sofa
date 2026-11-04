@@ -50,7 +50,11 @@ def base_opts():
 def make_web():
     o = base_opts()
     o["extractor_args"] = {
-        "youtube": {"player_client": ["web_embedded"], "player_skip": ["webpage"]},
+        # mweb first: its DASH URLs carry a GVS PO token (bgutil) and are not 403'd like the
+        # token-less web_embedded ones (2026-11-04: 403 with every user agent, pot missing);
+        # web_embedded stays as a second client in the same call (HLS, formats mweb lacks).
+        # yt-dlp merges both format lists, the first client wins per itag.
+        "youtube": {"player_client": ["mweb", "web_embedded"], "player_skip": ["webpage"]},
         # Script-Provider probt sonst 15 s lang node -> nur HTTP-Provider (127.0.0.1:4416)
         "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
     }

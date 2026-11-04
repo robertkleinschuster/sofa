@@ -308,7 +308,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         [_pending removeObjectForKey:rid];
         NSString *key = p[0], *vid = p[1];
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
-            SFLog(@"yt: resolved %@ -> %@p %@ in %@s (%@)", vid, j[@"height"], j[@"format"], j[@"secs"], j[@"pool"]);
+            SFLog(@"yt: resolved %@ -> %@p %@ in %.1fs (%@)", vid, j[@"height"], j[@"format"], [j[@"secs"] doubleValue], j[@"pool"]);
             if (![key hasPrefix:@"live:"]) _cache[vid] = j;
             // Playlist schon jetzt in den lokalen Proxy (auch beim Vorladen bei Fokus): Start ohne Netz-Abruf
             if ([j[@"url"] isKindOfClass:[NSString class]]) [[SFStreamProxy shared] warmPlaylist:[NSURL URLWithString:j[@"url"]]];
