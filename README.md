@@ -6,8 +6,8 @@ Lots of 2009–2012 iMacs still have a beautiful big screen, decent speakers and
 Apple Remote, but they're stuck on an OS that today's streaming apps and browsers
 no longer support. Sofa is a native smart-TV app for these Macs. From the couch, with
 the 7-button Apple Remote, you watch YouTube and the public German/Austrian
-broadcasters' Mediatheken. It runs on **OS X 10.9 Mavericks** with no browser, no
-Kodi skin and no Electron.
+broadcasters' Mediatheken. It runs on **OS X 10.9 Mavericks** as a native app, with no
+browser and no Electron.
 
 - **Sources:** YouTube (subscriptions, Watch Later, channels and playlists, with your
   existing account), ZDF, ARD, ORF and media.ccc.de, each with its own look.
@@ -48,7 +48,7 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 ```sh
 make            # builds build/Sofa.app (+ SofaRemote helper, + SofaDev.app for testing)
 make install    # copies to /Applications
-tools/switch-to-sofa.sh   # optional: make Sofa the thing MENU on the remote opens (replaces Kodi's helper)
+tools/switch-to-sofa.sh   # optional: LaunchAgents for the Apple Remote helper + autostart
 ```
 
 Development uses an isolated dev instance (`tools/sofa-dev`) with its own data, plus a
