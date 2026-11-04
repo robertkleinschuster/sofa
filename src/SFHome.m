@@ -225,8 +225,8 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     i.kind = SFItemAction;
     i.identifier = @"settings:";
     i.title = @"Einstellungen";
-    i.subtitle = @"Start, Fernbedienung, Updates";
-    i.plot = @"Festlegen, ob Sofa beim Anmelden startet und ob die Apple Remote Sofa öffnet. Nach Updates suchen und sehen, was neu ist.";
+    i.subtitle = @"Start, Fernbedienung, Untertitel, Updates";
+    i.plot = @"Festlegen, ob Sofa beim Anmelden startet, ob die Apple Remote Sofa öffnet und wann Untertitel mitlaufen. Nach Updates suchen und sehen, was neu ist.";
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
     i.action = ^{
@@ -265,6 +265,21 @@ static __weak SFMenuScreen *gSettingsMenu;
                            @"Sofa startet beim Anmelden automatisch", @"Sofa startet nicht mehr automatisch")];
     [opts addObject:toggle(@"Mit der Apple Remote starten", SFRemoteLaunchEnabled(), ^(BOOL v) { SFSetRemoteLaunchEnabled(v); },
                            @"Jede Taste der Apple Remote öffnet Sofa", @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac")];
+    // Untertitel: dieselben zwei Vorlieben, die „Ton & Untertitel“ im Player merkt (OK halten)
+    [opts addObject:toggle(@"Untertitel zum Mitlesen", SFSubtitlesSameLanguage(), ^(BOOL v) { SFSetSubtitlesSameLanguage(v); },
+                           @"Untertitel laufen mit, wo die Sendung welche hat (z.B. für Hörgeschädigte)",
+                           @"Bei Sendungen in der Sprache des Tons keine Untertitel")];
+    NSString *foreign = SFSubtitleLanguage();
+    SFMenuOption *fo = [SFMenuOption option:@"Untertitel übersetzt" action:^{
+        SFSetSubtitleLanguage(foreign ? nil : @"de");
+        [nav toast:foreign ? @"Fremdsprachige Videos laufen ohne Untertitel"
+                           : @"Fremdsprachige Videos bekommen deutsche Untertitel, wo vorhanden"];
+        refresh();
+    }];
+    NSString *fname = foreign ? [[NSLocale localeWithLocaleIdentifier:@"de"] displayNameForKey:NSLocaleLanguageCode value:foreign] : nil;
+    fo.detail = foreign ? (fname.length ? [[fname substringToIndex:1].uppercaseString stringByAppendingString:[fname substringFromIndex:1]] : foreign) : @"Aus";
+    fo.keepOpen = YES;
+    [opts addObject:fo];
     NSString *subtitle = [@"Version " stringByAppendingString:up.installedVersion];
     if (up.available) {
         [opts addObject:toggle(@"Automatisch aktualisieren", SFAutoUpdateEnabled(), ^(BOOL v) { SFSetAutoUpdateEnabled(v); },

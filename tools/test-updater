@@ -51,7 +51,7 @@ shot() { cmd shot "$T/$1.png"; sleep 1.5; }
 
 sleep 6
 cmd open settings; sleep 1; shot 1-einstellungen
-cmd key down; cmd key down; cmd key down; sleep 0.5; cmd key select    # „Nach Updates suchen“
+for k in 1 2 3 4 5; do cmd key down; done; sleep 0.5; cmd key select   # „Nach Updates suchen“ (6. Zeile)
 sleep 4; shot 2-gefunden
 grep -q "Update verfügbar: $CUR → $NEW" "$LOG" 2>/dev/null; :   # (Meldung ist ein Toast, nicht im Log)
 cmd key select; sleep 1.5; shot 3-release-notes                         # „Update installieren“

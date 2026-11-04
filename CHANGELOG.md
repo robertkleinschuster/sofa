@@ -4,6 +4,12 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.4
+
+- **Untertitel in den Einstellungen:** „Untertitel zum Mitlesen“ (Untertitel in der Sprache des
+  Tons, z.B. für Hörgeschädigte) und „Untertitel übersetzt“ (deutsche Untertitel zu
+  fremdsprachigen Videos) lassen sich jetzt auch ohne laufendes Video ein- und ausschalten.
+
 ## 0.3.3
 
 - **Untertitel für ZDF, ARD und ORF:** Sendungen mit Untertiteln (meist für Hörgeschädigte)
