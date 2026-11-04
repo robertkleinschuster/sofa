@@ -417,7 +417,7 @@ seeking, `1`/`2` from `AVPlayer.rate`, `0` when the last item ended.
 | `onHasPreviousNextChanged` | `hasPrevious`, `hasNext` ("true"/"false") | on connect, after playlist changes |
 | `onAutoplayModeChanged` | `autoplayMode`: `ENABLED`/`DISABLED`/`UNSUPPORTED` | on connect, `setAutoplayMode` |
 | `autoplayUpNext` | `videoId` or `{}` | only with autoplay support |
-| `onSubtitlesTrackChanged` | `videoId` (+ `languageCode`, … when on) | answer to `getSubtitlesTrack` |
+| `onSubtitlesTrackChanged` | `videoId` (+ `languageCode`, `vss_id` when on: `.de` = manual, `a.de` = auto/ASR) | answer to `getSubtitlesTrack` / `setSubtitlesTrack`; Sofa also sends it on every subtitle change (menu, remembered language) and with a new video |
 | `confirmPlaylistUpdate` | `updated: "true"` | plaincast answers `updatePlaylist` with it (old protocol, optional) |
 | `nowPlayingPlaylist` | `videoIds, videoId, currentTime, duration, state, currentIndex` | plaincast answer to `getPlaylist` (old) |
 | `loungeScreenDisconnected` | `{}` | before shutdown |
@@ -480,7 +480,7 @@ pyytlounge-style web remote, not the Android app).
 | `setVideo` | `videoId, currentTime` | plaincast (old protocol) – treat like single-item setPlaylist |
 | `getPlaylist` | – | plaincast (old) → `nowPlayingPlaylist` |
 | `dpadCommand` | `key`: `UP/DOWN/LEFT/RIGHT/ENTER/BACK` | optional: map to Sofa's own navigation |
-| `setSubtitlesTrack` | `videoId, languageCode` ("" = off) | optional |
+| `setSubtitlesTrack` | `videoId, languageCode` ("" = off), `vss_id` (`.de` / `a.de`), `trackName` **[src: gotubecast]** | Sofa: picks the matching track (exact code > base language; `a.` prefers automatic), remembers it like the menu, toasts, answers `onSubtitlesTrackChanged` with the track actually chosen (unavailable → current state, toast "Keine Untertitel auf …") |
 | `setPlaybackSpeed` | `playbackSpeed` | optional (then send `onPlaybackSpeedChanged`) |
 | `skipAd` | – | ignore |
 | `loungeScreenDisconnected` | – | (server→remote) |

@@ -211,7 +211,9 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     _running = YES;
     _loopGen++;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];   // Fortsetzen: nicht doppelt
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerSubtitlesNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerChanged:) name:SFPlayerStateNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(subtitlesChanged:) name:SFPlayerSubtitlesNotification object:nil];
     // Laufende Position regelmäßig melden (Handy-Fortschrittsbalken)
     [_tick invalidate];
     _tick = [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(periodic) userInfo:nil repeats:YES];
@@ -224,6 +226,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     _loopGen++;
     [_tick invalidate]; _tick = nil;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerSubtitlesNotification object:nil];
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     dispatch_async(_q, ^{ if (self->_sid) [self sendNow:@[@[@"loungeScreenDisconnected", @{}]]]; dispatch_semaphore_signal(sem); });
     dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)));   // best effort
@@ -389,6 +392,24 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     return a;
 }
 
+// Untertitelzustand fürs Handy (wie gotubecast): languageCode „“ = aus; vss_id „.de“ = echte,
+// „a.de“ = automatische Untertitel (YouTube-Kennung der Spur, daran markiert das Handy seine Liste)
+- (NSArray *)subtitlesMessage:(SFPlayerScreen *)p state:(NSDictionary *)st {
+    NSString *vid = [self videoIDOf:p];
+    NSString *lang = vid ? st[@"lang"] : nil;
+    if (!lang.length) return @[@"onSubtitlesTrackChanged", @{@"videoId": vid ?: @""}];
+    return @[@"onSubtitlesTrackChanged", @{@"videoId": vid, @"languageCode": lang,
+                                           @"vss_id": [([st[@"kind"] isEqual:@"auto"] ? @"a." : @".") stringByAppendingString:lang]}];
+}
+
+- (void)subtitlesChanged:(NSNotification *)n {
+    SFPlayerScreen *p = n.object;
+    if (![self videoIDOf:p]) return;   // Nicht-YouTube / nicht geteilt: nichts zu melden
+    NSArray *m = [self subtitlesMessage:p state:n.userInfo];
+    SFLog(@"lounge: -> onSubtitlesTrackChanged %@", m[1][@"vss_id"] ?: @"aus");
+    [self send:@[m]];
+}
+
 - (NSArray *)volumeMessage {
     int vol = (int)lroundf(MAX(0, [SFVolume volume]) * 100);
     return @[@"onVolumeChanged", @{@"volume": [@(vol) stringValue], @"muted": [SFVolume muted] ? @"true" : @"false"}];
@@ -418,7 +439,8 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     if (!(vid == _lastVideo || [vid isEqualToString:_lastVideo])) {
         _lastVideo = vid; _lastState = s; _cpn = [self newCPN];
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]], @[@"onStateChange", [self stateArgs:p]],
-                     @[@"onHasPreviousNextChanged", @{@"hasPrevious": p.hasPrevious ? @"true" : @"false", @"hasNext": p.hasNext ? @"true" : @"false"}]]];
+                     @[@"onHasPreviousNextChanged", @{@"hasPrevious": p.hasPrevious ? @"true" : @"false", @"hasNext": p.hasNext ? @"true" : @"false"}],
+                     [self subtitlesMessage:p state:p.subtitleState]]];   // neues Video: Untertitel des alten gelten nicht mehr
         return;
     }
     if (s != _lastState) {
@@ -482,7 +504,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         [self send:@[[self volumeMessage]]];
         return;
     } else if ([cmd isEqualToString:@"getSubtitlesTrack"]) {
-        [self send:@[@[@"onSubtitlesTrackChanged", @{@"videoId": [self videoIDOf:p] ?: @""}]]];
+        [self send:@[[self subtitlesMessage:p state:p.subtitleState]]];
         return;
     } else if ([cmd isEqualToString:@"setAutoplayMode"]) {
         [self send:@[@[@"onAutoplayModeChanged", @{@"autoplayMode": @"UNSUPPORTED"}]]];
