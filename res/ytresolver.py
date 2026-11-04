@@ -350,7 +350,10 @@ def prune_cache():
 
 prune_cache()
 emit({"ready": True})
-threading.Thread(target=warmup, daemon=True).start()
+# Dev-Instanzen ohne Vorwärmen: jeder Teststart wären sonst zwei zusätzliche YouTube-Abrufe
+# (trug 2026-11-04 zur Drosselung „Sign in to confirm you're not a bot“ bei)
+if not os.environ.get("SOFA_NO_WARMUP"):
+    threading.Thread(target=warmup, daemon=True).start()
 for line in sys.stdin:
     line = line.strip()
     if not line:

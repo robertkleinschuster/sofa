@@ -1,4 +1,5 @@
 #import "SFYouTube.h"
+#import "SFJSON.h"
 #import "SFMenuScreen.h"
 #import "SFYTResolver.h"
 #import "SFNet.h"
@@ -18,10 +19,6 @@
 static NSString *const kClientVersion = @"2.20261030.02.00";
 static NSString *const kOrigin = @"https://www.youtube.com";
 
-static id nn(id v) { return (v == [NSNull null]) ? nil : v; }
-static NSString *str(id v) { v = nn(v); return [v isKindOfClass:[NSString class]] ? v : nil; }
-static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictionary class]] ? v : nil; }
-static NSArray *arr(id v) { v = nn(v); return [v isKindOfClass:[NSArray class]] ? v : nil; }
 static id path(id root, NSString *p) {
     id cur = root;
     for (NSString *k in [p componentsSeparatedByString:@"."]) {

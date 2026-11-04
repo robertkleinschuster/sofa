@@ -161,6 +161,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
     env[@"PYTHONUNBUFFERED"] = @"1";
+    if (SFDevMode) env[@"SOFA_NO_WARMUP"] = @"1";   // Teststarts sollen YouTube nicht belasten
     // yt-dlp aus dem Zipapp, Plugins (bgutil) immer aus dem Bundle (passend zum PO-Token-Server)
     env[@"PYTHONPATH"] = [NSString stringWithFormat:@"%@:%@", [ytdir stringByAppendingPathComponent:@"yt-dlp"],
                           [YTBundledDir() stringByAppendingPathComponent:@"plugins"]];

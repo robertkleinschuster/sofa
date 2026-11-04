@@ -1,6 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFProviderZDF.h"
+#import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -8,10 +9,6 @@
 static NSString *const kGQL = @"https://api.zdf.de/graphql";
 static NSString *const kPlayer = @"android_native_6";
 
-static id nn(id v) { return (v == [NSNull null]) ? nil : v; }
-static NSString *str(id v) { v = nn(v); return [v isKindOfClass:[NSString class]] ? v : nil; }
-static NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictionary class]] ? v : nil; }
-static NSArray *arr(id v) { v = nn(v); return [v isKindOfClass:[NSArray class]] ? v : nil; }
 
 // GraphQL-Fragmente (frei formulierte Queries; persisted hashes brechen bei Redeploys)
 #define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title canonical } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
