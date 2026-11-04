@@ -9,6 +9,14 @@ the 7-button Apple Remote, you watch YouTube and the public German/Austrian
 broadcasters' Mediatheken. It runs on **OS X 10.9 Mavericks** as a native app, with no
 browser and no Electron.
 
+![Sofa home screen: YouTube, ZDF, ARD, ORF ON and media.ccc.de tiles, Continue watching below](docs/screenshots/home.jpg)
+
+| | |
+|---|---|
+| ![YouTube: hero for the focused video, Continue watching row](docs/screenshots/youtube.jpg) | ![ZDF Mediathek in ZDF colors](docs/screenshots/zdf.jpg) |
+| ![ORF ON in its light theme](docs/screenshots/orf.jpg) | ![media.ccc.de: newly published talks](docs/screenshots/media-ccc.jpg) |
+| ![On-screen keyboard with live search suggestions, operated with the Apple Remote](docs/screenshots/search.jpg) | Everything is operated with the 7-button Apple Remote: arrows, OK, MENU and Play/Pause. Holding OK opens options; holding MENU goes home. |
+
 - **Sources:** YouTube (channels, playlists, search, live streams; no account needed),
   ZDF, ARD, ORF and media.ccc.de, each with its own look.
 - **Follow shows and channels:** new episodes from everything you follow, a shared
