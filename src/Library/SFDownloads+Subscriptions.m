@@ -1,5 +1,5 @@
-// SFDownloads – Abos ("Neue Folgen automatisch laden"): Feed-Registry, Abo-Verwaltung,
-// regelmäßige Prüfung, Behaltefrist und Smart-Delete gesehener Abo-Folgen.
+// SFDownloads – subscriptions ("download new episodes automatically"): feed registry,
+// subscription management, periodic checks, retention and smart delete of watched episodes.
 #import "SFDownloads+Private.h"
 
 static NSMutableDictionary *gFeeds;   // prefix -> SFFeedFetcher
@@ -25,7 +25,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
 
 @implementation SFDownloads (Subscriptions)
 
-#pragma mark Abos
+#pragma mark Subscriptions
 
 - (void)saveSub:(NSDictionary *)s {
     [[SFStore shared] run:@"INSERT OR REPLACE INTO subscriptions (id,source,title,image,keepDays,since,added,lastCheck) VALUES (?,?,?,?,?,?,?,?)"
@@ -64,18 +64,18 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     if (folder.image) s[@"image"] = folder.image;
     _subs[folder.identifier] = s;
     [self saveSub:s];
-    SFLog(@"downloads: Automatisch herunterladen an: %@ (%@)", folder.title, folder.identifier);
-    [[SFFollows shared] follow:folder];   // Automatisch herunterladen setzt Folgen voraus
+    SFLog(@"downloads: auto-download on: %@ (%@)", folder.title, folder.identifier);
+    [[SFFollows shared] follow:folder];   // auto-download requires following
     [self changed:folder.identifier];
     [self checkSub:s initial:YES done:nil];
 }
 
 - (void)unsubscribe:(NSString *)fid {
     if (!_subs[fid]) return;
-    SFLog(@"downloads: Automatisch herunterladen aus: %@ (%@)", _subs[fid][@"title"], fid);
+    SFLog(@"downloads: auto-download off: %@ (%@)", _subs[fid][@"title"], fid);
     [_subs removeObjectForKey:fid];
     [[SFStore shared] run:@"DELETE FROM subscriptions WHERE id=?" args:@[fid]];
-    // bereits geladene Folgen bleiben, werden aber nicht mehr automatisch gelöscht
+    // already downloaded episodes stay, but are no longer deleted automatically
     for (NSMutableDictionary *r in _recs.allValues)
         if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) { [r removeObjectForKey:@"sub"]; [self save:r]; }
     [self changed:fid];
@@ -86,8 +86,8 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     if (!f) { if (done) done(); return; }
     f(restOf(s[@"id"]), ^(NSArray *items, NSError *e) {
         SFMain(^{
-            if (self->_subs[s[@"id"]] != s) { if (done) done(); return; }   // inzwischen abbestellt/ersetzt
-            if (!items) { SFLog(@"downloads: Abo %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
+            if (self->_subs[s[@"id"]] != s) { if (done) done(); return; }   // unsubscribed/replaced meanwhile
+            if (!items) { SFLog(@"downloads: subscription %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
             NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
             double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
             double since = [s[@"since"] doubleValue];
@@ -95,21 +95,21 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
             for (SFItem *it in items) {
                 if (it.kind != SFItemVideo) continue;
                 n++;
-                if (initial && n > 3) {                              // neues Abo: die 3 neuesten, Älteres nie nachladen
+                if (initial && n > 3) {                              // new subscription: the 3 newest, never backfill older ones
                     double pub3 = it.date ? [it.date timeIntervalSince1970] : now;
                     if ([s[@"since"] doubleValue] <= 0) s[@"since"] = @(pub3);
                     break;
                 }
                 double pub = it.date ? [it.date timeIntervalSince1970] : 0;
-                if (pub && pub < now - keep) break;                   // älter als Behaltefrist
-                if (since > 0 && pub && pub <= since) break;         // migrierte Abos: nur Neues
+                if (pub && pub < now - keep) break;                   // older than the retention period
+                if (since > 0 && pub && pub <= since) break;         // migrated subscriptions: only new ones
                 if ([[SFStore shared] watched:it.identifier]) continue;
-                if (added >= 5) break;                               // pro Prüfung höchstens 5
+                if (added >= 5) break;                               // at most 5 per check
                 if ([self enqueue:it sub:s[@"id"]]) added++;
             }
             s[@"lastCheck"] = @(now);
             [self saveSub:s];
-            if (added) SFLog(@"downloads: Abo %@: %ld neu", s[@"title"], (long)added);
+            if (added) SFLog(@"downloads: subscription %@: %ld new", s[@"title"], (long)added);
             if (done) done();
         });
     });
@@ -127,9 +127,9 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     next = ^{
         SFDownloads *me = ws;
         if (!me) return;
-        if (i >= all.count) { me->_checking = NO; next = nil; SFLog(@"downloads: Abo-Prüfung fertig"); return; }
+        if (i >= all.count) { me->_checking = NO; next = nil; SFLog(@"downloads: subscription check done"); return; }
         NSMutableDictionary *s = all[i++];
-        // nacheinander, mit kleiner Pause (schont die Quellen)
+        // one after another, with a short pause (spares the sources)
         __block BOOL called = NO;
         dispatch_block_t step = ^{
             if (called) return;
@@ -137,12 +137,12 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
         };
         [me checkSub:s initial:NO done:step];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);   // Zeitlimit je Feed
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);   // time limit per feed
     };
     next();
 }
 
-// Nutzer-Einstellung -> SFSettings; früher in SQLite (downloads.deleteWatched): einmalig übernehmen
+// user setting -> SFSettings; formerly in SQLite (downloads.deleteWatched): migrate once
 - (BOOL)deletesWatched {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -158,22 +158,22 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     SFSetDeleteWatchedDownloads(on);
     _generation++;
     [self changed:nil];
-    SFLog(@"downloads: gesehene Abo-Folgen löschen %@", on ? @"an" : @"aus");
+    SFLog(@"downloads: delete watched subscription episodes %@", on ? @"on" : @"off");
     if (on) [self cleanup];
 }
 
-// Behaltefrist: Abo-Folgen nach keepDays (ab Veröffentlichung) löschen;
-// Smart Downloads: gesehene Abo-Folgen 1 Tag nach dem Ansehen
+// Retention: delete subscription episodes after keepDays (from publication);
+// Smart Downloads: watched subscription episodes 1 day after watching
 - (void)cleanup {
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (self.deletesWatched) {
-        NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> Zeitpunkt "gesehen"
+        NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> time "watched"
         for (NSDictionary *row in [[SFStore shared] rows:@"SELECT id, updated FROM progress WHERE watched=1" args:nil]) seen[row[@"id"]] = row[@"updated"];
         for (NSMutableDictionary *r in [_recs.allValues copy]) {
             if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
             NSNumber *w = seen[r[@"id"]];
             if (w && [w doubleValue] < now - 86400) {
-                SFLog(@"downloads: gesehen, gelöscht: %@", r[@"id"]);
+                SFLog(@"downloads: watched, deleted: %@", r[@"id"]);
                 [self remove:r[@"id"]];
             }
         }
@@ -184,7 +184,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
         double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
         double pub = [r[@"published"] doubleValue] ?: [r[@"added"] doubleValue];
         if (pub && pub < now - keep) {
-            SFLog(@"downloads: Behaltefrist abgelaufen: %@", r[@"id"]);
+            SFLog(@"downloads: retention expired: %@", r[@"id"]);
             [self remove:r[@"id"]];
         }
     }

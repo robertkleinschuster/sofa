@@ -4,7 +4,7 @@
 
 
 @implementation SFWatchLater {
-    NSMutableArray *_entries;   // @{id, source, item(SFItem), added}, neueste zuerst
+    NSMutableArray *_entries;   // @{id, source, item(SFItem), added}, newest first
 }
 
 + (instancetype)shared {
@@ -29,7 +29,7 @@
 }
 
 - (void)changed {
-    [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];   // Regale neu laden
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];   // reload shelves
 }
 
 - (BOOL)contains:(NSString *)identifier {
@@ -41,7 +41,7 @@
 - (BOOL)insert:(SFItem *)item at:(NSTimeInterval)added {
     if (!item.identifier.length || [self contains:item.identifier]) return NO;
     SFItem *c = [item copy];
-    c.style = SFTileStyleLandscape;   // einheitlich im Regal, egal woher gemerkt
+    c.style = SFTileStyleLandscape;   // uniform in the shelf, wherever it was saved from
     NSData *j = [NSJSONSerialization dataWithJSONObject:[c dictionaryRepresentation] options:0 error:nil];
     NSString *js = j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : nil;
     if (!js) return NO;
@@ -56,7 +56,7 @@
 
 - (void)add:(SFItem *)item {
     if ([self insert:item at:[NSDate date].timeIntervalSince1970]) {
-        SFLog(@"später ansehen: + %@", item.identifier);
+        SFLog(@"watch later: + %@", item.identifier);
         [self changed];
     }
 }
@@ -67,7 +67,7 @@
     [_entries filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *b) { return ![e[@"id"] isEqualToString:identifier]; }]];
     if (_entries.count == n) return;
     [[SFStore shared] run:@"DELETE FROM watch_later WHERE id = ?" args:@[identifier]];
-    SFLog(@"später ansehen: − %@", identifier);
+    SFLog(@"watch later: − %@", identifier);
     [self changed];
 }
 
@@ -75,11 +75,11 @@
     NSMutableArray *out = [NSMutableArray new], *seen = [NSMutableArray new];
     SFStore *st = [SFStore shared];
     for (NSDictionary *e in _entries) {
-        if ([st progressFor:e[@"id"]] >= 1) { [seen addObject:e[@"id"]]; continue; }   // gesehen: fällt heraus
+        if ([st progressFor:e[@"id"]] >= 1) { [seen addObject:e[@"id"]]; continue; }   // watched: drops out
         if (source && ![e[@"source"] isEqualToString:source]) continue;
         [out addObject:[e[@"item"] copy]];
     }
-    for (NSString *i in seen) {   // still aufräumen (ohne Neuladen auszulösen)
+    for (NSString *i in seen) {   // clean up silently (without triggering a reload)
         [_entries filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *b) { return ![e[@"id"] isEqualToString:i]; }]];
         [st run:@"DELETE FROM watch_later WHERE id = ?" args:@[i]];
     }
@@ -88,7 +88,7 @@
 
 - (void)importItems:(NSArray *)items once:(NSString *)key {
     if (!items.count || [[SFStore shared] setting:key].length) return;
-    // Reihenfolge der Quelle beibehalten (oberstes = neuestes), zeitlich vor allem bereits Gemerkten
+    // keep the source's order (top = newest), dated before everything already saved
     NSTimeInterval base = _entries.count ? [[_entries.lastObject objectForKey:@"added"] doubleValue] - 1 : [NSDate date].timeIntervalSince1970;
     NSUInteger n = 0;
     for (NSUInteger i = 0; i < items.count; i++) {
@@ -97,7 +97,7 @@
         if ([self insert:it at:base - i]) n++;
     }
     [[SFStore shared] setSetting:@"1" forKey:key];
-    SFLog(@"später ansehen: %lu aus %@ übernommen", (unsigned long)n, key);
+    SFLog(@"watch later: adopted %lu from %@", (unsigned long)n, key);
     if (n) [self changed];
 }
 @end
@@ -109,7 +109,7 @@ SFPageLoader SFWithWatchLater(SFPageLoader loader, NSString *source) {
             if (!later.count) { done(page, err); return; }
             SFPage *p = page ?: [SFPage page:nil theme:source shelves:@[]];
             NSMutableArray *sh = [p.shelves mutableCopy] ?: [NSMutableArray new];
-            NSUInteger at = sh.count ? 1 : 0;   // die App öffnet auf ihren eigenen Inhalten
+            NSUInteger at = sh.count ? 1 : 0;   // the app opens on its own content
             for (NSUInteger k = 0; k < sh.count; k++) if ([[sh[k] title] isEqualToString:@"Weiterschauen"]) at = k + 1;
             [sh insertObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later] atIndex:MIN(at, sh.count)];
             p.shelves = sh;

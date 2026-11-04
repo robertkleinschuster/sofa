@@ -47,7 +47,7 @@
         self->_title.position = CGPointMake(x, y); [self->_title sizeToFitWidth:w]; y += self->_title.bounds.size.height + U(50);
         self->_steps.position = CGPointMake(x, y); [self->_steps sizeToFitWidth:w]; y += self->_steps.bounds.size.height + U(40);
         self->_code.position = CGPointMake(x, y); [self->_code sizeToFitWidth:w]; y += self->_code.bounds.size.height + U(20);
-        CGFloat cw = U(1130);   // Breite des Codes
+        CGFloat cw = U(1130);   // width of the code
         self->_barBg.frame = CGRectMake(x, y, cw, U(8)); self->_barBg.cornerRadius = U(4);
         y += U(28);
         self->_countdown.position = CGPointMake(x, y); [self->_countdown sizeToFitWidth:w]; y += self->_countdown.bounds.size.height + U(30);
@@ -60,10 +60,10 @@
 - (void)willAppear {
     [super willAppear];
     _visible = YES;
-    [_second invalidate]; [_refresh invalidate]; _refresh = nil;   // idempotent (Overlay davor)
+    [_second invalidate]; [_refresh invalidate]; _refresh = nil;   // idempotent (overlay in front)
     [self updatePhones];
     [self loadCode];
-    // Countdown sekündlich; neuer Code kurz vor Ablauf (Code lebt gemessen 300–307 s)
+    // countdown every second; new code shortly before expiry (a code lives 300–307 s, measured)
     _second = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(updateCountdown) userInfo:nil repeats:YES];
 }
 
@@ -74,7 +74,7 @@
     [_second invalidate]; _second = nil;
 }
 
-static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 300 s
+static const NSTimeInterval kCodeLife = 295;   // safely below the measured 300 s
 
 - (void)updateCountdown {
     if (!_validUntil) {
@@ -82,7 +82,7 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
         return;
     }
     NSTimeInterval left = [_validUntil timeIntervalSinceNow];
-    if (left <= 10 && !_loading) [self loadCode];   // nahtlos erneuern
+    if (left <= 10 && !_loading) [self loadCode];   // renew seamlessly
     left = MAX(0, left);
     int s = (int)ceil(left);
     SFNoAnimate(^{
@@ -129,8 +129,8 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
     if (self.size.width > 0) [self layoutForSize:self.size];
 }
 
-// Verbindungs-Einstellungen (Mehrbenutzer/Privatsphäre): pausieren ≠ trennen – zwei getrennte Funktionen.
-// Erreichbar über die Home-Kachel „Handy“ und über diese Seite (OK).
+// Connection settings (multi-user/privacy): pause ≠ disconnect – two separate functions.
+// Reachable via the Home tile "Handy" and via this page (OK).
 + (void)showConnectionMenuOn:(SFNavigator *)nav {
     SFLounge *l = [SFLounge shared];
     SFTheme *t = [SFTheme themeNamed:@"home"];
@@ -174,6 +174,6 @@ static const NSTimeInterval kCodeLife = 295;   // sicher unter den gemessenen 30
 
 - (BOOL)handleKey:(SFKey)key {
     if (key == SFKeySelect || key == SFKeySelectHold) { [self showOptions]; return YES; }
-    return NO;   // Menu -> zurück (Navigator)
+    return NO;   // Menu -> back (navigator)
 }
 @end

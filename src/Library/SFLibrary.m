@@ -7,8 +7,8 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 
 @implementation SFLibrary {
     NSArray *_shows;
-    NSUInteger _gen;        // Stand des Gruppierungs-Caches
-    NSUInteger _notified;   // zuletzt gemeldeter Stand (getrennt, sonst schluckt ein Rebuild die Meldung)
+    NSUInteger _gen;        // state of the grouping cache
+    NSUInteger _notified;   // last notified state (separate, otherwise a rebuild swallows the notification)
     BOOL _pending;
 }
 
@@ -30,7 +30,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 - (BOOL)ready { return YES; }
 - (void)whenReady:(dispatch_block_t)block { block(); }
 
-// Fortschritts-Meldungen kommen alle 2 s: nur bei echten Zustandsänderungen neu gruppieren
+// progress notifications arrive every 2 s: regroup only on real state changes
 - (void)downloadsChanged {
     if (_pending || [SFDownloads shared].generation == _notified) return;
     _pending = YES;
@@ -52,7 +52,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSMutableDictionary *groups = [NSMutableDictionary new];   // "source\tchannel" -> SFShow
     NSMutableArray *order = [NSMutableArray new];
     NSMutableDictionary *eps = [NSMutableDictionary new];      // key -> NSMutableArray
-    for (SFItem *e in [dl items:nil]) {   // neueste zuerst
+    for (SFItem *e in [dl items:nil]) {   // newest first
         NSString *src = e.source.length ? e.source : @"youtube";
         NSString *ch = e.channel.length ? e.channel : SFUnsortedChannel;
         NSString *k = [NSString stringWithFormat:@"%@\t%@", src, ch];

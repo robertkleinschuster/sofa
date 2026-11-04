@@ -27,7 +27,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
     SFImageLayer *_image;
     CALayer *_ring;
     CALayer *_progressBg, *_progress;
-    CALayer *_dlChip; SFLabel *_dlLabel;   // Download-Status unten links
+    CALayer *_dlChip; SFLabel *_dlLabel;   // download status bottom left
     CALayer *_durationPill;
     SFLabel *_duration;
     CALayer *_badgeBg;
@@ -46,11 +46,11 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
         _item = item; _style = st; _theme = theme;
         SFTileMetrics m = SFMetricsForStyle(st);
         CGFloat w = width > 0 ? width : U(m.width), ih = U(m.imageHeight), th = U(m.textHeight);
-        self.anchorPoint = CGPointMake(0.5, 0);    // skaliert von oben-mitte
+        self.anchorPoint = CGPointMake(0.5, 0);    // scales from top centre
         self.bounds = CGRectMake(0, 0, w, ih + (th ? U(14) + th : 0));
         CGFloat corner = (st == SFTileStyleCircle || st == SFTileStyleButton) ? ih / 2 : U(theme.corner);
 
-        // Schatten-Träger (ohne masksToBounds), darin das maskierte Bild
+        // shadow carrier (without masksToBounds), the masked image inside it
         CALayer *holder = [CALayer layer];
         holder.frame = CGRectMake(0, 0, w, ih);
         holder.cornerRadius = corner;
@@ -69,7 +69,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
         _image.cornerRadius = corner;
         _image.placeholderColor = item.tint ?: theme.surface;
         if (st == SFTileStyleApp || st == SFTileStyleWide) {
-            // Text im Bild (App-Kacheln, Rubriken)
+            // text in the image (app tiles, sections)
             if (item.image.length && st == SFTileStyleWide) {
                 _scrim = [CAGradientLayer layer];
                 _scrim.frame = _image.bounds;
@@ -80,7 +80,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
                 [_image addSublayer:_scrim];
             }
         }
-        if (item.imageFit) {   // Logos: eingepasst, Hintergrund passend zur Logo-Helligkeit
+        if (item.imageFit) {   // logos: fitted, background matching the logo's brightness
             _image.contentsGravity = kCAGravityResizeAspect;
             _image.placeholderColor = theme.surface; _image.backgroundColor = theme.surface.CGColor;
             _image.adaptiveBackground = YES;
@@ -113,16 +113,16 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
                 [_image addSublayer:sub];
             }
         } else if (st == SFTileStyleButton) {
-            // Aktions-Pille: Titel zentriert; aktive Aktionen (tint) farbig, sonst neutrale Fläche
+            // action pill: title centred; active actions (tint) coloured, otherwise a neutral surface
             SFLabel *bt = [SFLabel labelWithFont:[theme bold:26] color:item.tint ? [NSColor whiteColor] : theme.text];
             bt.text = item.title; bt.alignment = NSCenterTextAlignment; bt.maxLines = 1;
             CGFloat h = [bt sizeToFitWidth:w - U(36)];
             bt.position = CGPointMake(U(18), (ih - h) / 2);
             [_image addSublayer:bt];
         } else if (st == SFTileStyleWide) {
-            // Mit Bild: weiß + Schatten über dem Bild. Ohne Bild: Themenfarbe auf der Kachelfläche
-            // (weiß auf hellgrau war im hellen ORF-Theme kaum lesbar)
-            BOOL plain = !item.image.length && !item.tint;   // farbige Kacheln (Akzent) behalten weiße Schrift
+            // with image: white + shadow over the image. Without image: theme colour on the tile surface
+            // (white on light grey was hardly readable in the light ORF theme)
+            BOOL plain = !item.image.length && !item.tint;   // coloured tiles (accent) keep white text
             SFLabel *wt = [SFLabel labelWithFont:[theme bold:34] color:plain ? theme.text : [NSColor whiteColor]];
             wt.text = item.title; wt.maxLines = 2; wt.shadow = !plain;
             CGFloat h = [wt sizeToFitWidth:w - U(48)];
@@ -130,7 +130,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             [_image addSublayer:wt];
         }
 
-        // Badge (LIVE / NEU / LOKAL)
+        // badge (LIVE / NEU / LOKAL)
         if (item.badge.length) {
             _badge = [SFLabel labelWithFont:[theme bold:18] color:theme.accentText];
             _badge.text = item.badge;
@@ -146,7 +146,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             [holder addSublayer:_badgeBg];
         }
 
-        // Dauer unten rechts
+        // duration bottom right
         if (item.duration > 0 && (st == SFTileStyleLandscape)) {
             _duration = [SFLabel labelWithFont:[theme medium:19] color:[NSColor whiteColor]];
             _duration.text = SFFormatDuration(item.duration);
@@ -162,7 +162,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             [holder addSublayer:_durationPill];
         }
 
-        // Download-Status (Offline-Schicht): Chip unten links, nur bei Videos
+        // download status (offline layer): chip bottom left, videos only
         if (st == SFTileStyleLandscape && item.kind == SFItemVideo) {
             _dlChip = [CALayer layer];
             _dlChip.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.78].CGColor;
@@ -173,7 +173,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             [holder addSublayer:_dlChip];
         }
 
-        // Fortschritt
+        // progress
         if (st == SFTileStyleLandscape || st == SFTileStylePoster) {
             _progressBg = [CALayer layer];
             _progressBg.backgroundColor = [NSColor colorWithDeviceWhite:1 alpha:0.35].CGColor;
@@ -187,7 +187,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             [_image addSublayer:_progressBg];
         }
 
-        // Fokus-Rahmen
+        // focus frame
         _ring = [CALayer layer];
         CGFloat pad = U(5);
         _ring.frame = CGRectInset(holder.frame, -pad, -pad);
@@ -197,7 +197,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
         _ring.opacity = 0;
         [self addSublayer:_ring];
 
-        // Texte
+        // texts
         if (th > 0) {
             BOOL center = st == SFTileStyleCircle || st == SFTileStylePoster;
             _title = [SFLabel labelWithFont:[theme medium:center ? 23 : 25] color:theme.text];
@@ -238,9 +238,9 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
     NSString *t = nil;
     if (s == SFDLRunning) t = [NSString stringWithFormat:@"\u2193 %d %%", (int)round(p * 100)];
     else if (s == SFDLQueued) t = @"\u2193 wartet";
-    // Überall, wo ein geladenes Video auftaucht (Kanal, Weiterschauen, Verlauf …) – nur auf der
-    // Downloads-Seite selbst nicht. Früher: !localPath, aber gespeicherte Einträge erben den Pfad,
-    // wenn das Video einmal aus den Downloads lief -> Chip fehlte dort (WBS-Legal-Meldung 2026-11-04)
+    // Everywhere a downloaded video appears (channel, continue watching, history …) – just not on the
+    // downloads page itself. Formerly: !localPath, but saved entries inherit the path once the video
+    // played from the downloads -> the chip was missing there (WBS Legal report 2026-11-04)
     else if (s == SFDLDone && !self.item.inDownloadsList) t = @"\u2193 Offline";
     else if (s == SFDLFailed) t = [[SFDownloads shared] willRetry:self.item.identifier] ? @"\u2193 später erneut" : @"Download fehlgeschlagen";
     SFNoAnimate(^{

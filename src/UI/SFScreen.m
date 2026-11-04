@@ -49,7 +49,7 @@ NSCursor *SFBlankCursor(void) {
     NSUInteger _volSeq;
 }
 
-// Kein Mauszeiger in der TV-Oberfläche (siehe main.m hideCursor)
+// No mouse cursor in the TV UI (see main.m hideCursor)
 - (void)resetCursorRects { if (!SFDevMode) [self addCursorRect:self.bounds cursor:SFBlankCursor()]; }
 
 - (instancetype)initWithFrame:(NSRect)f {
@@ -88,8 +88,8 @@ NSCursor *SFBlankCursor(void) {
 - (void)push:(SFScreen *)s {
     SFScreen *old = self.top;
     [self prepare:s];
-    // Nur ein deckender Bildschirm verdrängt den darunter. Ein Overlay (Menü, Dialog) lässt ihn
-    // weiterlaufen – z.B. das Video unter „Ton & Untertitel“ (vorher: Wiedergabe abgebaut).
+    // Only an opaque screen displaces the one below. An overlay (menu, dialog) lets it keep
+    // running – e.g. the video under "Ton & Untertitel" (before: playback was torn down).
     if (s.isOpaque) [old willDisappear];
     [s willAppear];
     [_stack addObject:s];
@@ -224,10 +224,10 @@ NSCursor *SFBlankCursor(void) {
     [super keyDown:e];
 }
 
-#pragma mark Lautstärke
+#pragma mark Volume
 
 - (void)volumeStep:(int)dir {
-    // Dev-Instanzen ändern NIE die echte Systemlautstärke (nur Anzeige simulieren)
+    // dev instances NEVER change the real system volume (only simulate the indicator)
     static float devVol = 0.5f;
     float v;
     if (SFDevMode) { devVol = MAX(0, MIN(1, roundf(devVol * 16 + dir) / 16)); v = devVol; }
@@ -292,7 +292,7 @@ NSCursor *SFBlankCursor(void) {
     NSUInteger seq = ++_toastSeq;
     SFNoAnimate(^{
         self->_toastLabel.text = text;
-        // Breite am Text ausrichten (kurze Hinweise als kompakte Pille), lange umbrechen
+        // size the width to the text (short hints as a compact pill), wrap long ones
         CGFloat maxW = MIN(U(1100), sz.width - U(200));
         CGFloat tw = ceil([text sizeWithAttributes:@{NSFontAttributeName: self->_toastLabel.font}].width);
         CGFloat w = MIN(maxW, MAX(U(320), tw + U(96)));
@@ -300,7 +300,7 @@ NSCursor *SFBlankCursor(void) {
         self->_toastLayer.bounds = CGRectMake(0, 0, w, h + U(44));
         CGFloat fromBottom = self.top ? [self.top toastCenterFromBottom] : U(110);
         self->_toastLayer.position = CGPointMake(sz.width / 2, sz.height - fromBottom);
-        self->_toastLabel.position = CGPointMake(U(32), U(22));   // Label = Breite − 2·32
+        self->_toastLabel.position = CGPointMake(U(32), U(22));   // label = width − 2·32
     });
     SFAnimate(0.25, ^{ self->_toastLayer.opacity = 1; });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

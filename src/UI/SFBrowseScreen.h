@@ -1,16 +1,16 @@
-// Universeller Browse-Screen: Header (Schriftzug, Titel, Uhr), Hintergrund und
-// beliebige Shelves (Reihen/Raster) aus einer SFPage, Fokus-Navigation mit
-// virtualisierten Kacheln.
+// Universal browse screen: header (wordmark, title, clock), background and
+// any shelves (rows/grids) from an SFPage, focus navigation with
+// virtualized tiles.
 #import "SFScreen.h"
 #import "SFModel.h"
 
 @interface SFBrowseScreen : SFScreen
 @property (nonatomic, strong, readonly) SFPage *page;
-@property (nonatomic, copy) SFPageLoader loader;         // zum Laden/Neuladen
-@property (nonatomic) BOOL showsHero;                     // großes Info-Feld zum fokussierten Item
-@property (nonatomic, copy) NSString *reloadNotification;  // bei dieser Notification neu laden
-@property (nonatomic, copy) NSString *folderIdentifier;    // Kennung des geöffneten Ordners (z. B. „zdfshow:…“)
-@property (nonatomic, copy) NSString *searchSource;        // Kopfzeile: Knopf „Suche“ (Hoch aus der ersten Reihe)
+@property (nonatomic, copy) SFPageLoader loader;         // for loading/reloading
+@property (nonatomic) BOOL showsHero;                     // large info area for the focused item
+@property (nonatomic, copy) NSString *reloadNotification;  // reload on this notification
+@property (nonatomic, copy) NSString *folderIdentifier;    // identifier of the open folder (e.g. "zdfshow:…")
+@property (nonatomic, copy) NSString *searchSource;        // header: button "Suche" (Up from the first row)
 // Overlay mode (player info panel): not opaque (the screen below keeps running and stays visible,
 // dimmed by a translucent dark background), no logo/title/search in the header (clock and key hint
 // stay), no backdrop image, hero starts higher. Set before the screen is pushed.
@@ -25,11 +25,11 @@
 // rebuilt, focus stays; otherwise the page is rebuilt keeping the focus). Labels of action buttons
 // update without the other rows flickering.
 - (void)replaceItemsOfShelf:(SFShelf *)shelf with:(NSArray *)items;
-// Unterklassen/Hooks
+// Subclasses/hooks
 @property (nonatomic, copy) void (^onSelect)(SFItem *item, NSArray *shelfItems, NSUInteger index);
 @end
 
-// Standard-Aktion für ein Item (abspielen / öffnen / Aktion).
+// Default action for an item (play / open / action).
 void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index);
 // Screen for a folder item (show, channel, category) as SFOpenItem pushes it
 SFBrowseScreen *SFBrowseScreenForFolder(SFItem *folder, SFTheme *fallback);

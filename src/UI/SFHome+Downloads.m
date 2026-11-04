@@ -1,11 +1,11 @@
-// SFHome – Downloads-Seite (Offline-Bestand) und die Kachel, die sie öffnet.
+// SFHome – downloads page (offline inventory) and the tile that opens it.
 #import "SFHome+Private.h"
 #import "SFDownloads.h"
 #import "SFIconArt.h"
 
 @implementation SFHome (Downloads)
 
-#pragma mark Downloads (Offline-Bestand, wie „Downloads“ bei YouTube Premium)
+#pragma mark Downloads (offline inventory, like "Downloads" in YouTube Premium)
 
 + (SFPageLoader)downloadsLoader:(NSString *)source {
     return ^(SFPageDone done) {
@@ -35,10 +35,10 @@
     };
 }
 
-// Kachelbild mit Download-Symbol in App-Farben
+// tile image with a download symbol in app colours
 static NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", source); }
 
-// Kachel, die die Downloads-Seite öffnet (Home: alle Quellen, in Apps: nur diese Quelle)
+// tile that opens the downloads page (Home: all sources, in apps: only this source)
 + (SFItem *)downloadsTile:(NSString *)source {
     SFDownloads *dl = [SFDownloads shared];
     SFItem *i = [SFItem new];

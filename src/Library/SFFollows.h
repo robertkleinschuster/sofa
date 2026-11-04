@@ -1,31 +1,31 @@
-// „Folgen“: Kanäle/Sendungen, die der Haushalt verfolgt – über alle Apps, ohne Anmeldung, gemeinsam.
-// Kern des Konzepts (NOTES „Folgen statt Download-Abos“): Gefolgte Sendungen liefern „Neue Folgen“
-// (gestreamt) und „Meine Sendungen & Kanäle“. „Automatisch herunterladen“ (SFDownloads-Abo) ist nur
-// ein optionaler Zusatz pro gefolgter Sendung und setzt Folgen voraus.
-// Neue Folgen werden im Hintergrund (alle 30 min, nacheinander) geholt und gecacht, damit Home sofort
-// erscheint – nicht 128 Anfragen bei jedem Öffnen.
+// "Folgen" (follows): channels/shows the household follows – across all apps, without sign-in, shared.
+// Core of the concept (NOTES "Folgen statt Download-Abos"): followed shows feed "Neue Folgen"
+// (streamed) and "Meine Sendungen & Kanäle". "Automatisch herunterladen" (SFDownloads subscription) is
+// only an optional add-on per followed show and requires following.
+// New episodes are fetched in the background (every 30 min, one after another) and cached so Home
+// appears instantly – not 128 requests on every open.
 #import "SFModel.h"
 
 extern NSString *const SFFollowsDidChangeNotification;
 
-// Seite einer Sendung/eines Kanals aus seiner Kennung bauen (je Provider registriert)
+// build the page of a show/channel from its identifier (registered per provider)
 typedef SFPageLoader (^SFShowPageFactory)(NSString *ref, NSString *title);
 void SFRegisterShowPage(NSString *prefix, SFShowPageFactory f);
-SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil, wenn für den Typ keine Seite registriert ist
-// Sendung/Kanal einer Folge nachträglich ermitteln (Items ohne showRef, z. B. ältere gespeicherte)
+SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil if no page is registered for the type
+// determine an episode's show/channel after the fact (items without showRef, e.g. older saved ones)
 typedef void (^SFShowRefLookup)(SFItem *item, void (^done)(NSString *ref));
 void SFRegisterShowRefLookup(NSString *source, SFShowRefLookup f);
 SFShowRefLookup SFShowRefLookupFor(NSString *source);
 
 @interface SFFollows : NSObject
 + (instancetype)shared;
-- (void)start;                                         // Migration + Hintergrund-Aktualisierung
-- (BOOL)canFollow:(SFItem *)folder;                    // gibt es Feed + Seite für diesen Typ?
+- (void)start;                                         // migration + background refresh
+- (BOOL)canFollow:(SFItem *)folder;                    // is there a feed + page for this type?
 - (BOOL)isFollowing:(NSString *)identifier;
 - (void)follow:(SFItem *)folder;
-- (void)unfollow:(NSString *)identifier;               // beendet auch „Automatisch herunterladen“
-- (NSArray *)follows:(NSString *)source;               // SFItem-Ordner (alphabetisch), nil = alle
-- (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // neueste Folgen gefolgter Sendungen
+- (void)unfollow:(NSString *)identifier;               // also ends "Automatisch herunterladen"
+- (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
+- (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
 - (void)refreshNow;
-- (void)importFollows:(NSArray *)folders key:(NSString *)onceKey;   // einmaliger Import (z. B. YouTube-Konto)
+- (void)importFollows:(NSArray *)folders key:(NSString *)onceKey;   // one-time import (e.g. YouTube account)
 @end

@@ -1,8 +1,8 @@
-// SFHome – privater Teil: gemeinsame Hilfen für SFHome.m (Home, Verlauf, App-Startseiten),
-// SFHome+Downloads.m (Downloads-Seite) und SFHome+Settings.m (Einstellungen, Handy-Kachel).
+// SFHome – private part: shared helpers for SFHome.m (Home, history, app start pages),
+// SFHome+Downloads.m (downloads page) and SFHome+Settings.m (settings, phone tile).
 #import "SFHome.h"
 #import "SFLibrary.h"
 
 @interface SFHome ()
-+ (SFItem *)showTile:(SFShow *)sh;   // Kachel einer lokalen Sendung (öffnet showLoader:source:)
++ (SFItem *)showTile:(SFShow *)sh;   // tile of a local show (opens showLoader:source:)
 @end

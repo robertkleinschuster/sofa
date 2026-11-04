@@ -1,17 +1,17 @@
-// Bildschirmtastatur für die 7-Tasten-Fernbedienung: Buchstabenraster, Textzeile oben,
-// Vorschlagsliste rechts. Generisch (Suche, später andere Texteingaben).
-//   Pfeile = Fokus, Mitte = Taste/Vorschlag, Play/Pause = Zeichen löschen,
-//   Mitte lang = alles löschen (auf Vorschlag: in die Textzeile übernehmen),
-//   Rechts lang = zu „Suchen“, Links lang = zum Rasteranfang, MENU = abbrechen.
+// On-screen keyboard for the 7-key remote: letter grid, text line at the top,
+// suggestion list on the right. Generic (search, later other text input).
+//   arrows = focus, centre = key/suggestion, Play/Pause = delete character,
+//   centre long = clear all (on a suggestion: take it into the text line),
+//   right long = to "Suchen", left long = to the grid start, MENU = cancel.
 #import "SFScreen.h"
 
-// Vorschläge (NSString) samt Überschrift ("Vorschläge", "Zuletzt gesucht").
+// Suggestions (NSString) with heading ("Vorschläge", "Zuletzt gesucht").
 typedef void (^SFSuggestDone)(NSString *heading, NSArray *suggestions);
 typedef void (^SFSuggestProvider)(NSString *text, SFSuggestDone done);
 
 @interface SFKeyboardScreen : SFScreen
-// completion bekommt den getrimmten, nicht-leeren Text. Die Tastatur bleibt auf dem
-// Stapel (der Aufrufer pusht z.B. die Ergebnisse darüber; MENU dort = Suche verfeinern).
+// completion gets the trimmed, non-empty text. The keyboard stays on the
+// stack (the caller pushes e.g. the results on top; MENU there = refine the search).
 - (instancetype)initWithTitle:(NSString *)title theme:(SFTheme *)theme initialText:(NSString *)text
                    completion:(void (^)(NSString *text))completion;
 @property (nonatomic, copy) NSString *placeholder;           // Default "Suchbegriff eingeben"

@@ -1,5 +1,5 @@
-// SFBrowseScreen – privater Teil: Ivars und Zeilenmodell, gemeinsam für SFBrowseScreen.m
-// (Layout, Zeilen, Fokus, Hero) und SFBrowseScreen+Context.m (Kontextmenü „OK halten“).
+// SFBrowseScreen – private part: ivars and row model, shared by SFBrowseScreen.m
+// (layout, rows, focus, hero) and SFBrowseScreen+Context.m (context menu "hold OK").
 #import "SFBrowseScreen.h"
 #import "SFTile.h"
 #import "SFLayers.h"
@@ -17,40 +17,40 @@
 #import "SFSearch.h"
 #import "SFWatchLater.h"
 
-// Ein sichtbarer "Zeilen"-Abschnitt: Rail = eine Zeile; Grid = mehrere Zeilen.
+// A visible "row" section: rail = one row; grid = several rows.
 @interface SFRow : NSObject
 @property (nonatomic) NSUInteger shelf;
-@property (nonatomic, strong) NSArray *items;        // Items dieser Zeile
-@property (nonatomic) NSUInteger firstIndex;         // Index im Shelf
+@property (nonatomic, strong) NSArray *items;        // items of this row
+@property (nonatomic) NSUInteger firstIndex;         // index in the shelf
 @property (nonatomic) SFTileStyle style;
 @property (nonatomic) BOOL rail;
-@property (nonatomic, copy) NSString *title;         // nur erste Zeile eines Shelfs
+@property (nonatomic, copy) NSString *title;         // only the first row of a shelf
 @property (nonatomic) CGFloat y, height, titleHeight;
-@property (nonatomic) NSInteger focusCol;            // letzter Fokus in der Zeile
-@property (nonatomic) NSInteger scrollCol;           // erste sichtbare Spalte (Rail)
-@property (nonatomic, strong) CALayer *layer;        // Zeilencontainer
-@property (nonatomic, strong) CALayer *strip;        // verschiebbarer Kachelstreifen
+@property (nonatomic) NSInteger focusCol;            // last focus in the row
+@property (nonatomic) NSInteger scrollCol;           // first visible column (rail)
+@property (nonatomic, strong) CALayer *layer;        // row container
+@property (nonatomic, strong) CALayer *strip;        // movable strip of tiles
 @property (nonatomic, strong) NSMutableDictionary *tiles; // @(col) -> SFTileLayer
 @property (nonatomic, strong) NSArray *widths;       // content-sized button pills: width per column (points), else nil
 @end
 
 @interface SFBrowseScreen () {
     SFPage *_page;
-    BOOL _pinTop;   // Startfokus unterhalb der ersten Reihe: nicht scrollen, solange die Zeile sichtbar ist
+    BOOL _pinTop;   // start focus below the first row: do not scroll while the row is visible
     CALayer *_bg;
     SFImageLayer *_backdrop;
     CALayer *_backdropBox;
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
-    NSTimer *_prefetchTimer;      // YouTube vorladen bei ruhendem Fokus
-    CALayer *_hintKey, *_phonePill, *_phoneDot;   // Statuszeile oben rechts
-    CALayer *_searchPill; CAShapeLayer *_searchIcon; SFLabel *_searchLabel;   // Kopfzeile: „Suche“
-    BOOL _headerFocus;           // Fokus liegt auf „Suche“ statt auf einer Kachel
-    CALayer *_content;           // vertikal verschobener Inhalt
+    NSTimer *_prefetchTimer;      // preload YouTube while focus rests
+    CALayer *_hintKey, *_phonePill, *_phoneDot;   // status line top right
+    CALayer *_searchPill; CAShapeLayer *_searchIcon; SFLabel *_searchLabel;   // header: "Suche"
+    BOOL _headerFocus;           // focus is on "Suche" instead of a tile
+    CALayer *_content;           // vertically shifted content
     NSMutableArray *_rows;
-    NSInteger _row;              // fokussierte Zeile
-    CGFloat _contentTop;         // y-Beginn der Shelves
+    NSInteger _row;              // focused row
+    CGFloat _contentTop;         // y start of the shelves
     CGFloat _scrollY;
     // Hero
     CALayer *_hero;

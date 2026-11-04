@@ -1,5 +1,5 @@
-// SFHome – Einstellungen (Start & Fernbedienung, Untertitel, Updates mit Release-Notes) und
-// die Handy-Kachel (YouTube → Mehr), die die Verbindungs-Einstellungen öffnet.
+// SFHome – settings (start & remote, subtitles, updates with release notes) and
+// the phone tile (YouTube → Mehr) that opens the connection settings.
 #import "SFHome+Private.h"
 #import "SFMenuScreen.h"
 #import "SFSettings.h"
@@ -10,7 +10,7 @@
 
 @implementation SFHome (Settings)
 
-#pragma mark Einstellungen (Start & Fernbedienung)
+#pragma mark Settings (start & remote)
 
 + (SFItem *)settingsTile {
     SFItem *i = [SFItem new];
@@ -31,9 +31,9 @@
 
 + (void)showSettingsOn:(SFNavigator *)nav { [nav push:[self settingsMenu:nav selection:0]]; }
 
-// Einstellungen: Schalter + Update. Jede Änderung baut das Menü an derselben Zeile neu auf.
-// gSettingsMenu = das gerade sichtbare Einstellungsmenü (auch spätere Rückrufe, z.B. nach der
-// Update-Suche, bauen das aktuelle neu auf – nicht das, aus dem sie gestartet wurden).
+// Settings: switches + update. Every change rebuilds the menu at the same row.
+// gSettingsMenu = the settings menu currently visible (later callbacks too, e.g. after the
+// update check, rebuild the current one – not the one they were started from).
 static __weak SFMenuScreen *gSettingsMenu;
 + (SFMenuScreen *)settingsMenu:(SFNavigator *)nav selection:(NSInteger)sel {
     SFUpdater *up = [SFUpdater shared];
@@ -57,7 +57,7 @@ static __weak SFMenuScreen *gSettingsMenu;
                            @"Sofa startet beim Anmelden automatisch", @"Sofa startet nicht mehr automatisch")];
     [opts addObject:toggle(@"Mit der Apple Remote starten", SFRemoteLaunchEnabled(), ^(BOOL v) { SFSetRemoteLaunchEnabled(v); },
                            @"Jede Taste der Apple Remote öffnet Sofa", @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac")];
-    // Untertitel: dieselben zwei Vorlieben, die „Ton & Untertitel“ im Player merkt (OK halten)
+    // subtitles: the same two preferences that "Ton & Untertitel" in the player remembers (hold OK)
     [opts addObject:toggle(@"Untertitel zum Mitlesen", SFSubtitlesSameLanguage(), ^(BOOL v) { SFSetSubtitlesSameLanguage(v); },
                            @"Untertitel laufen mit, wo die Sendung welche hat (z.B. für Hörgeschädigte)",
                            @"Bei Sendungen in der Sprache des Tons keine Untertitel")];
@@ -104,13 +104,13 @@ static __weak SFMenuScreen *gSettingsMenu;
     return m;
 }
 
-// Manuelles Update: zuerst zeigen, was neu ist (Release-Notes von GitHub), dann entscheiden
+// Manual update: first show what is new (release notes from GitHub), then decide
 + (SFMenuScreen *)releaseNotesMenu:(SFNavigator *)nav {
     SFUpdater *up = [SFUpdater shared];
     NSMutableArray *lines = [NSMutableArray new];
     for (NSString *raw in [up.releaseNotes ?: @"" componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
         NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if ([l rangeOfString:@"sofa-notes-end"].location != NSNotFound) break;   // danach: nur für die Release-Seite
+        if ([l rangeOfString:@"sofa-notes-end"].location != NSNotFound) break;   // after this: only for the release page
         if (!l.length || [l hasPrefix:@"#"] || [l hasPrefix:@"<!--"]) continue;
         l = [l stringByReplacingOccurrencesOfString:@"**" withString:@""];
         l = [l stringByReplacingOccurrencesOfString:@"`" withString:@""];
@@ -129,12 +129,12 @@ static __weak SFMenuScreen *gSettingsMenu;
     return m;
 }
 
-#pragma mark Handy (YouTube „Mit TV verbinden“) – Einstellungen direkt vom Home erreichbar
+#pragma mark Phone (YouTube "Mit TV verbinden") – settings reachable directly from Home
 
 + (SFItem *)phoneTile {
-    // Eine Kachel, die sich der Lage anpasst (YouTube → Mehr):
-    //  kein Handy verbunden  -> „Mit Handy verbinden“ öffnet direkt den Code (dort OK = Einstellungen)
-    //  verbunden / pausiert  -> „Handy: Name“ / „Handy pausiert“ öffnet die Einstellungen
+    // One tile that adapts to the situation (YouTube → Mehr):
+    //  no phone connected    -> "Mit Handy verbinden" opens the code directly (OK there = settings)
+    //  connected / paused    -> "Handy: Name" / "Handy pausiert" opens the settings
     SFLounge *l = [SFLounge shared];
     NSArray *n = l.remoteNames;
     BOOL active = l.paused || n.count;

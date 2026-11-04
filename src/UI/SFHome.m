@@ -1,5 +1,5 @@
-// Home-Screen (App-Kacheln, Weiterschauen, Neue Folgen …), Verlauf und die Startseiten der
-// Quellen-Apps. Einstellungen/Handy: SFHome+Settings.m; Downloads-Seite: SFHome+Downloads.m.
+// Home screen (app tiles, continue watching, new episodes …), history and the start pages of the
+// source apps. Settings/phone: SFHome+Settings.m; downloads page: SFHome+Downloads.m.
 #import "SFHome+Private.h"
 #import "SFStore.h"
 #import "SFProviderCCC.h"
@@ -14,7 +14,7 @@
 
 @implementation SFHome
 
-// Titel, Beschreibung, Kachelfarbe, Logo-Variante (0 original, 1 helle Schrift, 2 weiß)
+// title, description, tile colour, logo variant (0 original, 1 light text, 2 white)
 static NSDictionary *appInfo(void) {
     return @{
         @"youtube": @[@"YouTube", @"Deine Kanäle, neue Videos, Suche", @0xffffff, @0],
@@ -48,7 +48,7 @@ static NSDictionary *appInfo(void) {
             [apps addObject:[self downloadsTile:nil]];
             [apps addObject:[self historyTile]];
             [apps addObject:[self settingsTile]];
-            // Kodi-Kachel entfernt (User 2026-11-03); Handy-Einstellungen gehören in die YouTube-App (Mehr → Handy)
+            // Kodi tile removed (user 2026-11-03); phone settings belong in the YouTube app (Mehr → Handy)
 
             NSMutableArray *shelves = [NSMutableArray new];
             [shelves addObject:[SFShelf shelf:nil style:SFTileStyleApp items:apps]];
@@ -57,10 +57,10 @@ static NSDictionary *appInfo(void) {
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
             NSArray *later = [[SFWatchLater shared] items:nil];
             if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
-            // Gefolgtes (Folgen-Konzept): neue Folgen streamen, Seiten online; Downloads stecken in der Kachel „Downloads“
+            // followed content (follows concept): stream new episodes, pages online; downloads live in the tile "Downloads"
             SFFollows *fo = [SFFollows shared];
             NSArray *latest = [fo latest:40 source:nil];
-            if (!latest.count) {   // noch nichts gefolgt / erste Aktualisierung läuft: Heruntergeladenes zeigen
+            if (!latest.count) {   // nothing followed yet / first refresh running: show downloaded content
                 latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
                 for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
             }
@@ -90,7 +90,7 @@ static NSDictionary *appInfo(void) {
 }
 
 + (void)reloadOnLibraryChange:(SFBrowseScreen *)s {
-    s.reloadNotification = SFLibraryDidChangeNotification;   // Screen verwaltet den Observer selbst
+    s.reloadNotification = SFLibraryDidChangeNotification;   // the screen manages the observer itself
 }
 
 + (SFItem *)showTile:(SFShow *)sh {
@@ -131,7 +131,7 @@ static NSDictionary *appInfo(void) {
     };
 }
 
-#pragma mark Verlauf (alles Abgespielte, zum Wiederfinden)
+#pragma mark History (everything played, to find it again)
 
 + (SFPageLoader)historyLoader {
     return ^(SFPageDone done) {
@@ -179,9 +179,9 @@ static NSDictionary *appInfo(void) {
     return i;
 }
 
-// Online-Startseite einer Mediathek um das Gefolgte ergänzen (Folgen-Konzept):
-//   Weiterschauen · Neue Folgen (gefolgte Sendungen, gestreamt) · Meine Sendungen (+ Downloads-Kachel am Ende) · Mediathek …
-// Downloads sind nur ein Zustand eines Videos (schneller Start, offline) – keine eigene Welt.
+// Add followed content to a Mediathek's online start page (follows concept):
+//   Weiterschauen · Neue Folgen (followed shows, streamed) · Meine Sendungen (+ downloads tile at the end) · Mediathek …
+// Downloads are only a state of a video (fast start, offline) – not a world of their own.
 + (SFPageLoader)withLocalShows:(SFPageLoader)online source:(NSString *)source {
     return ^(SFPageDone done) {
         online(^(SFPage *page, NSError *err) {
@@ -197,7 +197,7 @@ static NSDictionary *appInfo(void) {
                 if (!page && !mine.count) { done(nil, err); return; }
                 SFPage *p = page ?: [SFPage page:nil theme:source shelves:@[]];
                 NSMutableArray *sh = [p.shelves mutableCopy] ?: [NSMutableArray new];
-                NSUInteger at = sh.count ? 1 : 0;   // die App öffnet auf ihren eigenen Inhalten
+                NSUInteger at = sh.count ? 1 : 0;   // the app opens on its own content
                 for (NSUInteger k = 0; k < sh.count; k++) if ([[sh[k] title] isEqualToString:@"Weiterschauen"]) at = k + 1;
                 if (mine.count) [sh insertObject:[SFShelf shelf:@"Meine Sendungen" style:SFTileStyleWide items:mine] atIndex:MIN(at, sh.count)];
                 if (news.count) [sh insertObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:news] atIndex:MIN(at, sh.count)];
@@ -213,18 +213,18 @@ static NSDictionary *appInfo(void) {
     SFTheme *t = [SFTheme themeNamed:source];
     SFPageLoader online = nil;
     if ([source isEqualToString:@"ccc"]) online = [SFProviderCCC homeLoader];
-    else if ([source isEqualToString:@"youtube"]) online = [SFYouTube homeLoader];   // integriert Downloads selbst
+    else if ([source isEqualToString:@"youtube"]) online = [SFYouTube homeLoader];   // integrates downloads itself
     else if ([source isEqualToString:@"ard"]) online = [self withLocalShows:[SFProviderARD homeLoader] source:source];
     else if ([source isEqualToString:@"zdf"]) online = [self withLocalShows:[SFProviderZDF homeLoader] source:source];
     else if ([source isEqualToString:@"orf"]) online = [self withLocalShows:[SFProviderORF homeLoader] source:source];
     if (online) {
-        online = SFWithWatchLater(online, source);   // Regal „Später ansehen“ (eigene Merkliste)
-        online = SFWithSearchTile(online, source);   // Kachel „Suche“
+        online = SFWithWatchLater(online, source);   // shelf "Später ansehen" (own watch list)
+        online = SFWithSearchTile(online, source);   // tile "Suche"
         SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
         c.showsHero = YES;
-        if (SFHasSearch(source)) c.searchSource = source;   // Knopf „Suche“ in der Kopfzeile
+        if (SFHasSearch(source)) c.searchSource = source;   // button "Suche" in the header
         c.restoreKey = [@"app:" stringByAppendingString:source];
-        [self reloadOnLibraryChange:c];   // Downloads-Regal aktuell halten
+        [self reloadOnLibraryChange:c];   // keep the downloads shelf current
         return c;
     }
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {

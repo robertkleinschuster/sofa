@@ -1,5 +1,5 @@
-// SFDownloads – Kern: Persistenz (Tabelle downloads), Abfragen, Warteschlange, ffmpeg-Lauf,
-// Aktionen und Migration. Abos: SFDownloads+Subscriptions.m; gemeinsame Ivars: +Private.h.
+// SFDownloads – core: persistence (downloads table), queries, queue, ffmpeg run,
+// actions and migration. Subscriptions: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
 #import <signal.h>
 
@@ -21,7 +21,7 @@ static NSString *safeName(NSString *s, NSUInteger max) {
     return t.length ? t : @"Video";
 }
 
-static NSString *idHash(NSString *s) {   // FNV-1a 64 bit, stabil
+static NSString *idHash(NSString *s) {   // FNV-1a 64 bit, stable
     uint64_t h = 1469598103934665603ULL;
     NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
     const uint8_t *b = d.bytes;
@@ -45,14 +45,14 @@ static NSString *ffmpegPath(void) {
     return s;
 }
 
-// Dev-Instanzen arbeiten getrennt (eigener Ordner, eigene Tabellen) – nie die echten Downloads anfassen
+// dev instances work separately (own folder, own tables) – never touch the real downloads
 + (NSString *)root { return [NSHomeDirectory() stringByAppendingPathComponent:SFDevMode ? @"Movies/Sofa-dev" : @"Movies/Sofa"]; }
 
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
         [st run:@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)" args:nil];
-        // Spalte failedAt (Abo-Wiederholung mit Backoff) für ältere Datenbanken nachrüsten
+        // add column failedAt (subscription retry with backoff) to older databases
         BOOL hasFailedAt = NO;
         for (NSDictionary *c in [st rows:@"PRAGMA table_info(downloads)" args:nil]) if ([c[@"name"] isEqual:@"failedAt"]) hasFailedAt = YES;
         if (!hasFailedAt) [st run:@"ALTER TABLE downloads ADD COLUMN failedAt REAL" args:nil];
@@ -62,17 +62,17 @@ static NSString *ffmpegPath(void) {
         _itemCache = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM downloads" args:nil]) _recs[r[@"id"]] = [r mutableCopy];
         for (NSDictionary *r in [st rows:@"SELECT * FROM subscriptions" args:nil]) _subs[r[@"id"]] = [r mutableCopy];
-        // Abgebrochene Läufe vom letzten Mal wieder einreihen
+        // re-queue runs interrupted last time
         for (NSMutableDictionary *r in _recs.allValues)
             if ([r[@"state"] integerValue] == SFDLRunning) r[@"state"] = @(SFDLQueued);
-        SFLog(@"downloads: %lu Einträge, %lu Abos", (unsigned long)_recs.count, (unsigned long)_subs.count);
+        SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
         __weak SFDownloads *ws = self;
         SFSetLocalFileLookup(^NSString *(NSString *ident) { return [ws fileFor:ident]; });
     }
     return self;
 }
 
-#pragma mark Persistenz
+#pragma mark Persistence
 
 - (void)save:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
@@ -84,9 +84,9 @@ static NSString *ffmpegPath(void) {
                             r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null]]];
 }
 
-// Abo-Folgen: fehlgeschlagene Downloads mit wachsendem Abstand wiederholen (15 min, 30 min, 1 h …,
-// insgesamt ~16 h). YouTube drosselt zeitweise („Sign in to confirm you're not a bot“) – ohne
-// Abstand waren die Versuche in Minuten verbraucht und die Folge für immer verloren.
+// Subscription episodes: retry failed downloads with growing intervals (15 min, 30 min, 1 h …,
+// ~16 h in total). YouTube throttles at times ("Sign in to confirm you're not a bot") – without
+// spacing, the attempts were used up within minutes and the episode was lost for good.
 static const NSInteger kSubMaxTries = 6;
 static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0, MIN(tries, 10) - 1)); }
 
@@ -131,7 +131,7 @@ static NSString *const kRepairPrefix = @"repair: ";
     return j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : nil;
 }
 
-#pragma mark Abfragen
+#pragma mark Queries
 
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress {
     NSDictionary *r = identifier ? _recs[identifier] : nil;
@@ -241,11 +241,11 @@ static NSString *gb(unsigned long long b) {
         [self remove:r[@"id"]];
         n++;
     }
-    SFLog(@"downloads: %lu Downloads von %@ gelöscht", (unsigned long)n, channel);
+    SFLog(@"downloads: deleted %lu downloads of %@", (unsigned long)n, channel);
     return n;
 }
 
-#pragma mark Aktionen
+#pragma mark Actions
 
 - (void)download:(SFItem *)item { [self enqueue:item sub:nil]; }
 
@@ -258,10 +258,10 @@ static NSString *gb(unsigned long long b) {
     if (subID && r && st == SFDLFailed) {
         NSInteger n = [r[@"tries"] integerValue];
         if (n >= kSubMaxTries) return NO;
-        if ([NSDate date].timeIntervalSince1970 - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) return NO;   // noch warten
+        if ([NSDate date].timeIntervalSince1970 - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) return NO;   // keep waiting
     }
-    if (subID && r && !r[@"sub"]) subID = nil;   // einmal manuell geladen = manuell (keine Behaltefrist)
-    // Abo-Folgen gehören zur Sendung des Abos (ZDF/ARD nennen die Reihe oft anders)
+    if (subID && r && !r[@"sub"]) subID = nil;   // downloaded manually once = manual (no retention)
+    // subscription episodes belong to the subscription's show (ZDF/ARD often name the series differently)
     NSString *subTitle = subID ? _subs[subID][@"title"] : nil;
     if (subTitle.length) { item = [item copy]; item.channel = subTitle; }
     r = r ?: [NSMutableDictionary new];
@@ -273,13 +273,13 @@ static NSString *gb(unsigned long long b) {
     r[@"progress"] = @0;
     r[@"added"] = @([[NSDate date] timeIntervalSince1970]);
     if (item.date) r[@"published"] = @([item.date timeIntervalSince1970]);
-    if (subID) r[@"sub"] = subID; else [r removeObjectForKey:@"sub"];   // manuell = nie automatisch löschen
+    if (subID) r[@"sub"] = subID; else [r removeObjectForKey:@"sub"];   // manual = never delete automatically
     if (!subID) r[@"tries"] = @0;
     [r removeObjectForKey:@"error"];
     _recs[item.identifier] = r;
     [self save:r];
     [self changed:item.identifier];
-    SFLog(@"downloads: + %@ (%@)", item.title, subID ? @"Abo" : @"manuell");
+    SFLog(@"downloads: + %@ (%@)", item.title, subID ? @"subscription" : @"manual");
     [self pump];
     return YES;
 }
@@ -287,7 +287,7 @@ static NSString *gb(unsigned long long b) {
 - (void)remove:(NSString *)identifier {
     NSMutableDictionary *r = _recs[identifier];
     if (!r) return;
-    if ([identifier isEqualToString:_runningID]) {   // laufend: Slot sofort freigeben, Rückrufe verwerfen
+    if ([identifier isEqualToString:_runningID]) {   // running: free the slot right away, drop the callbacks
         NSTask *t = _task;
         _task = nil; _runningID = nil;
         [t terminate];
@@ -296,7 +296,7 @@ static NSString *gb(unsigned long long b) {
     if (r[@"path"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"path"] error:nil];
     if (r[@"thumb"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"thumb"] error:nil];
     [self pruneEmptyDirs:[r[@"path"] stringByDeletingLastPathComponent]];
-    if (r[@"sub"]) {   // Abo-Folge: merken, damit sie nicht wiederkommt
+    if (r[@"sub"]) {   // subscription episode: remember it so it does not come back
         r[@"state"] = @(SFDLDismissed); r[@"bytes"] = @0; [r removeObjectForKey:@"path"];
         [self save:r];
     } else {
@@ -311,7 +311,7 @@ static NSString *gb(unsigned long long b) {
 - (void)pruneEmptyDirs:(NSString *)dir {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *root = [SFDownloads root];
-    NSSet *decor = [NSSet setWithArray:@[@".DS_Store", @"poster.jpg", @"fanart.jpg"]];   // Sendungsbilder zählen nicht als Inhalt
+    NSSet *decor = [NSSet setWithArray:@[@".DS_Store", @"poster.jpg", @"fanart.jpg"]];   // show artwork does not count as content
     while (dir.length > root.length && [dir hasPrefix:root]) {
         NSArray *c = [fm contentsOfDirectoryAtPath:dir error:nil];
         BOOL empty = YES;
@@ -347,7 +347,7 @@ static NSString *gb(unsigned long long b) {
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
-    // Abos: kurz nach dem Start, dann alle 3 h; Aufräumen bei jeder Prüfung
+    // subscriptions: shortly after start, then every 3 h; cleanup on every check
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
     _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
 }
@@ -359,15 +359,15 @@ static NSString *gb(unsigned long long b) {
 - (NSString *)targetPathFor:(NSDictionary *)r item:(SFItem *)item {
     NSString *dir = [self folderForSource:r[@"source"] channel:item.channel];
     NSString *rest = restOf(item.identifier);
-    // kurze IDs (YouTube) lesbar; lange (ARD-crid base64, ZDF-canonical) teilen lange Präfixe -> Hash
+    // short IDs (YouTube) readable; long ones (ARD crid base64, ZDF canonical) share long prefixes -> hash
     NSString *idPart = rest.length <= 16 ? safeName(rest, 16) : idHash(item.identifier);
     return [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ [%@].mp4", safeName(item.title ?: @"Video", 120), idPart]];
 }
 
 - (void)pump {
     if (!_started || _runningID) return;
-    if (![SFNet isOnline]) return;   // offline: warten statt Versuche zu verbrauchen (weiter bei SFNetOnlineDidChange)
-    // manuelle Downloads vor Abo-Downloads, jeweils älteste Anforderung zuerst
+    if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
+    // manual downloads before subscription downloads, oldest request first in each
     NSDictionary *next = nil;
     for (NSDictionary *r in _recs.allValues) {
         if ([r[@"state"] integerValue] != SFDLQueued) continue;
@@ -378,7 +378,7 @@ static NSString *gb(unsigned long long b) {
     }
     if (!next) return;
     NSString *ff = ffmpegPath();
-    if (!ff) { SFLog(@"downloads: ffmpeg fehlt"); return; }
+    if (!ff) { SFLog(@"downloads: ffmpeg missing"); return; }
     NSMutableDictionary *r = _recs[next[@"id"]];
     SFItem *item = [self itemFromRec:r];
     if (!item) {
@@ -407,20 +407,20 @@ static NSString *gb(unsigned long long b) {
     NSString *target = [self targetPathFor:r item:item];
     NSString *part = [[target stringByDeletingPathExtension] stringByAppendingString:[self partSuffix]];
     [[NSFileManager defaultManager] createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
-    NSURL *src = [[SFStreamProxy shared] playableURLFor:url];   // ORF & Co. über die TLS-Brücke
+    NSURL *src = [[SFStreamProxy shared] playableURLFor:url];   // ORF & co. via the TLS bridge
     NSTask *t = [NSTask new];
     t.launchPath = @"/usr/bin/nice";
     NSMutableArray *args = [@[@"-n", @"10", ff, @"-nostdin", @"-hide_banner", @"-loglevel", @"error", @"-y", @"-progress", @"pipe:1",
-                              // Bandbreite schonen: höchstens 3x Abspielgeschwindigkeit (Hintergrund-Downloads sollen
-                              // Streaming am TV und andere Verbindungen nicht ausbremsen); kurzer Anlauf ungedrosselt.
+                              // spare bandwidth: at most 3x playback speed (background downloads must not slow down
+                              // streaming on the TV or other connections); short unthrottled start.
                               // -rw_timeout: a dead connection must end the run (30 s), never hang the queue forever
                               @"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000",
                               @"-i", src.absoluteString] mutableCopy];
-    if (audio) {   // eigene Tonspur (Originalton): Bild aus dem Stream, Ton aus der zweiten Quelle
+    if (audio) {   // separate audio track (original audio): video from the stream, audio from the second source
         NSURL *asrc = [[SFStreamProxy shared] playableURLFor:audio];
         [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000", @"-i", asrc.absoluteString,
                                     @"-map", @"0:v:0", @"-map", @"1:a:0", @"-shortest"]];
-        SFLog(@"downloads: %@ mit eigener Tonspur (Originalton)", item.title);
+        SFLog(@"downloads: %@ with separate audio track (original audio)", item.title);
     }
     [args addObjectsFromArray:@[@"-c", @"copy", @"-movflags", @"+faststart"]];
     if (!audio && ![src.path.pathExtension.lowercaseString isEqualToString:@"mp4"]) [args addObjectsFromArray:@[@"-bsf:a", @"aac_adtstoasc"]];
@@ -472,7 +472,7 @@ static NSString *gb(unsigned long long b) {
             } else {
                 [fm removeItemAtPath:part error:nil];
                 NSString *msg; @synchronized (errData) { msg = [[NSString alloc] initWithData:errData encoding:NSUTF8StringEncoding]; }
-                if ([self->_recs[ident][@"state"] integerValue] != SFDLRunning) return;   // abgebrochen
+                if ([self->_recs[ident][@"state"] integerValue] != SFDLRunning) return;   // cancelled
                 [self finish:ident ok:NO error:[msg stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] ?: @"ffmpeg-Fehler"];
             }
         });
@@ -480,7 +480,7 @@ static NSString *gb(unsigned long long b) {
     @try { [t launch]; }
     @catch (NSException *ex) { [self finish:ident ok:NO error:ex.reason]; return; }
     _task = t;
-    SFLog(@"downloads: lade %@", item.title);
+    SFLog(@"downloads: loading %@", item.title);
 }
 
 - (void)installPart:(NSString *)part target:(NSString *)target rec:(NSMutableDictionary *)r item:(SFItem *)item {
@@ -531,7 +531,7 @@ static NSString *gb(unsigned long long b) {
         if (ok) { [r removeObjectForKey:@"error"]; r[@"tries"] = @0; }
         if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970); }
         [self save:r];
-        SFLog(@"downloads: %@ %@%@", ok ? @"fertig" : @"FEHLER", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);
+        SFLog(@"downloads: %@ %@%@", ok ? @"done" : @"FAILED", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);
     }
     [self changed:ident];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
@@ -552,7 +552,7 @@ static NSString *gb(unsigned long long b) {
     if (![path.pathExtension.lowercaseString isEqualToString:@"mp4"]) target = [[target stringByDeletingPathExtension] stringByAppendingPathExtension:path.pathExtension];
     NSFileManager *fm = [NSFileManager defaultManager];
     [fm createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
-    if (![fm moveItemAtPath:path toPath:target error:err]) return NO;      // gleiches Volume: nur umbenennen
+    if (![fm moveItemAtPath:path toPath:target error:err]) return NO;      // same volume: just rename
     r[@"path"] = target;
     r[@"bytes"] = @([[fm attributesOfItemAtPath:target error:nil] fileSize]);
     if (thumb && [fm fileExistsAtPath:thumb]) {

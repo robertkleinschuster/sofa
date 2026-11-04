@@ -1,6 +1,6 @@
-// SFDownloads – privater Teil: Ivars und gemeinsame Hilfen für SFDownloads.m (Persistenz,
-// Abfragen, Warteschlange, ffmpeg-Lauf, Aktionen, Migration) und SFDownloads+Subscriptions.m
-// (Abos, Feeds, Behaltefrist und Smart-Delete gesehener Folgen).
+// SFDownloads – private part: ivars and shared helpers for SFDownloads.m (persistence,
+// queries, queue, ffmpeg run, actions, migration) and SFDownloads+Subscriptions.m
+// (subscriptions, feeds, retention and smart delete of watched episodes).
 #import "SFDownloads.h"
 #import "SFSettings.h"
 #import "SFStore.h"
@@ -9,23 +9,23 @@
 #import "SFFollows.h"
 #import "SFRuntime.h"
 
-// Quell-ID "prefix:rest" zerlegen (yt:…, zdfshow:…)
+// split a source ID "prefix:rest" (yt:…, zdfshow:…)
 static inline NSString *prefixOf(NSString *ref) { NSRange r = [ref rangeOfString:@":"]; return r.location == NSNotFound ? nil : [ref substringToIndex:r.location]; }
 static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@":"]; return r.location == NSNotFound ? ref : [ref substringFromIndex:NSMaxRange(r)]; }
 
 @interface SFDownloads () {
-    NSMutableDictionary *_recs;      // id -> NSMutableDictionary (Spalten der Tabelle downloads)
+    NSMutableDictionary *_recs;      // id -> NSMutableDictionary (columns of the downloads table)
     NSMutableDictionary *_subs;      // id -> NSMutableDictionary
     NSTask *_task;
     NSString *_runningID;
     BOOL _started, _checking;
     NSTimer *_checkTimer;
-    NSMutableDictionary *_itemCache; // id -> SFItem (aus JSON), ungültig bei save:
-    NSUInteger _generation;          // Speicher der Property generation (auch für die Abo-Kategorie)
+    NSMutableDictionary *_itemCache; // id -> SFItem (from JSON), invalidated by save:
+    NSUInteger _generation;          // storage of the generation property (also for the subscription category)
 }
 - (void)save:(NSDictionary *)r;
 - (void)changed:(NSString *)identifier;
-- (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = schon vorhanden/abgelehnt
+- (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = already present/rejected
 - (void)pump;
 - (void)retryDueRepairs;
 - (void)expireRepairBackoffForTesting;   // dev command dlretry

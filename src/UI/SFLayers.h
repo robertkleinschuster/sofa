@@ -1,34 +1,34 @@
-// Grundbausteine der Oberfläche: Text-Ebene und asynchron geladene Bild-Ebene.
+// Basic UI building blocks: text layer and asynchronously loaded image layer.
 #import "SFCore.h"
 
-// Text als CALayer (zeichnet mit NSStringDrawing, Kantenglättung, Ellipse).
+// Text as a CALayer (draws with NSStringDrawing, antialiasing, ellipsis).
 @interface SFLabel : CALayer
 @property (nonatomic, copy) NSString *text;
 @property (nonatomic, strong) NSFont *font;
 @property (nonatomic, strong) NSColor *color;
-@property (nonatomic) NSInteger maxLines;          // 0 = unbegrenzt
+@property (nonatomic) NSInteger maxLines;          // 0 = unlimited
 @property (nonatomic) NSTextAlignment alignment;
 @property (nonatomic) CGFloat lineSpacing;
-@property (nonatomic) BOOL shadow;                 // weicher Schatten (Text über Bildern)
+@property (nonatomic) BOOL shadow;                 // soft shadow (text over images)
 + (instancetype)labelWithFont:(NSFont *)f color:(NSColor *)c;
-// Setzt bounds.height passend zum Text bei gegebener Breite; liefert Höhe.
+// Sets bounds.height to fit the text at the given width; returns the height.
 - (CGFloat)sizeToFitWidth:(CGFloat)w;
 @end
 
-// Bild-Ebene: lädt Datei-/HTTP-Bilder im Hintergrund, skaliert auf Ebenengröße,
-// blendet weich ein. Gemeinsamer Speicher- und Plattencache.
+// Image layer: loads file/HTTP images in the background, scales to the layer size,
+// fades in softly. Shared memory and disk cache.
 @interface SFImageLayer : CALayer
-@property (nonatomic, copy) NSString *source;  // Dateipfad oder http(s)-URL
+@property (nonatomic, copy) NSString *source;  // file path or http(s) URL
 @property (nonatomic, strong) NSColor *placeholderColor;
-@property (nonatomic) BOOL blurred;            // für Hintergrundbilder
-@property (nonatomic) BOOL adaptiveBackground; // Logos: Hintergrund nach Helligkeit des Bildes (dunkles Logo -> hell)
-@property (nonatomic) BOOL fadeEdges;          // links + unten weich ausblenden (Backdrops)
+@property (nonatomic) BOOL blurred;            // for background images
+@property (nonatomic) BOOL adaptiveBackground; // logos: background by the image's brightness (dark logo -> light)
+@property (nonatomic) BOOL fadeEdges;          // soft fade-out left + bottom (backdrops)
 @end
 
 @interface SFImageCache : NSObject
 + (instancetype)shared;
 - (void)imageForSource:(NSString *)src maxPixel:(CGFloat)px blurred:(BOOL)blur
-            completion:(void (^)(CGImageRef img))done;   // done auf Main-Thread
+            completion:(void (^)(CGImageRef img))done;   // done on the main thread
 - (void)trim;
 @end
 

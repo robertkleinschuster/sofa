@@ -1,23 +1,23 @@
-// Home-Screen (App-Kacheln, Weiterschauen, Neue Folgen) und die Startseiten
-// der Quellen-Apps.
+// Home screen (app tiles, continue watching, new episodes) and the start pages
+// of the source apps.
 #import "SFBrowseScreen.h"
 
 @interface SFHome : NSObject
 + (SFScreen *)homeScreen;
 + (SFScreen *)appScreen:(NSString *)source;                  // youtube, zdf, ard, orf, ccc
-+ (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source;   // lokale Sendung
-+ (SFItem *)historyTile;                                       // öffnet den Verlauf
++ (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source;   // local show
++ (SFItem *)historyTile;                                       // opens the history
 @end
 
-// Downloads-Seite – SFHome+Downloads.m
+// Downloads page – SFHome+Downloads.m
 @interface SFHome (Downloads)
-+ (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = alle Quellen
-+ (SFItem *)downloadsTile:(NSString *)source;                  // öffnet die Downloads-Seite
++ (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = all sources
++ (SFItem *)downloadsTile:(NSString *)source;                  // opens the downloads page
 @end
 
-// Einstellungen und Handy – SFHome+Settings.m
+// Settings and phone – SFHome+Settings.m
 @interface SFHome (Settings)
-+ (SFItem *)settingsTile;                                      // Home-Kachel „Einstellungen“
-+ (SFItem *)phoneTile;                                         // Handy-Status + Einstellungen (YouTube → Mehr)
-+ (void)showSettingsOn:(SFNavigator *)nav;                     // Start & Fernbedienung
++ (SFItem *)settingsTile;                                      // Home tile "Einstellungen"
++ (SFItem *)phoneTile;                                         // phone status + settings (YouTube → Mehr)
++ (void)showSettingsOn:(SFNavigator *)nav;                     // "Start & Fernbedienung"
 @end

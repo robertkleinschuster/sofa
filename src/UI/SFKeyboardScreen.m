@@ -15,7 +15,7 @@ typedef NS_ENUM(NSInteger, SFKbKind) { SFKbChar, SFKbSpace, SFKbDelete, SFKbSubm
 @implementation SFKbKey
 @end
 
-// Raster in Design-Einheiten (1920x1080)
+// grid in design units (1920x1080)
 static const CGFloat kX = 96, kGridY = 330, kKeyW = 104, kKeyH = 92, kGap = 12;
 static const CGFloat kFieldY = 150, kFieldH = 130;
 static const CGFloat kSugRowH = 72, kSugGap = 6;
@@ -25,15 +25,15 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
     NSString *_title;
     NSMutableString *_text;
     void (^_completion)(NSString *);
-    NSMutableArray *_rows;            // NSArray von SFKbKey je Zeile
+    NSMutableArray *_rows;            // NSArray of SFKbKey per row
     CALayer *_field, *_caret;
     SFLabel *_fieldText, *_hint, *_sugHeading;
     CALayer *_sugBox, *_sugHighlight;
     NSMutableArray *_sugRows;         // CALayer
     NSArray *_suggestions;            // NSString
-    NSInteger _retRow, _retKey;       // Absprung-Taste bei „Rechts halten“ (-1 = geometrisch zurück)
+    NSInteger _retRow, _retKey;       // key to return to after "hold Right" (-1 = back geometrically)
     NSString *_sugHeadingText;
-    NSInteger _area;                  // 0 = Raster, 1 = Vorschläge
+    NSInteger _area;                  // 0 = grid, 1 = suggestions
     NSInteger _row, _key, _wantCol, _sug;
     NSUInteger _sugSeq;
     BOOL _laidOut;
@@ -56,10 +56,10 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 
 - (NSString *)text { return [_text copy]; }
 
-#pragma mark Aufbau
+#pragma mark Setup
 
 - (NSArray *)buildKeys {
-    // Layout wählbar (gemerkt): ABC (alphabetisch, für Ungeübte) oder QWERTZ (wie die Computertastatur)
+    // selectable layout (remembered): ABC (alphabetical, for the inexperienced) or QWERTZ (like the computer keyboard)
     BOOL qwertz = [[[SFStore shared] setting:@"keyboard.layout"] isEqualToString:@"qwertz"];
     NSArray *lines = qwertz ? @[@"qwertzuiop", @"asdfghjklö", @"yxcvbnmäüß", @"1234567890"]
                             : @[@"abcdefghij", @"klmnopqrst", @"uvwxyzäöüß", @"1234567890"];
@@ -88,7 +88,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 
 - (NSColor *)keyColor { return self.theme.light ? SFHex(0xffffff) : self.theme.surface; }
 
-// Textfarbe auf der Fokusfläche: nach Helligkeit der Fokusfarbe
+// text colour on the focus surface: by the brightness of the focus colour
 - (NSColor *)onFocus {
     NSColor *f = [self.theme.focus colorUsingColorSpaceName:NSDeviceRGBColorSpace];
     CGFloat l = 0.299 * f.redComponent + 0.587 * f.greenComponent + 0.114 * f.blueComponent;
@@ -105,7 +105,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         L.backgroundColor = t.background.CGColor;
         [L addSublayer:SFGradientBackground(t.backgroundTop, t.background, CGRectMake(0, 0, size.width, size.height))];
 
-        // Kopf: Logo/Schriftzug + Titel
+        // header: logo/wordmark + title
         CGFloat x = U(kX);
         CGImageRef logo = t.logo ? SFLogoImage(t.logo, t.logoVariant) : NULL;
         if (logo) {
@@ -133,7 +133,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         tl.position = CGPointMake(x, U(52));
         [L addSublayer:tl];
 
-        // Textzeile
+        // text line
         CGFloat fw = size.width - 2 * U(kX);
         self->_field = [CALayer layer];
         self->_field.frame = CGRectMake(U(kX), U(kFieldY), fw, U(kFieldH));
@@ -150,7 +150,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         self->_caret.backgroundColor = t.focus.CGColor;
         [self->_field addSublayer:self->_caret];
 
-        // Tasten
+        // keys
         for (NSUInteger r = 0; r < self->_rows.count; r++) {
             for (SFKbKey *k in self->_rows[r]) {
                 CGFloat kx = U(kX) + k.col * U(kKeyW + kGap), ky = U(kGridY) + r * U(kKeyH + kGap);
@@ -170,7 +170,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             }
         }
 
-        // Vorschläge rechts neben dem Raster
+        // suggestions to the right of the grid
         CGFloat sx = U(kX) + kCols * U(kKeyW + kGap) + U(60);
         self->_sugBox = [CALayer layer];
         self->_sugBox.frame = CGRectMake(sx, U(kGridY) - U(50), size.width - U(kX) - sx, U(50) + kMaxSug * U(kSugRowH + kSugGap));
@@ -198,7 +198,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 
 - (void)willAppear {
     [super willAppear];
-    [self refreshSuggestions];   // "Zuletzt gesucht" kann sich geändert haben
+    [self refreshSuggestions];   // "Zuletzt gesucht" may have changed
 }
 
 #pragma mark Text
@@ -215,19 +215,19 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
     CGFloat maxW = _field.bounds.size.width - U(80);
     NSString *shown = _text.length ? [_text copy] : self.placeholder;
     NSDictionary *attrs = @{NSFontAttributeName: _fieldText.font};
-    // Langer Text: Anfang abschneiden, Ende (Einfügestelle) bleibt sichtbar
+    // long text: cut off the start, the end (insertion point) stays visible
     if (_text.length) {
         while (shown.length > 1 && [[@"…" stringByAppendingString:shown] sizeWithAttributes:attrs].width > maxW - U(20))
             shown = [shown substringFromIndex:[shown rangeOfComposedCharacterSequenceAtIndex:0].length];
         if (shown.length < _text.length) shown = [@"…" stringByAppendingString:shown];
     }
-    // Leerzeichen am Ende sichtbar machen (sonst springt der Cursor nicht)
+    // make trailing spaces visible (otherwise the cursor does not move)
     CGFloat w = _text.length ? [[shown stringByReplacingOccurrencesOfString:@" " withString:@"\u00a0"] sizeWithAttributes:attrs].width : 0;
     SFNoAnimate(^{
         self->_fieldText.text = shown;
         self->_fieldText.color = self->_text.length ? t.text : t.textDim;
         CGFloat ch = U(70);
-        // leer: Cursor vorne, Platzhalter dahinter
+        // empty: cursor in front, placeholder behind it
         self->_fieldText.position = CGPointMake(self->_text.length ? U(40) : U(60), self->_fieldText.position.y);
         self->_caret.frame = CGRectMake(self->_text.length ? U(40) + ceil(w) + U(4) : U(40), (U(kFieldH) - ch) / 2, U(5), ch);
     });
@@ -268,12 +268,12 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
     if (_completion) _completion(q);
 }
 
-#pragma mark Vorschläge
+#pragma mark Suggestions
 
 - (void)refreshSuggestions { [self scheduleSuggestionsAfter:0]; }
 - (void)scheduleSuggestions { [self scheduleSuggestionsAfter:0.25]; }
 
-// Entprellt: nur die letzte Anfrage zählt (Tippen erzeugt sonst eine Anfrage je Taste)
+// Debounced: only the last request counts (otherwise typing creates one request per key)
 - (void)scheduleSuggestionsAfter:(NSTimeInterval)delay {
     if (!self.suggestionProvider) return;
     NSUInteger seq = ++_sugSeq;
@@ -287,8 +287,8 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
                 SFKeyboardScreen *s2 = ws;
                 if (!s2 || seq != s2->_sugSeq) return;
                 s2->_sugHeadingText = heading;
-                // Fokus in der Liste hängt am Text, nicht an der Position: ändert sich die Liste unter dem
-                // Fokus, nicht stillschweigend einen anderen Begriff auswählen – sonst zurück zur Tastatur.
+                // focus in the list is tied to the text, not the position: if the list changes under the
+                // focus, do not silently select another term – go back to the keyboard instead.
                 NSString *was = (s2->_area == 1 && s2->_sug < (NSInteger)s2->_suggestions.count) ? s2->_suggestions[s2->_sug] : nil;
                 s2->_suggestions = list.count > kMaxSug ? [list subarrayWithRange:NSMakeRange(0, kMaxSug)] : (list ?: @[]);
                 BOOL lost = NO;
@@ -330,7 +330,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
     [self updateFocus:NO];
 }
 
-#pragma mark Fokus
+#pragma mark Focus
 
 - (SFKbKey *)focusedKey { return _rows[_row][_key]; }
 
@@ -355,7 +355,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
                 SFKbKey *k = keys[i];
                 BOOL f = grid && (NSInteger)r == self->_row && (NSInteger)i == self->_key;
                 BOOL submit = k.kind == SFKbSubmit;
-                // „Suchen“ unfokussiert nur als Akzent-Umriss: sonst zwei gleich aussehende Tasten (Fokus unklar)
+                // "Suchen" unfocused only as an accent outline: otherwise two identical-looking keys (focus unclear)
                 k.bg.backgroundColor = (f ? t.focus : keyBg).CGColor;
                 k.bg.borderColor = t.accent.CGColor;
                 k.bg.borderWidth = (submit && !f) ? U(3) : 0;
@@ -372,7 +372,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             SFLabel *l = [[self->_sugRows[i] sublayers] firstObject];
             l.color = (sf && (NSInteger)i == self->_sug) ? on : t.text;
         }
-        // „Rechts halten“ springt zu den Vorschlägen, sobald es welche gibt (ein Griff statt bis zu 10× rechts)
+        // "hold Right" jumps to the suggestions as soon as there are any (one press instead of up to 10× right)
         self->_hint.text = grid
             ? (self->_suggestions.count
                ? @"Play/Pause: Zeichen löschen   ·   Mitte halten: alles löschen   ·   Rechts halten: zu den Vorschlägen   ·   MENU: zurück"
@@ -403,8 +403,8 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 - (void)moveGridKey:(NSInteger)dk {
     NSInteger k = _key + dk;
     NSArray *keys = _rows[_row];
-    if (k < 0) { [self bump:YES]; return; }   // linker Rand: Anschlag
-    if (k >= (NSInteger)keys.count) {         // rechter Rand: in die Vorschläge
+    if (k < 0) { [self bump:YES]; return; }   // left edge: bump
+    if (k >= (NSInteger)keys.count) {         // right edge: into the suggestions
         if (!_suggestions.count) { [self bump:YES]; return; }
         CGFloat ky = [self focusedKey].bg.frame.origin.y + U(kKeyH) / 2 - (_sugBox.frame.origin.y + U(50));
         _sug = MAX(0, MIN((NSInteger)_suggestions.count - 1, (NSInteger)floor(ky / U(kSugRowH + kSugGap))));
@@ -444,7 +444,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         }
 }
 
-#pragma mark Eingabe
+#pragma mark Input
 
 - (void)activateKey:(SFKbKey *)k {
     switch (k.kind) {
@@ -452,7 +452,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         case SFKbSpace: [self insert:@" "]; break;
         case SFKbDelete: [self deleteBackward]; break;
         case SFKbSubmit: [self submit:_text]; break;
-        case SFKbLayout: {   // ABC <-> QWERTZ, gemerkt; Fokus bleibt auf dem Umschalter
+        case SFKbLayout: {   // ABC <-> QWERTZ, remembered; focus stays on the toggle
             BOOL q = [[[SFStore shared] setting:@"keyboard.layout"] isEqualToString:@"qwertz"];
             [[SFStore shared] setSetting:q ? @"abc" : @"qwertz" forKey:@"keyboard.layout"];
             [self layoutForSize:self.size];
@@ -460,7 +460,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             return;
         }
     }
-    // kurzes "Drück"-Feedback
+    // short "press" feedback
     CABasicAnimation *a = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
     a.fromValue = @0.95; a.toValue = @1.1; a.duration = 0.12;
     [k.bg addAnimation:a forKey:@"press"];
@@ -490,7 +490,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
             return YES;
         case SFKeySelectHold:
             if (grid) [self clearAll];
-            else if (_sug < (NSInteger)_suggestions.count) {   // übernehmen und weitertippen
+            else if (_sug < (NSInteger)_suggestions.count) {   // take it and keep typing
                 NSString *s = _suggestions[_sug];
                 [self setText:[s hasSuffix:@" "] ? s : [s stringByAppendingString:@" "]];
                 [self leaveSuggestions];
@@ -505,7 +505,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
         case SFKeyPrev: [self focusKind:SFKbChar orChar:@"a"]; return YES;
         case SFKeyMenu:
             if (self.onCancel) self.onCancel();
-            return NO;   // Navigator: zurück
+            return NO;   // navigator: back
         default:
             return NO;
     }

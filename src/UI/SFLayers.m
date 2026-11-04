@@ -54,7 +54,7 @@
 }
 
 - (CGFloat)lineHeight {
-    // gleiche Messmethode wie beim Zeichnen (Line-Fragment), sonst passt Zeile 2 nicht
+    // same measuring method as when drawing (line fragment), otherwise line 2 does not fit
     NSDictionary *a = @{NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:U(24)]};
     NSRect r = [@"ÄÖgy" boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)
                                      options:NSStringDrawingUsesLineFragmentOrigin attributes:a];
@@ -63,11 +63,11 @@
 
 - (CGFloat)sizeToFitWidth:(CGFloat)w {
     CGFloat h;
-    if (!self.text.length) h = [self lineHeight];   // Platz für später gesetzten Text
+    if (!self.text.length) h = [self lineHeight];   // room for text set later
     else {
         NSRect r = [[self attributed] boundingRectWithSize:NSMakeSize(w, CGFLOAT_MAX)
                                                   options:NSStringDrawingUsesLineFragmentOrigin];
-        h = ceil(r.size.height) + ceil(fabs(self.font.descender) * 0.5);  // Unterlängen nicht abschneiden
+        h = ceil(r.size.height) + ceil(fabs(self.font.descender) * 0.5);  // do not clip descenders
         if (self.maxLines > 0) h = MIN(h, [self lineHeight] * self.maxLines + ceil(fabs(self.font.descender) * 0.5));
         if (self.shadow) h += U(4);
     }
@@ -79,7 +79,7 @@
 - (void)drawInContext:(CGContextRef)ctx {
     if (!self.text.length) return;
     NSGraphicsContext *old = [NSGraphicsContext currentContext];
-    // Ist die Ebene in einem geometryFlipped-Baum, liefert CA einen gespiegelten Kontext.
+    // If the layer is in a geometryFlipped tree, CA provides a flipped context.
     NSGraphicsContext *g = [NSGraphicsContext graphicsContextWithGraphicsPort:ctx flipped:self.contentsAreFlipped];
     [NSGraphicsContext setCurrentContext:g];
     CGContextSaveGState(ctx);
@@ -113,7 +113,7 @@
 - (instancetype)init {
     if ((self = [super init])) {
         _mem = [NSCache new];
-        _mem.totalCostLimit = 350 * 1024 * 1024;  // dekodierte Pixel
+        _mem.totalCostLimit = 350 * 1024 * 1024;  // decoded pixels
         _decode = [NSOperationQueue new];
         _decode.maxConcurrentOperationCount = 3;
         _net = [NSOperationQueue new];
@@ -141,8 +141,8 @@ static NSString *hashString(NSString *s) {
     return o;
 }
 
-// SVG (z. B. Konferenz-Logos): ImageIO kann auf 10.9 kein SVG -> einmal per rsvg-convert (librsvg,
-// MacPorts, nativ) in ein PNG rastern; das PNG ersetzt danach den Cache-Eintrag.
+// SVG (e.g. conference logos): ImageIO cannot do SVG on 10.9 -> rasterize once to a PNG via
+// rsvg-convert (librsvg, MacPorts, native); the PNG then replaces the cache entry.
 static BOOL looksLikeSVG(NSData *d) {
     if (d.length < 5) return NO;
     NSString *head = [[NSString alloc] initWithData:[d subdataWithRange:NSMakeRange(0, MIN(d.length, (NSUInteger)1024))] encoding:NSUTF8StringEncoding];
@@ -159,7 +159,7 @@ static NSData *rasterizeSVG(NSData *svg) {
     if (SFRunProcess(tool, @[@"-a", @"-w", @"1024", @"-f", @"png", @"-o", out, in], 20, NO, NULL) == 0) png = [NSData dataWithContentsOfFile:out];
     [[NSFileManager defaultManager] removeItemAtPath:in error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:out error:nil];
-    if (!png.length) SFLog(@"image: SVG nicht gerastert");
+    if (!png.length) SFLog(@"image: SVG not rasterized");
     return png.length ? png : nil;
 }
 
@@ -176,7 +176,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 - (void)imageForSource:(NSString *)src maxPixel:(CGFloat)px blurred:(BOOL)blur
             completion:(void (^)(CGImageRef))done {
     if (!src.length) { done(NULL); return; }
-    if (blur) px = 64;  // winzig dekodieren, die GPU skaliert weich hoch = günstige Unschärfe
+    if (blur) px = 64;  // decode tiny, the GPU scales up smoothly = cheap blur
     px = ceil(px / 64) * 64;
     NSString *key = [NSString stringWithFormat:@"%@|%.0f", src, px];
     id hit = [_mem objectForKey:key];
@@ -220,7 +220,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     void (^decodeData)(NSData *) = ^(NSData *raw) {
         [self->_decode addOperationWithBlock:^{
             NSData *data = raw;
-            if (looksLikeSVG(data)) {   // einmal rastern, PNG ersetzt den Cache-Eintrag
+            if (looksLikeSVG(data)) {   // rasterize once, the PNG replaces the cache entry
                 data = rasterizeSVG(data);
                 if (data) [data writeToFile:disk atomically:YES];
             }
@@ -236,7 +236,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         if (cached.length) { decodeData(cached); return; }
         NSURL *u = [NSURL URLWithString:src];
         if (!u) { finish(NULL); return; }
-        if (SFHostNeedsCurl(u.host)) {   // TLS-Brücke (z.B. ORF-Bilder)
+        if (SFHostNeedsCurl(u.host)) {   // TLS bridge (e.g. ORF images)
             NSInteger st = 0;
             NSData *data = SFCurlFetch(src, @"GET", nil, nil, &st, NULL);
             if (data.length && st < 400) { [data writeToFile:disk atomically:YES]; decodeData(data); }
@@ -246,7 +246,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         [[self->_session dataTaskWithURL:u completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
             NSInteger code = [(NSHTTPURLResponse *)r statusCode];
-            if (SFIsTLSError(e)) SFMarkHostNeedsCurl(u.host);   // nächster Versuch über curl
+            if (SFIsTLSError(e)) SFMarkHostNeedsCurl(u.host);   // next attempt via curl
             if (data.length && code < 400) {
                 [data writeToFile:disk atomically:YES];
                 decodeData(data);
@@ -316,7 +316,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 }
 @end
 
-// Analyse eines Logos (24x24): Helligkeit der deckenden Pixel, Deckungsgrad, mittlere Randfarbe
+// Analysis of a logo (24x24): brightness of the opaque pixels, coverage, average edge colour
 typedef struct { double lum, coverage, er, eg, eb; } SFLogoInfo;
 static SFLogoInfo logoInfo(CGImageRef img) {
     SFLogoInfo info = { -1, 0, 0, 0, 0 };
@@ -360,10 +360,10 @@ static SFLogoInfo logoInfo(CGImageRef img) {
             NSColor *pc = [s.placeholderColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
             if (pc) bgLum = 0.2126 * pc.redComponent + 0.7152 * pc.greenComponent + 0.0722 * pc.blueComponent;
             NSColor *bg = nil;
-            if (li.coverage > 0.85) {   // deckendes Bild: Ränder in seiner eigenen Randfarbe füllen (nahtlos)
+            if (li.coverage > 0.85) {   // opaque image: fill the edges in its own edge colour (seamless)
                 bg = [NSColor colorWithCalibratedRed:li.er green:li.eg blue:li.eb alpha:1];
-            } else if (lum < 0.4 && bgLum < 0.5) bg = [NSColor colorWithCalibratedWhite:0.9 alpha:1];        // dunkles Logo auf dunkel -> hell
-            else if (lum > 0.7 && bgLum > 0.5) bg = [NSColor colorWithCalibratedWhite:0.14 alpha:1];  // helles Logo auf hell -> dunkel
+            } else if (lum < 0.4 && bgLum < 0.5) bg = [NSColor colorWithCalibratedWhite:0.9 alpha:1];        // dark logo on dark -> light
+            else if (lum > 0.7 && bgLum > 0.5) bg = [NSColor colorWithCalibratedWhite:0.14 alpha:1];  // light logo on light -> dark
             if (bg) SFAnimate(0.25, ^{ s.backgroundColor = bg.CGColor; });
         });
     });
@@ -376,14 +376,14 @@ static CGImageRef fadedImage(CGImageRef src) {
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
     CGContextRef m = CGBitmapContextCreate(NULL, w, h, 8, 0, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
-    // Maske: horizontal 0->1 (linke 45 %), multipliert mit vertikal 1->0 (untere 45 %)
+    // mask: horizontal 0->1 (left 45 %), multiplied by vertical 1->0 (bottom 45 %)
     uint8_t *mp = CGBitmapContextGetData(m);
     size_t bpr = CGBitmapContextGetBytesPerRow(m);
     for (size_t y = 0; y < h; y++) {
-        // Bitmap-Zeile 0 = oben
+        // bitmap row 0 = top
         double fy = (double)y / h;
         double vy = fy < 0.55 ? 1.0 : MAX(0, 1.0 - (fy - 0.55) / 0.45);
-        if (fy < 0.18) vy *= 0.35 + 0.65 * (fy / 0.18);   // oben leicht abdunkeln (Header/Uhr lesbar)
+        if (fy < 0.18) vy *= 0.35 + 0.65 * (fy / 0.18);   // darken the top slightly (header/clock readable)
         for (size_t x = 0; x < w; x++) {
             double fx = (double)x / w;
             double vx = fx > 0.45 ? 1.0 : fx / 0.45;
@@ -429,7 +429,7 @@ CALayer *SFGradientBackground(NSColor *top, NSColor *bottom, CGRect frame) {
     CAGradientLayer *g = [CAGradientLayer layer];
     g.frame = frame;
     g.colors = @[(id)top.CGColor, (id)bottom.CGColor];
-    g.startPoint = CGPointMake(0.5, 0);   // geometryFlipped Wurzel: y=0 oben
+    g.startPoint = CGPointMake(0.5, 0);   // geometryFlipped root: y=0 at the top
     g.endPoint = CGPointMake(0.5, 0.7);
     return g;
 }

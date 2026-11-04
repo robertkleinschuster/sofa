@@ -26,7 +26,7 @@ static NSString *placeholder(NSString *source) {
     return @"Sendungen und Videos suchen";
 }
 
-#pragma mark Zuletzt gesucht
+#pragma mark Recent searches
 
 static NSString *recentKey(NSString *source) { return [@"search.recent." stringByAppendingString:source ?: @"all"]; }
 
@@ -49,9 +49,9 @@ void SFAddRecentSearch(NSString *source, NSString *query) {
     [[SFStore shared] setSetting:[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] forKey:recentKey(source)];
 }
 
-#pragma mark Vorschläge
+#pragma mark Suggestions
 
-// Leer: zuletzt gesucht. Mit Text: passende frühere Suchen, bei YouTube + Autovervollständigung.
+// Empty: recent searches. With text: matching earlier searches, for YouTube + autocomplete.
 static SFSuggestProvider suggestions(NSString *source) {
     return ^(NSString *text, SFSuggestDone done) {
         NSArray *recent = SFRecentSearches(source);
@@ -61,8 +61,8 @@ static SFSuggestProvider suggestions(NSString *source) {
         for (NSString *r in recent)
             if ([r rangeOfString:q options:NSCaseInsensitiveSearch | NSAnchoredSearch].location != NSNotFound && ![r isEqualToString:q]) [mine addObject:r];
         if (![source isEqualToString:@"youtube"]) {
-            // Mediatheken: Titel der ersten Treffer als Vorschläge (Sendungen zuerst) – man sieht beim
-            // Tippen, wann es reicht. Ab 2 Zeichen; die Suchanfragen sind gecacht.
+            // Mediatheken: titles of the first hits as suggestions (shows first) – while typing you can
+            // see when it is enough. From 2 characters; the search requests are cached.
             if (q.length < 2) { done(@"Zuletzt gesucht", mine); return; }
             SFPageLoader l = searchLoader(source, q);
             if (!l) { done(@"Zuletzt gesucht", mine); return; }
@@ -80,7 +80,7 @@ static SFSuggestProvider suggestions(NSString *source) {
                     if (all.count >= 6) break;
                 }
                 NSUInteger fromRecent = MIN(mine.count, (NSUInteger)2);
-                if (all.count == fromRecent) { done(@"Zuletzt gesucht", mine); return; }   // keine Treffer (z. B. offline): alle eigenen
+                if (all.count == fromRecent) { done(@"Zuletzt gesucht", mine); return; }   // no hits (e.g. offline): all own ones
                 done(@"Vorschläge", all);
             });
             return;
@@ -97,7 +97,7 @@ static SFSuggestProvider suggestions(NSString *source) {
     };
 }
 
-#pragma mark Ablauf
+#pragma mark Flow
 
 void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText) {
     if (!nav) return;
@@ -108,7 +108,7 @@ void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText) {
         if (!l) return;
         SFAddRecentSearch(source, q);
         SFLog(@"search: %@ „%@“", source, q);
-        // Ergebnisse über die Tastatur legen: MENU kehrt zum Suchbegriff zurück
+        // put the results over the keyboard: MENU returns to the search term
         SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:l theme:t];
         [wnav push:b];
     }];

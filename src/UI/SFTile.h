@@ -1,4 +1,4 @@
-// Eine Kachel (Bild, Fortschritt, Badge, Dauer, Texte) inkl. Fokus-Darstellung.
+// A tile (image, progress, badge, duration, texts) incl. focus rendering.
 #import "SFModel.h"
 #import "SFLayers.h"
 

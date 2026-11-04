@@ -46,7 +46,7 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
         t.fontBold = @"AvenirNext-DemiBold";
         t.corner = 18;
     } else if ([name isEqualToString:@"youtube"]) {
-        // Dunkel, rote Akzente, abgerundete 16:9-Kacheln.
+        // Dark, red accents, rounded 16:9 tiles.
         t.wordmark = @"YouTube"; t.logo = @"youtube"; t.logoVariant = 1;
         t.background = SFHex(0x0f0f0f);
         t.backgroundTop = SFHex(0x181818);
@@ -58,7 +58,7 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
         t.focus = SFHex(0xffffff);
         t.corner = 14;
     } else if ([name isEqualToString:@"zdf"]) {
-        // Anthrazit, Orange als Signalfarbe.
+        // Anthracite, orange as signal colour.
         t.wordmark = @"ZDF"; t.logo = @"zdf"; t.logoVariant = 0;
         t.background = SFHex(0x121417);
         t.backgroundTop = SFHex(0x22262c);
@@ -72,7 +72,7 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
         t.fontWordmark = @"AvenirNext-Heavy";
         t.corner = 4;
     } else if ([name isEqualToString:@"ard"]) {
-        // Nachtblau, kühles Weiß, redaktionelle Typografie.
+        // Midnight blue, cool white, editorial typography.
         t.wordmark = @"ARD"; t.logo = @"ard"; t.logoVariant = 2;
         t.background = SFHex(0x001a33);
         t.backgroundTop = SFHex(0x00305e);
@@ -88,21 +88,21 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
         t.fontWordmark = @"GillSans-Bold";
         t.corner = 8;
     } else if ([name isEqualToString:@"orf"]) {
-        // Hell: Weiß/Hellgrau, Rot als Akzent.
+        // Light: white/light grey, red as accent.
         t.wordmark = @"ORF"; t.logo = @"orf"; t.logoVariant = 0;
         t.light = YES;
         t.background = SFHex(0xeeeff1);
         t.backgroundTop = SFHex(0xffffff);
         t.surface = SFHex(0xdadce0);
         t.text = SFHex(0x141414);
-        t.textDim = SFHexA(0x141414, 0.74);   // auf Hellgrau mit TV-Abstand lesbar (0.6 war zu schwach)
+        t.textDim = SFHexA(0x141414, 0.74);   // readable on light grey at TV distance (0.6 was too weak)
         t.accent = SFHex(0xd8001b);
         t.accentText = SFHex(0xffffff);
         t.focus = SFHex(0xd8001b);
         t.fontWordmark = @"HelveticaNeue-CondensedBlack";
         t.corner = 6;
     } else if ([name isEqualToString:@"ccc"]) {
-        // Terminal-Ästhetik: Schwarz, Mono-Überschriften, Grün.
+        // Terminal aesthetic: black, mono headings, green.
         t.wordmark = @"media.ccc.de"; t.logo = @"ccc"; t.logoVariant = 1;
         t.background = SFHex(0x0a0b0a);
         t.backgroundTop = SFHex(0x141a14);

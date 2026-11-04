@@ -37,7 +37,7 @@
     }
     return self;
 }
-// Download-Status auf den Kacheln live halten
+// keep the download status on the tiles live
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
@@ -71,7 +71,7 @@
         [L addSublayer:self->_bg];
 
         if (!self->_backdrop) {
-            // Bild + Verläufe in einem Container, dessen Deckkraft gemeinsam animiert
+            // image + gradients in one container whose opacity animates as a whole
             self->_backdropBox = [CALayer layer];
             self->_backdropBox.zPosition = -5;
             self->_backdropBox.opacity = 0;
@@ -83,7 +83,7 @@
             [self->_backdropBox addSublayer:self->_backdropFadeBottom];
             [L addSublayer:self->_backdropBox];
         }
-        // Hintergrundbild rechts oben, nach links und unten ausgeblendet
+        // background image top right, faded out to the left and bottom
         CGFloat bw = size.width * 0.62, bh = bw * 9 / 16;
         self->_backdropBox.frame = CGRectMake(size.width - bw, 0, bw, bh);
         self->_backdrop.frame = self->_backdropBox.bounds;
@@ -132,7 +132,7 @@
         [_header addSublayer:lg];
         x += lw + U(28);
     } else if ([t.identifier isEqualToString:@"youtube"]) {
-        // Abspiel-Symbol vor dem Schriftzug (eigene Interpretation)
+        // play symbol in front of the wordmark (own interpretation)
         CALayer *pill = [CALayer layer];
         pill.backgroundColor = t.accent.CGColor;
         pill.cornerRadius = U(10);
@@ -162,8 +162,8 @@
         x += _wordmark.bounds.size.width + U(28);
     }
 
-    // „Suche“ als sichtbarer Knopf neben dem Logo (wie die Suche oben in TV-Apps): Hoch aus der
-    // ersten Reihe fokussiert ihn – die Suche ist so nie mehr als ein, zwei Tasten entfernt.
+    // "Suche" as a visible button next to the logo (like the search at the top in TV apps): Up from the
+    // first row focuses it – so search is never more than one or two keys away.
     _searchPill = nil;
     if (self.searchSource && brand) {
         _searchPill = [CALayer layer];
@@ -198,7 +198,7 @@
     _pageTitle.position = CGPointMake(x, U(52));
     if (brand) [_header addSublayer:_pageTitle];
 
-    // Kopfband: sanfter Verlauf in Hintergrundfarbe, damit Uhr/Hinweis über jedem Bild lesbar sind
+    // header band: soft gradient in the background colour so clock/hint are readable over any image
     CAGradientLayer *scrim = [CAGradientLayer layer];
     NSColor *top = t.backgroundTop ?: t.background;
     scrim.colors = @[(id)[top colorWithAlphaComponent:0.85].CGColor, (id)[top colorWithAlphaComponent:0].CGColor];
@@ -210,9 +210,9 @@
     [_clock sizeToFitWidth:U(300)];
     _clock.position = CGPointMake(size.width - U(96) - U(300), U(52));
     [_header addSublayer:_clock];
-    // Statuszeile rechts oben (eine gemeinsame Mittellinie mit der Uhr, von rechts nach links):
+    // status line top right (one shared centre line with the clock, right to left):
     //   [OK] halten: Optionen   ·   ● Handy: Name   ·   17:20
-    // „OK“ als Tastenkappe: liest sich sofort als Remote-Taste.
+    // "OK" as a keycap: reads instantly as a remote key.
     _hint = [SFLabel labelWithFont:[t medium:26] color:t.text];
     _hint.shadow = !t.light;
     _hint.text = @"halten: Optionen";
@@ -224,7 +224,7 @@
     _hintKey.opacity = 0; _hint.opacity = 0;
     [_header addSublayer:_hintKey];
     [_header addSublayer:_hint];
-    // Handy-Status als kompakte Pille: bei mehreren Nutzern sieht man sofort, ob ein Handy mitsteuert
+    // phone status as a compact pill: with several users one sees at once whether a phone is controlling too
     _phonePill = [CALayer layer];
     _phonePill.backgroundColor = [t.accent colorWithAlphaComponent:t.light ? 0.12 : 0.22].CGColor;
     _phonePill.cornerRadius = U(20);
@@ -245,14 +245,14 @@ static CGFloat textWidth(SFLabel *l) {
     return ceil([[NSAttributedString alloc] initWithString:l.text attributes:@{NSFontAttributeName: l.font}].size.width) + 2;
 }
 
-// Ordnet Uhr, Handy-Pille und Tastenhinweis rechtsbündig auf eine Mittellinie
+// Lays out clock, phone pill and key hint right-aligned on one centre line
 - (void)layoutStatusRow {
     if (!_clock) return;
     SFNoAnimate(^{
         CGFloat right = self.size.width - U(96);
         CGFloat ch = self->_clock.bounds.size.height, mid = U(52) + ch / 2;
         CGFloat cw = textWidth(self->_clock);
-        CGFloat x = right - cw;   // linke Kante der Uhr
+        CGFloat x = right - cw;   // left edge of the clock
         if (!self->_phonePill.hidden) {
             CGFloat lw = textWidth(self->_phone), ph = U(40);
             [self->_phone sizeToFitWidth:lw];
@@ -274,8 +274,8 @@ static CGFloat textWidth(SFLabel *l) {
     });
 }
 
-// YouTube vorladen: ruht der Fokus 1,2 s auf einem Video, die Stream-Adresse schon auflösen
-// (Resolver-Cache) – OK startet dann fast sofort. Heruntergeladenes braucht das nicht.
+// Preload YouTube: when focus rests on a video for 1.2 s, resolve the stream address already
+// (resolver cache) – OK then starts almost instantly. Downloaded content does not need this.
 - (void)schedulePrefetch {
     [_prefetchTimer invalidate];
     _prefetchTimer = [NSTimer scheduledTimerWithTimeInterval:1.2 target:self selector:@selector(prefetchFocused) userInfo:nil repeats:NO];
@@ -292,7 +292,7 @@ static CGFloat textWidth(SFLabel *l) {
     SFLounge *l = [SFLounge shared];
     NSArray *n = l.remoteNames;
     NSString *s = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : nil;
-    // Das Handy steuert nur YouTube: Status nur auf Home und in der YouTube-App zeigen
+    // the phone only controls YouTube: show the status only on Home and in the YouTube app
     NSString *tid = self.theme.identifier;
     if (![tid isEqualToString:@"home"] && ![tid isEqualToString:@"youtube"]) s = nil;
     SFNoAnimate(^{
@@ -304,7 +304,7 @@ static CGFloat textWidth(SFLabel *l) {
 }
 
 - (void)updateHint {
-    if (![SFNet isOnline]) {   // Offline hat Vorrang: erklärt, warum Online-Inhalte nicht laufen
+    if (![SFNet isOnline]) {   // offline takes precedence: explains why online content does not play
         SFNoAnimate(^{ self->_hint.text = @"Keine Internetverbindung – Downloads sind verfügbar"; });
         [self layoutStatusRow];
         SFAnimate(0.2, ^{ self->_hint.opacity = 1; self->_hintKey.opacity = 0; });
@@ -327,7 +327,7 @@ static CGFloat textWidth(SFLabel *l) {
 
 - (void)willAppear {
     [self updateClock];
-    [_clockTimer invalidate];   // nach einem Overlay (Menü) kommt willAppear ohne willDisappear davor
+    [_clockTimer invalidate];   // after an overlay (menu) willAppear arrives without a preceding willDisappear
     _clockTimer = [NSTimer scheduledTimerWithTimeInterval:15 target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
     if (!_page && !_loading) [self reload];
     else {
@@ -358,7 +358,7 @@ static CGFloat textWidth(SFLabel *l) {
     });
 }
 
-// Dev-Audit: Kacheln ohne Bild protokollieren (große leere Flächen finden)
+// Dev audit: log tiles without an image (find large empty areas)
 static void auditImages(SFPage *page) {
     if (!SFDevMode) return;
     for (SFShelf *sh in page.shelves) {
@@ -370,17 +370,17 @@ static void auditImages(SFPage *page) {
 
 - (void)setPage:(SFPage *)page keepFocus:(BOOL)keep {
     auditImages(page);
-    // Fokus merken (per Shelf-Titel + Item-ID)
+    // remember the focus (by shelf title + item ID)
     NSString *fShelf = nil, *fItem = nil;
     NSInteger fRow = -1, fIdx = 0;
     if (keep && _row < (NSInteger)_rows.count) {
         SFRow *r = _rows[_row];
-        fRow = _row; fIdx = r.firstIndex + r.focusCol;   // Index im Shelf (Raster: über Zeilen hinweg)
+        fRow = _row; fIdx = r.firstIndex + r.focusCol;   // index in the shelf (grid: across rows)
         fShelf = r.title ?: [self shelfTitleForRow:r];
         SFItem *it = [self focusedItem];
         fItem = it.identifier ?: it.title;
     }
-    BOOL hdr = keep && _headerFocus;   // Fokus auf „Suche“ übersteht Neuladen (z. B. Download fertig)
+    BOOL hdr = keep && _headerFocus;   // focus on "Suche" survives a reload (e.g. download finished)
     _page = page;
     if (!_laidOut) return;
     _pageTitle.text = page.subtitle.length ? [NSString stringWithFormat:@"%@  ·  %@", page.title ?: @"", page.subtitle] : page.title;
@@ -400,21 +400,21 @@ static void auditImages(SFPage *page) {
             }
         }
     }
-    // Fokussiertes Element weg (z. B. aus „Später ansehen“ entfernt): in derselben Reihe an derselben
-    // Stelle bleiben (= das nächste Element); ist die Reihe ganz weg, die Reihe, die nachgerückt ist.
+    // Focused element gone (e.g. removed from "Später ansehen"): stay in the same row at the same
+    // position (= the next element); if the row is gone entirely, the row that moved up.
     if (!found && fRow >= 0 && _rows.count) {
         NSInteger target = -1, col = 0;
-        for (NSUInteger i = 0; i < _rows.count && fShelf; i++) {   // Rasterzeile, die jetzt den alten Index enthält (sonst die letzte des Shelfs)
+        for (NSUInteger i = 0; i < _rows.count && fShelf; i++) {   // grid row that now contains the old index (else the shelf's last one)
             SFRow *r = _rows[i];
             if (![[self shelfTitleForRow:r] isEqualToString:fShelf]) continue;
             target = i; col = fIdx - (NSInteger)r.firstIndex;
             if (fIdx < (NSInteger)(r.firstIndex + r.items.count)) break;
         }
-        if (target < 0) {   // Shelf ganz weg: nachgerückte Reihe an ihrer eigenen Stelle
+        if (target < 0) {   // shelf gone entirely: the row that moved up, at its own position
             target = MIN(fRow, (NSInteger)_rows.count - 1);
             col = [_rows[target] focusCol];
         }
-        [self focusRow:target col:MAX(0, col) animated:NO];   // focusRow begrenzt die Spalte selbst
+        [self focusRow:target col:MAX(0, col) animated:NO];   // focusRow clamps the column itself
     }
     if (hdr && _searchPill) [self focusHeaderSearch];
 }
@@ -532,7 +532,7 @@ static void auditImages(SFPage *page) {
                 r.titleHeight = i == 0 ? titleH : 0;
                 r.y = y; r.height = r.titleHeight + tileH;
                 [_rows addObject:r];
-                y += r.height + U(58);   // Platz für die nach unten wandernden Titel der vergrößerten Fokus-Kachel
+                y += r.height + U(58);   // room for the downward-moving titles of the enlarged focus tile
             }
             y += U(12);
         }
@@ -553,7 +553,7 @@ static void auditImages(SFPage *page) {
     _scrollY = 0;
     SFNoAnimate(^{ self->_content.position = CGPointZero; });
     [self updateVisibleRows];
-    NSUInteger start = 0;   // Startfokus der Seite (Staffelauswahl bleibt per „Hoch“ erreichbar)
+    NSUInteger start = 0;   // start focus of the page (season choice stays reachable via Up)
     for (NSUInteger i = 0; i < _rows.count && _page.focusShelf; i++) if ([_rows[i] shelf] == _page.focusShelf) { start = i; break; }
     _pinTop = start > 0;
     [self focusRow:start col:0 animated:NO];
@@ -630,7 +630,7 @@ static void auditImages(SFPage *page) {
     NSInteger visible = (NSInteger)ceil(self.size.width / step) + 1;
     NSInteger from = MAX(0, r.scrollCol - 2), to = MIN((NSInteger)r.items.count - 1, r.scrollCol + visible + 2);
     if (r.widths) { from = 0; to = (NSInteger)r.items.count - 1; }   // button rows are short
-    // Entfernen außerhalb
+    // remove outside
     for (NSNumber *k in r.tiles.allKeys) {
         NSInteger c = k.integerValue;
         if (c < from - 4 || c > to + 4) {
@@ -684,14 +684,14 @@ static void auditImages(SFPage *page) {
     [self updateHint];
     [self schedulePrefetch];
 
-    // Vertikal: fokussierte Zeile an die Oberkante des Inhaltsbereichs
+    // vertical: focused row at the top edge of the content area
     CGFloat target = MAX(0, r.y - _contentTop);
     if (row == 0) target = 0;
-    if (_pinTop && r.y + r.height <= self.size.height - U(40)) target = 0;   // Reihe darüber (z. B. Staffeln) bleibt sichtbar
+    if (_pinTop && r.y + r.height <= self.size.height - U(40)) target = 0;   // row above (e.g. seasons) stays visible
     _scrollY = target;
     [self updateVisibleRows];
 
-    // Horizontal (Rail): Fokus bleibt in Spalte 1, solange möglich
+    // horizontal (rail): focus stays in column 1 while possible
     if (r.rail) {
         NSInteger sc = [self scrollColForRow:r col:col];
         r.scrollCol = sc;
@@ -700,7 +700,7 @@ static void auditImages(SFPage *page) {
         void (^move)(void) = ^{ r.strip.position = CGPointMake(dx, r.titleHeight); };
         if (anim) SFAnimate(0.3, move); else SFNoAnimate(move);
     }
-    // Zeilen oberhalb des Inhaltsbereichs ausblenden (laufen nicht unter Header/Hero)
+    // hide rows above the content area (they do not run under header/hero)
     CGFloat limit = self->_contentTop - U(20);
     void (^vmove)(void) = ^{
         self->_content.position = CGPointMake(0, -self->_scrollY);
@@ -743,7 +743,7 @@ static void auditImages(SFPage *page) {
 }
 
 - (BOOL)handleKey:(SFKey)key {
-    // Kopfzeilen-Fokus zuerst: auch eine leere Seite (z. B. offline) bleibt per „Suche“ bedienbar
+    // header focus first: even an empty page (e.g. offline) stays usable via "Suche"
     if (_headerFocus) {
         switch (key) {
             case SFKeyDown: case SFKeyDownHold:
@@ -757,7 +757,7 @@ static void auditImages(SFPage *page) {
                 return YES;
             case SFKeyMenu: case SFKeyMenuHold:
                 return NO;
-            default: {   // Anschlag (um die fokussierte Größe 1,08 herum, ohne Zurückspringen)
+            default: {   // bump (around the focused size 1.08, without snapping back)
                 CAKeyframeAnimation *a = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
                 a.values = @[@1.08, @1.14, @1.08]; a.duration = 0.2;
                 [_searchPill addAnimation:a forKey:@"bump"];
@@ -770,7 +770,7 @@ static void auditImages(SFPage *page) {
         return NO;
     }
     SFRow *r = _rows[_row];
-    // Halten der Pfeile (Remote-Helper wiederholt) = weiter navigieren
+    // holding the arrows (remote helper repeats) = keep navigating
     if (key == SFKeyUpHold) key = SFKeyUp;
     else if (key == SFKeyDownHold) key = SFKeyDown;
     else if (key == SFKeyPrev) key = SFKeyLeft;
@@ -793,10 +793,10 @@ static void auditImages(SFPage *page) {
             if (nr < 0 || nr >= (NSInteger)_rows.count) { [self bump:0]; return YES; }
             SFRow *n = _rows[nr];
             NSInteger col;
-            if (!r.rail && !n.rail && n.shelf == r.shelf) col = r.focusCol;   // Raster: Spalte halten
-            else if (n.rail) col = n.focusCol;                                // Rail: dort weiter, wo man war
+            if (!r.rail && !n.rail && n.shelf == r.shelf) col = r.focusCol;   // grid: keep the column
+            else if (n.rail) col = n.focusCol;                                // rail: continue where one was
             else {
-                // nächstliegende Spalte zur x-Position
+                // nearest column to the x position
                 CGFloat x = [self xForCol:r.focusCol inRow:r] - [self scrollOffsetForRow:r col:r.scrollCol];
                 SFTileMetrics m = SFMetricsForStyle(n.style);
                 col = (NSInteger)round((x - U(96)) / (U(m.width) + U(m.gap)));
@@ -820,7 +820,7 @@ static void auditImages(SFPage *page) {
             return YES;
         }
         case SFKeyMenu:
-            if (_row > 0 && _scrollY > 0) {   // erst nach oben, dann zurück
+            if (_row > 0 && _scrollY > 0) {   // first to the top, then back
                 [self focusRow:0 col:[_rows[0] focusCol] animated:YES];
                 return YES;
             }
@@ -831,7 +831,7 @@ static void auditImages(SFPage *page) {
 }
 
 - (void)bump:(NSInteger)dir {
-    // dezentes "Anschlag"-Feedback
+    // subtle "bump" feedback
     SFTileLayer *t = [_rows[_row] tiles][@([_rows[_row] focusCol])];
     if (!t) return;
     CAKeyframeAnimation *a = [CAKeyframeAnimation animationWithKeyPath:dir ? @"position.x" : @"position.y"];
@@ -849,7 +849,7 @@ static void auditImages(SFPage *page) {
     if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) return;
     if (!src.length) { SFAnimate(0.4, ^{ self->_backdropBox.opacity = 0; }); return; }
     _backdrop.source = src;
-    CGFloat op = self.showsHero ? 0.75 : 0.4;   // auf Raster-Seiten zurückhaltender
+    CGFloat op = self.showsHero ? 0.75 : 0.4;   // more restrained on grid pages
     if (self.theme.light) op *= 0.6;
     SFAnimate(0.5, ^{ self->_backdropBox.opacity = op; });
 }
@@ -887,7 +887,7 @@ static void auditImages(SFPage *page) {
             CGFloat h2 = [self->_heroMeta sizeToFitWidth:w];
             NSString *plot = [it.plot stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
             self->_heroPlot.text = plot;
-            // Plot-Zeilen an den verfügbaren Platz bis zu den Shelves anpassen
+            // fit the plot lines to the space available down to the shelves
             CGFloat y = self.overlay ? U(120) : U(190);   // overlay: no logo row above
             CGFloat avail = self->_contentTop - U(40) - (y + h1 + h2 + U(26));
             // first line incl. descender/shadow padding, each further line only its line height
@@ -913,20 +913,20 @@ static void auditImages(SFPage *page) {
 }
 @end
 
-#pragma mark - Öffnen
+#pragma mark - Opening
 
 SFBrowseScreen *SFBrowseScreenForFolder(SFItem *item, SFTheme *fallback) {
     SFTheme *t = [SFTheme themeNamed:item.themeName ?: fallback.identifier ?: @"home"];
     SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
     b.folderIdentifier = item.identifier;
-    // Offline-Seiten (Sendung, Downloads) folgen dem Bestand live
+    // offline pages (show, downloads) follow the inventory live
     if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
-    if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // Kanalkopf (Banner, Abonnenten, Beschreibung)
+    if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // channel header (banner, subscribers, description)
     return b;
 }
 
 void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index) {
-    // Kopiergeschützt: sofort ehrlich sagen statt Spinner + Fehlerbildschirm
+    // copy-protected: say so honestly right away instead of spinner + error screen
     if (item.drm && (item.kind == SFItemVideo || item.kind == SFItemLive)) { [nav toast:SFDRMNotice]; return; }
     switch (item.kind) {
         case SFItemVideo:

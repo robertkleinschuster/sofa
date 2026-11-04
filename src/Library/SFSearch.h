@@ -1,14 +1,14 @@
-// Suche je App: Kachel „Suche“ auf der Startseite -> Bildschirmtastatur (Vorschläge,
-// zuletzt gesucht) -> Ergebnisseite des Providers (+searchLoader:).
+// Search per app: tile "Suche" on the start page -> on-screen keyboard (suggestions,
+// recent searches) -> the provider's result page (+searchLoader:).
 #import "SFModel.h"
 #import "SFScreen.h"
 
-// Startseiten-Loader um die Kachel „Suche“ ergänzen: vorne in „Mehr“ / „Entdecken“ /
-// „Kategorien“, sonst als eigene kleine Reihe weit oben.
+// Add the tile "Suche" to a start page loader: in front of "Mehr" / "Entdecken" /
+// "Kategorien", otherwise as its own small row near the top.
 SFPageLoader SFWithSearchTile(SFPageLoader loader, NSString *source);
 SFItem *SFSearchTile(NSString *source);
-BOOL SFHasSearch(NSString *source);   // hat diese App eine Suche?
+BOOL SFHasSearch(NSString *source);   // does this app have a search?
 void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText);
-// Zuletzt gesucht (SFStore-Einstellung "search.recent.<source>"), neueste zuerst.
+// Recent searches (SFStore setting "search.recent.<source>"), newest first.
 NSArray *SFRecentSearches(NSString *source);
 void SFAddRecentSearch(NSString *source, NSString *query);

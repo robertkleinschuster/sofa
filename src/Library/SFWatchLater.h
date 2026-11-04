@@ -1,7 +1,7 @@
-// „Später ansehen“: eigene, gemeinsame Merkliste von Sofa – für Videos aus allen Apps.
-// Wie beim Folgen gilt: Sofa ist die Quelle, die Liste des YouTube-Kontos wird nur einmalig
-// übernommen. Hinzufügen/Entfernen über OK halten auf einem Video. Gesehene Videos fallen
-// von selbst heraus (wie „Gesehene entfernen“ bei YouTube, nur automatisch).
+// "Später ansehen" (watch later): Sofa's own shared list – for videos from all apps.
+// As with follows: Sofa is the source, the YouTube account's list is only imported once.
+// Add/remove by holding OK on a video. Watched videos drop out on their own
+// (like "Gesehene entfernen" on YouTube, just automatic).
 #import "SFModel.h"
 
 @interface SFWatchLater : NSObject
@@ -9,9 +9,9 @@
 - (BOOL)contains:(NSString *)identifier;
 - (void)add:(SFItem *)item;
 - (void)remove:(NSString *)identifier;
-- (NSArray *)items:(NSString *)source;                          // neueste zuerst, nil = alle Apps
-- (void)importItems:(NSArray *)items once:(NSString *)key;      // einmalige Übernahme (YouTube-Konto)
+- (NSArray *)items:(NSString *)source;                          // newest first, nil = all apps
+- (void)importItems:(NSArray *)items once:(NSString *)key;      // one-time import (YouTube account)
 @end
 
-// Startseiten-Loader einer App um das Regal „Später ansehen“ ergänzen (nach „Weiterschauen“)
+// add the shelf "Später ansehen" to an app's start page loader (after "Weiterschauen")
 SFPageLoader SFWithWatchLater(SFPageLoader loader, NSString *source);

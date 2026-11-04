@@ -20,12 +20,12 @@ static NSString *prefixOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; ret
 static NSString *restOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? s : [s substringFromIndex:NSMaxRange(r)]; }
 
 
-static const NSInteger kPerShow = 12;              // so viele neueste Folgen je Sendung merken
+static const NSInteger kPerShow = 12;              // keep this many newest episodes per show
 static const NSTimeInterval kRefresh = 30 * 60;
 
 @implementation SFFollows {
     NSMutableDictionary *_follows;   // id -> @{id, source, title, image, added}
-    NSMutableDictionary *_items;     // id -> NSArray<SFItem> (neueste zuerst)
+    NSMutableDictionary *_items;     // id -> NSArray<SFItem> (newest first)
     BOOL _started, _refreshing;
     NSTimer *_timer;
 }
@@ -51,7 +51,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
             [a addObject:[SFItem itemWithDictionary:d]];
             _items[r[@"follow"]] = a;
         }
-        SFLog(@"follows: %lu Sendungen/Kanäle", (unsigned long)_follows.count);
+        SFLog(@"follows: %lu shows/channels", (unsigned long)_follows.count);
     }
     return self;
 }
@@ -59,7 +59,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
 - (void)changed {
     SFMain(^{
         [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsDidChangeNotification object:nil];
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Home/App-Seiten neu (gleiche Beobachter)
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // reload Home/app pages (same observers)
     });
 }
 
@@ -73,7 +73,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
 - (void)start {
     if (_started) return;
     _started = YES;
-    // Einmalig: alle „Automatisch laden“-Abos (128 aus ytdl-sub) werden gefolgt – Download bleibt an
+    // One-time: all "Automatisch laden" subscriptions (128 from ytdl-sub) become follows – download stays on
     SFStore *st = [SFStore shared];
     if (![st setting:@"follows.migrated"]) {
         NSUInteger n = 0;
@@ -85,7 +85,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
             _follows[f[@"id"]] = f; [self save:f]; n++;
         }
         [st setSetting:[@(n) stringValue] forKey:@"follows.migrated"];
-        SFLog(@"follows: %lu Abos übernommen", (unsigned long)n);
+        SFLog(@"follows: adopted %lu subscriptions", (unsigned long)n);
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self refreshNow]; });
     _timer = [NSTimer scheduledTimerWithTimeInterval:kRefresh target:self selector:@selector(refreshNow) userInfo:nil repeats:YES];
@@ -97,11 +97,11 @@ static const NSTimeInterval kRefresh = 30 * 60;
     NSUInteger n = 0;
     for (SFItem *f in folders) if ([self canFollow:f] && !_follows[f.identifier]) { [self addFollow:f]; n++; }
     [st setSetting:[@(n) stringValue] forKey:onceKey];
-    SFLog(@"follows: %lu aus %@ übernommen", (unsigned long)n, onceKey);
+    SFLog(@"follows: adopted %lu from %@", (unsigned long)n, onceKey);
     if (n) { [self changed]; [self refreshNow]; }
 }
 
-#pragma mark Folgen
+#pragma mark Follows
 
 - (BOOL)canFollow:(SFItem *)folder {
     NSString *p = prefixOf(folder.identifier);
@@ -131,7 +131,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
     [_items removeObjectForKey:identifier];
     [[SFStore shared] run:@"DELETE FROM follows WHERE id=?" args:@[identifier]];
     [[SFStore shared] run:@"DELETE FROM follow_items WHERE follow=?" args:@[identifier]];
-    if ([[SFDownloads shared] isSubscribed:identifier]) [[SFDownloads shared] unsubscribe:identifier];   // Folgen ist Voraussetzung
+    if ([[SFDownloads shared] isSubscribed:identifier]) [[SFDownloads shared] unsubscribe:identifier];   // following is a prerequisite
     SFLog(@"follows: - %@", identifier);
     [self changed];
 }
@@ -184,7 +184,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
     return out;
 }
 
-#pragma mark Aktualisieren (Hintergrund, nacheinander)
+#pragma mark Refresh (background, one after another)
 
 - (void)refreshOne:(NSDictionary *)f done:(dispatch_block_t)done {
     SFFeedFetcher feed = SFFeedFor(f[@"id"]);
@@ -198,7 +198,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
                 for (SFItem *i in items) {
                     if (i.kind != SFItemVideo || !i.identifier) continue;
                     SFItem *c = [i copy];
-                    c.channel = f[@"title"];   // einheitlich: Name, unter dem gefolgt wird
+                    c.channel = f[@"title"];   // uniform: the name it is followed under
                     c.style = SFTileStyleLandscape;
                     [keep addObject:c];
                     if ((NSInteger)keep.count >= kPerShow) break;
@@ -215,7 +215,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
             finish();
         });
     });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), finish);   // Zeitlimit je Feed
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), finish);   // time limit per feed
 }
 
 - (void)refreshNow {
@@ -231,14 +231,14 @@ static const NSTimeInterval kRefresh = 30 * 60;
         if (!me) return;
         if (i >= all.count) {
             me->_refreshing = NO;
-            SFLog(@"follows: %lu aktualisiert in %.0fs", (unsigned long)all.count, -[t0 timeIntervalSinceNow]);
+            SFLog(@"follows: %lu refreshed in %.0fs", (unsigned long)all.count, -[t0 timeIntervalSinceNow]);
             [me changed];
             void (^n2)(void) = next; next = nil; (void)n2;
             return;
         }
         NSDictionary *f = all[i++];
         [me refreshOne:f done:^{
-            if (i % 20 == 0) [me changed];   // Zwischenstand sichtbar machen
+            if (i % 20 == 0) [me changed];   // make intermediate state visible
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
         }];
     };

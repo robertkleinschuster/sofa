@@ -1,12 +1,12 @@
-// Offline-Schicht ("Premium"): Herunterladen ist ein Zustand eines Inhalts, kein eigenes
-// Programm. Gilt für alle Quellen. Dateien in Sofa-eigenem Speicher (~/Movies/Sofa),
-// Metadaten in der DB (Tabellen downloads/subscriptions). Identität = Quell-ID
-// (yt:…, zdf:…, ard:…, orf:…), dadurch gemeinsamer Fortschritt online/offline.
-// Abos ("Neue Folgen automatisch laden") ersetzen ytdl-sub.
+// Offline layer ("premium"): downloading is a state of an item, not a separate program.
+// Applies to all sources. Files in Sofa's own storage (~/Movies/Sofa), metadata in the DB
+// (tables downloads/subscriptions). Identity = source ID (yt:…, zdf:…, ard:…, orf:…),
+// hence shared progress online/offline.
+// Subscriptions ("download new episodes automatically") replace ytdl-sub.
 #import "SFModel.h"
 
-extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (oder nil = viele)
-extern NSString *const SFUnsortedChannel;   // Sendungsname für Videos ohne Kanal
+extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (or nil = many)
+extern NSString *const SFUnsortedChannel;   // show name for videos without a channel
 
 typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLNone = -1,
@@ -14,58 +14,58 @@ typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLRunning = 1,
     SFDLDone = 2,
     SFDLFailed = 3,
-    SFDLDismissed = 4,     // vom User gelöscht -> Abo lädt es nicht erneut
+    SFDLDismissed = 4,     // deleted by the user -> the subscription does not download it again
 };
 
-// Liefert die neuesten Folgen eines Abos (Kanal/Sendung), neueste zuerst.
+// Delivers the newest episodes of a subscription (channel/show), newest first.
 typedef void (^SFFeedFetcher)(NSString *ref, void (^done)(NSArray *items, NSError *e));
 void SFRegisterFeed(NSString *prefix, SFFeedFetcher f);
-SFFeedFetcher SFFeedFor(NSString *identifier);   // registrierter Feed für "prefix:ref" (oder nil)
-// Feed aus einem Seiten-Loader (Sendungsseite): alle Videos der Seite, neueste zuerst
+SFFeedFetcher SFFeedFor(NSString *identifier);   // registered feed for "prefix:ref" (or nil)
+// feed from a page loader (show page): all videos of the page, newest first
 void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref));
-// Optional: eigene Download-URL (z.B. YouTube 720p statt 1080p-Stream)
-// audio: optionale eigene Tonspur (z.B. YouTube-Originalton statt der Standardspur im gemuxten Stream)
+// Optional: custom download URL (e.g. YouTube 720p instead of the 1080p stream)
+// audio: optional separate audio track (e.g. YouTube original audio instead of the default track in the muxed stream)
 typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSError *e);
 typedef void (^SFDownloadURLFetcher)(SFItem *item, SFDownloadURLDone done);
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 
 @interface SFDownloads : NSObject
 + (instancetype)shared;
-- (void)start;                                   // Warteschlange + Abo-Prüfung
+- (void)start;                                   // queue + subscription check
 - (void)stopForExit;                             // terminate the running ffmpeg before the app exits (no orphans)
 
-// Einzelne Inhalte
+// Single items
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress;
-- (BOOL)willRetry:(NSString *)identifier;   // fehlgeschlagene Abo-Folge, neuer Versuch folgt
-- (NSString *)fileFor:(NSString *)identifier;   // fertige Datei (existiert) oder nil
-- (SFItem *)itemFor:(NSString *)identifier;      // heruntergeladener Inhalt als Item (lokal)
+- (BOOL)willRetry:(NSString *)identifier;   // failed subscription episode, another attempt follows
+- (NSString *)fileFor:(NSString *)identifier;   // finished file (exists) or nil
+- (SFItem *)itemFor:(NSString *)identifier;      // downloaded content as an item (local)
 - (void)download:(SFItem *)item;
-- (void)remove:(NSString *)identifier;           // abbrechen bzw. Datei löschen
-- (NSArray *)items:(NSString *)source;           // fertige Downloads (SFItem, neueste zuerst); nil = alle
-- (NSArray *)active;                             // laufend/wartend (SFItem)
-@property (nonatomic, readonly) NSUInteger generation;   // ändert sich bei jeder Zustandsänderung (nicht bei Fortschritt)
-- (unsigned long long)bytesUsedFor:(NSString *)source;   // nil = alle
-- (unsigned long long)freeBytes;                           // freier Platz auf dem Speicher-Volume
+- (void)remove:(NSString *)identifier;           // cancel, or delete the file
+- (NSArray *)items:(NSString *)source;           // finished downloads (SFItem, newest first); nil = all
+- (NSArray *)active;                             // running/waiting (SFItem)
+@property (nonatomic, readonly) NSUInteger generation;   // changes on every state change (not on progress)
+- (unsigned long long)bytesUsedFor:(NSString *)source;   // nil = all
+- (unsigned long long)freeBytes;                           // free space on the storage volume
 - (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"
-- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // Anzahl gelöschter Downloads
-- (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // Ordner einer Sendung im Sofa-Speicher
+- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // number of deleted downloads
+- (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // folder of a show in Sofa's storage
 
-// Migration (einmalig): vorhandene Datei übernehmen (wird in den Sofa-Speicher verschoben)
+// Migration (one-time): adopt an existing file (moved into Sofa's storage)
 - (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;
 @end
 
-// Abos (Kanal/Sendung automatisch laden) – SFDownloads+Subscriptions.m
+// Subscriptions (auto-download a channel/show) – SFDownloads+Subscriptions.m
 @interface SFDownloads (Subscriptions)
 - (BOOL)isSubscribed:(NSString *)folderIdentifier;
 - (void)subscribe:(SFItem *)folder;              // folder.identifier = "ytchannel:UC…", "zdfshow:…", …
 - (void)unsubscribe:(NSString *)folderIdentifier;
-- (BOOL)canSubscribe:(SFItem *)folder;           // gibt es einen Feed für diesen Ordnertyp?
+- (BOOL)canSubscribe:(SFItem *)folder;           // is there a feed for this folder type?
 - (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays)
 - (void)checkSubscriptionsNow;
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
-// Smart Downloads: gesehene Abo-Folgen 1 Tag nach dem Ansehen löschen (Standard: an; manuelle nie)
+// Smart Downloads: delete watched subscription episodes 1 day after watching (default: on; manual ones never)
 @property (nonatomic) BOOL deletesWatched;
 
-// Migration (einmalig): Abo übernehmen
+// Migration (one-time): adopt a subscription
 - (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image, keepDays
 @end

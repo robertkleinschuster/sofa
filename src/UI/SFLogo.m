@@ -3,7 +3,7 @@
 
 static NSString *logoPath(NSString *name) {
     NSString *p = [[NSBundle mainBundle] pathForResource:name ofType:@"png" inDirectory:@"logos"];
-    if (!p) {   // Entwicklungs-Build ohne Bundle-Ressourcen
+    if (!p) {   // development build without bundle resources
         NSString *exe = [[NSBundle mainBundle] executablePath];
         NSString *root = [[[[[exe stringByDeletingLastPathComponent] stringByDeletingLastPathComponent]
                             stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
@@ -30,7 +30,7 @@ CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
     CGColorSpaceRelease(cs);
     CGContextDrawImage(c, CGRectMake(0, 0, w, h), img);
     uint8_t *px = CGBitmapContextGetData(c);
-    // Logos ohne Alphakanal (ARD) haben weißen Hintergrund -> freistellen
+    // logos without alpha channel (ARD) have a white background -> cut out
     BOOL knockWhite = CGImageGetAlphaInfo(img) == kCGImageAlphaNone || CGImageGetAlphaInfo(img) == kCGImageAlphaNoneSkipLast || CGImageGetAlphaInfo(img) == kCGImageAlphaNoneSkipFirst;
     for (size_t i = 0; i < w * h; i++) {
         uint8_t *p = px + i * 4;
@@ -40,7 +40,7 @@ CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
         double r = p[0] * 255.0 / a, g = p[1] * 255.0 / a, b = p[2] * 255.0 / a;
         double lum = 0.299 * r + 0.587 * g + 0.114 * b;
         double sat = MAX(r, MAX(g, b)) - MIN(r, MIN(g, b));
-        // weißen (undurchsichtigen) Hintergrund freistellen: sehr hell + unbunt -> transparent
+        // cut out the white (opaque) background: very light + achromatic -> transparent
         if (knockWhite && lum > 240 && sat < 18 && a == 255) { p[0] = p[1] = p[2] = p[3] = 0; continue; }
         if (variant == SFLogoWhite) { r = g = b = 255; }
         else if (variant == SFLogoLightText && lum < 90 && sat < 40) { r = g = b = 255; }

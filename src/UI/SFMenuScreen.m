@@ -62,7 +62,7 @@
             row.frame = CGRectMake(x - U(24), y, w + U(48), rh);
             SFLabel *l = [SFLabel labelWithFont:[t medium:30] color:t.text];
             l.text = o.title;
-            CGFloat lh = [l sizeToFitWidth:o.detail.length ? w - U(200) : w];   // ohne Wert rechts: volle Breite
+            CGFloat lh = [l sizeToFitWidth:o.detail.length ? w - U(200) : w];   // no value on the right: full width
             l.position = CGPointMake(U(24), (rh - lh) / 2);
             l.name = @"title";
             [row addSublayer:l];

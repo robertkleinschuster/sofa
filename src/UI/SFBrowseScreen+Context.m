@@ -2,7 +2,7 @@
 
 @implementation SFBrowseScreen (Context)
 
-#pragma mark Kontextmenü
+#pragma mark Context menu
 
 - (void)showContextMenuFor:(SFItem *)it shelfItems:(NSArray *)items index:(NSUInteger)idx {
     NSMutableArray *opts = [NSMutableArray new];
@@ -10,7 +10,7 @@
     SFNavigator *nav = self.navigator;
     if (it.kind == SFItemVideo || it.kind == SFItemLive) {
         double p = [[SFStore shared] progressFor:it.identifier];
-        // Kopiergeschützt: kein irreführendes „Abspielen“/Merken/Laden, nur die ehrliche Erklärung (Auswahl schließt)
+        // copy-protected: no misleading "Abspielen"/save/download, only the honest explanation (choosing closes)
         if (it.drm) {
             SFMenuOption *o = [SFMenuOption option:@"Kopiergeschützt (DRM)" action:nil];
             o.detail = @"nicht abspielbar";
@@ -23,7 +23,7 @@
                 [nav push:ps];
             }]];
         }
-        if (it.kind == SFItemVideo && !it.drm && it.identifier && p < 1) {   // eigene Merkliste, für alle Apps
+        if (it.kind == SFItemVideo && !it.drm && it.identifier && p < 1) {   // own watch list, for all apps
             SFWatchLater *wl = [SFWatchLater shared];
             BOOL in = [wl contains:it.identifier];
             [opts addObject:[SFMenuOption option:in ? @"Aus „Später ansehen“ entfernen" : @"Später ansehen" action:^{
@@ -31,7 +31,7 @@
                 else { [wl add:it]; [nav toast:@"Gemerkt – steht unter „Später ansehen“"]; }
             }]];
         }
-        if (it.kind == SFItemVideo && !it.drm) {   // Offline-Schicht: Download ist eine Option des Inhalts
+        if (it.kind == SFItemVideo && !it.drm) {   // offline layer: download is an option of the item
             SFDownloads *dl = [SFDownloads shared];
             double dp = 0;
             SFDLState ds = [dl stateFor:it.identifier progress:&dp];
@@ -60,7 +60,7 @@
                 }]];
             }
         }
-        // Zur Sendung / zum Kanal der Folge (SFShowLink: online page, looked up channel, or downloaded show)
+        // to the episode's show / channel (SFShowLink: online page, looked up channel, or downloaded show)
         SFShowLink *link = [SFShowLink linkFor:it here:self.folderIdentifier pageTitle:_page.title];
         if (link) {
             [opts addObject:[SFMenuOption option:link.title action:^{
@@ -70,7 +70,7 @@
     } else if (it.kind == SFItemFolder) {
         [opts addObject:[SFMenuOption option:@"Öffnen" action:^{ SFOpenItem(nav, it, items, idx); }]];
         SFDownloads *dl = [SFDownloads shared];
-        if ([it.identifier hasPrefix:@"downloads:"]) {   // Einstellungen der Offline-Schicht
+        if ([it.identifier hasPrefix:@"downloads:"]) {   // settings of the offline layer
             BOOL on = [dl deletesWatched];
             SFMenuOption *o = [SFMenuOption option:@"Gesehenes löschen" action:^{
                 [dl setDeletesWatched:!on];
@@ -80,7 +80,7 @@
             o.detail = on ? @"An" : @"Aus";
             [opts addObject:o];
         }
-        if ([it.identifier hasPrefix:@"show:"]) {   // Sendung im Offline-Bestand
+        if ([it.identifier hasPrefix:@"show:"]) {   // show in the offline inventory
             NSString *ch = it.channel ?: it.title, *src = it.source;
             NSString *sid = [dl subscriptionIDForChannel:ch source:src];
             if (sid) {
@@ -108,7 +108,7 @@
             del.detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"];
             [opts addObject:del];
         }
-        // Folgen = Kern (Neue Folgen, Meine Sendungen); Automatisch herunterladen = optionaler Zusatz
+        // Folgen = core (Neue Folgen, Meine Sendungen); Automatisch herunterladen = optional add-on
         SFFollows *fo = [SFFollows shared];
         if ([fo canFollow:it]) {
             BOOL following = [fo isFollowing:it.identifier];

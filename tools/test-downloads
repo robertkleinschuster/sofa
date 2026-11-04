@@ -90,14 +90,14 @@ grep -q 'proctest status -2 after [12]\.' "$LOG" && ok "hung child process is ki
 
 echo "==> 3. quit during a download"
 cmd "dlget $REF"
-for i in $(seq 1 60); do grep -q "downloads: lade" "$LOG" && break; sleep 0.5; done
+for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
 sleep 3
 [ -n "$(ffpids)" ] && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
 quit; sleep 1
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after quit" || bad "ffmpeg survived the quit: $(ffpids)"
 start
-for i in $(seq 1 60); do grep -q "downloads: lade" "$LOG" && break; sleep 0.5; done
-grep -q "downloads: lade" "$LOG" && ok "download resumed on the next start" || bad "download not resumed"
+for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
+grep -q "downloads: loading" "$LOG" && ok "download resumed on the next start" || bad "download not resumed"
 quit
 
 echo "==> 4. a failed repair keeps the file and is retried"

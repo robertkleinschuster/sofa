@@ -1,24 +1,24 @@
-// Bildschirm-Basisklasse und Navigator (Stapel, Übergänge, Eingabe-Verteilung).
+// Screen base class and navigator (stack, transitions, input dispatch).
 #import "SFCore.h"
 #import "SFTheme.h"
 
 @class SFNavigator;
 
 @interface SFScreen : NSObject
-@property (nonatomic, strong, readonly) CALayer *layer;   // Wurzel (Bildschirmgröße)
+@property (nonatomic, strong, readonly) CALayer *layer;   // root (screen size)
 @property (nonatomic, weak) SFNavigator *navigator;
 @property (nonatomic, strong) SFTheme *theme;
 @property (nonatomic, readonly) CGSize size;
-@property (nonatomic, copy) NSString *restoreKey;     // z.B. "app:zdf" (Wiederherstellung nach Update)
+@property (nonatomic, copy) NSString *restoreKey;     // e.g. "app:zdf" (restore after an update)
 - (instancetype)initWithTheme:(SFTheme *)theme;
-- (void)layoutForSize:(CGSize)size;   // einmalig vor dem Erscheinen + bei Größenänderung
+- (void)layoutForSize:(CGSize)size;   // once before appearing + on size changes
 - (void)willAppear;
 - (void)didAppear;
 - (void)willDisappear;
-- (BOOL)handleKey:(SFKey)key;         // NO = Navigator übernimmt (Menu = zurück)
+- (BOOL)handleKey:(SFKey)key;         // NO = navigator takes over (Menu = back)
 - (BOOL)wantsCursorHidden;
-- (BOOL)isOpaque;                     // NO = darunterliegender Screen bleibt sichtbar (Dialoge)
-- (CGFloat)toastCenterFromBottom;     // Lage der Einblendung (Player: über Zeitleiste/OSD)
+- (BOOL)isOpaque;                     // NO = the screen below stays visible (dialogs)
+- (CGFloat)toastCenterFromBottom;     // position of the toast (player: above the timeline/OSD)
 @end
 
 @interface SFNavigator : NSView
@@ -35,13 +35,13 @@
 // Remove every screen above s (overlays such as menus or the player info panel), s becomes top.
 - (void)popAbove:(SFScreen *)s;
 - (void)sendKey:(SFKey)key;
-@property (nonatomic, readonly) NSTimeInterval lastInput;   // Zeitpunkt der letzten Taste (Updater: nur in Ruhe tauschen)
-// Kurze Einblendung unten (Hinweise, Fehler)
+@property (nonatomic, readonly) NSTimeInterval lastInput;   // time of the last key press (updater: swap only when idle)
+// Short toast at the bottom (hints, errors)
 - (void)toast:(NSString *)text;
-// Lautstärke ändern (dir ±1) und Anzeige einblenden
+// Change the volume (dir ±1) and show the indicator
 - (void)volumeStep:(int)dir;
-// MENU auf dem untersten Screen (Home): Energie-Menü statt nichts
+// MENU on the bottom screen (Home): power menu instead of nothing
 @property (nonatomic, copy) dispatch_block_t rootMenuHandler;
 @end
 
-NSCursor *SFBlankCursor(void);   // transparenter Mauszeiger (TV-Oberfläche)
+NSCursor *SFBlankCursor(void);   // transparent mouse cursor (TV UI)

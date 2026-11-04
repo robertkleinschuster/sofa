@@ -1,10 +1,10 @@
-// Offizielle Logos (res/logos/*.png, Wikimedia-Renderings, Home-Use) in Varianten.
+// Official logos (res/logos/*.png, Wikimedia renderings, home use) in variants.
 #import "SFCore.h"
 
 typedef NS_ENUM(NSInteger, SFLogoVariant) {
-    SFLogoOriginal,     // wie geliefert (weißer Hintergrund wird freigestellt)
-    SFLogoLightText,    // dunkle Pixel -> weiß (für dunkle Flächen, Farbanteile bleiben)
-    SFLogoWhite,        // komplett weiß (einfarbige Logos auf Markenfarbe)
+    SFLogoOriginal,     // as delivered (white background is cut out)
+    SFLogoLightText,    // dark pixels -> white (for dark surfaces, colour parts stay)
+    SFLogoWhite,        // fully white (single-colour logos on the brand colour)
 };
 
-CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant);   // gecacht, nicht freigeben
+CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant);   // cached, do not release
