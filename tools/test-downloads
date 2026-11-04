@@ -71,6 +71,12 @@ grep -q "dlverify good.mp4 -> ok" "$LOG" && ok "healthy file accepted" || bad "h
 grep -q "dlverify bad.mp4 -> .*\(decode errors\|duration\|unreadable\|bitrate\)" "$LOG" && ok "corrupted file rejected ($(grep -o 'dlverify bad.mp4 -> .*' "$LOG" | cut -c20-))" \
   || bad "corrupted file accepted"
 
+# many verifications back to back: NSTask -waitUntilExit used to hang forever on a GCD thread
+for i in $(seq 1 15); do cmd "dlverify $T/good.mp4"; done
+for i in $(seq 1 120); do [ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16 ] && break; sleep 0.5; done
+[ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16 ] && ok "15 verifications in a row finished (no hang)" \
+  || bad "verifier hung ($(grep -c 'dlverify good.mp4 -> ok' "$LOG")/16 finished)"
+
 echo "==> 3. quit during a download"
 cmd "dlget $REF"
 for i in $(seq 1 60); do grep -q "downloads: lade" "$LOG" && break; sleep 0.5; done

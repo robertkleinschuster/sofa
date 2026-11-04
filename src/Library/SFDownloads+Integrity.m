@@ -103,7 +103,7 @@ static NSArray *SFProcessArgs(pid_t pid) {
 #pragma mark Verification
 
 // Runs ffmpeg synchronously (call off the main thread); returns stderr.
-static NSString *SFRunFF(NSString *ff, NSArray *args) {
+static NSString *SFRunFF(NSString *ff, NSArray *args, double timeout) {
     NSTask *t = [NSTask new];
     t.launchPath = @"/usr/bin/nice";
     t.arguments = [@[@"-n", @"15", ff, @"-nostdin", @"-hide_banner"] arrayByAddingObjectsFromArray:args];
@@ -113,9 +113,17 @@ static NSString *SFRunFF(NSString *ff, NSArray *args) {
     NSPipe *err = [NSPipe pipe];
     t.standardError = err; t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
     t.standardInput = [NSFileHandle fileHandleWithNullDevice];
+    // No -waitUntilExit: on 10.9 it spins a run loop and hung forever on a GCD thread although
+    // ffmpeg had long exited (2026-11-04). terminationHandler + semaphore, with a hard timeout.
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    t.terminationHandler = ^(NSTask *x) { dispatch_semaphore_signal(done); };
     @try { [t launch]; } @catch (NSException *e) { return nil; }
-    NSData *d = [err.fileHandleForReading readDataToEndOfFile];
-    [t waitUntilExit];
+    NSData *d = [err.fileHandleForReading readDataToEndOfFile];   // EOF when ffmpeg exits
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC))) != 0) {
+        SFLog(@"downloads: verification ffmpeg did not exit within %.0f s - killing it", timeout);
+        kill(t.processIdentifier, SIGKILL);
+        return nil;   // could not check -> treated as "fine", never destroys anything
+    }
     return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
 }
 
@@ -130,7 +138,7 @@ static double SFParseDuration(NSString *s) {
 // nil = file is fine, otherwise a short English reason. Synchronous, call off the main thread.
 + (NSString *)problemWithFile:(NSString *)path expectedDuration:(double)expected ffmpeg:(NSString *)ff {
     if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return @"file missing";
-    NSString *info = SFRunFF(ff, @[@"-i", path]);
+    NSString *info = SFRunFF(ff, @[@"-i", path], 30);
     if (!info) return nil;   // cannot check -> do not destroy anything
     double dur = SFParseDuration(info);
     if (dur <= 0) return @"no duration (unreadable container)";
@@ -144,7 +152,8 @@ static double SFParseDuration(NSString *s) {
     for (NSNumber *f in @[@0.02, @0.5, @0.95]) {
         double at = MAX(0, dur * f.doubleValue - 2);
         NSString *e = SFRunFF(ff, @[@"-v", @"error", @"-ss", [NSString stringWithFormat:@"%.1f", at], @"-t", @"3",
-                                    @"-i", path, @"-map", @"0:v:0?", @"-map", @"0:a:0?", @"-f", @"null", @"-"]);
+                                    @"-i", path, @"-map", @"0:v:0?", @"-map", @"0:a:0?", @"-f", @"null", @"-"], 60);
+        if (!e) return nil;
         NSUInteger lines = 0;
         for (NSString *l in [e componentsSeparatedByString:@"\n"]) if (l.length) lines++;
         if (lines > 3) return [NSString stringWithFormat:@"%lu decode errors at %.0f s", (unsigned long)lines, at];
