@@ -33,33 +33,24 @@
 #import "SFSettings.h"
 #import "SFUpdater.h"
 
-void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 
 BOOL SFDevMode = NO;
-static NSString *gInstance = @"view";
+NSString *gInstance = @"view";
 static uint16_t gPort = 8765;
 
-@interface SFWindow : NSWindow @end
+#import "SFAppDelegate.h"
+
 @implementation SFWindow
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return YES; }
 - (NSRect)constrainFrameRect:(NSRect)r toScreen:(NSScreen *)s { return SFDevMode ? r : [super constrainFrameRect:r toScreen:s]; }
 @end
 
-@interface SFAppDelegate : NSObject <NSApplicationDelegate>
-@property (nonatomic, strong) SFWindow *window;
-@property (nonatomic, strong) SFNavigator *nav;
-@property (nonatomic) NSSize devSize;
-@end
-
 @implementation SFAppDelegate {
-    dispatch_source_t _fifoSrc;
-    NSMutableString *_fifoBuf;
     SFRemote *_remote;
     SFDevServer *_dev;
-    NSUInteger _loungeGen;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
@@ -139,75 +130,6 @@ static uint16_t gPort = 8765;
         _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:8765];
         _dev.keyHandler = ^(NSString *k) { [ws devCommand:[@"key " stringByAppendingString:k]]; };
         [_dev start];
-    }
-}
-
-#pragma mark Handy-Koppeln
-
-- (SFPlayerScreen *)topPlayer { return [self.nav.top isKindOfClass:[SFPlayerScreen class]] ? (SFPlayerScreen *)self.nav.top : nil; }
-
-- (void)wakeAndFront {
-    if (SFDevMode) return;
-    IOPMAssertionID a = 0;
-    IOPMAssertionDeclareUserActivity(CFSTR("Sofa: Handy"), kIOPMUserActiveLocal, &a);   // weckt das Display
-    [NSApp activateIgnoringOtherApps:YES];
-    [self.window makeKeyAndOrderFront:nil];
-}
-
-- (void)loungeCommand:(NSString *)cmd args:(NSDictionary *)args {
-    SFPlayerScreen *p = [self topPlayer];
-    if ([cmd isEqualToString:@"remoteConnected"]) {
-        [self.nav toast:[NSString stringWithFormat:@"„%@“ verbunden", args[@"name"] ?: @"Handy"]];
-    } else if ([cmd isEqualToString:@"setPlaylist"] || [cmd isEqualToString:@"setVideo"]) {
-        NSString *ids = args[@"videoIds"] ?: args[@"videoId"] ?: @"";
-        NSMutableArray *vids = [NSMutableArray new];
-        for (NSString *v in [ids componentsSeparatedByString:@","]) if (v.length == 11) [vids addObject:v];
-        if (!vids.count) return;
-        NSUInteger idx = MIN((NSUInteger)MAX(0, [args[@"currentIndex"] integerValue]), vids.count - 1);
-        NSString *want = args[@"videoId"];
-        if (want && ![vids[idx] isEqualToString:want] && [vids indexOfObject:want] != NSNotFound) idx = [vids indexOfObject:want];
-        NSTimeInterval t = [args[@"currentTime"] doubleValue];
-        NSString *list = args[@"listId"] ?: @"";
-        NSMutableArray *items = [NSMutableArray new];
-        for (NSString *v in vids) [items addObject:[SFYouTube itemForVideoID:v]];
-        // Läuft genau dieses Video schon (Handy hat sich neu verbunden, z.B. nach einem Sofa-Update):
-        // nie neu laden. Liste/Queue übernehmen; springen nur, wenn das Handy eine echte, andere
-        // Position kennt (nach einem Neustart meldet es oft 0 -> Sofas Position gilt).
-        if (p && [p.item.externalID isEqualToString:vids[idx]]) {
-            NSMutableArray *curIDs = [NSMutableArray new];
-            for (SFItem *q in p.queue) [curIDs addObject:q.externalID ?: @""];
-            if (![p.remoteListID isEqualToString:list] || ![curIDs isEqualToArray:vids]) {
-                p.remoteListID = list;
-                [p adoptQueue:items index:idx];
-                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
-            }
-            if (t > 1 && fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
-            [p remotePlay];
-            SFLog(@"lounge: Video läuft schon – fortgesetzt statt neu geladen (Handy %.0f s, Sofa %.0f s)", t, [p currentTime]);
-            return;
-        }
-        [self wakeAndFront];
-        NSUInteger gen = ++_loungeGen;   // spätere setPlaylist gewinnt
-        [SFYouTube fillDetails:items[idx] done:^{
-            if (gen != self->_loungeGen) return;
-            SFPlayerScreen *cur = [self topPlayer];
-            if (cur.remoteListID) { cur.remoteListID = list; [cur replaceQueue:items index:idx at:t]; }
-            else {
-                SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:items[idx] queue:items index:idx];
-                ps.remoteListID = list;
-                if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
-                if (cur) [self.nav replaceTop:ps]; else [self.nav push:ps];
-            }
-            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
-        }];
-    } else if (!p) {
-        return;
-    } else if ([cmd isEqualToString:@"play"]) { [p remotePlay];
-    } else if ([cmd isEqualToString:@"pause"]) { [p remotePause];
-    } else if ([cmd isEqualToString:@"seekTo"]) { [p remoteSeekTo:[args[@"newTime"] doubleValue]];
-    } else if ([cmd isEqualToString:@"next"]) { [p remoteNext];
-    } else if ([cmd isEqualToString:@"previous"]) { [p remotePrevious];
-    } else if ([cmd isEqualToString:@"stopVideo"]) { [self.nav pop];
     }
 }
 
@@ -342,208 +264,6 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
-#pragma mark Update (Helper tauscht die App; Zustand überlebt)
-
-- (NSString *)resumePath { return [SFAppSupportDir() stringByAppendingPathComponent:@"resume.json"]; }
-
-- (void)prepareForUpdate {
-    SFLog(@"update: Zustand sichern und beenden");
-    SFClearRunningMarker();   // geplantes Ende, kein Absturz
-    NSMutableDictionary *st = [NSMutableDictionary new];
-    st[@"t"] = @([NSDate date].timeIntervalSince1970);
-    NSMutableArray *keys = [NSMutableArray new];
-    for (SFScreen *s in self.nav.stack) if (s.restoreKey) [keys addObject:s.restoreKey];
-    st[@"screens"] = keys;
-    for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) {
-        if (![s isKindOfClass:[SFPlayerScreen class]]) continue;
-        SFPlayerScreen *p = (SFPlayerScreen *)s;
-        if (p.item) {
-            st[@"item"] = [p.item dictionaryRepresentation];
-            if (p.remoteListID) {   // Handy-Sitzung: Liste + Queue überleben das Update
-                st[@"remoteList"] = p.remoteListID;
-                NSMutableArray *q = [NSMutableArray new];
-                for (SFItem *it in p.queue) [q addObject:[it dictionaryRepresentation]];
-                st[@"queue"] = q; st[@"queueIndex"] = @(p.queueIndex);
-            }
-            if ([p currentTime] > 2) st[@"pos"] = @([p currentTime]);
-            st[@"paused"] = @([p isPaused]);
-        }
-        break;
-    }
-    [[NSJSONSerialization dataWithJSONObject:st options:0 error:nil] writeToFile:[self resumePath] atomically:YES];
-    // "Wird aktualisiert"-Bildschirm über allem
-    CALayer *ov = [CALayer layer];
-    ov.frame = self.nav.layer.bounds;
-    ov.backgroundColor = [NSColor colorWithDeviceWhite:0.04 alpha:0.94].CGColor;
-    ov.zPosition = 5000;
-    SFLabel *l = [SFLabel labelWithFont:[NSFont fontWithName:@"AvenirNext-DemiBold" size:U(44)] color:[NSColor whiteColor]];
-    l.text = @"Sofa wird aktualisiert …";
-    l.alignment = NSCenterTextAlignment;
-    CGFloat h = [l sizeToFitWidth:ov.bounds.size.width];
-    l.position = CGPointMake(0, (ov.bounds.size.height - h) / 2);
-    [ov addSublayer:l];
-    SFNoAnimate(^{ [self.nav.layer addSublayer:ov]; });
-    [CATransaction flush];
-    for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // Positionen speichern
-    [[SFStore shared] flush];
-    [[SFYTResolver shared] saveCache];   // fortgesetztes YouTube-Video startet ohne neue Auflösung
-    SFLog(@"update: gesichert, beende");
-    // _exit statt exit: alles ist gespeichert; exit() blieb in Framework-Aufräumhandlern hängen.
-    // Auf einer Hintergrund-Queue: ein Main-Queue-Block lief nicht, solange der Main-Runloop
-    // in einem anderen Modus steckte -> Helper musste nach 5 s hart beenden (Log „erzwinge“).
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{ _exit(0); });
-}
-
-- (void)restoreAfterUpdate {
-    NSData *d = [NSData dataWithContentsOfFile:[self resumePath]];
-    [[NSFileManager defaultManager] removeItemAtPath:[self resumePath] error:nil];
-    NSDictionary *st = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
-    if (![st isKindOfClass:[NSDictionary class]] || [NSDate date].timeIntervalSince1970 - [st[@"t"] doubleValue] > 300) return;
-    SFLog(@"update: Wiederherstellung %@", st[@"screens"]);
-    for (NSString *k in st[@"screens"]) {
-        if ([k hasPrefix:@"app:"]) [self.nav push:[SFHome appScreen:[k substringFromIndex:4]]];
-    }
-    if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
-        SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
-        // Stream-Adresse des alten Prozesses (lokaler Proxy) nicht wiederverwenden (scheiterte mit -1102)
-        // -> über den Resolver, der seine Ergebnisse aus dem alten Prozess übernommen hat
-        if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
-        NSMutableArray *queue = [NSMutableArray new];
-        for (NSDictionary *d in ([st[@"queue"] isKindOfClass:[NSArray class]] ? st[@"queue"] : @[])) {
-            SFItem *q = [d isKindOfClass:[NSDictionary class]] ? [SFItem itemWithDictionary:d] : nil;
-            if (q.playURL && !q.playURL.isFileURL && q.resolverRef.length) q.playURL = nil;
-            if (q) [queue addObject:q];
-        }
-        NSUInteger qi = [st[@"queueIndex"] unsignedIntegerValue];
-        BOOL lounge = [st[@"remoteList"] isKindOfClass:[NSString class]] && qi < queue.count;
-        if (lounge) queue[qi] = it;   // laufendes Video = Queue-Eintrag (ohne alte Stream-Adresse)
-        SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:lounge ? queue : nil index:lounge ? qi : 0];
-        if (lounge) p.remoteListID = st[@"remoteList"];
-        if ([st[@"pos"] doubleValue] > 2) p.startPosition = [st[@"pos"] doubleValue] - 2;
-        p.startPaused = [st[@"paused"] boolValue];
-        [self.nav push:p];
-    }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self.nav toast:[@"Sofa wurde aktualisiert – Version " stringByAppendingString:[[NSBundle mainBundle] infoDictionary][@"CFBundleShortVersionString"]]];
-    });
-}
-
-#pragma mark Dev-FIFO
-
-- (void)startFifo {
-    NSString *p = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
-    unlink(p.fileSystemRepresentation);
-    mkfifo(p.fileSystemRepresentation, 0600);
-    int fd = open(p.fileSystemRepresentation, O_RDWR | O_NONBLOCK);
-    if (fd < 0) { SFLog(@"dev: fifo open failed"); return; }
-    _fifoBuf = [NSMutableString new];
-    _fifoSrc = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
-    dispatch_source_set_event_handler(_fifoSrc, ^{
-        char buf[4096];
-        ssize_t r = read(fd, buf, sizeof buf);
-        if (r <= 0) return;
-        [self->_fifoBuf appendString:[[NSString alloc] initWithBytes:buf length:r encoding:NSUTF8StringEncoding] ?: @""];
-        NSRange nl;
-        while ((nl = [self->_fifoBuf rangeOfString:@"\n"]).location != NSNotFound) {
-            NSString *line = [self->_fifoBuf substringToIndex:nl.location];
-            [self->_fifoBuf deleteCharactersInRange:NSMakeRange(0, nl.location + 1)];
-            [self devCommand:[line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
-        }
-    });
-    dispatch_resume(_fifoSrc);
-    SFLog(@"dev: fifo ready at %@", p);
-}
-
-- (void)devCommand:(NSString *)line {
-    if (!line.length) return;
-    NSArray *parts = [line componentsSeparatedByString:@" "];
-    NSString *cmd = parts[0];
-    NSString *arg = parts.count > 1 ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "] : nil;
-    SFLog(@"dev: %@", line);
-    if ([cmd isEqualToString:@"key"]) {
-        NSDictionary *m = @{@"up": @(SFKeyUp), @"down": @(SFKeyDown), @"left": @(SFKeyLeft), @"right": @(SFKeyRight),
-                            @"select": @(SFKeySelect), @"menu": @(SFKeyMenu), @"play": @(SFKeyPlayPause),
-                            @"selecthold": @(SFKeySelectHold), @"menuhold": @(SFKeyMenuHold),
-                            @"next": @(SFKeyNext), @"prev": @(SFKeyPrev), @"uphold": @(SFKeyUpHold), @"downhold": @(SFKeyDownHold)};
-        NSNumber *k = m[arg.lowercaseString];
-        if (k) [self.nav sendKey:k.integerValue];
-    } else if ([cmd isEqualToString:@"shot"] && arg) {
-        [self screenshot:arg];
-    } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: echtes mpv-Bild aus dem GL-Framebuffer
-        SFMPVDevFrameShot(arg);
-    } else if ([cmd isEqualToString:@"home"]) {
-        [self.nav popToRoot];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: Seiten direkt öffnen (stabiler als Tastenfolgen)
-        [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF-Markenseite (Absturztest)
-        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
-        f.pageLoader = [SFProviderZDF categoryLoader:[arg substringFromIndex:8] title:@"Test"];
-        SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: beliebige YouTube-Kanalseite
-        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
-        // ytchannel:<ID> oder ytchannel:<ID>|<Titel>
-        NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
-        f.pageLoader = [SFYouTube channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
-        SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: YouTube-Video von vorn abspielen (Starttests)
-        SFItem *it = [SFYouTube itemForVideoID:[arg substringFromIndex:3]];
-        [SFYouTube fillDetails:it done:^{
-            SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
-            ps.startFromBeginning = YES;
-            if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
-        }];
-    } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
-        SFItem *it = [SFItem new];
-        it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg;
-        SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
-        ps.startFromBeginning = YES;
-        if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
-        SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/Screenshots: App-Seite
-        [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
-        SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
-        [SFHome showSettingsOn:self.nav];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // Ersteinrichtung ab Begrüßung
-        setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
-    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // Dev: Handy-Befehl simulieren: lounge <cmd> <json>
-        NSRange sp = [arg rangeOfString:@" "];
-        NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
-        id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-        [self loungeCommand:lc args:[j isKindOfClass:[NSDictionary class]] ? j : @{}];
-    } else if ([cmd isEqualToString:@"quit"]) {
-        [NSApp terminate:nil];
-    }
-}
-
-- (void)screenshot:(NSString *)path {
-    // Kurz warten, damit laufende Animationen/Bildladungen abgeschlossen sind.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        // Ebenenbaum direkt in eine Bitmap rendern (unabhängig vom Window-Server,
-        // funktioniert für das Offscreen-Fenster; Videoebenen bleiben schwarz).
-        CALayer *root = self.nav.layer;
-        CGSize sz = root.bounds.size;
-        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)sz.width, (size_t)sz.height, 8, 0, cs,
-                                                 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
-        CGColorSpaceRelease(cs);
-        CGContextTranslateCTM(ctx, 0, sz.height);
-        CGContextScaleCTM(ctx, 1, -1);
-        SFRenderLayerTree(root, ctx);
-        CGImageRef img = CGBitmapContextCreateImage(ctx);
-        CGContextRelease(ctx);
-        if (!img) { SFLog(@"dev: screenshot failed"); return; }
-        CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], CFSTR("public.png"), 1, NULL);
-        if (!d) { SFLog(@"dev: shot path invalid %@", path); CGImageRelease(img); return; }
-        CGImageDestinationAddImage(d, img, NULL);
-        CGImageDestinationFinalize(d);
-        CFRelease(d); CGImageRelease(img);
-        SFLog(@"dev: shot %@", path);
-    });
-}
 @end
 
 #pragma mark Autostart (Einstellung „Beim Anmelden starten“)

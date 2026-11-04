@@ -229,7 +229,7 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st) {
     if (s == SFDLRunning) t = [NSString stringWithFormat:@"\u2193 %d %%", (int)round(p * 100)];
     else if (s == SFDLQueued) t = @"\u2193 wartet";
     else if (s == SFDLDone && !self.item.localPath) t = @"\u2193 Offline";
-    else if (s == SFDLFailed) t = @"Download fehlgeschlagen";
+    else if (s == SFDLFailed) t = [[SFDownloads shared] willRetry:self.item.identifier] ? @"\u2193 später erneut" : @"Download fehlgeschlagen";
     SFNoAnimate(^{
         self->_dlChip.hidden = (t == nil);
         if (!t) return;

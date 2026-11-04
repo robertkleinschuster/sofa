@@ -33,6 +33,7 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 
 // Einzelne Inhalte
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress;
+- (BOOL)willRetry:(NSString *)identifier;   // fehlgeschlagene Abo-Folge, neuer Versuch folgt
 - (NSString *)fileFor:(NSString *)identifier;   // fertige Datei (existiert) oder nil
 - (SFItem *)itemFor:(NSString *)identifier;      // heruntergeladener Inhalt als Item (lokal)
 - (void)download:(SFItem *)item;

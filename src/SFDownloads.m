@@ -86,6 +86,10 @@ static NSString *T(NSString *sql) {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
         [st run:T(@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)") args:nil];
+        // Spalte failedAt (Abo-Wiederholung mit Backoff) für ältere Datenbanken nachrüsten
+        BOOL hasFailedAt = NO;
+        for (NSDictionary *c in [st rows:T(@"PRAGMA table_info( downloads)") args:nil]   /* Leerzeichen: T() ersetzt " downloads" -> dev_downloads */) if ([c[@"name"] isEqual:@"failedAt"]) hasFailedAt = YES;
+        if (!hasFailedAt) [st run:T(@"ALTER TABLE downloads ADD COLUMN failedAt REAL") args:nil];
         [st run:T(@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)") args:nil];
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
@@ -107,11 +111,22 @@ static NSString *T(NSString *sql) {
 - (void)save:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
                      args:@[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
                             r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
                             r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
-                            r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0]];
+                            r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null]]];
+}
+
+// Abo-Folgen: fehlgeschlagene Downloads mit wachsendem Abstand wiederholen (15 min, 30 min, 1 h …,
+// insgesamt ~16 h). YouTube drosselt zeitweise („Sign in to confirm you're not a bot“) – ohne
+// Abstand waren die Versuche in Minuten verbraucht und die Folge für immer verloren.
+static const NSInteger kSubMaxTries = 6;
+static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0, MIN(tries, 10) - 1)); }
+
+- (BOOL)willRetry:(NSString *)identifier {
+    NSDictionary *r = _recs[identifier];
+    return r[@"sub"] && [r[@"state"] integerValue] == SFDLFailed && [r[@"tries"] integerValue] < kSubMaxTries;
 }
 
 - (void)saveSub:(NSDictionary *)s {
@@ -266,7 +281,12 @@ static NSString *gb(unsigned long long b) {
     NSMutableDictionary *r = _recs[item.identifier];
     SFDLState st = r ? [r[@"state"] integerValue] : SFDLNone;
     if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
-    if (subID && r && (st == SFDLDismissed || ([r[@"tries"] integerValue] >= 3 && st == SFDLFailed))) return NO;
+    if (subID && r && st == SFDLDismissed) return NO;
+    if (subID && r && st == SFDLFailed) {
+        NSInteger n = [r[@"tries"] integerValue];
+        if (n >= kSubMaxTries) return NO;
+        if ([NSDate date].timeIntervalSince1970 - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) return NO;   // noch warten
+    }
     if (subID && r && !r[@"sub"]) subID = nil;   // einmal manuell geladen = manuell (keine Behaltefrist)
     // Abo-Folgen gehören zur Sendung des Abos (ZDF/ARD nennen die Reihe oft anders)
     NSString *subTitle = subID ? _subs[subID][@"title"] : nil;
@@ -372,7 +392,7 @@ static NSString *gb(unsigned long long b) {
     NSMutableDictionary *r = _recs[next[@"id"]];
     SFItem *item = [self itemFromRec:r];
     if (!item) {
-        r[@"state"] = @(SFDLFailed); r[@"error"] = @"Eintrag unlesbar"; r[@"tries"] = @3;
+        r[@"state"] = @(SFDLFailed); r[@"error"] = @"Eintrag unlesbar"; r[@"tries"] = @(kSubMaxTries);
         [self save:r];
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
@@ -479,7 +499,7 @@ static NSString *gb(unsigned long long b) {
     if (r) {
         r[@"state"] = @(ok ? SFDLDone : SFDLFailed);
         r[@"progress"] = @(ok ? 1.0 : 0.0);
-        if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); }
+        if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970); }
         [self save:r];
         SFLog(@"downloads: %@ %@%@", ok ? @"fertig" : @"FEHLER", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);
     }
