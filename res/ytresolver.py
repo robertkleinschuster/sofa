@@ -117,13 +117,20 @@ def dash_pick(formats):
             if h <= 1080 and fps <= 60:
                 vids.append((h, fps, 1 if vc.startswith("vp") else 0, f.get("tbr") or 0, f))
         elif vc == "none" and ac != "none":
-            auds.append((1 if ac.startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0, f))
+            # Originalton zuerst (User-Vorgabe 2026-11-04: nie automatisch übersetzte Tonspuren).
+            # yt-dlp: language_preference 10 = Original, 5 = Standard, -1 = Synchronfassung,
+            # -10 = Audiodeskription. Dann ohne DRC (Lautheits-Variante), Opus, Bitrate.
+            lp = f.get("language_preference")
+            drc = "drc" in (f.get("format_id") or "").lower()
+            auds.append((lp if isinstance(lp, int) else 0, 0 if drc else 1,
+                         1 if ac.startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0, f))
     if not vids or not auds:
         return None
     v = max(vids, key=lambda t: t[:4])[4]
-    a = max(auds, key=lambda t: t[:2])[2]
+    a = max(auds, key=lambda t: t[:4])[4]
     return {"video": v["url"], "audio": a["url"], "height": v.get("height"), "fps": v.get("fps"),
-            "vcodec": (v.get("vcodec") or "").split(".")[0], "acodec": (a.get("acodec") or "").split(".")[0]}
+            "vcodec": (v.get("vcodec") or "").split(".")[0], "acodec": (a.get("acodec") or "").split(".")[0],
+            "alang": a.get("language")}
 
 def resolve(vid, live, pool):
     web, vr, _ = pools[pool]

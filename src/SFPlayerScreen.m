@@ -21,6 +21,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSArray *_queue;
     id _powerObs;
     BOOL _explicitQueue;   // Handy-Playlist: nächster = nächster Queue-Eintrag
+    NSURL *_dashFailedURL; // DASH-Streams dieser Quelle abgelehnt (YouTube 403) -> mpv mit dem HLS-Stream
+    BOOL _openedDash;      // aktueller Versuch: mpv mit getrennten DASH-Streams
     NSUInteger _index;
     id<SFEngine> _engine;        // AVFoundation oder mpv (SFEngine.h)
     CALayer *_videoHost;         // trägt die Video-Ebene der aktiven Engine
@@ -229,7 +231,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
-    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -278,7 +280,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSDictionary *src = SFMPVSourceFor(url);
     BOOL useMPV = SFMPVAvailable() && (forceMPV || [self prefersMPV:src url:url]);
     NSURL *open = url, *audio = nil;
-    if (useMPV && src[@"video"]) {
+    _openedDash = useMPV && src[@"video"] && ![url isEqual:_dashFailedURL];
+    if (_openedDash) {
         open = [NSURL URLWithString:src[@"video"]];
         if (src[@"audio"]) audio = [NSURL URLWithString:src[@"audio"]];
     }
@@ -291,7 +294,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         if (v) { [v removeFromSuperlayer]; v.frame = self->_videoHost.bounds; [self->_videoHost addSublayer:v]; }
     });
     SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
-          useMPV && src[@"video"] ? [NSString stringWithFormat:@" (%@p%@ %@)", src[@"height"], src[@"fps"], src[@"vcodec"]] : @"");
+          _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, Ton %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
     __weak SFPlayerScreen *wself = self;
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
@@ -329,6 +332,20 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
                 if (self->_closing || it != self->_item) return;
                 if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
                 [self playURL:u];
+            });
+            return;
+        }
+        // YouTube lehnt die DASH-Streams gelegentlich sofort ab (HTTP 403), der HLS-Stream derselben
+        // Auflösung läuft: erst mpv mit HLS, statt über AVFoundation-Neuversuche (docs/youtube.md §6)
+        if (viaMPV && _openedDash && _openURL && ![_openURL isEqual:_dashFailedURL]) {
+            SFLog(@"player: DASH abgelehnt -> mpv mit HLS");
+            _dashFailedURL = _openURL;
+            NSURL *u = _openURL; SFItem *it = _item; NSTimeInterval pos = MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (self->_closing || it != self->_item) return;
+                self->_openTries = 0;
+                if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+                [self playURL:u forceMPV:YES];
             });
             return;
         }
@@ -553,6 +570,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (t > 0) self.startPosition = t;
     [self startItem];
 }
+- (void)adoptQueue:(NSArray *)items index:(NSUInteger)i {
+    if (!items.count) return;
+    _queue = [items copy];
+    _explicitQueue = YES;
+    _index = MIN(i, items.count - 1);
+}
+
 - (void)replaceQueue:(NSArray *)items index:(NSUInteger)i at:(NSTimeInterval)t {
     _queue = [items copy];
     _explicitQueue = YES;

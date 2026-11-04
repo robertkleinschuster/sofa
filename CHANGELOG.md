@@ -4,6 +4,16 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.1
+
+- **Neues App-Icon.**
+- **Originalton:** YouTube spielt immer die Originalsprache – keine automatisch übersetzten
+  Tonspuren mehr.
+- Vom Handy gestartete Videos laufen nach einem Update an derselben Stelle weiter, statt von
+  vorne zu beginnen.
+- Videos, bei denen YouTube den bevorzugten Stream ablehnt, starten sofort mit dem
+  Ausweich-Stream (vorher teils gar nicht oder erst nach mehreren Versuchen).
+
 ## 0.3.0
 
 - **Ein Player für alles:** Sofa spielt jetzt alles mit mpv. YouTube läuft in VP9 bis 1080p60

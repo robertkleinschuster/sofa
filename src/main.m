@@ -168,16 +168,24 @@ static uint16_t gPort = 8765;
         if (want && ![vids[idx] isEqualToString:want] && [vids indexOfObject:want] != NSNotFound) idx = [vids indexOfObject:want];
         NSTimeInterval t = [args[@"currentTime"] doubleValue];
         NSString *list = args[@"listId"] ?: @"";
-        // Läuft genau dieses Video schon (z.B. Handy hat sich neu verbunden): nur springen
-        NSMutableArray *curIDs = [NSMutableArray new];
-        for (SFItem *q in p.queue) [curIDs addObject:q.externalID ?: @""];
-        if (p && [p.item.externalID isEqualToString:vids[idx]] && [p.remoteListID isEqualToString:list] && [curIDs isEqualToArray:vids]) {
-            if (fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
-            [p remotePlay];
-            return;
-        }
         NSMutableArray *items = [NSMutableArray new];
         for (NSString *v in vids) [items addObject:[SFYouTube itemForVideoID:v]];
+        // Läuft genau dieses Video schon (Handy hat sich neu verbunden, z.B. nach einem Sofa-Update):
+        // nie neu laden. Liste/Queue übernehmen; springen nur, wenn das Handy eine echte, andere
+        // Position kennt (nach einem Neustart meldet es oft 0 -> Sofas Position gilt).
+        if (p && [p.item.externalID isEqualToString:vids[idx]]) {
+            NSMutableArray *curIDs = [NSMutableArray new];
+            for (SFItem *q in p.queue) [curIDs addObject:q.externalID ?: @""];
+            if (![p.remoteListID isEqualToString:list] || ![curIDs isEqualToArray:vids]) {
+                p.remoteListID = list;
+                [p adoptQueue:items index:idx];
+                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
+            }
+            if (t > 1 && fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
+            [p remotePlay];
+            SFLog(@"lounge: Video läuft schon – fortgesetzt statt neu geladen (Handy %.0f s, Sofa %.0f s)", t, [p currentTime]);
+            return;
+        }
         [self wakeAndFront];
         NSUInteger gen = ++_loungeGen;   // spätere setPlaylist gewinnt
         [SFYouTube fillDetails:items[idx] done:^{
@@ -351,6 +359,12 @@ static uint16_t gPort = 8765;
         SFPlayerScreen *p = (SFPlayerScreen *)s;
         if (p.item) {
             st[@"item"] = [p.item dictionaryRepresentation];
+            if (p.remoteListID) {   // Handy-Sitzung: Liste + Queue überleben das Update
+                st[@"remoteList"] = p.remoteListID;
+                NSMutableArray *q = [NSMutableArray new];
+                for (SFItem *it in p.queue) [q addObject:[it dictionaryRepresentation]];
+                st[@"queue"] = q; st[@"queueIndex"] = @(p.queueIndex);
+            }
             if ([p currentTime] > 2) st[@"pos"] = @([p currentTime]);
             st[@"paused"] = @([p isPaused]);
         }
@@ -395,7 +409,17 @@ static uint16_t gPort = 8765;
         // Stream-Adresse des alten Prozesses (lokaler Proxy) nicht wiederverwenden (scheiterte mit -1102)
         // -> über den Resolver, der seine Ergebnisse aus dem alten Prozess übernommen hat
         if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
-        SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
+        NSMutableArray *queue = [NSMutableArray new];
+        for (NSDictionary *d in ([st[@"queue"] isKindOfClass:[NSArray class]] ? st[@"queue"] : @[])) {
+            SFItem *q = [d isKindOfClass:[NSDictionary class]] ? [SFItem itemWithDictionary:d] : nil;
+            if (q.playURL && !q.playURL.isFileURL && q.resolverRef.length) q.playURL = nil;
+            if (q) [queue addObject:q];
+        }
+        NSUInteger qi = [st[@"queueIndex"] unsignedIntegerValue];
+        BOOL lounge = [st[@"remoteList"] isKindOfClass:[NSString class]] && qi < queue.count;
+        if (lounge) queue[qi] = it;   // laufendes Video = Queue-Eintrag (ohne alte Stream-Adresse)
+        SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:lounge ? queue : nil index:lounge ? qi : 0];
+        if (lounge) p.remoteListID = st[@"remoteList"];
         if ([st[@"pos"] doubleValue] > 2) p.startPosition = [st[@"pos"] doubleValue] - 2;
         p.startPaused = [st[@"paused"] boolValue];
         [self.nav push:p];
@@ -479,6 +503,11 @@ static uint16_t gPort = 8765;
         [SFHome showSettingsOn:self.nav];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // Ersteinrichtung ab Begrüßung
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
+    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // Dev: Handy-Befehl simulieren: lounge <cmd> <json>
+        NSRange sp = [arg rangeOfString:@" "];
+        NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
+        id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        [self loungeCommand:lc args:[j isKindOfClass:[NSDictionary class]] ? j : @{}];
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }

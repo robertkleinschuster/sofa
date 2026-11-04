@@ -28,4 +28,6 @@ typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnd
 - (BOOL)hasPrevious;
 - (void)playQueueIndex:(NSUInteger)i at:(NSTimeInterval)t;
 - (void)replaceQueue:(NSArray *)items index:(NSUInteger)i at:(NSTimeInterval)t;   // Queue explizit (Handy): Weiter = nächster Eintrag
+// Queue vom Handy übernehmen, ohne das laufende Video (= items[i]) neu zu laden
+- (void)adoptQueue:(NSArray *)items index:(NSUInteger)i;
 @end
