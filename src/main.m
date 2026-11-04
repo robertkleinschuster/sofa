@@ -21,6 +21,7 @@
 #import "SFProviderZDF.h"
 #import "SFProviderORF.h"
 #import "SFYouTube.h"
+#import "SFYTResolver.h"
 #import "SFLounge.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
@@ -371,6 +372,7 @@ static uint16_t gPort = 8765;
     [CATransaction flush];
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // Positionen speichern
     [[SFStore shared] flush];
+    [[SFYTResolver shared] saveCache];   // fortgesetztes YouTube-Video startet ohne neue Auflösung
     SFLog(@"update: gesichert, beende");
     // _exit statt exit: alles ist gespeichert; exit() blieb in Framework-Aufräumhandlern hängen.
     // Auf einer Hintergrund-Queue: ein Main-Queue-Block lief nicht, solange der Main-Runloop
@@ -390,7 +392,8 @@ static uint16_t gPort = 8765;
     }
     if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
         SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
-        // Stream-Adresse des alten Prozesses nicht wiederverwenden (scheiterte mit -1102) -> neu auflösen
+        // Stream-Adresse des alten Prozesses (lokaler Proxy) nicht wiederverwenden (scheiterte mit -1102)
+        // -> über den Resolver, der seine Ergebnisse aus dem alten Prozess übernommen hat
         if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
         SFPlayerScreen *p = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
         if ([st[@"pos"] doubleValue] > 2) p.startPosition = [st[@"pos"] doubleValue] - 2;

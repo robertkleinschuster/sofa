@@ -248,6 +248,9 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
   Gewinn: YouTube direkt DASH/VP9 (1080p60/1440p, ohne HLS-Umweg), ORF/ARD ohne
   Versions-Tricks, Downloads ohne Remux-Grenzen. Prüfen: CPU (2011er iMac) für VP9/AV1
   in Software, Hardware nur H.264 → Auswahl-Regel "H.264 bevorzugen, sonst Software".
+- [ ] **AVFoundation entfernen? (User-Frage 2026-11-04, Entscheidung offen)** — Messung 2026-11-04 (i5-2500S, mpv Software, `--vo=null --untimed`): 720p50 H.264 ≈ 19 % eines Kerns, 1080p50 H.264 ≈ 34 %, 1080p50 VP9 ≈ 31 % (Testbild; echte Inhalte ~1,5x). mpv `--hwdec=videotoolbox(-copy)` geht auf 10.9 NICHT („hwaccel initialisation returned error“) → AVFoundation ist die einzige Hardware-H.264-Dekodierung. Kosten von AVFoundation: ~1/3 der YouTube-HLS-Starts scheitern zuerst (-1102/-11800/-12643), Neuversuch/mpv-Fallback 1–2 s; kein VP9/AV1; doppelte Pflege. Vorschlag an User: mpv als Standard-Engine, AVFoundation als versteckter Notschalter, nach ein paar Tagen Beobachtung ganz raus.
+- [x] 2026-11-04 Update-Neustart während YouTube: Resolver-Cache wird mitgesichert (`yt-resolved.json` in App Support, einmal lesbar, 0600, nicht in Dev-Instanzen) → fortgesetztes Video ohne neue Auflösung (vorher Lücke ~9 s, davon ~5 s Auflösung).
+
 ## Display-Sleep/Wake (aus Kodi-Erfahrung, siehe ~/kodi-setup-NOTES.md "Sleep/Wake-Modell")
 - macOS verwaltet Timeouts (pmset displaysleep 5, sleep 0); Sofa hat KEINE eigene
   Energieverwaltung.

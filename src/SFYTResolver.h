@@ -5,6 +5,7 @@
 
 @interface SFYTResolver : NSObject
 + (instancetype)shared;
+- (void)saveCache;             // vor einem Update-Neustart: Ergebnisse für den neuen Prozess sichern
 - (void)start;                 // idempotent; wärmt den Player-JS-Cache vor
 - (void)restart;
 // r: url, alt (Array), height, live, duration, title

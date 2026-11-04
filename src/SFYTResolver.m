@@ -139,8 +139,33 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
         _waiters = [NSMutableDictionary new];
         _prioKeys = [NSMutableSet new];
         _cache = [NSMutableDictionary new];
+        [self loadSavedCache];
     }
     return self;
+}
+
+// Ergebnis-Cache über einen Update-Neustart retten: das fortgesetzte Video startet dann ohne
+// neue Auflösung (~5 s). Nur einmal lesbar (Datei wird gelöscht), Abgelaufenes fällt weg.
++ (NSString *)savedCachePath { return [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]; }
+- (void)loadSavedCache {
+    if (SFDevMode) return;   // Dev-Instanzen teilen den Ordner mit der echten App -> nicht anfassen
+    NSString *path = [SFYTResolver savedCachePath];
+    NSData *d = [NSData dataWithContentsOfFile:path];
+    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    NSDictionary *c = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+    if (![c isKindOfClass:[NSDictionary class]]) return;
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    [c enumerateKeysAndObjectsUsingBlock:^(NSString *vid, NSDictionary *r, BOOL *stop) {
+        if ([r isKindOfClass:[NSDictionary class]] && [r[@"expires"] doubleValue] - 3600 > now) self->_cache[vid] = r;
+    }];
+    if (_cache.count) SFLog(@"yt: %lu Auflösungen aus dem letzten Lauf übernommen", (unsigned long)_cache.count);
+}
+- (void)saveCache {
+    if (!_cache.count || SFDevMode) return;
+    NSData *d = [NSJSONSerialization dataWithJSONObject:_cache options:0 error:nil];
+    NSString *path = [SFYTResolver savedCachePath];
+    if (d && [d writeToFile:path atomically:YES])
+        [[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: @0600} ofItemAtPath:path error:nil];
 }
 
 - (void)start {
