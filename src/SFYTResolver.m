@@ -102,6 +102,7 @@ static NSString *YTActiveDir(void) {
 
 // Ergebnis-Cache über einen Update-Neustart retten: das fortgesetzte Video startet dann ohne
 // neue Auflösung (~5 s). Nur einmal lesbar (Datei wird gelöscht), Abgelaufenes fällt weg.
+static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.py
 + (NSString *)savedCachePath { return [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]; }
 - (void)loadSavedCache {
     if (SFDevMode) return;   // Dev-Instanzen teilen den Ordner mit der echten App -> nicht anfassen
@@ -112,7 +113,9 @@ static NSString *YTActiveDir(void) {
     if (![c isKindOfClass:[NSDictionary class]]) return;
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     [c enumerateKeysAndObjectsUsingBlock:^(NSString *vid, NSDictionary *r, BOOL *stop) {
-        if ([r isKindOfClass:[NSDictionary class]] && [r[@"expires"] doubleValue] - 3600 > now) self->_cache[vid] = r;
+        // nur Ergebnisse der aktuellen Resolver-Version (ältere evtl. mit falscher Tonspur)
+        if ([r isKindOfClass:[NSDictionary class]] && [r[@"expires"] doubleValue] - 3600 > now && [r[@"v"] integerValue] >= kResultVersion)
+            self->_cache[vid] = r;
     }];
     if (_cache.count) SFLog(@"yt: %lu Auflösungen aus dem letzten Lauf übernommen", (unsigned long)_cache.count);
 }

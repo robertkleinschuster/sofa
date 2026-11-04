@@ -79,7 +79,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 
 #pragma mark Identität / Token
 
-- (NSString *)key:(NSString *)k { return [(SFDevMode ? @"lounge.dev." : @"lounge.") stringByAppendingString:k]; }
+- (NSString *)key:(NSString *)k { return [@"lounge." stringByAppendingString:k]; }
 
 - (NSData *)http:(NSString *)method url:(NSString *)url body:(NSString *)body status:(NSInteger *)st {
     NSError *e = nil;

@@ -19,12 +19,6 @@ SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
 static NSString *prefixOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? nil : [s substringToIndex:r.location]; }
 static NSString *restOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? s : [s substringFromIndex:NSMaxRange(r)]; }
 
-// Dev-Instanzen: eigene Tabellen (nie die echten Folgen anfassen)
-static NSString *T(NSString *sql) {
-    if (!SFDevMode) return sql;
-    return [[sql stringByReplacingOccurrencesOfString:@" follows" withString:@" dev_follows"] stringByReplacingOccurrencesOfString:@" follow_items" withString:@" dev_follow_items"];
-}
-static NSString *K(NSString *k) { return SFDevMode ? [@"dev." stringByAppendingString:k] : k; }
 
 static const NSInteger kPerShow = 12;              // so viele neueste Folgen je Sendung merken
 static const NSTimeInterval kRefresh = 30 * 60;
@@ -45,12 +39,12 @@ static const NSTimeInterval kRefresh = 30 * 60;
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:T(@"CREATE TABLE IF NOT EXISTS follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL)") args:nil];
-        [st run:T(@"CREATE TABLE IF NOT EXISTS follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id))") args:nil];
+        [st run:@"CREATE TABLE IF NOT EXISTS follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL)" args:nil];
+        [st run:@"CREATE TABLE IF NOT EXISTS follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id))" args:nil];
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
-        for (NSDictionary *r in [st rows:T(@"SELECT * FROM follows") args:nil]) _follows[r[@"id"]] = [r mutableCopy];
-        for (NSDictionary *r in [st rows:T(@"SELECT follow, item FROM follow_items ORDER BY date DESC") args:nil]) {
+        for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY date DESC" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
             if (![d isKindOfClass:[NSDictionary class]]) continue;
             NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
@@ -70,7 +64,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
 }
 
 - (void)save:(NSDictionary *)f {
-    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO follows (id,source,title,image,added) VALUES (?,?,?,?,?)")
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO follows (id,source,title,image,added) VALUES (?,?,?,?,?)"
                      args:@[f[@"id"], f[@"source"] ?: @"", f[@"title"] ?: @"", f[@"image"] ?: [NSNull null], f[@"added"] ?: @([NSDate date].timeIntervalSince1970)]];
 }
 
@@ -81,7 +75,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
     _started = YES;
     // Einmalig: alle „Automatisch laden“-Abos (128 aus ytdl-sub) werden gefolgt – Download bleibt an
     SFStore *st = [SFStore shared];
-    if (![st setting:K(@"follows.migrated")]) {
+    if (![st setting:@"follows.migrated"]) {
         NSUInteger n = 0;
         for (NSDictionary *s in [[SFDownloads shared] subscriptions]) {
             if (_follows[s[@"id"]]) continue;
@@ -90,7 +84,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
             if ([s[@"image"] length]) f[@"image"] = s[@"image"];
             _follows[f[@"id"]] = f; [self save:f]; n++;
         }
-        [st setSetting:[@(n) stringValue] forKey:K(@"follows.migrated")];
+        [st setSetting:[@(n) stringValue] forKey:@"follows.migrated"];
         SFLog(@"follows: %lu Abos übernommen", (unsigned long)n);
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self refreshNow]; });
@@ -99,10 +93,10 @@ static const NSTimeInterval kRefresh = 30 * 60;
 
 - (void)importFollows:(NSArray *)folders key:(NSString *)onceKey {
     SFStore *st = [SFStore shared];
-    if (!folders.count || [st setting:K(onceKey)]) return;
+    if (!folders.count || [st setting:onceKey]) return;
     NSUInteger n = 0;
     for (SFItem *f in folders) if ([self canFollow:f] && !_follows[f.identifier]) { [self addFollow:f]; n++; }
-    [st setSetting:[@(n) stringValue] forKey:K(onceKey)];
+    [st setSetting:[@(n) stringValue] forKey:onceKey];
     SFLog(@"follows: %lu aus %@ übernommen", (unsigned long)n, onceKey);
     if (n) { [self changed]; [self refreshNow]; }
 }
@@ -135,8 +129,8 @@ static const NSTimeInterval kRefresh = 30 * 60;
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
-    [[SFStore shared] run:T(@"DELETE FROM follows WHERE id=?") args:@[identifier]];
-    [[SFStore shared] run:T(@"DELETE FROM follow_items WHERE follow=?") args:@[identifier]];
+    [[SFStore shared] run:@"DELETE FROM follows WHERE id=?" args:@[identifier]];
+    [[SFStore shared] run:@"DELETE FROM follow_items WHERE follow=?" args:@[identifier]];
     if ([[SFDownloads shared] isSubscribed:identifier]) [[SFDownloads shared] unsubscribe:identifier];   // Folgen ist Voraussetzung
     SFLog(@"follows: - %@", identifier);
     [self changed];
@@ -211,10 +205,10 @@ static const NSTimeInterval kRefresh = 30 * 60;
                 }
                 self->_items[f[@"id"]] = keep;
                 SFStore *st = [SFStore shared];
-                [st run:T(@"DELETE FROM follow_items WHERE follow=?") args:@[f[@"id"]]];
+                [st run:@"DELETE FROM follow_items WHERE follow=?" args:@[f[@"id"]]];
                 for (SFItem *c in keep) {
                     NSData *j = [NSJSONSerialization dataWithJSONObject:[c dictionaryRepresentation] options:0 error:nil];
-                    [st run:T(@"INSERT OR REPLACE INTO follow_items (follow,id,item,date) VALUES (?,?,?,?)")
+                    [st run:@"INSERT OR REPLACE INTO follow_items (follow,id,item,date) VALUES (?,?,?,?)"
                        args:@[f[@"id"], c.identifier, j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}", @(c.date.timeIntervalSince1970)]];
                 }
             }

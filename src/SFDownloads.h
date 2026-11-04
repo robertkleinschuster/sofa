@@ -24,7 +24,9 @@ SFFeedFetcher SFFeedFor(NSString *identifier);   // registrierter Feed für "pre
 // Feed aus einem Seiten-Loader (Sendungsseite): alle Videos der Seite, neueste zuerst
 void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref));
 // Optional: eigene Download-URL (z.B. YouTube 720p statt 1080p-Stream)
-typedef void (^SFDownloadURLFetcher)(SFItem *item, SFURLDone done);
+// audio: optionale eigene Tonspur (z.B. YouTube-Originalton statt der Standardspur im gemuxten Stream)
+typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSError *e);
+typedef void (^SFDownloadURLFetcher)(SFItem *item, SFDownloadURLDone done);
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 
 @interface SFDownloads : NSObject

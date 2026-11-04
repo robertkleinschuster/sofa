@@ -679,12 +679,14 @@ static NSSet *skipKeys(void) {
         }];
     });
     // Downloads in 720p (wie bisher ytdl-sub): spart Platz, am TV gut genug
-    SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFURLDone done) {
+    SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
         [[SFYTResolver shared] prefetch:vid done:^(NSDictionary *r, NSError *e) {
             NSString *u = r[@"url"];
             for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
-            done(u ? [NSURL URLWithString:u] : nil, e);
+            // Mehrere Tonspuren: Originalton separat (der gemuxte Stream hat YouTubes Standardspur)
+            NSString *au = r[@"dlaudio"];
+            done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, e);
         }];
     });
     SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {

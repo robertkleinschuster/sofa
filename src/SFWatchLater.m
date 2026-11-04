@@ -2,10 +2,6 @@
 #import "SFStore.h"
 #import "SFLibrary.h"
 
-// Dev-Instanzen: eigene Tabelle (nie die echte Liste anfassen)
-static NSString *T(NSString *sql) {
-    return SFDevMode ? [sql stringByReplacingOccurrencesOfString:@" watch_later" withString:@" dev_watch_later"] : sql;
-}
 
 @implementation SFWatchLater {
     NSMutableArray *_entries;   // @{id, source, item(SFItem), added}, neueste zuerst
@@ -20,9 +16,9 @@ static NSString *T(NSString *sql) {
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:T(@"CREATE TABLE IF NOT EXISTS watch_later (id TEXT PRIMARY KEY, source TEXT, item TEXT, added REAL)") args:nil];
+        [st run:@"CREATE TABLE IF NOT EXISTS watch_later (id TEXT PRIMARY KEY, source TEXT, item TEXT, added REAL)" args:nil];
         _entries = [NSMutableArray new];
-        for (NSDictionary *r in [st rows:T(@"SELECT * FROM watch_later ORDER BY added DESC") args:nil]) {
+        for (NSDictionary *r in [st rows:@"SELECT * FROM watch_later ORDER BY added DESC" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
             SFItem *it = [d isKindOfClass:[NSDictionary class]] ? [SFItem itemWithDictionary:d] : nil;
             if (!it.identifier.length) continue;
@@ -50,7 +46,7 @@ static NSString *T(NSString *sql) {
     NSString *js = j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : nil;
     if (!js) return NO;
     NSString *src = c.source ?: @"";
-    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO watch_later (id, source, item, added) VALUES (?, ?, ?, ?)") args:@[c.identifier, src, js, @(added)]];
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO watch_later (id, source, item, added) VALUES (?, ?, ?, ?)" args:@[c.identifier, src, js, @(added)]];
     NSDictionary *e = @{@"id": c.identifier, @"source": src, @"item": c, @"added": @(added)};
     NSUInteger at = 0;
     while (at < _entries.count && [_entries[at][@"added"] doubleValue] > added) at++;
@@ -70,7 +66,7 @@ static NSString *T(NSString *sql) {
     NSUInteger n = _entries.count;
     [_entries filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *b) { return ![e[@"id"] isEqualToString:identifier]; }]];
     if (_entries.count == n) return;
-    [[SFStore shared] run:T(@"DELETE FROM watch_later WHERE id = ?") args:@[identifier]];
+    [[SFStore shared] run:@"DELETE FROM watch_later WHERE id = ?" args:@[identifier]];
     SFLog(@"später ansehen: − %@", identifier);
     [self changed];
 }
@@ -85,7 +81,7 @@ static NSString *T(NSString *sql) {
     }
     for (NSString *i in seen) {   // still aufräumen (ohne Neuladen auszulösen)
         [_entries filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *b) { return ![e[@"id"] isEqualToString:i]; }]];
-        [st run:T(@"DELETE FROM watch_later WHERE id = ?") args:@[i]];
+        [st run:@"DELETE FROM watch_later WHERE id = ?" args:@[i]];
     }
     return out;
 }

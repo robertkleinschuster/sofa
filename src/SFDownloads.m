@@ -77,25 +77,21 @@ static NSString *ffmpegPath(void) {
 
 // Dev-Instanzen arbeiten getrennt (eigener Ordner, eigene Tabellen) – nie die echten Downloads anfassen
 + (NSString *)root { return [NSHomeDirectory() stringByAppendingPathComponent:SFDevMode ? @"Movies/Sofa-dev" : @"Movies/Sofa"]; }
-static NSString *T(NSString *sql) {
-    if (!SFDevMode) return sql;
-    return [[sql stringByReplacingOccurrencesOfString:@" downloads" withString:@" dev_downloads"] stringByReplacingOccurrencesOfString:@" subscriptions" withString:@" dev_subscriptions"];
-}
 
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:T(@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)") args:nil];
+        [st run:@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)" args:nil];
         // Spalte failedAt (Abo-Wiederholung mit Backoff) für ältere Datenbanken nachrüsten
         BOOL hasFailedAt = NO;
-        for (NSDictionary *c in [st rows:T(@"PRAGMA table_info( downloads)") args:nil]   /* Leerzeichen: T() ersetzt " downloads" -> dev_downloads */) if ([c[@"name"] isEqual:@"failedAt"]) hasFailedAt = YES;
-        if (!hasFailedAt) [st run:T(@"ALTER TABLE downloads ADD COLUMN failedAt REAL") args:nil];
-        [st run:T(@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)") args:nil];
+        for (NSDictionary *c in [st rows:@"PRAGMA table_info(downloads)" args:nil]) if ([c[@"name"] isEqual:@"failedAt"]) hasFailedAt = YES;
+        if (!hasFailedAt) [st run:@"ALTER TABLE downloads ADD COLUMN failedAt REAL" args:nil];
+        [st run:@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)" args:nil];
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];
-        for (NSDictionary *r in [st rows:T(@"SELECT * FROM downloads") args:nil]) _recs[r[@"id"]] = [r mutableCopy];
-        for (NSDictionary *r in [st rows:T(@"SELECT * FROM subscriptions") args:nil]) _subs[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *r in [st rows:@"SELECT * FROM downloads" args:nil]) _recs[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *r in [st rows:@"SELECT * FROM subscriptions" args:nil]) _subs[r[@"id"]] = [r mutableCopy];
         // Abgebrochene Läufe vom letzten Mal wieder einreihen
         for (NSMutableDictionary *r in _recs.allValues)
             if ([r[@"state"] integerValue] == SFDLRunning) r[@"state"] = @(SFDLQueued);
@@ -111,7 +107,7 @@ static NSString *T(NSString *sql) {
 - (void)save:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                      args:@[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
                             r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
                             r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
@@ -130,7 +126,7 @@ static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0
 }
 
 - (void)saveSub:(NSDictionary *)s {
-    [[SFStore shared] run:T(@"INSERT OR REPLACE INTO subscriptions (id,source,title,image,keepDays,since,added,lastCheck) VALUES (?,?,?,?,?,?,?,?)")
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO subscriptions (id,source,title,image,keepDays,since,added,lastCheck) VALUES (?,?,?,?,?,?,?,?)"
                      args:@[s[@"id"], s[@"source"] ?: [NSNull null], s[@"title"] ?: [NSNull null], s[@"image"] ?: [NSNull null],
                             s[@"keepDays"] ?: @90, s[@"since"] ?: @0.0, s[@"added"] ?: @0.0, s[@"lastCheck"] ?: @0.0]];
 }
@@ -330,7 +326,7 @@ static NSString *gb(unsigned long long b) {
         [_recs removeObjectForKey:identifier];
         [_itemCache removeObjectForKey:identifier];
         _generation++;
-        [[SFStore shared] run:T(@"DELETE FROM downloads WHERE id=?") args:@[identifier]];
+        [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
     }
     [self changed:identifier];
 }
@@ -403,17 +399,17 @@ static NSString *gb(unsigned long long b) {
     [self changed:_runningID];
     NSString *ident = _runningID;
     SFDownloadURLFetcher custom = gDLURL[prefixOf(item.resolverRef ?: item.identifier)];
-    SFURLDone got = ^(NSURL *url, NSError *e) {
+    SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSError *e) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             if (!url) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Kein Stream"]; return; }
-            [self runFFmpeg:ff url:url rec:r item:item];
+            [self runFFmpeg:ff url:url audio:audio rec:r item:item];
         });
     };
-    if (custom) custom(item, got); else [item resolveURL:got];
+    if (custom) custom(item, got); else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, e); }];
 }
 
-- (void)runFFmpeg:(NSString *)ff url:(NSURL *)url rec:(NSMutableDictionary *)r item:(SFItem *)item {
+- (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(NSMutableDictionary *)r item:(SFItem *)item {
     NSString *target = [self targetPathFor:r item:item];
     NSString *part = [[target stringByDeletingPathExtension] stringByAppendingString:@".part.mp4"];
     [[NSFileManager defaultManager] createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
@@ -424,8 +420,15 @@ static NSString *gb(unsigned long long b) {
                               // Bandbreite schonen: höchstens 3x Abspielgeschwindigkeit (Hintergrund-Downloads sollen
                               // Streaming am TV und andere Verbindungen nicht ausbremsen); kurzer Anlauf ungedrosselt
                               @"-readrate", @"3", @"-readrate_initial_burst", @"10",
-                              @"-i", src.absoluteString, @"-c", @"copy", @"-movflags", @"+faststart"] mutableCopy];
-    if (![src.path.pathExtension.lowercaseString isEqualToString:@"mp4"]) [args addObjectsFromArray:@[@"-bsf:a", @"aac_adtstoasc"]];
+                              @"-i", src.absoluteString] mutableCopy];
+    if (audio) {   // eigene Tonspur (Originalton): Bild aus dem Stream, Ton aus der zweiten Quelle
+        NSURL *asrc = [[SFStreamProxy shared] playableURLFor:audio];
+        [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-i", asrc.absoluteString,
+                                    @"-map", @"0:v:0", @"-map", @"1:a:0", @"-shortest"]];
+        SFLog(@"downloads: %@ mit eigener Tonspur (Originalton)", item.title);
+    }
+    [args addObjectsFromArray:@[@"-c", @"copy", @"-movflags", @"+faststart"]];
+    if (!audio && ![src.path.pathExtension.lowercaseString isEqualToString:@"mp4"]) [args addObjectsFromArray:@[@"-bsf:a", @"aac_adtstoasc"]];
     [args addObject:part];
     t.arguments = args;
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
@@ -543,7 +546,7 @@ static NSString *gb(unsigned long long b) {
     if (!_subs[fid]) return;
     SFLog(@"downloads: Automatisch herunterladen aus: %@ (%@)", _subs[fid][@"title"], fid);
     [_subs removeObjectForKey:fid];
-    [[SFStore shared] run:T(@"DELETE FROM subscriptions WHERE id=?") args:@[fid]];
+    [[SFStore shared] run:@"DELETE FROM subscriptions WHERE id=?" args:@[fid]];
     // bereits geladene Folgen bleiben, werden aber nicht mehr automatisch gelöscht
     for (NSMutableDictionary *r in _recs.allValues)
         if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) { [r removeObjectForKey:@"sub"]; [self save:r]; }
@@ -610,7 +613,7 @@ static NSString *gb(unsigned long long b) {
     next();
 }
 
-static NSString *deleteWatchedKey(void) { return SFDevMode ? @"downloads.dev.deleteWatched" : @"downloads.deleteWatched"; }   // Dev nie die echte Einstellung
+static NSString *deleteWatchedKey(void) { return @"downloads.deleteWatched"; }
 - (BOOL)deletesWatched { return ![[[SFStore shared] setting:deleteWatchedKey()] isEqualToString:@"0"]; }
 - (void)setDeletesWatched:(BOOL)on {
     [[SFStore shared] setSetting:on ? @"1" : @"0" forKey:deleteWatchedKey()];
@@ -626,7 +629,7 @@ static NSString *deleteWatchedKey(void) { return SFDevMode ? @"downloads.dev.del
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (self.deletesWatched) {
         NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> Zeitpunkt "gesehen"
-        for (NSDictionary *row in [[SFStore shared] rows:[NSString stringWithFormat:@"SELECT id, updated FROM %@ WHERE watched=1", SFProgressTable()] args:nil]) seen[row[@"id"]] = row[@"updated"];
+        for (NSDictionary *row in [[SFStore shared] rows:@"SELECT id, updated FROM progress WHERE watched=1" args:nil]) seen[row[@"id"]] = row[@"updated"];
         for (NSMutableDictionary *r in [_recs.allValues copy]) {
             if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
             NSNumber *w = seen[r[@"id"]];

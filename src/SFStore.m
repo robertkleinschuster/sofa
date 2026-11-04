@@ -1,9 +1,7 @@
 #import "SFStore.h"
 #import <sqlite3.h>
 
-// Dev-Instanzen haben eigenen Fortschritt (dev_progress) – Tests dürfen nie "Weiterschauen"/"gesehen" der echten App verändern
-NSString *SFProgressTable(void) { return SFDevMode ? @"dev_progress" : @"progress"; }
-static NSString *P(NSString *sql) { return SFDevMode ? [sql stringByReplacingOccurrencesOfString:@" progress" withString:@" dev_progress"] : sql; }
+// Dev-Instanzen: eigene Datenbank sofa-dev.db (siehe -init)
 
 @implementation SFStore {
     sqlite3 *_db;
@@ -21,14 +19,17 @@ static NSString *P(NSString *sql) { return SFDevMode ? [sql stringByReplacingOcc
     if ((self = [super init])) {
         _q = dispatch_queue_create("sofa.store", DISPATCH_QUEUE_SERIAL);
         _progressCache = [NSMutableDictionary new];
-        NSString *p = [SFAppSupportDir() stringByAppendingPathComponent:@"sofa.db"];
+        // Dev-Instanzen haben eine eigene Datenbank: Tests können Fortschritt, Folgen, Downloads,
+        // Merkliste und Einstellungen der echten App nicht berühren (früher: Tabellen-Umbenennung
+        // per Textersetzung in jeder Datei – fehleranfällig)
+        NSString *p = [SFAppSupportDir() stringByAppendingPathComponent:SFDevMode ? @"sofa-dev.db" : @"sofa.db"];
         if (sqlite3_open(p.fileSystemRepresentation, &_db) != SQLITE_OK) {
             SFLog(@"store: open failed %s", sqlite3_errmsg(_db));
         }
         [self exec:@"PRAGMA journal_mode=WAL"];
         [self exec:@"PRAGMA synchronous=NORMAL"];
-        [self exec:P(@"CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT)")];
-        [self exec:P(@"CREATE INDEX IF NOT EXISTS progress_updated ON progress(updated)")];
+        [self exec:@"CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT)"];
+        [self exec:@"CREATE INDEX IF NOT EXISTS progress_updated ON progress(updated)"];
         [self exec:@"CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)"];
         [self exec:@"CREATE TABLE IF NOT EXISTS jcache (k TEXT PRIMARY KEY, t REAL, v BLOB)"];
         [self loadProgress];
@@ -46,7 +47,7 @@ static NSString *P(NSString *sql) { return SFDevMode ? [sql stringByReplacingOcc
 
 - (void)loadProgress {
     sqlite3_stmt *st;
-    if (sqlite3_prepare_v2(_db, P(@"SELECT id,pos,dur,watched FROM progress").UTF8String, -1, &st, NULL) != SQLITE_OK) return;
+    if (sqlite3_prepare_v2(_db, @"SELECT id,pos,dur,watched FROM progress".UTF8String, -1, &st, NULL) != SQLITE_OK) return;
     while (sqlite3_step(st) == SQLITE_ROW) {
         NSString *i = @((const char *)sqlite3_column_text(st, 0));
         _progressCache[i] = @[@(sqlite3_column_double(st, 1)), @(sqlite3_column_double(st, 2)), @(sqlite3_column_int(st, 3))];
@@ -94,7 +95,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     double now = [NSDate date].timeIntervalSince1970;
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
-        const char *sql = P(@"INSERT OR REPLACE INTO progress (id,pos,dur,watched,updated,source,item) VALUES (?,?,?,?,?,?,?)").UTF8String;
+        const char *sql = @"INSERT OR REPLACE INTO progress (id,pos,dur,watched,updated,source,item) VALUES (?,?,?,?,?,?,?)".UTF8String;
         if (sqlite3_prepare_v2(self->_db, sql, -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, ident);
         sqlite3_bind_double(st, 2, pos);
@@ -128,7 +129,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 - (NSArray *)query:(NSString *)where limit:(NSInteger)limit source:(NSString *)source {
     __block NSMutableArray *out = [NSMutableArray new];
     dispatch_sync(_q, ^{
-        NSString *sql = [NSString stringWithFormat:P(@"SELECT item,pos,dur FROM progress WHERE %@ %@ ORDER BY updated DESC LIMIT %ld"),
+        NSString *sql = [NSString stringWithFormat:@"SELECT item,pos,dur FROM progress WHERE %@ %@ ORDER BY updated DESC LIMIT %ld",
                          where, source ? @"AND source=?" : @"", (long)limit];
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) return;
@@ -158,7 +159,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     NSMutableArray *out = [NSMutableArray new];
     dispatch_sync(_q, ^{
         sqlite3_stmt *st;
-        NSString *sql = [NSString stringWithFormat:P(@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld"), (long)limit];
+        NSString *sql = [NSString stringWithFormat:@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld", (long)limit];
         if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) return;
         while (sqlite3_step(st) == SQLITE_ROW) {
             const char *t = (const char *)sqlite3_column_text(st, 0);
@@ -181,18 +182,14 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     }
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, P(@"UPDATE progress SET pos=0 WHERE id=?").UTF8String, -1, &st, NULL) != SQLITE_OK) return;
+        if (sqlite3_prepare_v2(self->_db, @"UPDATE progress SET pos=0 WHERE id=?".UTF8String, -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, identifier);
         sqlite3_step(st); sqlite3_finalize(st);
     });
 }
 
-// Dev-Instanzen: alle Einstellungen in eigenem Namensraum (Tests dürfen nie Tastatur-Layout,
-// zuletzt Gesuchtes, Handy-Kopplung usw. der echten App verändern)
-static NSString *SK(NSString *key) { return (SFDevMode && ![key hasPrefix:@"dev."]) ? [@"dev." stringByAppendingString:key] : key; }
 
 - (NSString *)setting:(NSString *)key {
-    key = SK(key);
     __block NSString *v = nil;
     dispatch_sync(_q, ^{
         sqlite3_stmt *st;
@@ -204,7 +201,6 @@ static NSString *SK(NSString *key) { return (SFDevMode && ![key hasPrefix:@"dev.
     return v;
 }
 - (void)setSetting:(NSString *)value forKey:(NSString *)key {
-    key = SK(key);
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO settings (k,v) VALUES (?,?)", -1, &st, NULL) != SQLITE_OK) return;
@@ -308,7 +304,7 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
     }
     NSString *js = [self json:item];
     NSString *src = item.source ?: @"";
-    dispatch_async(_q, ^{ [self runNow:P(@"UPDATE OR IGNORE progress SET id=?, item=?, source=? WHERE id=?") args:@[to, js ?: @"{}", src, from]]; });
+    dispatch_async(_q, ^{ [self runNow:@"UPDATE OR IGNORE progress SET id=?, item=?, source=? WHERE id=?" args:@[to, js ?: @"{}", src, from]]; });
     return YES;
 }
 @end

@@ -14,6 +14,11 @@ Einstellungen → „Update installieren“.
 - **Verständliche Fehlermeldungen:** Lässt YouTube vorübergehend keine Wiedergabe zu oder
   scheitert ein Video, sagt Sofa jetzt auf Deutsch, was los ist und wie es weitergeht.
 - **Handy:** Ein fehlgeschlagenes Video, das erneut vom Handy gesendet wird, lädt neu.
+- **Originalton zuverlässiger:** Sofa erkennt die Original-Tonspur jetzt auch, wenn YouTube die
+  Sprachangaben weglässt – automatisch synchronisierte Fassungen (z.B. KI-Stimmen) laufen nicht
+  mehr versehentlich. Auch **Downloads** bekommen immer den Originalton.
+- **Download oder online:** Bei heruntergeladenen Videos bietet „Ton & Untertitel“ (OK halten)
+  „Online abspielen“ – mit allen Tonspuren und Untertiteln, an derselben Stelle.
 - **Abo-Downloads:** Bei vorübergehenden YouTube-Sperren versucht Sofa es über mehrere Stunden
   verteilt erneut, statt die Folge nach wenigen Minuten aufzugeben.
 

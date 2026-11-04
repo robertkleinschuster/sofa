@@ -888,8 +888,32 @@ static NSString *SFBaseLanguage(NSString *code) {
     u.detail = subs.count > 1 ? [self currentChoice:subs] : @"keine vorhanden";
     if (audio.count > 1) [opts addObject:a];
     if (subs.count > 1) [opts addObject:u];
+    // Heruntergeladen: die Datei hat nur die geladene Tonspur – online gibt es alle Ton- und
+    // Untertitelspuren (User-Wunsch 2026-11-04: auf den Stream wechseln können)
+    if (_openURL.isFileURL && (_item.resolverRef || _item.externalID)) {
+        SFMenuOption *o = [SFMenuOption option:@"Online abspielen" action:^{
+            dispatch_async(dispatch_get_main_queue(), ^{ [ws switchToStream]; });
+        }];
+        o.detail = @"alle Spuren";
+        [opts addObject:o];
+    }
     if (!opts.count) { [nav toast:@"Dieses Video hat nur eine Tonspur und keine Untertitel"]; return; }
     [nav push:[[SFMenuScreen alloc] initWithTitle:@"Ton & Untertitel" subtitle:_item.title options:opts theme:self.theme]];
+}
+
+// Vom Download auf den Online-Stream wechseln, an derselben Stelle
+- (void)switchToStream {
+    SFItem *it = [_item copy];
+    it.localPath = nil; it.playURL = nil;
+    if (!it.resolverRef && it.externalID) it.resolverRef = [@"yt:" stringByAppendingString:it.externalID];
+    NSMutableArray *q = [_queue mutableCopy];
+    if (_index < q.count) q[_index] = it;
+    SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:q index:_index];
+    ps.remoteListID = self.remoteListID;
+    NSTimeInterval t = [self currentTime];
+    if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
+    SFLog(@"player: Download -> online bei %.0f s", t);
+    [self.navigator replaceTop:ps];
 }
 
 - (void)showChoices:(NSArray *)choices type:(NSString *)type title:(NSString *)title on:(SFNavigator *)nav {

@@ -33,6 +33,10 @@ import yt_dlp
 FMT_VOD = ("best[height<=1080][vcodec^=avc1][acodec!=none][protocol^=m3u8]"
            "/best[height<=720][vcodec^=avc1][acodec!=none]/18")
 
+# Version der Ergebnisse: erhöhen, wenn sich die Auswahl ändert -> Sofa verwirft beim Neustart
+# gesicherte ältere Auflösungen (2: Original-Tonspur auch über xtags, dlaudio für Downloads)
+RESULT_VERSION = 2
+
 def base_opts():
     return {
         "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
@@ -98,14 +102,24 @@ def summarize(info):
     r = {"url": url, "alt": alt, "height": info.get("height"), "fps": info.get("fps"),
          "format": info.get("format_id"), "live": bool(info.get("is_live")),
          "duration": info.get("duration"), "title": info.get("title"),
-         "expires": expires_of(url)}
+         "expires": expires_of(url),
+         "v": RESULT_VERSION}
     d = dash_pick(info.get("formats") or [])
     if d:
         d["audios"] = audio_tracks(info.get("formats") or [])
         r["dash"] = d
+    # Download (gemuxter HLS-Stream = Standardspur, evtl. Synchronfassung): bei mehreren Tonspuren
+    # die Original-Tonspur als AAC (passt in MP4) separat mitgeben -> Downloader legt sie darüber
+    if d and d["audios"]:
+        aac = [f for f in info.get("formats") or [] if f.get("url") and (f.get("vcodec") or "none") == "none"
+               and (f.get("acodec") or "").startswith("mp4a") and not (f.get("protocol") or "").startswith("m3u8")]
+        if aac:
+            best = max(aac, key=audio_rank)
+            if audio_pref(best) >= 5:   # nur, wenn sicher Original/Standard – sonst lieber nichts ändern
+                r["dlaudio"] = best["url"]
     # Diagnose „falsche Tonspur“: was hat YouTube an Tonspuren geliefert (Sprache/Rang je Spur)?
     # Ohne audioTrack fehlt die Sprache (yt-dlp: language None) -> „Ton ?“ im Player-Log.
-    tracks = sorted({"%s:%s" % (f.get("language") or "?", f.get("language_preference"))
+    tracks = sorted({"%s:%s:%s" % (audio_lang(f) or "?", f.get("language_preference"), xtags(f).get("acont", "-"))
                      for f in info.get("formats") or []
                      if (f.get("vcodec") or "none") == "none" and (f.get("acodec") or "none") != "none"})
     log("audio %s: %s -> %s (Video-Sprache %s, Format %s)" % (info.get("id"), " ".join(tracks) or "nur gemuxt",
@@ -113,12 +127,41 @@ def summarize(info):
     r["subs"] = subtitle_tracks(info)
     return r
 
-def audio_rank(f):
-    """Rangfolge der Tonspuren: Original zuerst (yt-dlp language_preference: 10 Original,
-    5 Standard, -1 Synchronfassung, -10 Audiodeskription), ohne DRC, Opus, Bitrate."""
+def xtags(f):
+    """Stream-Kennzeichnung aus der googlevideo-URL (xtags=acont=original:lang=de-DE …).
+    Unabhängig von audioTrack in der Player-Antwort, das YouTube nicht immer mitliefert
+    (dann kennt yt-dlp weder Sprache noch Original -> falsche Synchronspur, Dagi-Meldung 2026-11-04)."""
+    from urllib.parse import urlparse, parse_qs
+    try:
+        v = (parse_qs(urlparse(f.get("url") or "").query).get("xtags") or [""])[0]
+    except Exception:
+        return {}
+    out = {}
+    for part in re.split(r"[:;&]", v):
+        if "=" in part:
+            k, _, val = part.partition("=")
+            out[k] = val
+    return out
+
+def audio_lang(f):
+    return f.get("language") or xtags(f).get("lang")
+
+def audio_pref(f):
+    """10 Original, 5 Standard, 0 unbekannt, -1 Synchronfassung, -10 Audiodeskription."""
     lp = f.get("language_preference")
-    drc = "drc" in (f.get("format_id") or "").lower()
-    return (lp if isinstance(lp, int) else 0, 0 if drc else 1,
+    acont = xtags(f).get("acont", "")
+    if acont == "original":
+        return 10
+    if acont.startswith("dubbed"):
+        return -1
+    if acont == "descriptive":
+        return -10
+    return lp if isinstance(lp, int) else 0
+
+def audio_rank(f):
+    """Rangfolge der Tonspuren: Original zuerst, ohne DRC, Opus, Bitrate."""
+    drc = "drc" in (f.get("format_id") or "").lower() or xtags(f).get("drc") == "1"
+    return (audio_pref(f), 0 if drc else 1,
             1 if (f.get("acodec") or "").startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0)
 
 def audio_tracks(formats):
@@ -129,16 +172,16 @@ def audio_tracks(formats):
             continue
         if (f.get("vcodec") or "none") != "none" or (f.get("acodec") or "none") == "none":
             continue
-        lang = f.get("language") or "und"
+        lang = audio_lang(f) or "und"
         if lang not in best or audio_rank(f) > audio_rank(best[lang]):
             best[lang] = f
     if len(best) < 2:
         return []   # nur eine Sprache: nichts auszuwählen
     out = []
     for lang, f in best.items():
-        lp = f.get("language_preference")
+        lp = audio_pref(f)
         out.append({"lang": lang, "url": f["url"], "original": lp == 10,
-                    "dubbed": isinstance(lp, int) and lp < 5 and lp > -10, "described": lp == -10})
+                    "dubbed": -10 < lp < 5, "described": lp == -10})
     out.sort(key=lambda t: (not t["original"], t["described"], t["lang"]))
     return out
 
@@ -193,7 +236,7 @@ def dash_pick(formats):
     a = max(auds, key=lambda t: t[:4])[4]
     return {"video": v["url"], "audio": a["url"], "height": v.get("height"), "fps": v.get("fps"),
             "vcodec": (v.get("vcodec") or "").split(".")[0], "acodec": (a.get("acodec") or "").split(".")[0],
-            "alang": a.get("language")}
+            "alang": audio_lang(a)}
 
 def resolve(vid, live, pool):
     web, vr, _ = pools[pool]

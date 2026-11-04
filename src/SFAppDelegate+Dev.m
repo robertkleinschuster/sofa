@@ -104,7 +104,12 @@
     } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek-Video per Resolver-Ref (orf:…, ard:…, zdf:…)
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.title = arg;
-        if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg]; else it.resolverRef = arg;   // direkte URL: Ausweich-Kette testen
+        if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg];   // direkte URL: Ausweich-Kette testen
+        else if ([arg hasPrefix:@"/"]) {   // „/datei.mp4|orf:…“: wie ein Download mit Online-Gegenstück
+            NSArray *pt = [arg componentsSeparatedByString:@"|"];
+            it.localPath = pt[0]; it.playURL = [NSURL fileURLWithPath:pt[0]];
+            if (pt.count > 1) { it.resolverRef = pt[1]; it.identifier = pt[1]; }
+        } else it.resolverRef = arg;
         SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
         ps.startFromBeginning = YES;
         if ([self topPlayer]) [self.nav replaceTop:ps]; else [self.nav push:ps];
