@@ -74,6 +74,10 @@ class Job:
         self.key, self.pool = key, pool
         self.started, self.ev = False, threading.Event()
         self.result, self.error = None, None
+        self.superseded_by = None      # Wiedergabe-Job, der diesen wartenden Vorlade-Job überholt hat
+        self.created = time.time()
+
+BG_MAX_WAIT = 60   # Vorladen, das so lange in der Schlange stand, ist veraltet (Fokus längst weiter)
 
 def expires_of(url):
     m = re.search(r"/expire/(\d+)/", url) or re.search(r"[?&]expire=(\d+)", url)
@@ -143,26 +147,34 @@ def resolve(vid, live, pool):
 
 def run(job):
     """Job im eigenen Pool ausführen. Wurde er, solange er wartete, von einer
-    Wiedergabe-Anfrage überholt, deren Ergebnis übernehmen statt doppelt aufzulösen."""
-    other = None
-    with pools[job.pool][2]:
+    Wiedergabe-Anfrage überholt, deren Ergebnis übernehmen statt doppelt aufzulösen –
+    auch wenn jener Job schon fertig und aus `jobs` entfernt ist (superseded_by)."""
+    try:
+        other = None
+        with pools[job.pool][2]:
+            with jobs_lock:
+                job.started = True
+                cur = jobs.get(job.key)
+                other = job.superseded_by or (cur if cur is not None and cur is not job else None)
+            if other is None:
+                if job.pool == "bg" and time.time() - job.created > BG_MAX_WAIT:
+                    job.error = RuntimeError("Vorladen verworfen (veraltet)")
+                else:
+                    try:
+                        job.result = resolve(job.key[0], job.key[1], job.pool)
+                    except Exception as e:
+                        job.error = e
+        if other is not None:
+            other.ev.wait(120)
+            job.result, job.error = other.result, other.error
+    except BaseException as e:   # nie einen Job ohne Ergebnis hängen lassen
+        if job.result is None and job.error is None:
+            job.error = e
+    finally:
         with jobs_lock:
-            job.started = True
-            cur = jobs.get(job.key)
-            if cur is not None and cur is not job:
-                other = cur
-        if other is None:
-            try:
-                job.result = resolve(job.key[0], job.key[1], job.pool)
-            except Exception as e:
-                job.error = e
-    if other is not None:
-        other.ev.wait(120)
-        job.result, job.error = other.result, other.error
-    with jobs_lock:
-        if jobs.get(job.key) is job:
-            del jobs[job.key]
-    job.ev.set()
+            if jobs.get(job.key) is job:
+                del jobs[job.key]
+        job.ev.set()
 
 def handle(req):
     rid = req.get("rid")
@@ -175,7 +187,10 @@ def handle(req):
         job = jobs.get(key)
         mine = job is None or (pool == "fg" and job.pool == "bg" and not job.started)
         if mine:
-            job = jobs[key] = Job(key, pool)
+            new = Job(key, pool)
+            if job is not None:
+                job.superseded_by = new   # der wartende Vorlade-Job übernimmt später dieses Ergebnis
+            job = jobs[key] = new
     if mine:
         run(job)
     else:

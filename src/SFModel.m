@@ -33,9 +33,9 @@ void SFResolveRef(NSString *ref, SFURLDone done) {
     if (self.date) d[@"date"] = @(self.date.timeIntervalSince1970);
     if (self.duration > 0) d[@"duration"] = @(self.duration);
     if (self.localPath) d[@"localPath"] = self.localPath;
-    if (self.externalID) d[@"externalID"] = self.externalID;
     if (self.showRef) d[@"showRef"] = self.showRef;
-    else if (self.playURL) d[@"url"] = self.playURL.absoluteString;
+    if (self.externalID) d[@"externalID"] = self.externalID;
+    else if (self.playURL) d[@"url"] = self.playURL.absoluteString;   // YouTube-URLs laufen ab -> nur ohne externalID speichern
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
     return d;
 }

@@ -5,7 +5,7 @@
     NSTask *_task;
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
-    NSMutableDictionary *_pending;    // rid -> @[key, vid]
+    NSMutableDictionary *_pending;    // rid -> @[key, vid, prio]
     NSMutableDictionary *_waiters;    // key (vid bzw. live:vid) -> Rückrufe; eine Auflösung je Video
     NSMutableSet *_prioKeys;          // keys, für die schon eine Wiedergabe-Anfrage läuft
     NSMutableDictionary *_cache;      // vid -> result (bis expires - 1 h)
@@ -87,7 +87,11 @@
     ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
     _task = nil; _in = nil;
     [_pending removeAllObjects];
-    for (NSString *key in [_waiters allKeys]) [self finish:key result:nil error:SFError(@"YouTube-Auflösung abgebrochen.")];
+    // erst alles einsammeln und leeren, dann zurückrufen: ein Rückruf darf sofort neu anfragen
+    NSDictionary *w = [_waiters copy];
+    [_waiters removeAllObjects]; [_prioKeys removeAllObjects];
+    NSError *err = SFError(@"YouTube-Auflösung abgebrochen.");
+    for (NSString *key in w) for (void (^done)(NSDictionary *, NSError *) in w[key]) done(nil, err);
     if (!_wantRunning) return;
     _crashes++;
     double delay = MIN(60, 2 * _crashes);
@@ -119,8 +123,9 @@
             [self finish:key result:j error:nil];
         } else {
             SFLog(@"yt: resolve %@ failed: %@", vid, j[@"error"]);
-            // läuft für dasselbe Video noch eine zweite Anfrage (Vorladen + Klick), auf die warten
-            if (![self hasPending:key]) [self finish:key result:nil error:SFError([self friendly:j[@"error"]])];
+            // Wiedergabe gescheitert -> sofort melden; nur ein gescheitertes Vorladen wartet auf eine
+            // noch laufende Wiedergabe-Anfrage für dasselbe Video
+            if ([p[2] boolValue] || ![self hasPending:key]) [self finish:key result:nil error:SFError([self friendly:j[@"error"]])];
         }
     }
 }
@@ -171,7 +176,7 @@
     }
     if (prio) [_prioKeys addObject:key];
     NSNumber *rid = @(++_rid);
-    _pending[rid] = @[key, vid];
+    _pending[rid] = @[key, vid, @(prio)];
     NSData *line = [NSJSONSerialization dataWithJSONObject:@{@"rid": rid, @"vid": vid, @"live": @(live), @"prio": @(prio)} options:0 error:nil];
     NSMutableData *m = [line mutableCopy]; [m appendBytes:"\n" length:1];
     @try { [_in writeData:m]; }

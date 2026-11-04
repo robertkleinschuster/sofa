@@ -879,6 +879,7 @@ static void auditImages(SFPage *page) {
             NSString *name = it.channel.length ? it.channel : nil;
             [opts addObject:[SFMenuOption option:name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal" action:^{
                 lookup(it, ^(NSString *ref) {
+                    if (nav.top != ws) return;   // inzwischen woanders (z. B. Wiedergabe gestartet)
                     SFPageLoader pl = ref ? SFShowPageLoader(ref, it.channel) : nil;
                     if (!pl) { [nav toast:@"Kanal nicht gefunden"]; return; }
                     SFItem *f = [SFItem new];
