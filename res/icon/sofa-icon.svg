@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Sofa-App-Icon, Variante „Bühne“: eigenes Motiv im Stil der 2000er-Mediacenter –
+       glänzendes Schwarz, Spiegelboden mit Reflexion, blaues Bühnenlicht. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1d24"/>
+      <stop offset="0.62" stop-color="#050608"/>
+      <stop offset="1" stop-color="#000000"/>
+    </linearGradient>
+    <radialGradient id="spot" cx="512" cy="300" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9cc7ff" stop-opacity="0.6"/>
+      <stop offset="0.45" stop-color="#3f74d8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#3f74d8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="horizon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8fb8ff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#cfe2ff" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#8fb8ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sofa" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d6dce8"/>
+    </linearGradient>
+    <linearGradient id="seat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f5fa"/>
+      <stop offset="1" stop-color="#c4ccda"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="reflmask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="0" y="704" width="1024" height="220" fill="url(#fade)"/>
+    </mask>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <g id="couch">
+      <rect x="268" y="360" width="488" height="230" rx="64" fill="url(#sofa)"/>
+      <rect x="300" y="556" width="424" height="88" rx="20" fill="#b3bccc"/>
+      <rect x="300" y="532" width="208" height="120" rx="34" fill="url(#seat)"/>
+      <rect x="516" y="532" width="208" height="120" rx="34" fill="url(#seat)"/>
+      <rect x="236" y="622" width="552" height="82" rx="36" fill="url(#sofa)"/>
+      <rect x="196" y="476" width="132" height="228" rx="56" fill="url(#sofa)"/>
+      <rect x="696" y="476" width="132" height="228" rx="56" fill="url(#sofa)"/>
+    </g>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#spot)"/>
+    <!-- Spiegelboden + Horizontlinie -->
+    <rect x="100" y="704" width="824" height="220" fill="url(#floor)"/>
+    <rect x="160" y="703" width="704" height="2" fill="url(#horizon)"/>
+    <!-- Reflexion (gespiegelt an der Bodenlinie y=704) -->
+    <g mask="url(#reflmask)"><use xlink:href="#couch" transform="translate(0,1408) scale(1,-1)"/></g>
+    <use xlink:href="#couch"/>
+    <!-- Glanz oben -->
+    <ellipse cx="512" cy="110" rx="520" ry="250" fill="url(#gloss)"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="3"/>
+</svg>

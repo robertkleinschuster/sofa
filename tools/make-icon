@@ -1,0 +1,14 @@
+#!/bin/bash
+# make-icon -- res/icon/sofa-icon.svg -> res/Sofa.icns (alle Größen, @1x/@2x).
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+SVG="$SRC/res/icon/sofa-icon.svg"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-icon.XXXXXX")"; trap 'rm -rf "$T"' EXIT
+SET="$T/Sofa.iconset"; mkdir "$SET"
+for s in 16 32 128 256 512; do
+  /opt/local/bin/rsvg-convert -w $s -h $s "$SVG" -o "$SET/icon_${s}x${s}.png"
+  /opt/local/bin/rsvg-convert -w $((s*2)) -h $((s*2)) "$SVG" -o "$SET/icon_${s}x${s}@2x.png"
+done
+iconutil -c icns "$SET" -o "$SRC/res/Sofa.icns"
+echo "res/Sofa.icns ($(du -h "$SRC/res/Sofa.icns" | cut -f1))"
