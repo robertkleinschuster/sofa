@@ -141,7 +141,10 @@ Gilt für ALLE Apps (YouTube, ZDF, ARD, ORF, CCC …); Umsetzung je Quelle darf 
 - 2026-11-03: Kein Mehrbenutzer-Konzept (User): Gerät wird geteilt, alles ist gemeinsam (Verlauf, Weiterschauen, Abos). Keine Anmelde-/Firefox-Hinweise in der Oberfläche.
 - 2026-11-03: ORF über libcurl+lokalen HLS-Proxy statt NSURLSession (10.9-TLS zu alt). User-Prio danach: YouTube + Handy-Koppeln.
 
-## Dev-Kreislauf (closed loop, stört Kodi nicht)
+## Dev-Kreislauf (closed loop, stört die echte App nicht)
+- **Regel (User 2026-11-04): jede Änderung nach dem Test sofort live installieren**
+  (`tools/sofa-deploy`, Tausch während der Wiedergabe < 1 s) und im SofaRemote.log prüfen
+  („Update installiert“, kein „erzwinge“).
 - `tools/sofa-dev cycle` = build + unsichtbare Instanz (`--dev`: Offscreen-Fenster,
   ActivationPolicyProhibited, stumm, keine Power-Assertion) + Check.
 - `tools/sofa-dev do "key down" "shot name" ...` → PNG in /private/tmp/claude-501/sofa-shots.
