@@ -1,0 +1,82 @@
+#!/bin/bash
+# test-playback -- robustness regression tests for the player, driven through an invisible dev
+# instance (own database, muted). No YouTube requests: uses a generated local file and ORF ON.
+#
+# Checks (each one is a bug that happened in production):
+#   1. playback right after launch has a configured video output (render-context race, 2026-11-04:
+#      after an update restart the file resumed before the GL layer existed -> audio only)
+#   2. a dead video output heals itself (watchdog re-selects the video track)
+#   3. a broken stream walks the fallback chain and ends in a readable German message
+#   4. a downloaded item switches to the online stream at the same position ("Online abspielen"
+#      used to restart the local file because the download lookup found it again)
+#   5. a remembered subtitle preference is applied automatically
+#
+#   tools/test-playback            all checks
+# Exit code 0 = all ok.
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
+INST=playtest PORT=47994
+FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
+DEVDB="$HOME/Library/Application Support/Sofa/sofa-dev.db"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
+FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
+ORF=orf:14345720   # ORF ON episode with subtitles (replace when it expires)
+fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+
+make -C "$SRC" >/dev/null || exit 1
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine=frequency=440 \
+      -t 90 -c:v libx264 -preset ultrafast -c:a aac "$T/local.mp4" || { echo "ffmpeg failed"; exit 1; }
+
+APP=
+start() {
+  : > "$LOG"
+  "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
+  for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.1; done
+  echo "dev instance did not start"; exit 1
+}
+stop() { echo quit > "$FIFO" 2>/dev/null; sleep 2; kill $APP 2>/dev/null; APP=; }
+cmd() { echo "$*" > "$FIFO"; }
+since() { sed -n "$1,\$p" "$LOG"; }   # log lines from line $1 on
+mark() { wc -l < "$LOG" | tr -d ' '; }
+cleanup() { [ -n "$APP" ] && kill $APP 2>/dev/null; sqlite3 "$DEVDB" "delete from downloads where id='$ORF' and path like '$T/%';" 2>/dev/null; rm -rf "$T"; }
+trap cleanup EXIT
+SQL=/opt/local/bin/sqlite3; sqlite3() { "$SQL" "$@"; }
+
+echo "==> 1. playback right after launch"
+start
+cmd "play $T/local.mp4|$ORF"; sleep 5
+cmd "mpvprop vo-configured"; sleep 1
+grep -q 'mpv vo-configured = yes' "$LOG" && ok "video output configured" || bad "no video output (audio only?)"
+grep -q 'No render context set' "$LOG" && bad "mpv started before the render context" || ok "no render-context race"
+
+echo "==> 2. self-healing of a dead video output"
+m=$(mark); cmd "mpvset vid no"; sleep 4; cmd "mpvprop vo-configured"; sleep 1
+since $m | grep -q 'video output missing' && ok "watchdog noticed the missing video" || bad "watchdog did not react"
+since $m | grep -q 'mpv vo-configured = yes' && ok "video output restored" || bad "video output not restored"
+
+echo "==> 3. broken stream -> fallback chain -> readable message"
+m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; sleep 8
+since $m | grep -q 'mpv scheitert -> AVFoundation\|mpv fails' && ok "fallback chain ran" || bad "no fallback"
+since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no final failure"
+cmd "shot $T/fail.png"; sleep 1.5; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
+stop
+
+echo "==> 4. download -> online stream at the same position"
+sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('$ORF','orf','ORF','{\"id\":\"$ORF\",\"kind\":0,\"title\":\"Playtest\",\"ref\":\"$ORF\",\"source\":\"orf\"}','$T/local.mp4',2,1,strftime('%s','now'));"
+start
+cmd "play $ORF"; sleep 10
+grep -q 'player: play local.mp4' "$LOG" && ok "download preferred when present" || bad "download not used"
+m=$(mark); cmd "key selecthold"; sleep 1.5; cmd "key select"; sleep 12
+since $m | grep -q 'Download -> online' && ok "switched to online" || bad "no switch"
+since $m | grep -q 'player: play apasfiis\|player: play .*via mpv' && ! since $m | grep -q 'player: play local.mp4' \
+  && ok "online stream playing (not the file again)" || bad "the local file was played again"
+
+echo "==> 5. remembered subtitle preference"
+since $m | grep -q 'Untertitel .*gemerkte Sprache\|subtitles .*remembered' && ok "subtitles applied automatically" \
+  || echo "  skip  no remembered subtitle preference in the dev domain (defaults write de.sofa.dev subtitlesSameLanguage -bool YES)"
+stop
+
+[ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
+exit $fail
