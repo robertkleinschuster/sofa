@@ -10,6 +10,7 @@
 @end
 
 @interface SFMenuScreen : SFScreen
+@property (nonatomic) NSInteger subtitleLines;   // Standard 2 (z.B. Begrüßung mit Tastenübersicht: mehr)
 - (instancetype)initWithTitle:(NSString *)title subtitle:(NSString *)subtitle
                       options:(NSArray *)options theme:(SFTheme *)theme;
 @end

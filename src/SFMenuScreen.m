@@ -17,7 +17,7 @@
 
 - (instancetype)initWithTitle:(NSString *)title subtitle:(NSString *)subtitle options:(NSArray *)options theme:(SFTheme *)theme {
     if ((self = [super initWithTheme:theme])) {
-        _title = title; _subtitle = subtitle; _options = options;
+        _title = title; _subtitle = subtitle; _options = options; _subtitleLines = 2;
         _rows = [NSMutableArray new];
     }
     return self;
@@ -46,7 +46,7 @@
         [self->_panel addSublayer:tl];
         if (self->_subtitle.length) {
             SFLabel *sl = [SFLabel labelWithFont:[t regular:26] color:t.textDim];
-            sl.text = self->_subtitle; sl.maxLines = 2;
+            sl.text = self->_subtitle; sl.maxLines = self->_subtitleLines;
             sl.position = CGPointMake(x, y + U(8));
             y += [sl sizeToFitWidth:w] + U(8);
             [self->_panel addSublayer:sl];

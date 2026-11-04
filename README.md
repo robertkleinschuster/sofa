@@ -51,12 +51,12 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 ## Install
 
 ```sh
-sudo port -n install sofa       # Sofa.app + all dependencies (mpv, ffmpeg, curl, python, PO token server)
-sudo port load sofa             # Apple Remote helper + start Sofa at login
-sudo port load bgutil-pot-server  # local YouTube PO token service (127.0.0.1 only)
+sudo port -n install sofa   # Sofa.app + all dependencies (mpv, ffmpeg, curl, python, node, PO token service)
+sudo port load sofa         # Apple Remote helper + start Sofa at login (run in Terminal on the Mac)
 ```
 
-On first use of YouTube, Sofa sets up its own yt-dlp environment
+The local YouTube PO token service (`bgutil-pot-server`, 127.0.0.1 only) starts automatically.
+On first start Sofa explains the remote; on first use of YouTube it sets up its own yt-dlp environment
 (`~/Library/Application Support/Sofa/ytdlp`, about a minute) and keeps it updated daily.
 
 ## Build from source

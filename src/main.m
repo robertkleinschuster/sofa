@@ -7,6 +7,7 @@
 #import "SFCore.h"
 #import "SFScreen.h"
 #import "SFHome.h"
+#import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
 #import "SFDevServer.h"
@@ -96,6 +97,7 @@ static uint16_t gPort = 8765;
         [[SFLounge shared] start];
     }
     if (!SFDevMode) [self restoreAfterUpdate];
+    [self welcomeIfFirstRun];
 
     if (SFDevMode) {
         [self.window setFrame:frame display:YES];
@@ -234,6 +236,32 @@ static uint16_t gPort = 8765;
     [[SFLounge shared] stop];   // Handy: "getrennt" (best effort, max 1,5 s). Nicht beim Update – da sind wir in 1 s zurück.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
+}
+
+#pragma mark Erster Start
+
+// Einmalige Begrüßung mit der Tastenbelegung (7-Tasten-Apple-Remote): nur bei wirklich neuer
+// Installation – wer schon Sendungen/Kanälen folgt oder Fortschritt hat, kennt Sofa.
+// Dev: SOFA_WELCOME=1 zeigt sie immer (Test), sonst nie.
+- (void)welcomeIfFirstRun {
+    SFStore *st = [SFStore shared];
+    BOOL force = SFDevMode && getenv("SOFA_WELCOME");
+    if (!force) {
+        if (SFDevMode || [st setting:@"welcome.shown"].length) return;
+        [st setSetting:@"1" forKey:@"welcome.shown"];
+        if ([[SFFollows shared] follows:nil].count || [st continueWatching:1 source:nil].count) return;
+    }
+    SFMenuOption *go = [SFMenuOption option:@"Los geht’s" action:^{}];
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Willkommen bei Sofa"
+        subtitle:@"Alles geht mit der Apple Remote:\n"
+                 @"Pfeile – auswählen · Mitte – öffnen\n"
+                 @"Mitte halten – Optionen (Folgen, Später ansehen, Herunterladen)\n"
+                 @"MENU – zurück · MENU halten – Startseite\n"
+                 @"▶❚❚ – Wiedergabe und Pause\n"
+                 @"Im Video: Links/Rechts halten spult, Hoch/Runter regelt die Lautstärke."
+        options:@[go] theme:[SFTheme themeNamed:@"home"]];
+    m.subtitleLines = 8;
+    [self.nav push:m];
 }
 
 #pragma mark Update (Helper tauscht die App; Zustand überlebt)
