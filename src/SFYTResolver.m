@@ -237,7 +237,10 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
             });
         };
         NSString *before = nil;
-        BOOL foreign = exists && !YTVenvMatchesBase(dir);
+        // Ordner da, aber Python tot (App verschoben, alte Bundle-Version, MacPorts weg) oder von
+        // einem anderen Basis-Python: neu bauen und den alten Ordner beim Tausch beiseite legen.
+        BOOL present = [fm fileExistsAtPath:dir];
+        BOOL foreign = present && (!exists || !YTVenvMatchesBase(dir));
         if (foreign) SFLog(@"yt: venv stammt von anderem Python – neu anlegen");
         if (exists && !foreign) {
             // Server (noch) nicht erreichbar: lieber warten als ein unpassendes Plugin holen
@@ -257,9 +260,9 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
             // Tausch: altes venv beiseite, neues an seinen Platz. Der laufende Resolver lädt Module über
             // denselben Pfad bis zu seinem Neustart (gleich danach, sobald frei) schon aus dem neuen.
             [fm removeItemAtPath:old error:nil];
-            if (exists) [fm moveItemAtPath:dir toPath:old error:nil];
+            if (present) [fm moveItemAtPath:dir toPath:old error:nil];
             ok = [fm moveItemAtPath:tmp toPath:dir error:nil];
-            if (!ok && exists) [fm moveItemAtPath:old toPath:dir error:nil];
+            if (!ok && present) [fm moveItemAtPath:old toPath:dir error:nil];
         }
         if (!ok) [fm removeItemAtPath:tmp error:nil];
         finish(ok, before, after, out);

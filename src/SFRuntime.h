@@ -14,5 +14,8 @@ NSString *SFCABundle(void);                // CA-Zertifikate für libcurl (nil =
 // einrichten (Fernbedienungs-Helper sofort laden, Autostart ab nächster Anmeldung).
 // Nicht, wenn der MacPorts-Port seine Agents installiert hat. Nur aus der echten App aufrufen.
 void SFInstallAgents(void);
+// Release-Bundle läuft nicht aus /Applications bzw. ~/Applications (z.B. direkt aus der DMG):
+// dann keine Agents einrichten, sondern den Nutzer bitten, Sofa in „Programme“ zu ziehen.
+BOOL SFRuntimeMisplaced(void);
 // Einmal früh in main(): PATH, SSL_CERT_FILE, FONTCONFIG_*, SOFA_NODE für Kindprozesse.
 void SFRuntimeSetup(void);

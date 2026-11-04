@@ -36,17 +36,27 @@ for t in ffmpeg node rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 echo "==> Python (gekürzt)"
 PF="$MP/Library/Frameworks/Python.framework/Versions/3.14"
 mkdir -p "$RT/Python.framework/Versions"
+# Muster mit führendem / sind am Quellordner verankert
 rsync -a --exclude '__pycache__/*.opt-*.pyc' \
-  --exclude 'lib/python3.14/test/' --exclude 'lib/python3.14/idlelib/' \
-  --exclude 'lib/python3.14/tkinter/' --exclude 'lib/python3.14/turtledemo/' \
-  --exclude 'lib/python3.14/lib-dynload/_tkinter*' \
-  --exclude 'lib/python3.14/site-packages/*' --exclude 'share/' \
+  --exclude '/lib/python3.14/test/' --exclude '/lib/python3.14/idlelib/' \
+  --exclude '/lib/python3.14/tkinter/' --exclude '/lib/python3.14/turtledemo/' \
+  --exclude '/lib/python3.14/lib-dynload/_tkinter*' \
+  --exclude '/lib/python3.14/site-packages/*' --exclude '/share/' \
   "$PF/" "$RT/Python.framework/Versions/3.14/"
+# bin/: nur Python selbst (MacPorts legt dort Skripte anderer Ports ab, mit /opt/local-Shebang)
+find "$RT/Python.framework/Versions/3.14/bin" -mindepth 1 ! -name 'python3*' -delete
 
 echo "==> PO-Token-Server"
 cp -R "$MP/libexec/bgutil-pot-server" "$RT/bgutil"
+# canvas: nur das fertige Addon, keine Build-Zwischenstände (Makefiles, .o, .d)
+CB="$RT/bgutil/node_modules/canvas/build"
+find "$CB" -mindepth 1 -maxdepth 1 ! -name Release -exec rm -rf {} +
+find "$CB/Release" -mindepth 1 ! -name '*.node' ! -name '*.dylib' -exec rm -rf {} +
 
-echo "==> CA-Zertifikate + fontconfig"
+echo "==> CA-Zertifikate, fontconfig, leere Modul-/Konfig-Pfade (gegen MacPorts-Module, siehe SFRuntime)"
+mkdir -p "$RT/lib/gio/modules"
+: > "$RT/etc/gdk-pixbuf-loaders.cache"
+printf '# Sofa: keine System-/MacPorts-OpenSSL-Konfiguration laden\n' > "$RT/etc/openssl.cnf"
 cp "$MP/share/curl/curl-ca-bundle.crt" "$RT/etc/cert.pem"
 cat > "$RT/etc/fonts/fonts.conf" <<'XML'
 <?xml version="1.0"?>
@@ -65,20 +75,25 @@ cat > "$RT/etc/fonts/fonts.conf" <<'XML'
 XML
 
 echo "==> Bibliotheken einsammeln und umlinken"
-"$PY" -I "$SRC/tools/relink.py" "$APP/Contents" "$APP/Contents/Frameworks"
+"$PY" -I "$SRC/tools/relink.py" "$APP/Contents" "$APP/Contents/Frameworks"   # Exit 1 bei Fehlern
 
 echo "==> Symbole strippen (Werkzeuge + Bibliotheken; Sofa selbst behält sie für Absturzberichte)"
 strip -x "$RT"/bin/* "$APP"/Contents/Frameworks/*.dylib 2>/dev/null || true
 
-echo "==> Prüfen: kein Mach-O darf noch nach $MP zeigen"
-bad=$(find "$APP" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' -o -name '*.node' \) -print0 \
-      | xargs -0 otool -L 2>/dev/null | /usr/bin/grep -c "^[[:space:]]*$MP/" || true)
-[ "$bad" = 0 ] || { echo "FEHLER: $bad Verweise nach $MP"; exit 1; }
+echo "==> Prüfen: nur noch System- und Bundle-Abhängigkeiten, keine rpaths"
+"$PY" -I "$SRC/tools/relink.py" --check "$APP"
+# Skripte zur Laufzeit: keine /opt/local-Pfade (Ausnahmen: canvas-Build-Helfer; ytresolver.py
+# nutzt /opt/local nur als Rückfall, wenn SOFA_NODE fehlt)
+LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.py' --include='*.json' "$MP/" "$RT/bgutil" \
+       | /usr/bin/grep -v '/canvas/util/has_lib.js$' || true)
+[ -z "$LEFT" ] || { echo "FEHLER: $MP-Pfade in Laufzeit-Skripten:"; echo "$LEFT"; exit 1; }
 
 echo "==> DMG"
 STAGE="$DIST/dmg"; mkdir -p "$STAGE"
-mv "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Programme"
+mv "$APP" "$STAGE/"
+trap 'mv "$STAGE/Sofa.app" "$APP" 2>/dev/null; rm -rf "$STAGE"' EXIT   # auch wenn hdiutil scheitert
+ln -s /Applications "$STAGE/Programme"
 hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -format UDBZ -ov "$DIST/Sofa-$VER.dmg"
-mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"
+mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"; trap - EXIT
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
 shasum -a 256 "$DIST/Sofa-$VER.dmg"

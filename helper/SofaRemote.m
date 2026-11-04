@@ -11,6 +11,7 @@
 #import <IOKit/hid/IOHIDLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import <sys/socket.h>
+#import <sys/stat.h>
 #import <netinet/in.h>
 #import "../src/SFCore.h"
 #import "../src/SFRemote.h"
@@ -58,8 +59,8 @@ static NSString *ExternalUpdateDir(void) {
 // Sofa ihn mit (Contents/Runtime/bgutil) und der Helper betreibt ihn als Kindprozess: läuft schon
 // einer (z.B. der MacPorts-Daemon bgutil-pot-server), bleibt es bei dem. Beendet sich der Helper
 // (Update, Logout), endet der Server mit ihm -> nie ein Server aus einem alten Bundle.
-static pid_t gPotPid;
-static void SRStopPot(void) { if (gPotPid > 0) kill(gPotPid, SIGTERM); gPotPid = 0; }
+static pid_t gPotPid;   // 0 = kein eigener Server (auch nach dessen Ende: terminationHandler)
+static void SRStopPot(void) { pid_t p = gPotPid; gPotPid = 0; if (p > 0) kill(p, SIGTERM); }
 static BOOL SRPortOpen(uint16_t port) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return NO;
@@ -83,6 +84,9 @@ static BOOL SRPortOpen(uint16_t port) {
     BOOL _updating;
     BOOL _external;     // laufendes Update: Tausch durch tools/sofa-deploy (App-Ordner nicht beschreibbar)
     NSTask *_pot;
+    int _potFails;
+    ino_t _selfIno;     // Datei-ID des eigenen Programms beim Start (Sofa.app ersetzt? -> neu starten)
+    BOOL _replaced;     // laufendes "Update": Bundle wurde von außen ersetzt (neue DMG), kein Tausch
 }
 
 
@@ -102,9 +106,20 @@ static BOOL SRPortOpen(uint16_t port) {
                  [SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]] ? SofaAppPath() : nil;
     [self log:[NSString stringWithFormat:@"SofaRemote start, Sofa=%@", _sofaPath]];
     [self open];
+    _selfIno = [self selfInode];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
     atexit(SRStopPot);
+    // launchctl unload / Abmelden schicken SIGTERM: ohne Handler endete der Helper sofort, atexit
+    // liefe nicht und node bliebe verwaist auf 4416 (NSTask-Kinder haben eine eigene Prozessgruppe).
+    static dispatch_source_t sigs[2];
+    int nums[2] = {SIGTERM, SIGINT};
+    for (int i = 0; i < 2; i++) {
+        signal(nums[i], SIG_IGN);
+        sigs[i] = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, nums[i], 0, dispatch_get_main_queue());
+        dispatch_source_set_event_handler(sigs[i], ^{ [self log:@"Signal – beende (mit PO-Token-Server)"]; exit(0); });
+        dispatch_resume(sigs[i]);
+    }
     [self superviseServer];
 }
 
@@ -112,9 +127,13 @@ static BOOL SRPortOpen(uint16_t port) {
     NSString *rt = SFRuntimeDir();
     if (!rt) return;   // Port-/Entwicklungs-Build: Server kommt vom Port bgutil-pot-server
     if (!_pot.isRunning && !SRPortOpen(4416)) {
+        NSFileManager *fm = [NSFileManager defaultManager];
         NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Sofa-potserver.log"];
-        if (![[NSFileManager defaultManager] fileExistsAtPath:lp]) [[NSFileManager defaultManager] createFileAtPath:lp contents:nil attributes:nil];
-        NSFileHandle *lh = [NSFileHandle fileHandleForWritingAtPath:lp];
+        [fm createDirectoryAtPath:[lp stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+        // Log klein halten: über 1 MB neu beginnen
+        if ([[fm attributesOfItemAtPath:lp error:nil] fileSize] > 1024 * 1024) [fm removeItemAtPath:lp error:nil];
+        if (![fm fileExistsAtPath:lp]) [fm createFileAtPath:lp contents:nil attributes:nil];
+        NSFileHandle *lh = [NSFileHandle fileHandleForWritingAtPath:lp] ?: [NSFileHandle fileHandleWithNullDevice];
         [lh seekToEndOfFile];
         NSTask *t = [NSTask new];
         t.launchPath = SFTool(@"node");
@@ -122,8 +141,23 @@ static BOOL SRPortOpen(uint16_t port) {
         t.currentDirectoryPath = [rt stringByAppendingPathComponent:@"bgutil"];
         t.standardOutput = lh; t.standardError = lh;
         t.standardInput = [NSFileHandle fileHandleWithNullDevice];
+        t.terminationHandler = ^(NSTask *x) { if (gPotPid == x.processIdentifier) gPotPid = 0; };
+        _potFails = 0;
         @try { [t launch]; _pot = t; gPotPid = t.processIdentifier; [self log:@"PO-Token-Server gestartet"]; }
         @catch (NSException *e) { [self log:[@"PO-Token-Server: " stringByAppendingString:e.reason]]; }
+    }
+    else if (_pot.isRunning) {
+        // hängt der eigene Server (antwortet 3x nicht auf /ping), neu starten
+        NSTask *t = _pot;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSURLRequest *r = [NSURLRequest requestWithURL:[NSURL URLWithString:@"http://127.0.0.1:4416/ping"]
+                                               cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10];
+            BOOL ok = [NSURLConnection sendSynchronousRequest:r returningResponse:NULL error:NULL] != nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self->_potFails = ok ? 0 : self->_potFails + 1;
+                if (self->_potFails >= 3 && t.isRunning) { [self log:@"PO-Token-Server hängt – Neustart"]; [t terminate]; }
+            });
+        });
     }
     // alle 30 s nachsehen (abgestürzt -> neu starten)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self superviseServer]; });
@@ -144,8 +178,30 @@ static BOOL SRPortOpen(uint16_t port) {
     return a;
 }
 
+- (ino_t)selfInode {
+    struct stat st;
+    NSString *exe = [SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/SofaRemote"];
+    return stat(exe.fileSystemRepresentation, &st) == 0 ? st.st_ino : 0;
+}
+
 - (void)checkUpdate {
     if (_updating) return;
+    // Neue Version per Finder über die alte gezogen: Sofa (Zustand sichern) und Helper neu starten,
+    // sonst liefen alter Helper + alter PO-Token-Server bis zur nächsten Anmeldung weiter.
+    ino_t ino = [self selfInode];
+    if (!_selfIno) _selfIno = ino;
+    else if (ino && ino != _selfIno &&
+             [[NSFileManager defaultManager] isExecutableFileAtPath:[SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]]) {
+        _updating = YES; _replaced = YES;
+        [self log:@"Sofa.app wurde ersetzt – starte neu"];
+        BOOL wasRunning = [self realSofaProcesses].count > 0;
+        if (wasRunning) {
+            CFMessagePortRef port = CFMessagePortCreateRemote(NULL, CFSTR(SF_REMOTE_APP_PORT));
+            if (port) { CFMessagePortSendRequest(port, SF_MSG_PREPARE_UPDATE, NULL, 1.0, 0, NULL, NULL); CFRelease(port); }
+        }
+        [self waitForExit:0 wasRunning:wasRunning];
+        return;
+    }
     NSString *staged = [SofaAppPath() stringByAppendingString:@".staged"];
     NSString *ext = [ExternalUpdateDir() stringByAppendingPathComponent:@"Sofa.app"];
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -181,6 +237,10 @@ static BOOL SRPortOpen(uint16_t port) {
     }
     for (NSRunningApplication *r in procs) { [self log:@"Sofa beendet sich nicht, erzwinge"]; [r forceTerminate]; }
     NSFileManager *fm = [NSFileManager defaultManager];
+    if (_replaced) {   // nichts zu tauschen: neues Sofa starten, dann selbst aus dem neuen Bundle
+        [self ensureSofaRunning:wasRunning ? 6 : 0 then:^{ exit(0); }];
+        return;
+    }
     if (_external) {   // Tausch macht tools/sofa-deploy (sudo); wir melden „bereit“ und warten
         [@"" writeToFile:[ExternalUpdateDir() stringByAppendingPathComponent:@"ready"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         [self log:@"Update (extern): Sofa beendet, warte auf Tausch"];
@@ -253,7 +313,9 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 
 - (void)open {
     io_service_t s = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleIRController"));
-    if (!s) { [self log:@"kein AppleIRController"]; [self scheduleRetry]; return; }
+    // Macs ohne IR-Empfänger: einmal melden, nicht alle 5 s (Sofa läuft dann mit Tastatur/Handy)
+    static BOOL saidNoIR;
+    if (!s) { if (!saidNoIR) [self log:@"kein AppleIRController (kein IR-Empfänger?) – suche weiter"]; saidNoIR = YES; [self scheduleRetry]; return; }
     _dev = IOHIDDeviceCreate(kCFAllocatorDefault, s);
     IOObjectRelease(s);
     if (!_dev) { [self scheduleRetry]; return; }
@@ -439,8 +501,8 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 @end
 
 int main(int argc, const char **argv) {
-    SFRuntimeSetup();
     @autoreleasepool {
+        SFRuntimeSetup();
         [NSApplication sharedApplication].activationPolicy = NSApplicationActivationPolicyProhibited;
         SRHelper *h = [SRHelper new];
         [h start];

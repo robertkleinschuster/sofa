@@ -99,6 +99,7 @@ static uint16_t gPort = 8765;
     }
     if (!SFDevMode) [self restoreAfterUpdate];
     [self welcomeIfFirstRun];
+    [self askToMoveIfMisplaced];
     if (!SFDevMode) SFBackground(^{ SFInstallAgents(); });   // nur Release-Bundle (SFRuntime)
 
     if (SFDevMode) {
@@ -266,6 +267,22 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
+// Release direkt aus der DMG (oder einem anderen Ordner) gestartet: Fernbedienung und Autostart
+// werden dann bewusst nicht eingerichtet (sie zeigten auf die DMG) -- sagen, was zu tun ist.
+- (void)askToMoveIfMisplaced {
+    if (SFDevMode || !SFRuntimeMisplaced()) return;
+    SFLog(@"start: Sofa läuft nicht aus „Programme“ (%@)", [[NSBundle mainBundle] bundlePath]);
+    SFMenuOption *quit = [SFMenuOption option:@"Sofa beenden" action:^{ [NSApp terminate:nil]; }];
+    SFMenuOption *look = [SFMenuOption option:@"Trotzdem umsehen" action:^{}];
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Bitte Sofa in „Programme“ ziehen"
+        subtitle:@"Sofa läuft gerade direkt aus dem Installations-Fenster.\n"
+                 @"Zieh Sofa im Finder auf „Programme“ und starte es von dort –\n"
+                 @"erst dann richtet Sofa die Apple Remote und den Autostart ein."
+        options:@[quit, look] theme:[SFTheme themeNamed:@"home"]];
+    m.subtitleLines = 4;
+    [self.nav push:m];
+}
+
 #pragma mark Update (Helper tauscht die App; Zustand überlebt)
 
 - (NSString *)resumePath { return [SFAppSupportDir() stringByAppendingPathComponent:@"resume.json"]; }
@@ -424,8 +441,8 @@ static uint16_t gPort = 8765;
 @end
 
 int main(int argc, const char *argv[]) {
-    SFRuntimeSetup();
     @autoreleasepool {
+        SFRuntimeSetup();
         NSApplication *app = [NSApplication sharedApplication];
         SFAppDelegate *del = [SFAppDelegate new];
         for (int i = 1; i < argc; i++) {

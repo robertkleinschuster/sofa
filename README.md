@@ -57,6 +57,17 @@ the YouTube PO token service). On first start it sets up the Apple Remote helper
 with the next login; it explains the remote, and on first use of YouTube it creates its own
 yt-dlp environment (`~/Library/Application Support/Sofa/ytdlp`, under a minute), updated daily.
 
+**Update:** download the new DMG and drag Sofa onto Programme again (replace). Sofa notices
+the new version on its next start and restarts its remote helper and PO token service.
+
+**Uninstall:**
+
+```sh
+launchctl unload ~/Library/LaunchAgents/de.sofa.remote.plist ~/Library/LaunchAgents/de.sofa.app.plist
+rm ~/Library/LaunchAgents/de.sofa.remote.plist ~/Library/LaunchAgents/de.sofa.app.plist
+rm -rf /Applications/Sofa.app ~/Library/Application\ Support/Sofa ~/Library/Caches/Sofa
+```
+
 Alternatively, with [MacPorts](https://www.macports.org) and the
 [backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay:
 
