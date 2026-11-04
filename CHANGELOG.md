@@ -4,6 +4,23 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.7
+
+- **Neu: Info im Player.** OK gedrückt halten öffnet über dem laufenden Video die Info:
+  Beschreibung, „Zum Kanal“/„Zur Sendung“, Folgen, Herunterladen, Später ansehen, Ton und
+  Untertitel – dazu die Playlist („Läuft“), „Als Nächstes“, weitere Folgen und bei YouTube
+  Empfehlungen. Das Video läuft dabei weiter.
+- **Bessere YouTube-Streams:** Sofa holt die hochwertigen Streams jetzt mit gültigem Nachweis
+  (PO-Token) – Abbrüche mit „Zugriff verweigert“ und Ausweichen auf schlechtere Qualität
+  werden seltener.
+- **Downloads bleiben heil:** Ein Update während eines Downloads konnte die Datei beschädigen.
+  Fertige Downloads werden jetzt geprüft; beschädigte werden automatisch neu geladen (die alte
+  Datei bleibt, bis die neue fehlerfrei ist).
+- **Bild kommt immer:** Direkt nach einem Update lief ein fortgesetztes Video manchmal nur mit
+  Ton. Sofa wartet jetzt auf die Bildausgabe und repariert sie selbst, falls sie ausfällt.
+- **Kopiergeschützte Folgen** werden beim automatischen Weiterspielen übersprungen.
+- **Handy:** Untertitel lassen sich vom Handy aus umschalten.
+
 ## 0.3.6
 
 - **„Online abspielen“ funktioniert:** Bei heruntergeladenen Videos startete der Wechsel bisher
