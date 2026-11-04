@@ -186,6 +186,7 @@ static BOOL SRPortOpen(uint16_t port) {
 
 - (void)checkUpdate {
     if (_updating) return;
+    [self syncRemote];
     // Neue Version per Finder über die alte gezogen: Sofa (Zustand sichern) und Helper neu starten,
     // sonst liefen alter Helper + alter PO-Token-Server bis zur nächsten Anmeldung weiter.
     ino_t ino = [self selfInode];
@@ -311,7 +312,39 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     dispatch_async(dispatch_get_main_queue(), ^{ [h deviceGone]; });
 }
 
+// Einstellung „Mit MENU-Taste starten“ (Sofa → Einstellungen; Preferences-Domain de.sofa.app,
+// Standard an). Aus: solange Sofa geschlossen ist, gibt der Helper den IR-Empfänger frei – die
+// Remote steuert dann wieder den Mac (iTunes, Keynote, Lautstärke).
+- (BOOL)remoteLaunch {
+    CFPreferencesAppSynchronize(CFSTR("de.sofa.app"));
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("remoteLaunch"), CFSTR("de.sofa.app"));
+    BOOL on = v ? CFBooleanGetTypeID() == CFGetTypeID(v) && CFBooleanGetValue((CFBooleanRef)v) : YES;
+    if (v) CFRelease(v);
+    return on;
+}
+
+- (BOOL)wantsRemote { return [self remoteLaunch] || [self realSofa] != nil; }
+
+// alle 3 s (checkUpdate): IR übernehmen bzw. freigeben, wenn sich Lage oder Einstellung ändern
+- (void)syncRemote {
+    BOOL want = [self wantsRemote];
+    if (want && !_dev && !_retry.isValid) [self open];
+    else if (!want && _dev) {
+        [self log:@"Sofa geschlossen, MENU-Start aus – Apple Remote freigegeben"];
+        [self closeDevice];
+    }
+}
+
+- (void)closeDevice {
+    [_retry invalidate]; _retry = nil;
+    if (!_dev) return;
+    IOHIDDeviceUnscheduleFromRunLoop(_dev, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
+    IOHIDDeviceClose(_dev, kIOHIDOptionsTypeNone);
+    CFRelease(_dev); _dev = NULL;
+}
+
 - (void)open {
+    if (![self wantsRemote]) return;   // syncRemote holt das nach, sobald Sofa läuft
     io_service_t s = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleIRController"));
     // Macs ohne IR-Empfänger: einmal melden, nicht alle 5 s (Sofa läuft dann mit Tastatur/Handy)
     static BOOL saidNoIR;
@@ -364,11 +397,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 
 - (void)deviceGone {
     [self log:@"Gerät entfernt"];
-    if (_dev) {
-        IOHIDDeviceUnscheduleFromRunLoop(_dev, CFRunLoopGetMain(), kCFRunLoopDefaultMode);
-        IOHIDDeviceClose(_dev, kIOHIDOptionsTypeNone);
-        CFRelease(_dev); _dev = NULL;
-    }
+    [self closeDevice];
     [self scheduleRetry];
 }
 
@@ -494,7 +523,10 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 
 - (void)dispatch:(SFKey)k button:(RButton)b hold:(BOOL)hold {
     if (_updating) { [self log:@"Taste während Update ignoriert"]; return; }
-    if (![self realSofa]) { [self launchSofa]; return; }
+    if (![self realSofa]) {   // Sofa geschlossen: nur MENU startet es (Einstellung „Mit MENU-Taste starten“)
+        if (k == SFKeyMenu && [self remoteLaunch]) [self launchSofa];
+        return;
+    }
     if (![self sofaFrontmost]) { [self bringSofaFront]; return; }
     if (![self sendToSofa:k]) [self log:@"Sofa-Port nicht erreichbar"];
 }

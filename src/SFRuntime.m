@@ -68,7 +68,7 @@ static BOOL SFWriteAgent(NSString *label, NSString *exe, BOOL keepAlive) {
     // gleiche Werte wie res/launchd/*.plist (Port)
     NSDictionary *want = @{
         @"Label": label,
-        @"ProgramArguments": @[exe],
+        @"ProgramArguments": keepAlive ? @[exe] : @[exe, @"--autostart"],
         @"RunAtLoad": @YES,
         @"KeepAlive": keepAlive ? (id)@YES : (id)@{@"SuccessfulExit": @NO},
         @"ThrottleInterval": @5,

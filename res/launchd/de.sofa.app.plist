@@ -4,7 +4,7 @@
 <dict>
   <key>Label</key><string>de.sofa.app</string>
   <key>ProgramArguments</key>
-  <array><string>/Applications/Sofa.app/Contents/MacOS/Sofa</string></array>
+  <array><string>/Applications/Sofa.app/Contents/MacOS/Sofa</string><string>--autostart</string></array>
   <key>ProcessType</key><string>Interactive</string>
   <key>RunAtLoad</key><true/>
   <!-- Absturz -> automatisch neu starten; reguläres Beenden (exit 0) nicht -->

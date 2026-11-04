@@ -13,4 +13,5 @@ NSString *SFDownloadsArt(NSString *source);   // Kachelbild mit Download-Symbol 
 + (SFItem *)historyTile;
 + (SFItem *)phoneTile;                                          // Handy-Status + Einstellungen (YouTube → Mehr)                                        // öffnet den Verlauf
 + (SFItem *)downloadsTile:(NSString *)source;                  // öffnet die Downloads-Seite
++ (void)showSettingsOn:(SFNavigator *)nav;   // Start & Fernbedienung
 @end

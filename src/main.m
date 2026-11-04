@@ -29,6 +29,9 @@
 #import "SFPlayerScreen.h"
 #import "SFLayers.h"
 #import "SFRuntime.h"
+#import "SFSettings.h"
+
+void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 
@@ -236,6 +239,7 @@ static uint16_t gPort = 8765;
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)a { return YES; }
 - (void)applicationWillTerminate:(NSNotification *)n {
+    SFClearRunningMarker();
     [[SFLounge shared] stop];   // Handy: "getrennt" (best effort, max 1,5 s). Nicht beim Update – da sind wir in 1 s zurück.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
@@ -254,7 +258,11 @@ static uint16_t gPort = 8765;
         [st setSetting:@"1" forKey:@"welcome.shown"];
         if ([[SFFollows shared] follows:nil].count || [st continueWatching:1 source:nil].count) return;
     }
-    SFMenuOption *go = [SFMenuOption option:@"Los geht’s" action:^{}];
+    // danach: Start-Einstellungen abfragen (nur Neuinstallation; änderbar unter „Einstellungen“)
+    __weak SFAppDelegate *ws = self;
+    SFMenuOption *go = [SFMenuOption option:@"Weiter" action:^{
+        dispatch_async(dispatch_get_main_queue(), ^{ [ws askAutostart]; });
+    }];
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Willkommen bei Sofa"
         subtitle:@"Alles geht mit der Apple Remote:\n"
                  @"Pfeile – auswählen · Mitte – öffnen\n"
@@ -283,12 +291,53 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
+// Ersteinrichtung, Frage 1/2: beim Anmelden starten?
+- (void)askAutostart {
+    __weak SFAppDelegate *ws = self;
+    void (^next)(BOOL) = ^(BOOL on) {
+        SFSetAutostartEnabled(on);
+        dispatch_async(dispatch_get_main_queue(), ^{ [ws askRemoteLaunch]; });
+    };
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Sofa automatisch starten?"
+        subtitle:@"Sofa startet von selbst, sobald du dich am Mac anmeldest – "
+                 @"ideal, wenn der Mac vor allem Fernseher ist.\n"
+                 @"Später änderbar in den Einstellungen."
+        options:@[[SFMenuOption option:@"Ja, automatisch starten" action:^{ next(YES); }],
+                  [SFMenuOption option:@"Nein, nur wenn ich es öffne" action:^{ next(NO); }]]
+        theme:[SFTheme themeNamed:@"home"]];
+    m.subtitleLines = 6;
+    [self.nav push:m];
+}
+
+// Ersteinrichtung, Frage 2/2: mit MENU der Apple Remote starten?
+- (void)askRemoteLaunch {
+    __weak SFAppDelegate *ws = self;
+    void (^done)(BOOL) = ^(BOOL on) {
+        SFSetRemoteLaunchEnabled(on);
+        SFSetStartupQuestionsAsked();
+        SFLog(@"start: Ersteinrichtung autostart=%d remoteLaunch=%d", SFAutostartEnabled(), on);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [ws.nav toast:@"Fertig – viel Spaß mit Sofa!"];
+        });
+    };
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Sofa mit der Apple Remote öffnen?"
+        subtitle:@"MENU öffnet Sofa auch, wenn es geschlossen ist. Bei „Nein“ "
+                 @"steuert die Remote den Mac (z. B. iTunes), solange Sofa zu ist.\n"
+                 @"Später änderbar in den Einstellungen."
+        options:@[[SFMenuOption option:@"Ja, MENU öffnet Sofa" action:^{ done(YES); }],
+                  [SFMenuOption option:@"Nein" action:^{ done(NO); }]]
+        theme:[SFTheme themeNamed:@"home"]];
+    m.subtitleLines = 6;
+    [self.nav push:m];
+}
+
 #pragma mark Update (Helper tauscht die App; Zustand überlebt)
 
 - (NSString *)resumePath { return [SFAppSupportDir() stringByAppendingPathComponent:@"resume.json"]; }
 
 - (void)prepareForUpdate {
     SFLog(@"update: Zustand sichern und beenden");
+    SFClearRunningMarker();   // geplantes Ende, kein Absturz
     NSMutableDictionary *st = [NSMutableDictionary new];
     st[@"t"] = @([NSDate date].timeIntervalSince1970);
     NSMutableArray *keys = [NSMutableArray new];
@@ -440,6 +489,18 @@ static uint16_t gPort = 8765;
 }
 @end
 
+#pragma mark Autostart (Einstellung „Beim Anmelden starten“)
+// Der Autostart-Agent (de.sofa.app) startet Sofa mit --autostart und startet es nach einem Absturz
+// neu (KeepAlive). Ist Autostart aus, beendet sich Sofa beim Anmelden sofort still – nach einem
+// Absturz (Marker „running“ noch da) läuft es aber weiter.
+static NSString *SFRunningMarker(void) { return [SFAppSupportDir() stringByAppendingPathComponent:@"running"]; }
+void SFClearRunningMarker(void) {
+    if (!SFDevMode) [[NSFileManager defaultManager] removeItemAtPath:SFRunningMarker() error:nil];
+}
+static void SFSetRunningMarker(void) {
+    if (!SFDevMode) [[NSFileManager defaultManager] createFileAtPath:SFRunningMarker() contents:nil attributes:nil];
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         SFRuntimeSetup();
@@ -455,6 +516,16 @@ int main(int argc, const char *argv[]) {
             }
         }
         if (SFDevMode) SFLogFileName = [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstance];
+        BOOL autostart = NO;
+        for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--autostart")) autostart = YES;
+        if (autostart && !SFDevMode && !SFAutostartEnabled()) {
+            if (![[NSFileManager defaultManager] fileExistsAtPath:SFRunningMarker()]) {
+                SFLog(@"start: Autostart ist aus – beende");
+                return 0;   // exit 0: launchd (KeepAlive SuccessfulExit=false) startet nicht neu
+            }
+            SFLog(@"start: Autostart aus, aber letzter Lauf endete unerwartet – starte trotzdem");
+        }
+        SFSetRunningMarker();
         // Dev: nie im Dock, nie im Vordergrund (stört Kodi nicht).
         app.activationPolicy = SFDevMode ? NSApplicationActivationPolicyProhibited : NSApplicationActivationPolicyRegular;
         app.delegate = del;

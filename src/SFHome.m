@@ -12,6 +12,8 @@
 #import "SFIconArt.h"
 #import "SFLounge.h"
 #import "SFFollows.h"
+#import "SFMenuScreen.h"
+#import "SFSettings.h"
 #import "SFPairScreen.h"
 
 @implementation SFHome
@@ -49,6 +51,7 @@ static NSDictionary *appInfo(void) {
             for (NSString *src in @[@"youtube", @"zdf", @"ard", @"orf", @"ccc"]) [apps addObject:[self appTile:src]];
             [apps addObject:[self downloadsTile:nil]];
             [apps addObject:[self historyTile]];
+            [apps addObject:[self settingsTile]];
             // Kodi-Kachel entfernt (User 2026-11-03); Handy-Einstellungen gehören in die YouTube-App (Mehr → Handy)
 
             NSMutableArray *shelves = [NSMutableArray new];
@@ -211,6 +214,45 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     i.style = SFTileStyleApp; i.tint = SFHex(0x34495e);
     i.pageLoader = [self historyLoader];
     return i;
+}
+
+#pragma mark Einstellungen (Start & Fernbedienung)
+
++ (SFItem *)settingsTile {
+    SFItem *i = [SFItem new];
+    i.kind = SFItemAction;
+    i.identifier = @"settings:";
+    i.title = @"Einstellungen";
+    i.subtitle = @"Start & Fernbedienung";
+    i.plot = @"Festlegen, ob Sofa beim Anmelden automatisch startet und ob die MENU-Taste der Apple Remote Sofa öffnet.";
+    i.themeName = @"home";
+    i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
+    i.action = ^{
+        id d = [NSApp delegate];
+        SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
+        if (nav) [SFHome showSettingsOn:nav];
+    };
+    return i;
+}
+
++ (void)showSettingsOn:(SFNavigator *)nav {
+    BOOL autostart = SFAutostartEnabled(), remote = SFRemoteLaunchEnabled();
+    SFMenuOption *a = [SFMenuOption option:@"Beim Anmelden starten" action:^{
+        SFSetAutostartEnabled(!autostart);
+        [nav toast:!autostart ? @"Sofa startet beim Anmelden automatisch"
+                              : @"Sofa startet nicht mehr automatisch"];
+    }];
+    a.detail = autostart ? @"An" : @"Aus";
+    SFMenuOption *r = [SFMenuOption option:@"Mit MENU-Taste starten" action:^{
+        SFSetRemoteLaunchEnabled(!remote);
+        [nav toast:!remote ? @"MENU auf der Apple Remote öffnet Sofa"
+                           : @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac"];
+    }];
+    r.detail = remote ? @"An" : @"Aus";
+    NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Einstellungen"
+                                         subtitle:[NSString stringWithFormat:@"Sofa %@", info[@"CFBundleShortVersionString"]]
+                                          options:@[a, r] theme:[SFTheme themeNamed:@"home"]]];
 }
 
 #pragma mark Handy (YouTube „Mit TV verbinden“) – Einstellungen direkt vom Home erreichbar
