@@ -1,0 +1,12 @@
+name: checks
+on: [push, pull_request]
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No private data (home paths, tailnet, tokens, cookies)
+        run: |
+          P='/Users/[a-z]+/|serengeti|\.ts\.net|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]+\.[0-9]+|gh[ops]_[A-Za-z0-9]{20}|sk-ant-|SAPISID=|LOGIN_INFO=|niceshops'
+          if git ls-files -z | xargs -0 grep -nIE "$P" | grep -v '100\.64\.0\.0/10'; then
+            echo "::error::private data found (see above)"; exit 1; fi
