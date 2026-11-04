@@ -10,3 +10,5 @@ BOOL SFAutoUpdateEnabled(void);           // Updates von GitHub automatisch lade
 void SFSetAutoUpdateEnabled(BOOL on);
 BOOL SFStartupQuestionsAsked(void);       // Ersteinrichtung hat beides abgefragt
 void SFSetStartupQuestionsAsked(void);
+// mpv ist der Standard-Player; YES = alte Wahl (H.264 über AVFoundation). Nur per defaults, Notschalter.
+BOOL SFPreferAVFoundation(void);

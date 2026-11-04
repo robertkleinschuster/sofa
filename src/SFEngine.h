@@ -1,7 +1,8 @@
 // Abspiel-Engines hinter SFPlayerScreen (docs/codecs-research.md):
-//  - SFAVEngine:  AVFoundation (Hardware-H.264, HLS) – Standard
-//  - SFMPVEngine: libmpv (VP9/AV1/Opus, DASH, HLS v7, fMP4 …) – wenn AVFoundation das Format
-//                 nicht kann oder schlechtere Qualität liefert; schwach gelinkt (optional).
+//  - SFMPVEngine: libmpv (VP9/AV1/Opus, DASH, HLS, H.264 in Software) – Standard seit 2026-11-04;
+//                 schwach gelinkt (optional).
+//  - SFAVEngine:  AVFoundation (Hardware-H.264, HLS) – Ausweg, wenn mpv scheitert, und per
+//                 Notschalter SFPreferAVFoundation (defaults) die alte Wahl.
 // Der Screen kennt nur dieses Protokoll: OSD, Fortschritt, Remote bleiben engine-unabhängig.
 #import "SFCore.h"
 

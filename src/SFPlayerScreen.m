@@ -1,4 +1,5 @@
 #import "SFPlayerScreen.h"
+#import "SFSettings.h"
 #import "SFLayers.h"
 #import "SFStore.h"
 #import "SFAVEngine.h"
@@ -254,12 +255,14 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)playURL:(NSURL *)url { [self playURL:url forceMPV:NO]; }
 
-// Engine-Wahl (User-Vorgabe): H.264 bis 1080p über AVFoundation (Hardware); mpv nur, wenn es
-// Besseres gibt (DASH-VP9/AV1 mit mehr Auflösung/fps), das Format AVFoundation fremd ist (WebM/MKV)
-// oder AVFoundation am Stream scheitert (forceMPV).
+// Engine-Wahl (User-Entscheidung 2026-11-04): mpv spielt alles. AVFoundation scheiterte auf 10.9
+// bei YouTube-HLS sporadisch beim Start (docs/youtube.md §6), kann kein VP9/AV1, und mpv dekodiert
+// 1080p50 in Software mit ~1/3 Kern (mpv-Hardwaredekodierung geht auf 10.9 nicht). AVFoundation
+// bleibt Ausweg, wenn mpv an einem Stream scheitert, und per Notschalter (SFPreferAVFoundation)
+// die alte Wahl: H.264 über AVFoundation, mpv nur für Besseres/Fremdes.
 - (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url {
     if (!SFMPVAvailable() || [url isEqual:_mpvFailedURL]) return NO;
-    if (SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_FORCE_MPV"] length]) return YES;   // Dev-Test
+    if (!SFPreferAVFoundation()) return YES;
     NSString *ext = url.path.pathExtension.lowercaseString;
     if ([@[@"webm", @"mkv", @"ogv"] containsObject:ext]) return YES;
     if (!src[@"video"]) return NO;

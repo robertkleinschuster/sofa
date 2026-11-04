@@ -258,7 +258,7 @@ static void onWakeup(void *ctx) {
         _mpv = mpv_create();
         if (!_mpv) return self;
         const char *opts[][2] = {
-            {"vo", "libmpv"}, {"hwdec", "no"},   // VP9/AV1 nur in Software möglich; H.264 läuft über AVFoundation
+            {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox-hwaccel scheitert auf 10.9 (gemessen 2026-11-04)
             {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},
             {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
             {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
@@ -266,6 +266,9 @@ static void onWakeup(void *ctx) {
             {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
         };
         for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
+        // Bewusst ohne TLS-Zertifikatsprüfung (ffmpeg-Standard tls_verify=0, User-Entscheidung
+        // 2026-11-04): reine Mediendaten, ein veraltetes CA-Bundle auf dem eingefrorenen 10.9 soll die
+        // Wiedergabe nie brechen. Code (Updater, yt-dlp/pip, node) wird weiterhin geprüft geladen.
         int r = mpv_initialize(_mpv);
         if (r < 0) { SFLog(@"mpv: init: %s", mpv_error_string(r)); mpv_terminate_destroy(_mpv); _mpv = NULL; return self; }
         mpv_observe_property(_mpv, kPropTime, "time-pos", MPV_FORMAT_DOUBLE);
