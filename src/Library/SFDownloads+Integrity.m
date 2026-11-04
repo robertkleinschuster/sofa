@@ -16,6 +16,7 @@
 
 static NSString *const kAuditKey = @"downloadsAuditVersion";
 static NSString *const kAuditVersion = @"1";
+static NSString *const kAuditPosKey = @"downloadsAuditPos";   // last verified id (ids are processed sorted)
 
 @implementation SFDownloads (Integrity)
 
@@ -133,8 +134,10 @@ static double SFParseDuration(NSString *s) {
     if (!info) return nil;   // cannot check -> do not destroy anything
     double dur = SFParseDuration(info);
     if (dur <= 0) return @"no duration (unreadable container)";
-    if (expected > 60 && fabs(dur - expected) > MAX(20, expected * 0.03))
-        return [NSString stringWithFormat:@"duration %.0f s, expected %.0f s", dur, expected];
+    // only a clearly SHORTER file is a problem (truncated download); metadata durations are often
+    // rounded (feeds report 900 s for a 945 s video), so longer is never treated as broken
+    if (expected > 60 && dur < expected * 0.9 - 10)
+        return [NSString stringWithFormat:@"duration %.0f s, expected %.0f s (truncated)", dur, expected];
     unsigned long long bytes = [[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil] fileSize];
     if (dur > 0 && bytes * 8 / dur > 60e6) return [NSString stringWithFormat:@"implausible bitrate %.0f Mbit/s", bytes * 8 / dur / 1e6];
     // decode probes at start, middle and end: a healthy file decodes without errors
@@ -155,9 +158,15 @@ static double SFParseDuration(NSString *s) {
     if ([[[SFStore shared] setting:kAuditKey] isEqualToString:kAuditVersion]) return;
     NSString *ff = [SFDownloads ffmpegToolPath];
     if (!ff) return;
+    // resumable across restarts (updates restart the app often): ids sorted descending, processed
+    // from the end, position persisted after every file
+    NSString *pos = [[SFStore shared] setting:kAuditPosKey];
     NSMutableArray *todo = [NSMutableArray array];
     for (NSDictionary *r in _recs.allValues)
-        if ([r[@"state"] integerValue] == SFDLDone && [r[@"path"] length]) [todo addObject:r[@"id"]];
+        if ([r[@"state"] integerValue] == SFDLDone && [r[@"path"] length] && (!pos.length || [r[@"id"] compare:pos] == NSOrderedDescending))
+            [todo addObject:r[@"id"]];
+    [todo sortUsingSelector:@selector(compare:)];
+    todo = [[[todo reverseObjectEnumerator] allObjects] mutableCopy];
     SFLog(@"downloads: verifying %lu existing download(s) once in the background", (unsigned long)todo.count);
     [self auditNext:todo ff:ff broken:0];
 }
@@ -172,9 +181,8 @@ static double SFParseDuration(NSString *s) {
     NSDictionary *r = _recs[ident];
     NSString *path = r[@"path"];
     if ([r[@"state"] integerValue] != SFDLDone || !path || [ident isEqualToString:_runningID]) { [self auditNext:todo ff:ff broken:broken]; return; }
-    double expected = [self itemFromRec:r].duration;
     SFBackground(^{
-        NSString *problem = [SFDownloads problemWithFile:path expectedDuration:expected ffmpeg:ff];
+        NSString *problem = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:ff];   // metadata durations are too imprecise for old files
         SFMain(^{
             NSUInteger b = broken;
             NSMutableDictionary *rr = self->_recs[ident];
@@ -188,6 +196,7 @@ static double SFParseDuration(NSString *s) {
                 b++;
                 [self pump];
             }
+            [[SFStore shared] setSetting:ident forKey:kAuditPosKey];
             // pace the audit: low priority, one file every few seconds
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self auditNext:todo ff:ff broken:b];
