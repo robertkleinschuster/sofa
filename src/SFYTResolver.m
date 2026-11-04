@@ -1,5 +1,38 @@
 #import "SFYTResolver.h"
 #import "SFModel.h"
+#import "SFStore.h"
+
+// yt-dlp + Plugins leben in einem eigenen venv (nicht im App-Bundle): yt-dlp muss oft
+// aktualisiert werden, schneller als jede Sofa-/MacPorts-Version. Sofa legt das venv beim
+// ersten Bedarf selbst an und hält es täglich aktuell (pip install -U).
+static NSString *const kBasePython = @"/opt/local/bin/python3.14";   // MacPorts python314 (Port-Abhängigkeit)
+static NSArray *YTPackages(void) { return @[@"yt-dlp", @"yt-dlp-ejs", @"bgutil-ytdlp-pot-provider"]; }
+static NSString *const kUpdatedKey = @"ytdlp.updated";
+static const NSTimeInterval kUpdateEvery = 24 * 3600;
+
+// Läuft synchron (nur im Hintergrund aufrufen); liefert Exit-Status, *out = stdout+stderr.
+static int YTRun(NSString *path, NSArray *args, NSString **out) {
+    NSTask *t = [NSTask new];
+    t.launchPath = path; t.arguments = args;
+    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
+    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
+    env[@"PATH"] = @"/opt/local/bin:/usr/bin:/bin";
+    env[@"PIP_DISABLE_PIP_VERSION_CHECK"] = @"1";
+    t.environment = env;
+    NSPipe *p = [NSPipe pipe];
+    t.standardOutput = p; t.standardError = p;
+    @try { [t launch]; } @catch (NSException *e) { if (out) *out = e.reason; return -1; }
+    NSData *d = [p.fileHandleForReading readDataToEndOfFile];
+    [t waitUntilExit];
+    if (out) *out = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
+    return t.terminationStatus;
+}
+static NSString *YTTail(NSString *s) { return s.length > 400 ? [s substringFromIndex:s.length - 400] : s; }
+static NSString *YTVersion(NSString *py) {
+    NSString *o = nil;
+    if (YTRun(py, @[@"-c", @"import yt_dlp.version as v; print(v.__version__)"], &o) != 0) return nil;
+    return [o stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
 
 @implementation SFYTResolver {
     NSTask *_task;
@@ -12,6 +45,8 @@
     NSInteger _rid;
     NSInteger _crashes;
     BOOL _wantRunning;
+    BOOL _settingUp;                  // venv wird angelegt/aktualisiert
+    NSTimer *_updateTimer;
 }
 
 + (instancetype)shared {
@@ -21,7 +56,11 @@
 }
 
 + (NSString *)cookieFile { return [SFAppSupportDir() stringByAppendingPathComponent:@"youtube-cookies.txt"]; }
-+ (NSString *)python { return [SFAppSupportDir() stringByAppendingPathComponent:@"ytdlp/bin/python"]; }
++ (NSString *)envDir {
+    NSString *o = [NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"];   // Tests: eigenes venv
+    return o.length ? o : [SFAppSupportDir() stringByAppendingPathComponent:@"ytdlp"];
+}
++ (NSString *)python { return [[self envDir] stringByAppendingPathComponent:@"bin/python"]; }
 
 - (instancetype)init {
     if ((self = [super init])) {
@@ -39,8 +78,16 @@
     if (_task.isRunning) return;
     NSString *py = [SFYTResolver python];
     NSString *script = [[NSBundle mainBundle] pathForResource:@"ytresolver" ofType:@"py"];
-    if (![[NSFileManager defaultManager] isExecutableFileAtPath:py] || !script) {
-        SFLog(@"yt: resolver missing (python %@, script %@)", py, script);
+    if (!_updateTimer) {   // Sofa läuft wochenlang durch -> regelmäßig prüfen, ob ein Update fällig ist
+        _updateTimer = [NSTimer scheduledTimerWithTimeInterval:6 * 3600 target:self
+                                                      selector:@selector(updateTick:) userInfo:nil repeats:YES];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self ensureEnvironment];   // erst nach dem Start, nicht mitten ins Hochfahren
+        });
+    }
+    if (!script) { SFLog(@"yt: ytresolver.py fehlt im Bundle"); return; }
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:py]) {
+        [self ensureEnvironment];   // startet den Resolver nach dem Anlegen selbst
         return;
     }
     NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
@@ -73,6 +120,68 @@
     _task = t;
     _in = pin.fileHandleForWriting;
     SFLog(@"yt: resolver started pid %d", t.processIdentifier);
+}
+
+- (BOOL)isSettingUp { return _settingUp; }
+
+- (void)updateTick:(NSTimer *)t { [self ensureEnvironment]; }
+
+// Legt das venv an (fehlt es) bzw. aktualisiert es (einmal täglich). Nie zwei Läufe gleichzeitig.
+- (void)ensureEnvironment {
+    if (_settingUp) return;
+    NSString *dir = [SFYTResolver envDir], *py = [SFYTResolver python];
+    BOOL exists = [[NSFileManager defaultManager] isExecutableFileAtPath:py];
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    BOOL due = now - [[[SFStore shared] setting:kUpdatedKey] doubleValue] > kUpdateEvery;
+    // Dev-Instanzen teilen sich das venv der echten App: dort nur lesen, nie umbauen
+    BOOL custom = [(NSString *)[NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"] length] > 0;
+    if (exists && (!due || (SFDevMode && !custom))) return;
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:kBasePython]) {
+        SFLog(@"yt: %@ fehlt – YouTube-Wiedergabe nicht möglich (MacPorts-Port python314)", kBasePython);
+        return;
+    }
+    _settingUp = YES;
+    SFLog(@"yt: %@ venv %@", exists ? @"aktualisiere" : @"lege an", dir);
+    SFBackground(^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSString *out = nil, *before = nil, *after = nil;
+        NSMutableArray *pip = [@[@"-m", @"pip", @"install", @"--upgrade", @"--quiet"] mutableCopy];
+        [pip addObjectsFromArray:YTPackages()];
+        BOOL ok;
+        if (!exists) {
+            // in ein Nachbarverzeichnis bauen, erst fertig an den echten Ort -> nie halbes venv
+            NSString *tmp = [dir stringByAppendingString:@".new"];
+            [fm removeItemAtPath:tmp error:nil];
+            [fm createDirectoryAtPath:[dir stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *tpy = [tmp stringByAppendingPathComponent:@"bin/python"];
+            ok = YTRun(kBasePython, @[@"-m", @"venv", tmp], &out) == 0 && YTRun(tpy, pip, &out) == 0;
+            if (ok) { [fm removeItemAtPath:dir error:nil]; ok = [fm moveItemAtPath:tmp toPath:dir error:nil]; }
+            else [fm removeItemAtPath:tmp error:nil];
+        } else {
+            before = YTVersion(py);
+            ok = YTRun(py, pip, &out) == 0;
+        }
+        if (ok) after = YTVersion(py);
+        ok = ok && after.length;
+        SFMain(^{
+            self->_settingUp = NO;
+            if (!ok) { SFLog(@"yt: venv fehlgeschlagen: %@", YTTail(out)); return; }
+            [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", now] forKey:kUpdatedKey];
+            SFLog(@"yt: yt-dlp %@%@", after, before && ![before isEqualToString:after] ? [@" (vorher " stringByAppendingFormat:@"%@)", before] : @"");
+            if (!exists) { if (self->_wantRunning) [self start]; }
+            else if (![before isEqualToString:after]) [self restartWhenIdle];
+        });
+    });
+}
+
+// Neue yt-dlp-Version übernehmen, ohne eine laufende Auflösung abzubrechen
+- (void)restartWhenIdle {
+    if (_pending.count) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self restartWhenIdle]; });
+        return;
+    }
+    SFLog(@"yt: Resolver-Neustart für neue yt-dlp-Version");
+    [self restart];
 }
 
 - (void)restart {
@@ -163,7 +272,11 @@
     NSDictionary *c = _cache[vid];
     if (c && [c[@"expires"] doubleValue] - 3600 > [[NSDate date] timeIntervalSince1970] && !live) { done(c, nil); return; }
     [self start];
-    if (!_in) { done(nil, SFError(@"YouTube-Wiedergabe nicht eingerichtet (yt-dlp fehlt).")); return; }
+    if (!_in) {
+        done(nil, SFError(_settingUp ? @"YouTube wird eingerichtet (einmalig, etwa eine Minute) – bitte gleich noch einmal versuchen."
+                                     : @"YouTube-Wiedergabe nicht eingerichtet (yt-dlp fehlt)."));
+        return;
+    }
     NSString *key = live ? [@"live:" stringByAppendingString:vid] : vid;
     NSMutableArray *w = _waiters[key];
     if (w) {   // dasselbe Video wird schon aufgelöst (z.B. Vorladen bei Fokus) -> mitwarten
