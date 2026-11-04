@@ -95,5 +95,7 @@ trap 'mv "$STAGE/Sofa.app" "$APP" 2>/dev/null; rm -rf "$STAGE"' EXIT   # auch we
 ln -s /Applications "$STAGE/Programme"
 hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -format UDBZ -ov "$DIST/Sofa-$VER.dmg"
 mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"; trap - EXIT
+# Prüfsumme als eigenes Release-Asset: Sofas Updater lädt sie und vergleicht vor der Installation
+(cd "$DIST" && shasum -a 256 "Sofa-$VER.dmg" > "Sofa-$VER.dmg.sha256")
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
-shasum -a 256 "$DIST/Sofa-$VER.dmg"
+cat "$DIST/Sofa-$VER.dmg.sha256"

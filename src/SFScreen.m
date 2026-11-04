@@ -165,6 +165,7 @@ NSCursor *SFBlankCursor(void) {
 }
 
 - (void)sendKey:(SFKey)key {
+    _lastInput = [NSDate timeIntervalSinceReferenceDate];
     SFScreen *t = self.top;
     if (!t) return;
     if ([t handleKey:key]) return;

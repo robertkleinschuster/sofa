@@ -1,0 +1,23 @@
+#!/bin/bash
+# publish-release -- dist/Sofa-<version>.dmg (+ .sha256) als GitHub-Release v<version> veröffentlichen.
+# Release-Text = Abschnitt "## <version>" aus CHANGELOG.md (erscheint in Sofa beim manuellen Update).
+# Vorher: Version in res/Info.plist erhöht, CHANGELOG ergänzt, alles committet,
+#         tools/make-release und tools/test-release erfolgreich.
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SRC"
+VER=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' res/Info.plist)
+DMG="dist/Sofa-$VER.dmg"
+[ -f "$DMG" ] && [ -f "$DMG.sha256" ] || { echo "erst tools/make-release ($DMG fehlt)"; exit 1; }
+[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/Sofa.app/Contents/Info.plist)" = "$VER" ] \
+  || { echo "dist/Sofa.app ist nicht Version $VER – tools/make-release neu ausführen"; exit 1; }
+[ -z "$(git status --porcelain)" ] || { echo "Arbeitskopie nicht sauber – erst committen"; exit 1; }
+(cd dist && shasum -a 256 -c "Sofa-$VER.dmg.sha256" >/dev/null) || { echo "Prüfsumme stimmt nicht"; exit 1; }
+NOTES=$(awk -v v="## $VER" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md | sed -e '/./,$!d')
+[ -n "$NOTES" ] || { echo "CHANGELOG.md hat keinen Abschnitt '## $VER'"; exit 1; }
+git tag -l "v$VER" | grep -q . || git tag -a "v$VER" -m "Sofa $VER"
+git push -q origin HEAD "v$VER"
+printf '%s\n\n<!-- sofa-notes-end -->\n**Installation:** `Sofa-%s.dmg` laden, öffnen, Sofa nach „Programme“ ziehen; erster Start: Rechtsklick → Öffnen.\n' "$NOTES" "$VER" > dist/notes.md
+gh release create "v$VER" --title "Sofa $VER" --notes-file dist/notes.md "$DMG" "$DMG.sha256"
+echo "veröffentlicht: v$VER"

@@ -12,6 +12,9 @@ NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSDa
 // nach /opt/local). Rückgabe ist ein CURL * (void *, damit dieser Header ohne curl.h auskommt).
 void *SFCurlNew(void);
 
+// Große Datei direkt auf Platte laden (Redirects folgen, HTTP-Fehler = Fehlschlag). Nur im Hintergrund.
+BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error);
+
 // Hosts, die den curl-Weg brauchen (wird bei SSL-Fehlern automatisch gelernt).
 BOOL SFHostNeedsCurl(NSString *host);
 void SFMarkHostNeedsCurl(NSString *host);

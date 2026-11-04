@@ -14,6 +14,8 @@
 #import "SFFollows.h"
 #import "SFMenuScreen.h"
 #import "SFSettings.h"
+#import "SFUpdater.h"
+#import "SFRuntime.h"
 #import "SFPairScreen.h"
 
 @implementation SFHome
@@ -223,8 +225,8 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     i.kind = SFItemAction;
     i.identifier = @"settings:";
     i.title = @"Einstellungen";
-    i.subtitle = @"Start & Fernbedienung";
-    i.plot = @"Festlegen, ob Sofa beim Anmelden automatisch startet und ob ein Tastendruck auf der Apple Remote Sofa öffnet.";
+    i.subtitle = @"Start, Fernbedienung, Updates";
+    i.plot = @"Festlegen, ob Sofa beim Anmelden startet und ob die Apple Remote Sofa öffnet. Nach Updates suchen und sehen, was neu ist.";
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
     i.action = ^{
@@ -235,24 +237,87 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     return i;
 }
 
-+ (void)showSettingsOn:(SFNavigator *)nav {
-    BOOL autostart = SFAutostartEnabled(), remote = SFRemoteLaunchEnabled();
-    SFMenuOption *a = [SFMenuOption option:@"Beim Anmelden starten" action:^{
-        SFSetAutostartEnabled(!autostart);
-        [nav toast:!autostart ? @"Sofa startet beim Anmelden automatisch"
-                              : @"Sofa startet nicht mehr automatisch"];
++ (void)showSettingsOn:(SFNavigator *)nav { [nav push:[self settingsMenu:nav selection:0]]; }
+
+// Einstellungen: Schalter + Update. Jede Änderung baut das Menü an derselben Zeile neu auf.
++ (SFMenuScreen *)settingsMenu:(SFNavigator *)nav selection:(NSInteger)sel {
+    SFUpdater *up = [SFUpdater shared];
+    __block __weak SFMenuScreen *wm = nil;
+    void (^refresh)(void) = ^{
+        SFMenuScreen *m = wm;
+        if (m && nav.top == m) [nav replaceTop:[SFHome settingsMenu:nav selection:m.selectedIndex]];
+    };
+    SFMenuOption *(^toggle)(NSString *, BOOL, void (^)(BOOL), NSString *, NSString *) =
+        ^SFMenuOption *(NSString *title, BOOL on, void (^set)(BOOL), NSString *onText, NSString *offText) {
+        SFMenuOption *o = [SFMenuOption option:title action:^{
+            set(!on);
+            [nav toast:!on ? onText : offText];
+            refresh();
+        }];
+        o.detail = on ? @"An" : @"Aus";
+        o.keepOpen = YES;
+        return o;
+    };
+    NSMutableArray *opts = [NSMutableArray new];
+    [opts addObject:toggle(@"Beim Anmelden starten", SFAutostartEnabled(), ^(BOOL v) { SFSetAutostartEnabled(v); },
+                           @"Sofa startet beim Anmelden automatisch", @"Sofa startet nicht mehr automatisch")];
+    [opts addObject:toggle(@"Mit der Apple Remote starten", SFRemoteLaunchEnabled(), ^(BOOL v) { SFSetRemoteLaunchEnabled(v); },
+                           @"Jede Taste der Apple Remote öffnet Sofa", @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac")];
+    NSString *subtitle = [@"Version " stringByAppendingString:up.installedVersion];
+    if (up.available) {
+        [opts addObject:toggle(@"Automatisch aktualisieren", SFAutoUpdateEnabled(), ^(BOOL v) { SFSetAutoUpdateEnabled(v); },
+                               @"Updates werden geladen und installiert, wenn Sofa ruht", @"Updates nur noch über „Nach Updates suchen“")];
+        SFMenuOption *u;
+        if (up.updateAvailable) {
+            subtitle = [NSString stringWithFormat:@"Installiert: %@ · Verfügbar: %@", up.installedVersion, up.latestVersion];
+            u = [SFMenuOption option:@"Update installieren" action:^{ [nav push:[SFHome releaseNotesMenu:nav]]; }];
+            u.detail = [NSString stringWithFormat:@"%@ → %@", up.installedVersion, up.latestVersion];
+        } else {
+            if (up.lastCheck) subtitle = [subtitle stringByAppendingString:@" · aktuell"];
+            u = [SFMenuOption option:up.busy ? @"Suche läuft …" : @"Nach Updates suchen" action:^{
+                [[SFUpdater shared] check:^(NSString *msg) { [nav toast:msg]; refresh(); }];
+                refresh();
+            }];
+            if (up.lastCheck) {
+                NSDateFormatter *f = [NSDateFormatter new]; f.dateFormat = @"HH:mm";
+                u.detail = [@"zuletzt " stringByAppendingString:[f stringFromDate:up.lastCheck]];
+            }
+        }
+        u.keepOpen = YES;
+        [opts addObject:u];
+    } else if (SFRuntimeDir()) {
+        subtitle = [subtitle stringByAppendingString:@" · Updates erst, wenn Sofa in „Programme“ liegt"];
+    }
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Einstellungen" subtitle:subtitle
+                                                  options:opts theme:[SFTheme themeNamed:@"home"]];
+    m.initialSelection = sel;
+    wm = m;
+    return m;
+}
+
+// Manuelles Update: zuerst zeigen, was neu ist (Release-Notes von GitHub), dann entscheiden
++ (SFMenuScreen *)releaseNotesMenu:(SFNavigator *)nav {
+    SFUpdater *up = [SFUpdater shared];
+    NSMutableArray *lines = [NSMutableArray new];
+    for (NSString *raw in [up.releaseNotes ?: @"" componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if ([l rangeOfString:@"sofa-notes-end"].location != NSNotFound) break;   // danach: nur für die Release-Seite
+        if (!l.length || [l hasPrefix:@"#"] || [l hasPrefix:@"<!--"]) continue;
+        l = [l stringByReplacingOccurrencesOfString:@"**" withString:@""];
+        l = [l stringByReplacingOccurrencesOfString:@"`" withString:@""];
+        if ([l hasPrefix:@"- "] || [l hasPrefix:@"* "]) l = [@"•  " stringByAppendingString:[l substringFromIndex:2]];
+        [lines addObject:l];
+    }
+    if (!lines.count) [lines addObject:@"Für diese Version gibt es keine Beschreibung."];
+    SFMenuOption *go = [SFMenuOption option:@"Jetzt installieren" action:^{
+        [[SFUpdater shared] install:^(NSString *msg) { [nav toast:msg]; }];
     }];
-    a.detail = autostart ? @"An" : @"Aus";
-    SFMenuOption *r = [SFMenuOption option:@"Mit der Apple Remote starten" action:^{
-        SFSetRemoteLaunchEnabled(!remote);
-        [nav toast:!remote ? @"Jede Taste der Apple Remote öffnet Sofa"
-                           : @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac"];
-    }];
-    r.detail = remote ? @"An" : @"Aus";
-    NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Einstellungen"
-                                         subtitle:[NSString stringWithFormat:@"Sofa %@", info[@"CFBundleShortVersionString"]]
-                                          options:@[a, r] theme:[SFTheme themeNamed:@"home"]]];
+    go.detail = [NSString stringWithFormat:@"%@ → %@", up.installedVersion, up.latestVersion];
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:[@"Neu in Sofa " stringByAppendingString:up.latestVersion ?: @""]
+        subtitle:[lines componentsJoinedByString:@"\n"]
+        options:@[go, [SFMenuOption option:@"Später" action:^{}]] theme:[SFTheme themeNamed:@"home"]];
+    m.subtitleLines = 14;
+    return m;
 }
 
 #pragma mark Handy (YouTube „Mit TV verbinden“) – Einstellungen direkt vom Home erreichbar

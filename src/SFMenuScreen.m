@@ -79,7 +79,7 @@
             y += rh + U(6);
         }
     });
-    [self select:0 animated:NO];
+    [self select:self.initialSelection animated:NO];
 }
 
 - (void)willAppear {
@@ -106,6 +106,8 @@
     };
     if (anim) SFAnimate(0.18, ch); else SFNoAnimate(ch);
 }
+
+- (NSInteger)selectedIndex { return _sel; }
 
 - (BOOL)handleKey:(SFKey)key {
     switch (key) {

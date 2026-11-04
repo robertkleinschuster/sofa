@@ -100,6 +100,36 @@ NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSDa
     return fetchFull(url, method ?: @"GET", headers, body, status, NULL, error);
 }
 
+static size_t writeFile(char *p, size_t sz, size_t n, void *ud) {
+    return fwrite(p, sz, n, (FILE *)ud) * sz;
+}
+
+BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
+    curlInit();
+    FILE *f = fopen(path.fileSystemRepresentation, "wb");
+    if (!f) { if (error) *error = SFError(@"Datei nicht schreibbar."); return NO; }
+    CURL *c = SFCurlNew();
+    curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);          // GitHub-Assets leiten auf ihr CDN um
+    curl_easy_setopt(c, CURLOPT_MAXREDIRS, 8L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);      // < 1 KB/s für 60 s -> abbrechen
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 60L);
+    curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, [SFNet userAgent].UTF8String);
+    curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, writeFile);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, f);
+    CURLcode rc = curl_easy_perform(c);
+    curl_easy_cleanup(c);
+    BOOL ok = fclose(f) == 0 && rc == CURLE_OK;
+    if (!ok) {
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+        if (error) *error = [NSError errorWithDomain:@"curl" code:rc userInfo:@{NSLocalizedDescriptionKey: @(curl_easy_strerror(rc))}];
+    }
+    return ok;
+}
+
 #pragma mark - Stream-Proxy
 
 @implementation SFStreamProxy {

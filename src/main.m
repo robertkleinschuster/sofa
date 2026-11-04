@@ -30,6 +30,7 @@
 #import "SFLayers.h"
 #import "SFRuntime.h"
 #import "SFSettings.h"
+#import "SFUpdater.h"
 
 void SFClearRunningMarker(void);   // Autostart-Absturzerkennung, siehe main()
 #import <ImageIO/ImageIO.h>
@@ -104,6 +105,7 @@ static uint16_t gPort = 8765;
     [self welcomeIfFirstRun];
     [self askToMoveIfMisplaced];
     if (!SFDevMode) SFBackground(^{ SFInstallAgents(); });   // nur Release-Bundle (SFRuntime)
+    [[SFUpdater shared] startWithNavigator:self.nav];        // nur Release-Bundle in „Programme“
 
     if (SFDevMode) {
         [self.window setFrame:frame display:YES];
@@ -396,7 +398,7 @@ static uint16_t gPort = 8765;
         [self.nav push:p];
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self.nav toast:@"Sofa wurde aktualisiert"];
+        [self.nav toast:[@"Sofa wurde aktualisiert – Version " stringByAppendingString:[[NSBundle mainBundle] infoDictionary][@"CFBundleShortVersionString"]]];
     });
 }
 

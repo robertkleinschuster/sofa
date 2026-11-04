@@ -29,6 +29,7 @@
 - (void)popToRoot;
 - (void)replaceTop:(SFScreen *)s;
 - (void)sendKey:(SFKey)key;
+@property (nonatomic, readonly) NSTimeInterval lastInput;   // Zeitpunkt der letzten Taste (Updater: nur in Ruhe tauschen)
 // Kurze Einblendung unten (Hinweise, Fehler)
 - (void)toast:(NSString *)text;
 // Lautstärke ändern (dir ±1) und Anzeige einblenden
