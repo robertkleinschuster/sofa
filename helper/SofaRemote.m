@@ -501,10 +501,16 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 - (void)launchSofa {
     if (!_sofaPath) { [self log:@"Sofa nicht gefunden"]; return; }
     [self log:@"starte Sofa"];
-    // Einziger Startweg: der LaunchAgent de.sofa.app (gleiche Umgebung wie beim Login).
-    NSTask *t = [NSTask launchedTaskWithLaunchPath:@"/bin/launchctl" arguments:@[@"start", @"de.sofa.app"]];
-    [t waitUntilExit];
-    if (t.terminationStatus != 0) [[NSWorkspace sharedWorkspace] launchApplication:_sofaPath];
+    // Über LaunchServices wie ein Klick im Finder. Nicht über den Agent de.sofa.app: der startet
+    // mit --autostart, und bei ausgeschaltetem Autostart beendete sich Sofa dann sofort.
+    NSError *e = nil;
+    if (![[NSWorkspace sharedWorkspace] launchApplicationAtURL:[NSURL fileURLWithPath:_sofaPath]
+                                                       options:NSWorkspaceLaunchDefault configuration:@{} error:&e]) {
+        [self log:[NSString stringWithFormat:@"LaunchServices: %@ – starte direkt", e.localizedDescription]];
+        NSTask *t = [NSTask new];
+        t.launchPath = [_sofaPath stringByAppendingPathComponent:@"Contents/MacOS/Sofa"];
+        @try { [t launch]; } @catch (NSException *x) { [self log:[@"Start fehlgeschlagen: " stringByAppendingString:x.reason]]; }
+    }
 }
 
 // Sofa ist die TV-Shell: die Remote bedient IMMER Sofa (Kodi-Kompatibilität entfällt,
@@ -535,10 +541,12 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 int main(int argc, const char **argv) {
     @autoreleasepool {
         SFRuntimeSetup();
-        [NSApplication sharedApplication].activationPolicy = NSApplicationActivationPolicyProhibited;
+        // Kein NSApplication: sonst meldet sich der Helper bei LaunchServices als App „Sofa“
+        // (gleiche Bundle-ID de.sofa.app) an, und Finder/open/NSWorkspace aktivierten nur ihn,
+        // statt Sofa zu starten. Ein reiner Hintergrunddienst braucht nur die RunLoop.
         SRHelper *h = [SRHelper new];
         [h start];
-        [NSApp run];
+        while (1) CFRunLoopRun();
     }
     return 0;
 }
