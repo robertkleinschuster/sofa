@@ -1,0 +1,402 @@
+{
+ "_comment": "verkleinert aus yt-dlp -J (deutsches Video mit KI-Synchronfassung en-US, 2026-11-04); URLs gekürzt, keine Signaturen/IPs/Tokens",
+ "id": "dagiFixture",
+ "language": "de-DE",
+ "duration": 588,
+ "formats": [
+  {
+   "format_id": "249",
+   "vcodec": "none",
+   "acodec": "opus",
+   "height": null,
+   "fps": null,
+   "tbr": 57.208,
+   "abr": 57.208,
+   "language": "en-US",
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=249&xtags=acont=dubbed-auto:lang=en-US"
+  },
+  {
+   "format_id": "250",
+   "vcodec": "none",
+   "acodec": "opus",
+   "height": null,
+   "fps": null,
+   "tbr": 74.194,
+   "abr": 74.194,
+   "language": "en-US",
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=250&xtags=acont=dubbed-auto:lang=en-US"
+  },
+  {
+   "format_id": "140-0",
+   "vcodec": "none",
+   "acodec": "mp4a.40.2",
+   "height": null,
+   "fps": null,
+   "tbr": 129.486,
+   "abr": 129.486,
+   "language": "en-US",
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=140&xtags=acont=dubbed-auto:lang=en-US"
+  },
+  {
+   "format_id": "140-1",
+   "vcodec": "none",
+   "acodec": "mp4a.40.2",
+   "height": null,
+   "fps": null,
+   "tbr": 129.482,
+   "abr": 129.482,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=140&xtags=acont=original:lang=de-DE"
+  },
+  {
+   "format_id": "251-0",
+   "vcodec": "none",
+   "acodec": "opus",
+   "height": null,
+   "fps": null,
+   "tbr": 142.609,
+   "abr": 142.609,
+   "language": "en-US",
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=251&xtags=acont=dubbed-auto:lang=en-US"
+  },
+  {
+   "format_id": "251-1",
+   "vcodec": "none",
+   "acodec": "opus",
+   "height": null,
+   "fps": null,
+   "tbr": 137.738,
+   "abr": 137.738,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=251&xtags=acont=original:lang=de-DE"
+  },
+  {
+   "format_id": "91-0",
+   "vcodec": "avc1.4D400C",
+   "acodec": "mp4a.40.5",
+   "height": 144,
+   "fps": 30.0,
+   "tbr": 175.614,
+   "abr": null,
+   "language": "en-US",
+   "language_preference": null,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/91-0/index.m3u8"
+  },
+  {
+   "format_id": "91-1",
+   "vcodec": "avc1.4D400C",
+   "acodec": "mp4a.40.5",
+   "height": 144,
+   "fps": 30.0,
+   "tbr": 175.839,
+   "abr": null,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/91-1/index.m3u8"
+  },
+  {
+   "format_id": "160",
+   "vcodec": "avc1.4D400C",
+   "acodec": "none",
+   "height": 144,
+   "fps": 30,
+   "tbr": 50.489,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=160"
+  },
+  {
+   "format_id": "394",
+   "vcodec": "av01.0.00M.08",
+   "acodec": "none",
+   "height": 144,
+   "fps": 30,
+   "tbr": 32.309,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=394"
+  },
+  {
+   "format_id": "395",
+   "vcodec": "av01.0.00M.08",
+   "acodec": "none",
+   "height": 240,
+   "fps": 30,
+   "tbr": 54.181,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=395"
+  },
+  {
+   "format_id": "93-0",
+   "vcodec": "avc1.4D401E",
+   "acodec": "mp4a.40.2",
+   "height": 360,
+   "fps": 30.0,
+   "tbr": 739.333,
+   "abr": null,
+   "language": "en-US",
+   "language_preference": null,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/93-0/index.m3u8"
+  },
+  {
+   "format_id": "93-1",
+   "vcodec": "avc1.4D401E",
+   "acodec": "mp4a.40.2",
+   "height": 360,
+   "fps": 30.0,
+   "tbr": 739.487,
+   "abr": null,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/93-1/index.m3u8"
+  },
+  {
+   "format_id": "134",
+   "vcodec": "avc1.4D401E",
+   "acodec": "none",
+   "height": 360,
+   "fps": 30,
+   "tbr": 196.486,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=134"
+  },
+  {
+   "format_id": "18",
+   "vcodec": "avc1.42001E",
+   "acodec": "mp4a.40.2",
+   "height": 360,
+   "fps": 30,
+   "tbr": 285.776,
+   "abr": null,
+   "language": "de",
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=18"
+  },
+  {
+   "format_id": "243",
+   "vcodec": "vp9",
+   "acodec": "none",
+   "height": 360,
+   "fps": 30,
+   "tbr": 110.135,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=243"
+  },
+  {
+   "format_id": "396",
+   "vcodec": "av01.0.01M.08",
+   "acodec": "none",
+   "height": 360,
+   "fps": 30,
+   "tbr": 95.175,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=396"
+  },
+  {
+   "format_id": "397",
+   "vcodec": "av01.0.04M.08",
+   "acodec": "none",
+   "height": 480,
+   "fps": 30,
+   "tbr": 148.58,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=397"
+  },
+  {
+   "format_id": "136",
+   "vcodec": "avc1.64001F",
+   "acodec": "none",
+   "height": 720,
+   "fps": 30,
+   "tbr": 620.53,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=136"
+  },
+  {
+   "format_id": "300-0",
+   "vcodec": "avc1.640020",
+   "acodec": "mp4a.40.2",
+   "height": 720,
+   "fps": 60.0,
+   "tbr": 2934.189,
+   "abr": null,
+   "language": "en-US",
+   "language_preference": null,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/300-0/index.m3u8"
+  },
+  {
+   "format_id": "300-1",
+   "vcodec": "avc1.640020",
+   "acodec": "mp4a.40.2",
+   "height": 720,
+   "fps": 60.0,
+   "tbr": 2934.343,
+   "abr": null,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/300-1/index.m3u8"
+  },
+  {
+   "format_id": "298",
+   "vcodec": "avc1.640020",
+   "acodec": "none",
+   "height": 720,
+   "fps": 60,
+   "tbr": 923.346,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=298"
+  },
+  {
+   "format_id": "398",
+   "vcodec": "av01.0.08M.08",
+   "acodec": "none",
+   "height": 720,
+   "fps": 60,
+   "tbr": 272.479,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=398"
+  },
+  {
+   "format_id": "301-0",
+   "vcodec": "avc1.64002A",
+   "acodec": "mp4a.40.2",
+   "height": 1080,
+   "fps": 60.0,
+   "tbr": 4999.257,
+   "abr": null,
+   "language": "en-US",
+   "language_preference": null,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/301-0/index.m3u8"
+  },
+  {
+   "format_id": "301-1",
+   "vcodec": "avc1.64002A",
+   "acodec": "mp4a.40.2",
+   "height": 1080,
+   "fps": 60.0,
+   "tbr": 4999.412,
+   "abr": null,
+   "language": "de-DE",
+   "language_preference": 10,
+   "protocol": "m3u8_native",
+   "url": "https://x/hls/itag/301-1/index.m3u8"
+  },
+  {
+   "format_id": "299",
+   "vcodec": "avc1.64002A",
+   "acodec": "none",
+   "height": 1080,
+   "fps": 60,
+   "tbr": 1718.349,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=299"
+  },
+  {
+   "format_id": "399",
+   "vcodec": "av01.0.09M.08",
+   "acodec": "none",
+   "height": 1080,
+   "fps": 60,
+   "tbr": 538.364,
+   "abr": 0,
+   "language": null,
+   "language_preference": -1,
+   "protocol": "https",
+   "url": "https://x/videoplayback?itag=399"
+  }
+ ],
+ "subtitles": {},
+ "automatic_captions": {
+  "de-orig": [
+   {
+    "ext": "json3",
+    "url": "https://x/api/timedtext?lang=de-orig&fmt=json3"
+   },
+   {
+    "ext": "vtt",
+    "url": "https://x/api/timedtext?lang=de-orig&fmt=vtt"
+   }
+  ],
+  "de": [
+   {
+    "ext": "json3",
+    "url": "https://x/api/timedtext?lang=de&fmt=json3"
+   },
+   {
+    "ext": "vtt",
+    "url": "https://x/api/timedtext?lang=de&fmt=vtt"
+   }
+  ],
+  "en": [
+   {
+    "ext": "json3",
+    "url": "https://x/api/timedtext?lang=en&fmt=json3"
+   },
+   {
+    "ext": "vtt",
+    "url": "https://x/api/timedtext?lang=en&fmt=vtt"
+   }
+  ],
+  "fr": [
+   {
+    "ext": "json3",
+    "url": "https://x/api/timedtext?lang=fr&fmt=json3"
+   },
+   {
+    "ext": "vtt",
+    "url": "https://x/api/timedtext?lang=fr&fmt=vtt"
+   }
+  ]
+ }
+}

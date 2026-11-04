@@ -1,0 +1,11 @@
+#!/bin/bash
+# test-resolver [unittest-Argumente] -- Offline-Tests der Auswahllogik von res/ytresolver.py
+# (Original- vs. Synchron-Tonspur, DASH-Wahl, dlaudio, Untertitel) gegen Fixtures in tests/.
+# Kein Netz, kein yt-dlp, fasst nichts außerhalb des Repos an. Exit-Code != 0 bei Fehler.
+#   tools/test-resolver                      alle Tests
+#   tools/test-resolver Subtitles -v         nur eine Klasse, ausführlich
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+PY="${PYTHON:-/opt/local/bin/python3.14}"
+cd "$SRC/tests" && exec "$PY" -I -B test_ytresolver.py "$@"
