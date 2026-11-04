@@ -102,7 +102,7 @@ The release bundle is built on a MacPorts machine: `tools/make-release` copies t
 `@loader_path`-relative, then checks that nothing points to `/opt/local` any more.
 
 Development uses an isolated dev instance (`tools/sofa-dev`) with its own data, plus a
-browser-based viewer/remote. See [`NOTES.md`](NOTES.md) (German) for architecture,
+browser-based viewer/remote. See [`NOTES.md`](NOTES.md) for architecture,
 decisions and the source APIs ([`docs/`](docs/): YouTube InnerTube & Lounge, Mediathek APIs, codecs).
 
 ## License

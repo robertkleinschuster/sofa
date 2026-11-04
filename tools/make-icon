@@ -1,5 +1,5 @@
 #!/bin/bash
-# make-icon -- res/icon/sofa-icon.svg -> res/Sofa.icns (alle Größen, @1x/@2x).
+# make-icon -- res/icon/sofa-icon.svg -> res/Sofa.icns (all sizes, @1x/@2x).
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"

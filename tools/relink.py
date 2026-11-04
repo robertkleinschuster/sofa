@@ -119,8 +119,8 @@ def relink(root, libdir):
                 if prev and not os.path.exists(tgt):
                     tgt = prev
                 if prev:
-                    # Bibliothek aus einem älteren Bundle wiederverwendet (sofa-deploy): sie muss
-                    # mindestens die Version haben, gegen die p gebaut ist
+                    # library reused from an older bundle (sofa-deploy): it must have
+                    # at least the version p was built against
                     need = versions(p).get(dep)
                     have = next(iter(versions(prev).values()), None)
                     if need and have and vkey(have) < vkey(need):

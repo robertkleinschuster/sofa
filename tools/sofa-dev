@@ -1,41 +1,41 @@
 #!/bin/bash
-# sofa-dev — geschlossener Entwicklungskreislauf für Sofa, ohne den echten Bildschirm
-# (Kodi-Nutzer) zu stören: unsichtbare Instanz (--dev), Steuerung per FIFO, Screenshots
-# aus dem Offscreen-Fenster, Log-/Crash-Prüfung.
+# sofa-dev — closed development loop for Sofa, without disturbing the real screen
+# (Kodi user): invisible instance (--dev), control via FIFO, screenshots
+# from the offscreen window, log/crash check.
 #
-#   sofa-dev build                 make (Fehler -> Exit 1)
-#   sofa-dev start [WxH]           Dev-Instanz (neu) starten, Default 1920x1080
-#   sofa-dev stop                  Dev-Instanz beenden
-#   sofa-dev key k [k ...]         Tasten senden (up down left right select menu play
+#   sofa-dev build                 make (error -> exit 1)
+#   sofa-dev start [WxH]           (re)start the dev instance, default 1920x1080
+#   sofa-dev stop                  stop the dev instance
+#   sofa-dev key k [k ...]         send keys (up down left right select menu play
 #                                  selecthold menuhold next prev uphold downhold)
-#   sofa-dev wshot NAME            echte Fensteraufnahme (geht aus der SSH-Shell nicht: kein Window-Server-Zugriff)
-#   sofa-dev frame NAME            echtes mpv-Videobild (GL-Readback in eigenes FBO, 1280x720) -> $SHOTS/NAME.png
-#   sofa-dev open pair|history     Seite direkt öffnen (Dev)
-#   sofa-dev shot NAME             Screenshot -> $SHOTS/NAME.png (Pfad wird ausgegeben)
-#   sofa-dev do "key down" "shot a" "sleep 1" ...   Abfolge
-#   sofa-dev check                 läuft? neue Crash-Reports? Fehler im Log?
-#   sofa-dev log [N]               letzte N Logzeilen (Default 40)
-#   sofa-dev cycle [WxH]           build + start + check (Standard-Schleife)
+#   sofa-dev wshot NAME            real window capture (does not work from the SSH shell: no window server access)
+#   sofa-dev frame NAME            real mpv video frame (GL readback into its own FBO, 1280x720) -> $SHOTS/NAME.png
+#   sofa-dev open pair|history     open a page directly (dev)
+#   sofa-dev shot NAME             screenshot -> $SHOTS/NAME.png (prints the path)
+#   sofa-dev do "key down" "shot a" "sleep 1" ...   sequence
+#   sofa-dev check                 running? new crash reports? errors in the log?
+#   sofa-dev log [N]               last N log lines (default 40)
+#   sofa-dev cycle [WxH]           build + start + check (standard loop)
 set -u
 unset DYLD_INSERT_LIBRARIES
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/build/SofaDev.app/Contents/MacOS/Sofa"   # Bundle-ID de.sofa.dev
 CACHE="$HOME/Library/Caches/Sofa"
-# Instanzen: "test" (Default, automatische Tests, Port 8766) und "view" (Live-Vorschau
-# für den User, Port 8765). SOFA_INSTANCE=view sofa-dev start ...
+# Instances: "test" (default, automated tests, port 8766) and "view" (live preview
+# for the user, port 8765). SOFA_INSTANCE=view sofa-dev start ...
 INST="${SOFA_INSTANCE:-test}"
-case "$INST" in view) PORT=8767 ;; test) PORT=8766 ;; *) PORT="${SOFA_PORT:-8770}" ;; esac   # 8765 = echte App; weitere Instanzen (Agents): SOFA_INSTANCE=name SOFA_PORT=877x
+case "$INST" in view) PORT=8767 ;; test) PORT=8766 ;; *) PORT="${SOFA_PORT:-8770}" ;; esac   # 8765 = real app; further instances (agents): SOFA_INSTANCE=name SOFA_PORT=877x
 FIFO="$CACHE/dev-$INST.fifo"
 PIDF="$CACHE/dev-$INST.pid"
 STARTF="$CACHE/dev-$INST.start"
-LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"   # jede Dev-Instanz eigenes Log (echte App: Sofa.log)
+LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"   # every dev instance has its own log (real app: Sofa.log)
 SHOTS="${SOFA_SHOTS:-/private/tmp/claude-501/sofa-shots}"
 mkdir -p "$CACHE" "$SHOTS"
 
 alive() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 
 send() {
-  alive || { echo "sofa-dev: keine Dev-Instanz" >&2; return 1; }
+  alive || { echo "sofa-dev: no dev instance" >&2; return 1; }
   printf '%s\n' "$*" > "$FIFO"
 }
 
@@ -60,18 +60,18 @@ cmd_start() {
   "$BIN" --dev --instance "$INST" --port "$PORT" --size "$size" >> "$CACHE/dev-$INST.stderr" 2>&1 &
   echo $! > "$PIDF"
   for i in $(seq 1 50); do [ -p "$FIFO" ] && break; sleep 0.2; done
-  [ -p "$FIFO" ] || { echo "start: FIFO fehlt"; cmd_check; return 1; }
+  [ -p "$FIFO" ] || { echo "start: FIFO missing"; cmd_check; return 1; }
   sleep 1.5
   echo "started [$INST] pid $(cat "$PIDF") ($size) http://127.0.0.1:$PORT/"
 }
 
 cmd_key() { for k in "$@"; do send "key $k" || return 1; sleep 0.35; done; }
 
-# Echte Fensteraufnahme über den Window-Server (inkl. OpenGL/mpv-Video, das "shot" nicht sieht)
+# real window capture via the window server (incl. OpenGL/mpv video, which "shot" does not see)
 cmd_wshot() {
-  alive || { echo "sofa-dev: keine Dev-Instanz"; return 1; }
+  alive || { echo "sofa-dev: no dev instance"; return 1; }
   local wid; wid="$(grep -a "dev: window" "$LOG" | tail -1 | awk '{print $NF}')"
-  [ -n "$wid" ] || { echo "wshot: Fenster-ID unbekannt"; return 1; }
+  [ -n "$wid" ] || { echo "wshot: window ID unknown"; return 1; }
   mkdir -p "$SHOTS"; screencapture -x -o -l "$wid" "$SHOTS/$1.png" && echo "$SHOTS/$1.png"
 }
 
@@ -79,7 +79,7 @@ cmd_frame() {
   local f="$SHOTS/$1.png"; rm -f "$f"; mkdir -p "$SHOTS"
   send "frameshot $f" || return 1
   for i in $(seq 1 40); do [ -s "$f" ] && { echo "$f"; return 0; }; sleep 0.15; done
-  echo "frame: kein Bild (läuft ein Video über mpv? SOFA_FORCE_MPV=1)"; return 1
+  echo "frame: no image (is a video playing via mpv? SOFA_FORCE_MPV=1)"; return 1
 }
 
 cmd_shot() {
@@ -87,7 +87,7 @@ cmd_shot() {
   rm -f "$f"
   send "shot $f" || return 1
   for i in $(seq 1 40); do [ -s "$f" ] && { echo "$f"; return 0; }; sleep 0.15; done
-  echo "shot: kein Bild ($f)"; return 1
+  echo "shot: no image ($f)"; return 1
 }
 
 cmd_check() {

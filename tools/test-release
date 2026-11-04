@@ -1,9 +1,9 @@
 #!/bin/bash
-# test-release [Sofa.app] -- prüft ein Release-Bundle wie auf einem Mac OHNE MacPorts:
-# alles läuft unter sandbox-exec mit verbotenem Lesezugriff auf /opt/local.
-#   Bundle-Abhängigkeiten, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (Zipapp, Signaturprüfer),
-#   PO-Token-Server (eigener Port), YouTube-Auflösung mit node für die JS-Challenge.
-# Braucht Internet. Fasst nichts außerhalb eines Temp-Ordners an.
+# test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
+# everything runs under sandbox-exec with read access to /opt/local denied.
+#   bundle dependencies, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (zipapp, signature verifier),
+#   PO token server (own port), YouTube resolving with node for the JS challenge.
+# Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 printf '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/local"))\n' > "$T/nomp.sb"
 np() { sandbox-exec -f "$T/nomp.sb" "$@"; }
-# dieselbe Umgebung, die SFRuntimeSetup() setzt
+# the same environment SFRuntimeSetup() sets
 export PATH="$RT/bin:/usr/bin:/bin:/usr/sbin:/sbin" SOFA_NODE="$RT/bin/node" \
        SSL_CERT_FILE="$RT/etc/cert.pem" NODE_EXTRA_CA_CERTS="$RT/etc/cert.pem" \
        FONTCONFIG_FILE="$RT/etc/fonts/fonts.conf" FONTCONFIG_PATH="$RT/etc/fonts" \
@@ -27,8 +27,8 @@ export PATH="$RT/bin:/usr/bin:/bin:/usr/sbin:/sbin" SOFA_NODE="$RT/bin/node" \
        OPENSSL_CONF="$RT/etc/openssl.cnf"
 
 echo "==> $APP"
-np /bin/ls /opt/local >/dev/null 2>&1 && { echo "Sandbox wirkt nicht"; exit 1; }
-/opt/local/bin/python3.14 -I "$SRC/tools/relink.py" --check "$APP" >/dev/null && ok "Abhängigkeiten nur System + Bundle" || bad "relink --check"
+np /bin/ls /opt/local >/dev/null 2>&1 && { echo "sandbox has no effect"; exit 1; }
+/opt/local/bin/python3.14 -I "$SRC/tools/relink.py" --check "$APP" >/dev/null && ok "dependencies only system + bundle" || bad "relink --check"
 
 np "$RT/bin/ffmpeg" -hide_banner -version >/dev/null 2>&1 && ok ffmpeg || bad ffmpeg
 np "$RT/bin/node" -e 'process.exit(0)' && ok node || bad node
@@ -41,27 +41,27 @@ np "$PY" -c 'import ssl, sqlite3, lzma, ctypes, urllib.request as u; u.urlopen("
 YT="$APP/Contents/Resources/yt-dlp"
 export PYTHONPATH="$YT/yt-dlp:$YT/plugins"
 V=$(np "$PY" -s "$YT/yt-dlp" --version 2>&1)
-[ "$V" = "$(cat "$YT/VERSION")" ] && ok "yt-dlp $V (Zipapp im Bundle)" || bad "yt-dlp: $V"
-np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_bgutil_http' 2>/dev/null && ok "yt-dlp-ejs + bgutil-Plugin" || bad "ejs/Plugin nicht importierbar"
-# Signaturprüfer (Updates von yt-dlp): echtes Release gültig, verfälschte Summen ungültig
+[ "$V" = "$(cat "$YT/VERSION")" ] && ok "yt-dlp $V (zipapp in the bundle)" || bad "yt-dlp: $V"
+np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_bgutil_http' 2>/dev/null && ok "yt-dlp-ejs + bgutil plugin" || bad "ejs/plugin not importable"
+# signature verifier (yt-dlp updates): real release valid, tampered sums invalid
 R="https://github.com/yt-dlp/yt-dlp/releases/download/$(cat "$YT/VERSION")"
 curl -fsSL -o "$T/sums" "$R/SHA2-256SUMS" && curl -fsSL -o "$T/sums.sig" "$R/SHA2-256SUMS.sig"
 if np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums" "$T/sums.sig" "$YT/yt-dlp" yt-dlp; then
   sed 's/^./0/' "$T/sums" > "$T/sums.bad"
   np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums.bad" "$T/sums.sig" "$YT/yt-dlp" yt-dlp 2>/dev/null \
-    && bad "Signaturprüfer nimmt verfälschte Summen an" || ok "Signaturprüfer (yt-dlp-GPG)"
-else bad "Signaturprüfer lehnt echtes yt-dlp ab"; fi
+    && bad "signature verifier accepts tampered sums" || ok "signature verifier (yt-dlp GPG)"
+else bad "signature verifier rejects the real yt-dlp"; fi
 
 (cd "$RT/bgutil" && exec sandbox-exec -f "$T/nomp.sb" "$RT/bin/node" build/main.js --host 127.0.0.1 --port $POT_PORT >"$T/pot.log" 2>&1) &
 POT=$!
 for i in $(seq 1 30); do curl -sf "127.0.0.1:$POT_PORT/ping" >/dev/null && break; sleep 1; done
 if curl -sf -X POST "127.0.0.1:$POT_PORT/get_pot" -H 'Content-Type: application/json' \
-     -d '{"content_binding":"jNQXAC9IVRw"}' | /usr/bin/grep -q poToken; then ok "PO-Token-Server"; else bad "PO-Token-Server ($(tail -1 "$T/pot.log"))"; fi
+     -d '{"content_binding":"jNQXAC9IVRw"}' | /usr/bin/grep -q poToken; then ok "PO token server"; else bad "PO token server ($(tail -1 "$T/pot.log"))"; fi
 
 F=$(np "$PY" -s "$YT/yt-dlp" --no-warnings --no-check-certificates --js-runtimes "node:$RT/bin/node" \
       --extractor-args "youtube:player_client=web_embedded;youtubepot-bgutilhttp:base_url=http://127.0.0.1:$POT_PORT" \
       -f 'best[vcodec^=avc1][acodec!=none]/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>&1 | tail -1)
-[[ "$F" =~ ^[0-9]+$ ]] && ok "YouTube-Auflösung (Format $F)" || bad "YouTube-Auflösung: $F"
+[[ "$F" =~ ^[0-9]+$ ]] && ok "YouTube resolving (format $F)" || bad "YouTube resolving: $F"
 
-[ $fail = 0 ] && echo "==> alles ok" || echo "==> FEHLER"
+[ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

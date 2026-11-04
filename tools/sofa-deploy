@@ -1,15 +1,15 @@
 #!/bin/bash
-# Neues Sofa ausrollen, ohne den Nutzer zu stören. Der laufende SofaRemote-Helper übernimmt
-# innerhalb von ~3 s: Sofa sichert Zustand (Bereich + laufendes Video + Position), Tausch,
-# Neustart, Wiedergabe läuft an derselben Stelle weiter. Rollback: <App>.prev.
+# Roll out a new Sofa without disturbing the user. The running SofaRemote helper takes over
+# within ~3 s: Sofa saves its state (area + running video + position), swap,
+# restart, playback continues at the same spot. Rollback: <App>.prev.
 #
-# Ziel = das Sofa.app, aus dem der laufende Helper stammt (sonst MacPorts-, sonst /Applications-Kopie).
-#  - App-Ordner beschreibbar (/Applications): Bundle als <App>.staged daneben, der Helper tauscht.
-#  - nicht beschreibbar (MacPorts-Port: /Applications/MacPorts gehört root): Bundle nach
-#    ~/Library/Application Support/Sofa/update/Sofa.app, der Helper beendet Sofa und meldet
-#    „ready“, dieses Skript tauscht per sudo. sudo nicht-interaktiv: SUDO_PW setzen.
-# Auf einer Port-Installation ist das ein Entwicklungsstand; `port -n upgrade --force sofa`
-# stellt den Port-Stand wieder her.
+# Target = the Sofa.app the running helper comes from (else the MacPorts copy, else the /Applications copy).
+#  - app folder writable (/Applications): bundle as <App>.staged next to it, the helper swaps.
+#  - not writable (MacPorts port: /Applications/MacPorts belongs to root): bundle into
+#    ~/Library/Application Support/Sofa/update/Sofa.app, the helper quits Sofa and signals
+#    "ready", this script swaps via sudo. sudo non-interactively: set SUDO_PW.
+# On a port installation this is a development state; `port -n upgrade --force sofa`
+# restores the port state.
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,7 +18,7 @@ LOG="$HOME/Library/Logs/SofaRemote.log"
 APP="$(ps -axo command | sed -n 's|^\(/.*/Sofa\.app\)/Contents/MacOS/SofaRemote.*|\1|p' | head -1)"
 if [ -z "$APP" ]; then
   if [ -d /Applications/MacPorts/Sofa.app ]; then APP=/Applications/MacPorts/Sofa.app; else APP=/Applications/Sofa.app; fi
-  echo "WARNUNG: kein SofaRemote läuft – Ziel $APP, Übernahme erst beim nächsten Helper-Start"
+  echo "WARNING: no SofaRemote running - target $APP, takeover only at the next helper start"
 fi
 
 as_root() {
@@ -26,37 +26,37 @@ as_root() {
 }
 
 make -C "$SRC" >/dev/null
-echo "Ziel: $APP"
+echo "target: $APP"
 
-# Release-Bundle (tools/make-release, mit Contents/Runtime): Runtime + Bibliotheken des Ziels
-# übernehmen und nur die neuen Programme dagegen umlinken (Sekunden statt Neubau des Releases).
+# Release bundle (tools/make-release, with Contents/Runtime): take over the target's runtime + libraries
+# and relink only the new programs against them (seconds instead of rebuilding the release).
 NEW="$SRC/build/Sofa.app"
 if [ -d "$APP/Contents/Runtime" ]; then
   NEW="$SRC/build/Sofa-release.app"
   rm -rf "$NEW"; cp -R "$SRC/build/Sofa.app" "$NEW"
   cp -R "$APP/Contents/Runtime" "$APP/Contents/Frameworks" "$NEW/Contents/"
   /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" "$NEW/Contents/MacOS" "$NEW/Contents/Frameworks" >/dev/null
-  echo "Release-Bundle: Runtime übernommen, Programme umgelinkt"
+  echo "release bundle: runtime taken over, programs relinked"
 fi
 
 if [ -w "$(dirname "$APP")" ]; then
   rm -rf "$APP.staged.tmp"
   cp -R "$NEW" "$APP.staged.tmp"
-  rm -rf "$APP.staged"                     # nie in ein altes .staged verschachteln
-  mv "$APP.staged.tmp" "$APP.staged"       # atomar sichtbar
-  echo "bereitgestellt; warte auf Übernahme durch SofaRemote ..."
+  rm -rf "$APP.staged"                     # never nest into an old .staged
+  mv "$APP.staged.tmp" "$APP.staged"       # becomes visible atomically
+  echo "staged; waiting for SofaRemote to take over ..."
   for i in $(seq 1 60); do [ -e "$APP.staged" ] || break; sleep 0.5; done
-  [ -e "$APP.staged" ] && { echo "WARNUNG: nicht übernommen (läuft SofaRemote mit Update-Logik?)"; exit 1; }
+  [ -e "$APP.staged" ] && { echo "WARNING: not taken over (is SofaRemote running with the update logic?)"; exit 1; }
 else
   U="$HOME/Library/Application Support/Sofa/update"
   mkdir -p "$U"
   rm -rf "$U/Sofa.app" "$U/Sofa.app.tmp" "$U/ready"
   cp -R "$NEW" "$U/Sofa.app.tmp"
   mv "$U/Sofa.app.tmp" "$U/Sofa.app"
-  echo "bereitgestellt (extern); warte, bis SofaRemote Sofa beendet hat ..."
+  echo "staged (external); waiting until SofaRemote has quit Sofa ..."
   for i in $(seq 1 60); do [ -e "$U/ready" ] && break; sleep 0.5; done
-  [ -e "$U/ready" ] || { rm -rf "$U/Sofa.app"; echo "WARNUNG: SofaRemote hat nicht reagiert (alter Helper ohne externen Tausch?)"; exit 1; }
-  # Tausch als root; das neue Bundle bekommt dieselben Besitzrechte wie das alte
+  [ -e "$U/ready" ] || { rm -rf "$U/Sofa.app"; echo "WARNING: SofaRemote did not respond (old helper without external swap?)"; exit 1; }
+  # swap as root; the new bundle gets the same ownership as the old one
   OWNER="$(stat -f '%Su:%Sg' "$APP")"
   as_root rm -rf "$APP.prev"
   as_root mv "$APP" "$APP.prev"

@@ -1,19 +1,19 @@
 #!/bin/bash
-# make-release -- eigenständiges Sofa.app + DMG bauen (für GitHub-Releases).
+# make-release -- build a self-contained Sofa.app + DMG (for GitHub releases).
 #
-# MacPorts ist hier nur die Werkbank: Sofa wird gegen die MacPorts-Bibliotheken gebaut,
-# danach kommen alle Laufzeit-Teile ins Bundle und werden @loader_path-relativ umgelinkt.
-# Der Nutzer braucht nur die DMG -- kein MacPorts, keine Xcode-Tools.
+# MacPorts is only the workbench here: Sofa is built against the MacPorts libraries,
+# then every runtime part goes into the bundle and is relinked @loader_path-relative.
+# The user only needs the DMG -- no MacPorts, no Xcode tools.
 #
 #   Contents/MacOS/{Sofa,SofaRemote}
-#   Contents/Frameworks/*.dylib           alle Bibliotheken (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
+#   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
 #   Contents/Runtime/bin/{ffmpeg,node,rsvg-convert}
-#   Contents/Runtime/Python.framework     Basis-Python für das yt-dlp-venv (gekürzt)
-#   Contents/Runtime/bgutil               YouTube-PO-Token-Server (vom Helper betrieben)
+#   Contents/Runtime/Python.framework     base Python for the yt-dlp venv (trimmed)
+#   Contents/Runtime/bgutil               YouTube PO token server (run by the helper)
 #   Contents/Runtime/etc/{cert.pem,fonts/}
 #
-# Voraussetzung (Build-Maschine): Ports sofa-Abhängigkeiten + bgutil-pot-server installiert.
-# Aufruf: tools/make-release            -> dist/Sofa-<version>.dmg
+# Prerequisite (build machine): ports for the sofa dependencies + bgutil-pot-server installed.
+# Usage: tools/make-release            -> dist/Sofa-<version>.dmg
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,46 +24,46 @@ DIST="$SRC/dist"
 APP="$DIST/Sofa.app"
 RT="$APP/Contents/Runtime"
 
-echo "==> Sofa $VER bauen"
+echo "==> building Sofa $VER"
 make -C "$SRC" >/dev/null
 # regression suites first: never ship a build that fails one (SKIP_TESTS=1 only for emergencies)
-[ "${SKIP_TESTS:-0}" = 1 ] || "$SRC/tools/test-all" || { echo "FEHLER: Regressionstests fehlgeschlagen"; exit 1; }
+[ "${SKIP_TESTS:-0}" = 1 ] || "$SRC/tools/test-all" || { echo "ERROR: regression tests failed"; exit 1; }
 rm -rf "$DIST"; mkdir -p "$DIST"
 cp -R "$SRC/build/Sofa.app" "$APP"
 mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
 
-echo "==> Werkzeuge"
+echo "==> tools"
 for t in ffmpeg node rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 
-echo "==> Python (gekürzt)"
+echo "==> Python (trimmed)"
 PF="$MP/Library/Frameworks/Python.framework/Versions/3.14"
 mkdir -p "$RT/Python.framework/Versions"
-# Muster mit führendem / sind am Quellordner verankert
+# patterns with a leading / are anchored at the source folder
 rsync -a --exclude '__pycache__/*.opt-*.pyc' \
   --exclude '/lib/python3.14/test/' --exclude '/lib/python3.14/idlelib/' \
   --exclude '/lib/python3.14/tkinter/' --exclude '/lib/python3.14/turtledemo/' \
   --exclude '/lib/python3.14/lib-dynload/_tkinter*' \
   --exclude '/lib/python3.14/site-packages/*' --exclude '/share/' \
   "$PF/" "$RT/Python.framework/Versions/3.14/"
-# bin/: nur Python selbst (MacPorts legt dort Skripte anderer Ports ab, mit /opt/local-Shebang)
+# bin/: only Python itself (MacPorts puts scripts of other ports there, with an /opt/local shebang)
 find "$RT/Python.framework/Versions/3.14/bin" -mindepth 1 ! -name 'python3*' -delete
 
-echo "==> PO-Token-Server"
+echo "==> PO token server"
 cp -R "$MP/libexec/bgutil-pot-server" "$RT/bgutil"
-# canvas: nur das fertige Addon, keine Build-Zwischenstände (Makefiles, .o, .d)
+# canvas: only the finished addon, no intermediate build files (Makefiles, .o, .d)
 CB="$RT/bgutil/node_modules/canvas/build"
 find "$CB" -mindepth 1 -maxdepth 1 ! -name Release -exec rm -rf {} +
 find "$CB/Release" -mindepth 1 ! -name '*.node' ! -name '*.dylib' -exec rm -rf {} +
 
-echo "==> CA-Zertifikate, fontconfig, leere Modul-/Konfig-Pfade (gegen MacPorts-Module, siehe SFRuntime)"
+echo "==> CA certificates, fontconfig, empty module/config paths (against MacPorts modules, see SFRuntime)"
 mkdir -p "$RT/lib/gio/modules"
 : > "$RT/etc/gdk-pixbuf-loaders.cache"
-printf '# Sofa: keine System-/MacPorts-OpenSSL-Konfiguration laden\n' > "$RT/etc/openssl.cnf"
+printf '# Sofa: do not load any system/MacPorts OpenSSL configuration\n' > "$RT/etc/openssl.cnf"
 cp "$MP/share/curl/curl-ca-bundle.crt" "$RT/etc/cert.pem"
 cat > "$RT/etc/fonts/fonts.conf" <<'XML'
 <?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
-<!-- Sofa-Release: nur macOS-Systemschriften, Cache im Benutzer-Cache -->
+<!-- Sofa release: macOS system fonts only, cache in the user cache -->
 <fontconfig>
   <dir>/System/Library/Fonts</dir>
   <dir>/Library/Fonts</dir>
@@ -76,37 +76,37 @@ cat > "$RT/etc/fonts/fonts.conf" <<'XML'
 </fontconfig>
 XML
 
-echo "==> Bibliotheken einsammeln und umlinken"
-"$PY" -I "$SRC/tools/relink.py" "$APP/Contents" "$APP/Contents/Frameworks"   # Exit 1 bei Fehlern
+echo "==> collecting and relinking libraries"
+"$PY" -I "$SRC/tools/relink.py" "$APP/Contents" "$APP/Contents/Frameworks"   # exit 1 on errors
 
-echo "==> Symbole strippen (Werkzeuge + Bibliotheken; Sofa selbst behält sie für Absturzberichte)"
+echo "==> stripping symbols (tools + libraries; Sofa itself keeps them for crash reports)"
 strip -x "$RT"/bin/* "$APP"/Contents/Frameworks/*.dylib 2>/dev/null || true
 
-echo "==> Prüfen: nur noch System- und Bundle-Abhängigkeiten, keine rpaths"
+echo "==> checking: only system and bundle dependencies left, no rpaths"
 "$PY" -I "$SRC/tools/relink.py" --check "$APP"
-# Skripte zur Laufzeit: keine /opt/local-Pfade (Ausnahmen: canvas-Build-Helfer; ytresolver.py
-# nutzt /opt/local nur als Rückfall, wenn SOFA_NODE fehlt)
+# runtime scripts: no /opt/local paths (exceptions: canvas build helper; ytresolver.py
+# uses /opt/local only as a fallback when SOFA_NODE is missing)
 LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.py' --include='*.json' "$MP/" "$RT/bgutil" \
        | /usr/bin/grep -v '/canvas/util/has_lib.js$' || true)
-[ -z "$LEFT" ] || { echo "FEHLER: $MP-Pfade in Laufzeit-Skripten:"; echo "$LEFT"; exit 1; }
+[ -z "$LEFT" ] || { echo "ERROR: $MP paths in runtime scripts:"; echo "$LEFT"; exit 1; }
 
 echo "==> DMG"
 STAGE="$DIST/dmg"; mkdir -p "$STAGE"
 mv "$APP" "$STAGE/"
-trap 'mv "$STAGE/Sofa.app" "$APP" 2>/dev/null; rm -rf "$STAGE"' EXIT   # auch wenn hdiutil scheitert
+trap 'mv "$STAGE/Sofa.app" "$APP" 2>/dev/null; rm -rf "$STAGE"' EXIT   # even if hdiutil fails
 ln -s /Applications "$STAGE/Programme"
-# Größe vorgeben: hdiutils Schätzung war bei ~330 MB zu knapp (Fehler -5341)
+# set the size explicitly: hdiutil's estimate was too tight at ~330 MB (error -5341)
 MB=$(( $(du -sm "$STAGE/Sofa.app" | cut -f1) * 11 / 10 + 40 ))
 hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -size ${MB}m -format UDBZ -ov "$DIST/Sofa-$VER.dmg" \
-  || { echo "FEHLER: hdiutil create gescheitert"; exit 1; }
+  || { echo "ERROR: hdiutil create failed"; exit 1; }
 mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"; trap - EXIT
-# Signatur (Sofas Updater installiert nur signierte DMGs, SFSignature) + Prüfsumme für Menschen.
-# Der private Schlüssel verlässt diesen Mac nie (~/.config/sofa, 0600, nicht im Repo).
+# Signature (Sofa's updater only installs signed DMGs, SFSignature) + checksum for humans.
+# The private key never leaves this Mac (~/.config/sofa, 0600, not in the repo).
 KEY="${SOFA_SIGNING_KEY:-$HOME/.config/sofa/release-signing-key.pem}"
-[ -f "$KEY" ] || { echo "FEHLER: Signierschlüssel $KEY fehlt"; exit 1; }
+[ -f "$KEY" ] || { echo "ERROR: signing key $KEY missing"; exit 1; }
 "$MP/bin/openssl" dgst -sha256 -sign "$KEY" -out "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg"
 "$MP/bin/openssl" dgst -sha256 -verify "$SRC/res/sofa-release-public.pem" -signature "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg" >/dev/null \
-  || { echo "FEHLER: Signatur passt nicht zum öffentlichen Schlüssel im Bundle"; exit 1; }
+  || { echo "ERROR: signature does not match the public key in the bundle"; exit 1; }
 (cd "$DIST" && shasum -a 256 "Sofa-$VER.dmg" > "Sofa-$VER.dmg.sha256")
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
 cat "$DIST/Sofa-$VER.dmg.sha256"

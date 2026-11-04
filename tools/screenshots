@@ -1,9 +1,9 @@
 #!/bin/bash
-# screenshots -- README-Screenshots aller Hauptseiten neu erzeugen (für jedes Release).
+# screenshots -- regenerate the README screenshots of all main pages (for every release).
 #
-# Startet eine unsichtbare Dev-Instanz (eigene Einstellungen, verändert die echte App nicht),
-# öffnet die Seiten über die Dev-FIFO, rendert sie (1920x1080) und legt verkleinerte JPEGs
-# nach docs/screenshots/. Inhalte (Kanäle, Sendungen) sind die dieses Macs.
+# Starts an invisible dev instance (own settings, does not change the real app),
+# opens the pages via the dev FIFO, renders them (1920x1080) and stores downscaled JPEGs
+# in docs/screenshots/. The content (channels, shows) is this Mac's.
 #   tools/screenshots [build/SofaDev.app]
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -18,16 +18,16 @@ mkdir -p "$OUT"
 
 make -C "$SRC" >/dev/null || exit 1
 : > "$LOG"
-defaults delete de.sofa.dev >/dev/null 2>&1   # Dev-Einstellungen frisch (Begrüßung/Fragen zeigen)
+defaults delete de.sofa.dev >/dev/null 2>&1   # fresh dev settings (show welcome/questions)
 "$APP/Contents/MacOS/Sofa" --dev --instance "$INST" --port 47990 >/dev/null 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT
 for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
-grep -q 'fifo ready' "$LOG" || { echo "Dev-Instanz startet nicht"; exit 1; }
+grep -q 'fifo ready' "$LOG" || { echo "dev instance does not start"; exit 1; }
 
 cmd()  { echo "$*" > "$FIFO"; }
 keys() { for k in "$@"; do cmd key "$k"; sleep 0.7; done; }
-# shot <name> <Wartezeit>: warten (Bilder laden), rendern, als JPEG (1600 px breit) ablegen
+# shot <name> <wait>: wait (images load), render, store as JPEG (1600 px wide)
 shot() {
   sleep "$2"
   rm -f "$TMP/$1.png"; cmd shot "$TMP/$1.png"
@@ -36,12 +36,12 @@ shot() {
     sips -s format jpeg -s formatOptions 80 --resampleWidth 1600 "$TMP/$1.png" --out "$OUT/$1.jpg" >/dev/null 2>&1
     echo "  $1.jpg"
   else
-    echo "  FEHLT: $1"
+    echo "  MISSING: $1"
   fi
 }
 
-echo "==> Screenshots nach $OUT"
-sleep 10                                   # Startseite: Bibliothek + Bilder laden
+echo "==> screenshots into $OUT"
+sleep 10                                   # home: library + images load
 shot home 4
 keys right right right right right right right
 cmd open settings;          shot settings 2
@@ -60,4 +60,4 @@ cmd home; cmd open pair;      shot pair 6
 cmd home; cmd open welcome;   shot welcome 2
 keys select;                  shot first-start 2
 cmd quit
-echo "==> fertig ($(ls "$OUT"/*.jpg | wc -l | tr -d ' ') Bilder)"
+echo "==> done ($(ls "$OUT"/*.jpg | wc -l | tr -d ' ') images)"

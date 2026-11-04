@@ -1,7 +1,7 @@
 #!/opt/local/bin/python3 -I
-# Test-Fernbedienung für Sofas Handy-Koppeln: verhält sich wie eine Web-Remote
-# (pyytlounge-Requests), koppelt per TV-Code und schickt setPlaylist/pause/seek/play.
-#   unset DYLD_INSERT_LIBRARIES; tools/lounge-remote.py <12-stelliger Code> [videoId]
+# Test remote for Sofa's phone pairing: behaves like a web remote
+# (pyytlounge requests), pairs via TV code and sends setPlaylist/pause/seek/play.
+#   unset DYLD_INSERT_LIBRARIES; tools/lounge-remote.py <12-digit code> [videoId]
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "probes"))
 import lounge_probe as lp
