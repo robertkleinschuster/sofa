@@ -9,8 +9,8 @@ the 7-button Apple Remote, you watch YouTube and the public German/Austrian
 broadcasters' Mediatheken. It runs on **OS X 10.9 Mavericks** as a native app, with no
 browser and no Electron.
 
-- **Sources:** YouTube (subscriptions, Watch Later, channels and playlists, with your
-  existing account), ZDF, ARD, ORF and media.ccc.de, each with its own look.
+- **Sources:** YouTube (channels, playlists, search, live streams; no account needed),
+  ZDF, ARD, ORF and media.ccc.de, each with its own look.
 - **Follow shows and channels:** new episodes from everything you follow, a shared
   "Watch later" list across all sources, Continue watching and History.
 - **Downloads as a feature, not a chore:** episodes of followed shows can be fetched
@@ -38,8 +38,6 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 - An Intel Mac on OS X 10.9.5 (developed on an iMac12,2).
 - [MacPorts](https://www.macports.org) with the
   [backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay.
-- For your YouTube subscriptions: a Firefox profile logged in to YouTube (cookies are read
-  locally and never leave the machine). Everything else works without an account.
 - An Apple Remote (IR) is recommended; the `SofaRemote` helper takes over the IR receiver.
 
 ## Install

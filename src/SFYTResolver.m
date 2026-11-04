@@ -112,7 +112,6 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
     return s;
 }
 
-+ (NSString *)cookieFile { return [SFAppSupportDir() stringByAppendingPathComponent:@"youtube-cookies.txt"]; }
 + (NSString *)envDir {
     NSString *o = [NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"];   // Tests: eigenes venv
     return o.length ? o : [SFAppSupportDir() stringByAppendingPathComponent:@"ytdlp"];
@@ -131,6 +130,11 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
 
 - (void)start {
     _wantRunning = YES;
+    // Früher aus Firefox kopierte YouTube-Cookies (Anmeldung gibt es nicht mehr) -> Kopie löschen
+    static dispatch_once_t cleanup;
+    dispatch_once(&cleanup, ^{
+        [[NSFileManager defaultManager] removeItemAtPath:[SFAppSupportDir() stringByAppendingPathComponent:@"youtube-cookies.txt"] error:nil];
+    });
     signal(SIGPIPE, SIG_IGN);   // Schreiben in eine tote Pipe darf die App nicht beenden
     if (_task.isRunning) return;
     NSString *py = [SFYTResolver python];
@@ -151,7 +155,7 @@ static BOOL YTBuildVenv(NSString *tmp, NSString *server, NSString **out) {
     [[NSFileManager defaultManager] createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:nil];
     NSTask *t = [NSTask new];
     t.launchPath = py;
-    t.arguments = @[script, [SFYTResolver cookieFile], cache];
+    t.arguments = @[script, cache];
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
     env[@"PATH"] = @"/opt/local/bin:/usr/bin:/bin";

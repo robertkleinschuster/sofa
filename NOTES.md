@@ -71,7 +71,7 @@ Radeon HD 6770M, 2560x1440).
   0x42 Up, 0x43 Down, 0x44 Left, 0x45 Right, 0xCD Play/Pause, 0xB5/0xB6 Next/Prev,
   0xE9/0xEA Vol; GenericDesktop 0x89..0x8D System-Menu*. Exklusiv-Open scheitert
   solange XBMCHelper läuft (0xe00002c5).
-- YouTube-Login: Firefox-Profil `cookies.sqlite` (inkl. LOGIN_INFO) nativ lesen.
+- YouTube: ohne Anmeldung (seit 2026-11-04, siehe Entscheidungslog).
 - Mediatheken: offizielle APIs (ZDF api.zdf.de, ARD api.ardmediathek.de, ORF
   api-tvthek.orf.at) — Endpunkte aus MServer ableiten. MediathekView-Filmliste
   (`liste.mediathekview.de/Filmliste-akt.xz`, 77 MB xz / 477 MB JSON, 717k Einträge,
@@ -140,6 +140,10 @@ Gilt für ALLE Apps (YouTube, ZDF, ARD, ORF, CCC …); Umsetzung je Quelle darf 
 - 2026-11-03: Folgen statt Download-Abos (User): „Folgen“ ist der Kern (Neue Folgen gestreamt, Meine Sendungen/Kanäle, eine gemeinsame Sofa-Liste, YouTube-Konto-Kanäle einmalig übernommen); „Automatisch herunterladen“ nur Zusatz je gefolgter Sendung (die 128 übernommenen bleiben an). Downloads = Zustand eines Videos (schneller Start, offline), kein eigener Bereich mehr im Vordergrund.
 - 2026-11-03: Kein Mehrbenutzer-Konzept (User): Gerät wird geteilt, alles ist gemeinsam (Verlauf, Weiterschauen, Abos). Keine Anmelde-/Firefox-Hinweise in der Oberfläche.
 - 2026-11-03: ORF über libcurl+lokalen HLS-Proxy statt NSURLSession (10.9-TLS zu alt). User-Prio danach: YouTube + Handy-Koppeln.
+- 2026-11-04: **Keine YouTube-Anmeldung mehr** (User: Abo-/„Später ansehen“-Import war nur ein
+  einmaliger Import für uns; keine Abhängigkeit zu Firefox o. ä.). Firefox-Cookie-Lesen, SAPISIDHASH,
+  Konto-Feeds (FEsubscriptions/VLWL/FEchannels) und Cookie-Datei entfernt; Folgen/Merkliste sind
+  Sofas eigene Daten. yt-dlp ohne Cookies: JS-Challenge mit node statt QuickJS (4 s statt 20 s je Video).
 
 ## Dev-Kreislauf (closed loop, stört die echte App nicht)
 - **Regel (User 2026-11-04): jede Änderung nach dem Test sofort live installieren**

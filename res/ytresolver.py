@@ -5,10 +5,12 @@
 #       "live": false, "duration": 2135, "expires": 1762190000}
 #   <- {"rid": 1, "error": "..."}
 #   <- {"ready": true}     (einmal, nach dem Start)
-# Aufruf: python ytresolver.py <cookies.txt> <cachedir>
+# Aufruf: python ytresolver.py <cachedir>
+# Ohne Anmeldung/Cookies (User 2026-11-04). JS-Challenges löst node (MacPorts nodejs26, ohnehin
+# für den PO-Token-Server da): ~4 s je Video; QuickJS brauchte ohne Cookies ~20 s.
 import json, os, sys, threading, time, re
 
-COOKIES, CACHE = sys.argv[1], sys.argv[2]
+CACHE = sys.argv[-1]   # früher: <cookies.txt> <cachedir> – letztes Argument ist immer cachedir
 out_lock = threading.Lock()
 
 def emit(obj):
@@ -21,7 +23,7 @@ def log(msg):
     sys.stderr.flush()
 
 try:
-    # Vorverarbeiteten Player-JS-Cache aktivieren (spart ~19 s QuickJS pro Player-Version)
+    # Vorverarbeiteten Player-JS-Cache aktivieren (spart je Player-Version die Vorverarbeitung)
     from yt_dlp.extractor.youtube.jsc._builtin import ejs
     ejs.EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = True
 except Exception as e:
@@ -35,14 +37,12 @@ def base_opts():
     return {
         "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
         "noplaylist": True, "cachedir": CACHE,
-        "js_runtimes": {"quickjs": {"path": "/opt/local/bin/qjs"}},
+        "js_runtimes": {"node": {"path": "/opt/local/bin/node"}},
         "format": FMT_VOD,
     }
 
 def make_web():
     o = base_opts()
-    if os.path.exists(COOKIES):
-        o["cookiefile"] = COOKIES
     o["extractor_args"] = {
         "youtube": {"player_client": ["web_embedded"], "player_skip": ["webpage"]},
         # Script-Provider probt sonst 15 s lang node -> nur HTTP-Provider (127.0.0.1:4416)
@@ -51,7 +51,7 @@ def make_web():
     return yt_dlp.YoutubeDL(o)
 
 def make_vr():
-    # android_vr: ohne Cookies, ohne JS, ~2 s; liefert HLS bei Lives, sonst nur Format 18
+    # android_vr: ohne JS, ~2 s; liefert HLS bei Lives, sonst nur Format 18
     o = base_opts()
     o["extractor_args"] = {
         "youtube": {"player_client": ["android_vr"]},
