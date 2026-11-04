@@ -309,7 +309,7 @@ static uint16_t gPort = 8765;
     [self.nav push:m];
 }
 
-// Ersteinrichtung, Frage 2/2: mit MENU der Apple Remote starten?
+// Ersteinrichtung, Frage 2/2: mit der Apple Remote starten?
 - (void)askRemoteLaunch {
     __weak SFAppDelegate *ws = self;
     void (^done)(BOOL) = ^(BOOL on) {
@@ -321,10 +321,10 @@ static uint16_t gPort = 8765;
         });
     };
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Sofa mit der Apple Remote öffnen?"
-        subtitle:@"MENU öffnet Sofa auch, wenn es geschlossen ist. Bei „Nein“ "
+        subtitle:@"Ein Tastendruck öffnet Sofa, auch wenn es geschlossen ist. Bei „Nein“ "
                  @"steuert die Remote den Mac (z. B. iTunes), solange Sofa zu ist.\n"
                  @"Später änderbar in den Einstellungen."
-        options:@[[SFMenuOption option:@"Ja, MENU öffnet Sofa" action:^{ done(YES); }],
+        options:@[[SFMenuOption option:@"Ja, die Remote öffnet Sofa" action:^{ done(YES); }],
                   [SFMenuOption option:@"Nein" action:^{ done(NO); }]]
         theme:[SFTheme themeNamed:@"home"]];
     m.subtitleLines = 6;

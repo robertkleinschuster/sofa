@@ -4,7 +4,7 @@
 
 BOOL SFAutostartEnabled(void);            // beim Anmelden starten (Standard: an)
 void SFSetAutostartEnabled(BOOL on);
-BOOL SFRemoteLaunchEnabled(void);         // geschlossenes Sofa mit MENU der Apple Remote starten (Standard: an)
+BOOL SFRemoteLaunchEnabled(void);         // geschlossenes Sofa mit jeder Taste der Apple Remote starten (Standard: an)
 void SFSetRemoteLaunchEnabled(BOOL on);
 BOOL SFStartupQuestionsAsked(void);       // Ersteinrichtung hat beides abgefragt
 void SFSetStartupQuestionsAsked(void);

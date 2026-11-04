@@ -224,7 +224,7 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     i.identifier = @"settings:";
     i.title = @"Einstellungen";
     i.subtitle = @"Start & Fernbedienung";
-    i.plot = @"Festlegen, ob Sofa beim Anmelden automatisch startet und ob die MENU-Taste der Apple Remote Sofa öffnet.";
+    i.plot = @"Festlegen, ob Sofa beim Anmelden automatisch startet und ob ein Tastendruck auf der Apple Remote Sofa öffnet.";
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
     i.action = ^{
@@ -243,9 +243,9 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
                               : @"Sofa startet nicht mehr automatisch"];
     }];
     a.detail = autostart ? @"An" : @"Aus";
-    SFMenuOption *r = [SFMenuOption option:@"Mit MENU-Taste starten" action:^{
+    SFMenuOption *r = [SFMenuOption option:@"Mit der Apple Remote starten" action:^{
         SFSetRemoteLaunchEnabled(!remote);
-        [nav toast:!remote ? @"MENU auf der Apple Remote öffnet Sofa"
+        [nav toast:!remote ? @"Jede Taste der Apple Remote öffnet Sofa"
                            : @"Ist Sofa geschlossen, steuert die Apple Remote wieder den Mac"];
     }];
     r.detail = remote ? @"An" : @"Aus";

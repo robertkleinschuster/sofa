@@ -312,7 +312,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     dispatch_async(dispatch_get_main_queue(), ^{ [h deviceGone]; });
 }
 
-// Einstellung „Mit MENU-Taste starten“ (Sofa → Einstellungen; Preferences-Domain de.sofa.app,
+// Einstellung „Mit der Apple Remote starten“ (Sofa → Einstellungen; Preferences-Domain de.sofa.app,
 // Standard an). Aus: solange Sofa geschlossen ist, gibt der Helper den IR-Empfänger frei – die
 // Remote steuert dann wieder den Mac (iTunes, Keynote, Lautstärke).
 - (BOOL)remoteLaunch {
@@ -330,7 +330,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     BOOL want = [self wantsRemote];
     if (want && !_dev && !_retry.isValid) [self open];
     else if (!want && _dev) {
-        [self log:@"Sofa geschlossen, MENU-Start aus – Apple Remote freigegeben"];
+        [self log:@"Sofa geschlossen, Start per Remote aus – Apple Remote freigegeben"];
         [self closeDevice];
     }
 }
@@ -523,8 +523,8 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 
 - (void)dispatch:(SFKey)k button:(RButton)b hold:(BOOL)hold {
     if (_updating) { [self log:@"Taste während Update ignoriert"]; return; }
-    if (![self realSofa]) {   // Sofa geschlossen: nur MENU startet es (Einstellung „Mit MENU-Taste starten“)
-        if (k == SFKeyMenu && [self remoteLaunch]) [self launchSofa];
+    if (![self realSofa]) {   // Sofa geschlossen: jede Taste startet es (Einstellung „Mit der Apple Remote starten“)
+        if ([self remoteLaunch]) [self launchSofa];
         return;
     }
     if (![self sofaFrontmost]) { [self bringSofaFront]; return; }
