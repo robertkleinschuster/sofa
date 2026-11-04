@@ -35,20 +35,29 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 
 ## Requirements
 
-- An Intel Mac on OS X 10.9.5 (developed on an iMac12,2). Newer macOS versions
-  should work too, but aren't the target.
-- MacPorts with the [backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay:
-  `clang-22`, `curl`, `sqlite3`, `ffmpeg`, `python314`; optional `mpv +libmpv` for VP9/AV1.
-- For YouTube: `yt-dlp` (installed by Sofa into its own venv) and a Firefox profile
-  logged in to YouTube (cookies are read locally and never leave the machine).
-- An Apple Remote (IR) is recommended. The `SofaRemote` helper takes over the IR receiver.
+- An Intel Mac on OS X 10.9.5 (developed on an iMac12,2).
+- [MacPorts](https://www.macports.org) with the
+  [backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay.
+- For your YouTube subscriptions: a Firefox profile logged in to YouTube (cookies are read
+  locally and never leave the machine). Everything else works without an account.
+- An Apple Remote (IR) is recommended; the `SofaRemote` helper takes over the IR receiver.
 
-## Build & run
+## Install
 
 ```sh
-make            # builds build/Sofa.app (+ SofaRemote helper, + SofaDev.app for testing)
-make install    # copies to /Applications
-tools/switch-to-sofa.sh   # optional: LaunchAgents for the Apple Remote helper + autostart
+sudo port -n install sofa       # Sofa.app + all dependencies (mpv, ffmpeg, curl, python, PO token server)
+sudo port load sofa             # Apple Remote helper + start Sofa at login
+sudo port load bgutil-pot-server  # local YouTube PO token service (127.0.0.1 only)
+```
+
+On first use of YouTube, Sofa sets up its own yt-dlp environment
+(`~/Library/Application Support/Sofa/ytdlp`, about a minute) and keeps it updated daily.
+
+## Build from source
+
+```sh
+make            # build/Sofa.app (+ SofaRemote helper, + SofaDev.app for testing)
+make install    # copies Sofa.app to /Applications (PREFIX=..., DESTDIR=... supported)
 ```
 
 Development uses an isolated dev instance (`tools/sofa-dev`) with its own data, plus a
