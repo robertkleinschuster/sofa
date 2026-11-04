@@ -1,7 +1,7 @@
-// ORF ON (api-tvthek.orf.at/api/v4.3, statischer App-Schlüssel; vom User für
-// Home-Use freigegeben 2026-11-03): Startseite (Lanes), Kategorien, A–Z, Live.
-// Siehe docs/mediathek-apis.md §3. DRM-Inhalte (ORF 1/2 live) sind auf 10.9 nicht
-// abspielbar und werden gekennzeichnet.
+// ORF ON (api-tvthek.orf.at/api/v4.3, static app key; approved by the user for
+// home use 2026-11-03): home page (lanes), categories, A-Z, live.
+// See docs/mediathek-apis.md §3. DRM content (ORF 1/2 live) can't be played on 10.9
+// and is marked.
 #import "SFModel.h"
 
 @interface SFProviderORF : NSObject

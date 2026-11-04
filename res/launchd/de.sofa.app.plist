@@ -7,7 +7,7 @@
   <array><string>/Applications/Sofa.app/Contents/MacOS/Sofa</string><string>--autostart</string></array>
   <key>ProcessType</key><string>Interactive</string>
   <key>RunAtLoad</key><true/>
-  <!-- Absturz -> automatisch neu starten; reguläres Beenden (exit 0) nicht -->
+  <!-- crash -> restart automatically; regular quit (exit 0) does not -->
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>5</integer>
   <key>LimitLoadToSessionType</key><string>Aqua</string>

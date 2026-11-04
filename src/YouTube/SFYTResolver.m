@@ -4,21 +4,21 @@
 #import "SFStore.h"
 #import "SFRuntime.h"
 
-// yt-dlp kommt als offizielles Zipapp (enthält yt-dlp-ejs) – kein venv, kein pip:
-//  - Grundausstattung im App-Bundle (Resources/yt-dlp, res/ytdlp.lock), dazu das bgutil-Plugin
-//    passend zum mitgelieferten PO-Token-Server.
-//  - Sofa holt neuere yt-dlp-Releases selbst (täglich) nach Application Support/Sofa/yt-dlp.
-//    Netz ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04); die Echtheit sichert die
-//    Signatur der yt-dlp-Maintainer über SHA2-256SUMS (res/ytdlp_verify.py, Schlüssel im Bundle).
-//  - Aktiv ist die neuere der beiden Versionen.
-// Basis-Python: im Release-Bundle Contents/Runtime/python, sonst MacPorts python314 (SFRuntime)
+// yt-dlp comes as the official zipapp (contains yt-dlp-ejs) - no venv, no pip:
+//  - Base install in the app bundle (Resources/yt-dlp, res/ytdlp.lock), plus the bgutil plugin
+//    matching the bundled PO token server.
+//  - Sofa fetches newer yt-dlp releases itself (daily) into Application Support/Sofa/yt-dlp.
+//    Network without TLS certificate verification (user decision 2026-11-04); authenticity is ensured
+//    by the yt-dlp maintainers' signature over SHA2-256SUMS (res/ytdlp_verify.py, key in the bundle).
+//  - The newer of the two versions is active.
+// Base Python: in the release bundle Contents/Runtime/python, otherwise MacPorts python314 (SFRuntime)
 #define kBasePython SFPythonPath()
 static NSString *const kUpdatedKey = @"ytdlp.updated";
 static const NSTimeInterval kUpdateEvery = 24 * 3600;
 static NSString *const kReleaseAPI = @"https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 
-// Läuft synchron (nur im Hintergrund aufrufen); liefert Exit-Status, *out = stdout+stderr.
-// Hängt ein Lauf länger als `timeout`, wird er beendet.
+// Runs synchronously (call only in the background); returns the exit status, *out = stdout+stderr.
+// If a run hangs longer than `timeout`, it is terminated.
 static int YTRun(NSString *path, NSArray *args, NSString **out, NSTimeInterval timeout) {
     // PYTHONPATH must not leak into the bundled Python; SFRunProcess handles timeout and DYLD
     NSString *pp = [[NSProcessInfo processInfo] environment][@"PYTHONPATH"];
@@ -31,7 +31,7 @@ static int YTRun(NSString *path, NSArray *args, NSString **out, NSTimeInterval t
 }
 static NSString *YTTail(NSString *s) { return s.length > 400 ? [s substringFromIndex:s.length - 400] : s; }
 static NSString *YTTrim(NSString *s) { return [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]; }
-// yt-dlp-Versionen „2026.10.26“, „2026.10.26.1“ … numerisch je Teil vergleichen
+// compare yt-dlp versions "2026.10.26", "2026.10.26.1" ... numerically per part
 static NSComparisonResult YTCompare(NSString *a, NSString *b) {
     NSArray *x = [a componentsSeparatedByString:@"."], *y = [b componentsSeparatedByString:@"."];
     for (NSUInteger i = 0; i < MAX(x.count, y.count); i++) {
@@ -45,7 +45,7 @@ static BOOL YTValidVersion(NSString *v) {
     return v && [re numberOfMatchesInString:v options:0 range:NSMakeRange(0, v.length)] == 1;
 }
 static NSString *YTBundledDir(void) { return [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"yt-dlp"]; }
-// Tests: SOFA_YTDLP_DIR = eigener Update-Ordner (erlaubt den Updater auch in Dev-Instanzen)
+// Tests: SOFA_YTDLP_DIR = separate update folder (allows the updater in dev instances too)
 static NSString *YTTestDir(void) { return [NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"]; }
 static NSString *YTUpdateDir(void) { return YTTestDir().length ? YTTestDir() : [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp"]; }
 static NSString *YTDirVersion(NSString *dir) {
@@ -53,7 +53,7 @@ static NSString *YTDirVersion(NSString *dir) {
     BOOL ok = YTValidVersion(v) && [[NSFileManager defaultManager] fileExistsAtPath:[dir stringByAppendingPathComponent:@"yt-dlp"]];
     return ok ? v : nil;
 }
-// Ordner der aktiven yt-dlp-Version: Update, wenn neuer als die Grundausstattung
+// folder of the active yt-dlp version: the update if newer than the base install
 static NSString *YTActiveDir(void) {
     NSString *b = YTBundledDir(), *u = YTUpdateDir();
     NSString *bv = YTDirVersion(b), *uv = YTDirVersion(u);
@@ -66,13 +66,13 @@ static NSString *YTActiveDir(void) {
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
     NSMutableDictionary *_pending;    // rid -> @[key, vid, prio]
-    NSMutableDictionary *_waiters;    // key (vid bzw. live:vid) -> Rückrufe; eine Auflösung je Video
-    NSMutableSet *_prioKeys;          // keys, für die schon eine Wiedergabe-Anfrage läuft
-    NSMutableDictionary *_cache;      // vid -> result (bis expires - 1 h)
+    NSMutableDictionary *_waiters;    // key (vid or live:vid) -> callbacks; one resolution per video
+    NSMutableSet *_prioKeys;          // keys with a playback request already running
+    NSMutableDictionary *_cache;      // vid -> result (until expires - 1 h)
     NSInteger _rid;
     NSInteger _crashes;
     BOOL _wantRunning;
-    BOOL _updating;                   // yt-dlp-Update läuft
+    BOOL _updating;                   // yt-dlp update running
     NSTimer *_updateTimer;
 }
 
@@ -93,12 +93,12 @@ static NSString *YTActiveDir(void) {
     return self;
 }
 
-// Ergebnis-Cache über einen Update-Neustart retten: das fortgesetzte Video startet dann ohne
-// neue Auflösung (~5 s). Nur einmal lesbar (Datei wird gelöscht), Abgelaufenes fällt weg.
+// Carry the result cache over an update restart: the resumed video then starts without
+// a new resolution (~5 s). Readable once only (the file is deleted), expired entries are dropped.
 static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.py
 + (NSString *)savedCachePath { return [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]; }
 - (void)loadSavedCache {
-    if (SFDevMode) return;   // Dev-Instanzen teilen den Ordner mit der echten App -> nicht anfassen
+    if (SFDevMode) return;   // dev instances share the folder with the real app -> don't touch
     NSString *path = [SFYTResolver savedCachePath];
     NSData *d = [NSData dataWithContentsOfFile:path];
     [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
@@ -106,11 +106,11 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     if (![c isKindOfClass:[NSDictionary class]]) return;
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     [c enumerateKeysAndObjectsUsingBlock:^(NSString *vid, NSDictionary *r, BOOL *stop) {
-        // nur Ergebnisse der aktuellen Resolver-Version (ältere evtl. mit falscher Tonspur)
+        // only results of the current resolver version (older ones may have the wrong audio track)
         if ([r isKindOfClass:[NSDictionary class]] && [r[@"expires"] doubleValue] - 3600 > now && [r[@"v"] integerValue] >= kResultVersion)
             self->_cache[vid] = r;
     }];
-    if (_cache.count) SFLog(@"yt: %lu Auflösungen aus dem letzten Lauf übernommen", (unsigned long)_cache.count);
+    if (_cache.count) SFLog(@"yt: %lu resolutions carried over from the last run", (unsigned long)_cache.count);
 }
 - (void)saveCache {
     if (!_cache.count || SFDevMode) return;
@@ -122,40 +122,40 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 
 - (void)start {
     _wantRunning = YES;
-    // Früher aus Firefox kopierte YouTube-Cookies (Anmeldung gibt es nicht mehr) -> Kopie löschen
+    // YouTube cookies formerly copied from Firefox (sign-in no longer exists) -> delete the copy
     static dispatch_once_t cleanup;
     dispatch_once(&cleanup, ^{
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm removeItemAtPath:[SFAppSupportDir() stringByAppendingPathComponent:@"youtube-cookies.txt"] error:nil];
-        // Früheres venv (yt-dlp per pip, bis 0.2.x) wird nicht mehr gebraucht – nicht aus Dev-Instanzen
+        // former venv (yt-dlp via pip, up to 0.2.x) is no longer needed - not from dev instances
         if (!SFDevMode) SFBackground(^{
             for (NSString *n in @[@"ytdlp", @"ytdlp.new", @"ytdlp.old"])
                 [fm removeItemAtPath:[SFAppSupportDir() stringByAppendingPathComponent:n] error:nil];
         });
     });
-    signal(SIGPIPE, SIG_IGN);   // Schreiben in eine tote Pipe darf die App nicht beenden
+    signal(SIGPIPE, SIG_IGN);   // writing into a dead pipe must not kill the app
     if (_task.isRunning) return;
     NSString *py = kBasePython, *ytdir = YTActiveDir();
     NSString *script = [[NSBundle mainBundle] pathForResource:@"ytresolver" ofType:@"py"];
-    if (!_updateTimer) {   // Sofa läuft wochenlang durch -> regelmäßig prüfen, ob ein Update fällig ist
+    if (!_updateTimer) {   // Sofa runs for weeks -> check regularly whether an update is due
         _updateTimer = [NSTimer scheduledTimerWithTimeInterval:6 * 3600 target:self
                                                       selector:@selector(updateTick:) userInfo:nil repeats:YES];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((YTTestDir().length ? 5 : 120) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self updateYTDLP];   // erst nach dem Start, nicht mitten ins Hochfahren
+            [self updateYTDLP];   // only after the start, not in the middle of starting up
         });
     }
-    if (!script || !ytdir) { SFLog(@"yt: ytresolver.py bzw. yt-dlp fehlt im Bundle"); return; }
-    if (![[NSFileManager defaultManager] isExecutableFileAtPath:py]) { SFLog(@"yt: %@ fehlt – YouTube nicht möglich", py); return; }
+    if (!script || !ytdir) { SFLog(@"yt: ytresolver.py or yt-dlp missing from the bundle"); return; }
+    if (![[NSFileManager defaultManager] isExecutableFileAtPath:py]) { SFLog(@"yt: %@ missing - YouTube not possible", py); return; }
     NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
     [[NSFileManager defaultManager] createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:nil];
     NSTask *t = [NSTask new];
     t.launchPath = py;
-    t.arguments = @[@"-s", script, cache];   // -s: keine Pakete aus ~/Library/Python
+    t.arguments = @[@"-s", script, cache];   // -s: no packages from ~/Library/Python
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
     env[@"PYTHONUNBUFFERED"] = @"1";
-    if (SFDevMode) env[@"SOFA_NO_WARMUP"] = @"1";   // Teststarts sollen YouTube nicht belasten
-    // yt-dlp aus dem Zipapp, Plugins (bgutil) immer aus dem Bundle (passend zum PO-Token-Server)
+    if (SFDevMode) env[@"SOFA_NO_WARMUP"] = @"1";   // test starts must not load YouTube
+    // yt-dlp from the zipapp, plugins (bgutil) always from the bundle (matching the PO token server)
     env[@"PYTHONPATH"] = [NSString stringWithFormat:@"%@:%@", [ytdir stringByAppendingPathComponent:@"yt-dlp"],
                           [YTBundledDir() stringByAppendingPathComponent:@"plugins"]];
     t.environment = env;
@@ -184,12 +184,12 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 
 - (void)updateTick:(NSTimer *)t { [self updateYTDLP]; }
 
-// Neueres yt-dlp-Release holen (höchstens täglich): laden, Signatur + Prüfsumme prüfen, Probelauf,
-// dann fertig nach Application Support tauschen und den Resolver neu starten, sobald er frei ist.
-// Ohne TLS-Prüfung – maßgeblich ist allein die Signatur (res/ytdlp_verify.py).
+// Fetch a newer yt-dlp release (at most daily): download, verify signature + checksum, trial run,
+// then swap it into Application Support and restart the resolver as soon as it is idle.
+// Without TLS verification - only the signature counts (res/ytdlp_verify.py).
 - (void)updateYTDLP {
     BOOL test = YTTestDir().length > 0;
-    if (_updating || (SFDevMode && !test)) return;   // Dev-Instanzen teilen den Ordner mit der echten App
+    if (_updating || (SFDevMode && !test)) return;   // dev instances share the folder with the real app
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (!test && now - [[[SFStore shared] setting:kUpdatedKey] doubleValue] < kUpdateEvery) return;
     NSString *py = kBasePython;
@@ -206,8 +206,8 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         NSString *tag = [j isKindOfClass:[NSDictionary class]] && [j[@"tag_name"] isKindOfClass:[NSString class]] ? j[@"tag_name"] : nil;
         NSString *dir = YTUpdateDir(), *tmp = [dir stringByAppendingString:@".new"], *old = [dir stringByAppendingString:@".old"];
         BOOL ok = NO, newer = NO;
-        if (!YTValidVersion(tag)) err = [NSString stringWithFormat:@"Release-Abfrage: HTTP %ld %@", (long)st, e.localizedDescription ?: @""];
-        else if (have && YTCompare(tag, have) != NSOrderedDescending) ok = YES;   // aktuell
+        if (!YTValidVersion(tag)) err = [NSString stringWithFormat:@"release query: HTTP %ld %@", (long)st, e.localizedDescription ?: @""];
+        else if (have && YTCompare(tag, have) != NSOrderedDescending) ok = YES;   // up to date
         else {
             newer = YES;
             [fm removeItemAtPath:tmp error:nil];
@@ -221,45 +221,45 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
             NSString *zip = [tmp stringByAppendingPathComponent:@"yt-dlp"];
             if (!err && YTRun(py, @[@"-I", verify, key, [tmp stringByAppendingPathComponent:@"SHA2-256SUMS"],
                                     [tmp stringByAppendingPathComponent:@"SHA2-256SUMS.sig"], zip, @"yt-dlp"], &out, 60) != 0)
-                err = [@"Signaturprüfung: " stringByAppendingString:YTTrim(out)];
+                err = [@"signature check: " stringByAppendingString:YTTrim(out)];
             if (!err && (YTRun(py, @[@"-s", zip, @"--version"], &out, 60) != 0 || ![YTTrim(out) isEqualToString:tag]))
-                err = [@"Probelauf: " stringByAppendingString:YTTail(YTTrim(out))];
+                err = [@"trial run: " stringByAppendingString:YTTail(YTTrim(out))];
             if (!err) {
                 [tag writeToFile:[tmp stringByAppendingPathComponent:@"VERSION"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
                 for (NSString *f in @[@"SHA2-256SUMS", @"SHA2-256SUMS.sig"]) [fm removeItemAtPath:[tmp stringByAppendingPathComponent:f] error:nil];
-                // Tausch: der laufende Resolver hat das alte Zipapp offen und liest bis zum Neustart daraus
+                // swap: the running resolver has the old zipapp open and reads from it until the restart
                 [fm removeItemAtPath:old error:nil];
                 BOOL present = [fm fileExistsAtPath:dir];
                 if (present) [fm moveItemAtPath:dir toPath:old error:nil];
                 ok = [fm moveItemAtPath:tmp toPath:dir error:nil];
                 if (!ok && present) [fm moveItemAtPath:old toPath:dir error:nil];
-                if (!ok) err = @"Tausch fehlgeschlagen";
+                if (!ok) err = @"swap failed";
             }
             [fm removeItemAtPath:tmp error:nil];
         }
         SFMain(^{
             self->_updating = NO;
-            if (!ok) { SFLog(@"yt: yt-dlp-Update gescheitert: %@", err); return; }   // nächster Versuch beim nächsten Tick
+            if (!ok) { SFLog(@"yt: yt-dlp update failed: %@", err); return; }   // next attempt on the next tick
             if (!test) [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", now] forKey:kUpdatedKey];
             if (!newer) return;
-            SFLog(@"yt: yt-dlp %@ installiert (vorher %@), Signatur geprüft", tag, have ?: @"-");
+            SFLog(@"yt: yt-dlp %@ installed (previously %@), signature verified", tag, have ?: @"-");
             [self restartWhenIdle];
         });
     });
 }
 
-// Neue yt-dlp-Version übernehmen, ohne eine laufende Auflösung abzubrechen
+// Adopt a new yt-dlp version without aborting a running resolution
 - (void)restartWhenIdle {
     if (_pending.count) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self restartWhenIdle]; });
         return;
     }
-    SFLog(@"yt: Resolver-Neustart für neue yt-dlp-/Plugin-Version");
+    SFLog(@"yt: resolver restart for new yt-dlp/plugin version");
     [self restart];
 }
 
 - (void)restart {
-    if (_task.isRunning) { [_task terminate]; }   // terminated: startet neu
+    if (_task.isRunning) { [_task terminate]; }   // terminated: restarts
     else [self start];
 }
 
@@ -270,7 +270,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
     _task = nil; _in = nil;
     [_pending removeAllObjects];
-    // erst alles einsammeln und leeren, dann zurückrufen: ein Rückruf darf sofort neu anfragen
+    // first collect and clear everything, then call back: a callback may request again right away
     NSDictionary *w = [_waiters copy];
     [_waiters removeAllObjects]; [_prioKeys removeAllObjects];
     NSError *err = SFError(@"YouTube-Auflösung abgebrochen.");
@@ -303,13 +303,13 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
             SFLog(@"yt: resolved %@ -> %@p %@ in %.1fs (%@)", vid, j[@"height"], j[@"format"], [j[@"secs"] doubleValue], j[@"pool"]);
             if (![key hasPrefix:@"live:"]) _cache[vid] = j;
-            // Playlist schon jetzt in den lokalen Proxy (auch beim Vorladen bei Fokus): Start ohne Netz-Abruf
+            // playlist into the local proxy right away (also when preloading on focus): start without a network fetch
             if ([j[@"url"] isKindOfClass:[NSString class]]) [[SFStreamProxy shared] warmPlaylist:[NSURL URLWithString:j[@"url"]]];
             [self finish:key result:j error:nil];
         } else {
             SFLog(@"yt: resolve %@ failed: %@", vid, j[@"error"]);
-            // Wiedergabe gescheitert -> sofort melden; nur ein gescheitertes Vorladen wartet auf eine
-            // noch laufende Wiedergabe-Anfrage für dasselbe Video
+            // playback failed -> report right away; only a failed preload waits for a still
+            // running playback request for the same video
             if ([p[2] boolValue] || ![self hasPending:key]) [self finish:key result:nil error:SFError([self friendly:j[@"error"]])];
         }
     }
@@ -321,12 +321,12 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     if ([l rangeOfString:@"private"].location != NSNotFound) return @"Dieses Video ist privat.";
     if ([l rangeOfString:@"age"].location != NSNotFound && [l rangeOfString:@"confirm"].location != NSNotFound) return @"Dieses Video ist altersbeschränkt und kann hier nicht abgespielt werden.";
     if ([l rangeOfString:@"premiere"].location != NSNotFound || [l rangeOfString:@"live event will begin"].location != NSNotFound) return @"Dieser Livestream hat noch nicht begonnen.";
-    // YouTube drosselt zeitweise („Sign in to confirm you're not a bot“) – vorübergehend, nicht umgehen
+    // YouTube throttles at times ("Sign in to confirm you're not a bot") - temporary, don't circumvent
     if ([l rangeOfString:@"not a bot"].location != NSNotFound) return @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
     if ([l rangeOfString:@"playback on other websites has been disabled"].location != NSNotFound) return @"Der Kanal erlaubt dieses Video nur auf youtube.com.";
     if ([l rangeOfString:@"unavailable"].location != NSNotFound || [l rangeOfString:@"nicht verfügbar"].location != NSNotFound) return @"Video nicht verfügbar.";
-    if ([l hasPrefix:@"youtube startet"]) return e;   // eigene Meldung
-    return @"YouTube liefert dieses Video gerade nicht aus.";   // Originaltext steht im Log (yt: resolve … failed)
+    if ([l hasPrefix:@"youtube startet"]) return e;   // our own message
+    return @"YouTube liefert dieses Video gerade nicht aus.";   // the original text is in the log (yt: resolve ... failed)
 }
 
 - (BOOL)hasPending:(NSString *)key {
@@ -361,11 +361,11 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     }
     NSString *key = live ? [@"live:" stringByAppendingString:vid] : vid;
     NSMutableArray *w = _waiters[key];
-    if (w) {   // dasselbe Video wird schon aufgelöst (z.B. Vorladen bei Fokus) -> mitwarten
+    if (w) {   // the same video is already being resolved (e.g. preload on focus) -> wait along
         [w addObject:[done copy]];
         if (!prio || [_prioKeys containsObject:key]) return;
-        // nur Vorladen unterwegs: zusätzlich als Wiedergabe anfragen – der Resolver überholt
-        // ein noch wartendes Vorladen oder hängt sich an ein laufendes an
+        // only a preload in flight: additionally request as playback - the resolver overtakes
+        // a still waiting preload or attaches to a running one
     } else {
         _waiters[key] = [NSMutableArray arrayWithObject:[done copy]];
     }
@@ -380,7 +380,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         if (![self hasPending:key]) [self finish:key result:nil error:SFError(@"YouTube-Auflösung nicht erreichbar.")];
         return;
     }
-    // Zeitlimit: erster Lauf nach Player-Rollout ~25 s, danach ~3 s
+    // time limit: first run after a player rollout ~25 s, afterwards ~3 s
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (!self->_pending[rid]) return;
         [self->_pending removeObjectForKey:rid];

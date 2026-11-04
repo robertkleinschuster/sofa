@@ -2,7 +2,7 @@
 #import <dlfcn.h>
 #import "SFModel.h"
 
-#pragma mark mpv-Quellen (Seitenkanal vom Resolver zum Player, wie SFSetAlternateURLs)
+#pragma mark mpv sources (side channel from the resolver to the player, like SFSetAlternateURLs)
 
 static NSMutableDictionary *gSources;
 void SFSetMPVSource(NSURL *forURL, NSDictionary *source) {
@@ -33,7 +33,7 @@ static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.mutableBytes);
     GLenum err = glGetError();
-    // GL liefert Zeilen von unten nach oben, CG erwartet oben zuerst: Zeilen tauschen
+    // GL returns rows bottom-up, CG expects top first: swap rows
     uint8_t *b = px.mutableBytes; size_t rb = (size_t)w * 4;
     NSMutableData *tmp = [NSMutableData dataWithLength:rb];
     for (GLint y = 0; y < h / 2; y++) {
@@ -59,7 +59,7 @@ static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
 BOOL SFMPVAvailable(void) {
 #if SF_HAVE_MPV
     static int v = -1;
-    if (v < 0) v = dlsym(RTLD_DEFAULT, "mpv_create") != NULL;   // schwach gelinkt: fehlt die dylib, ist das Symbol NULL
+    if (v < 0) v = dlsym(RTLD_DEFAULT, "mpv_create") != NULL;   // weakly linked: if the dylib is missing, the symbol is NULL
     return v == 1;
 #else
     return NO;
@@ -68,7 +68,7 @@ BOOL SFMPVAvailable(void) {
 
 #if SF_HAVE_MPV
 
-#pragma mark Video-Ebene
+#pragma mark Video layer
 
 static void *glProc(void *ctx, const char *name) {
     static CFBundleRef gl;
@@ -89,17 +89,17 @@ static void *glProc(void *ctx, const char *name) {
 @implementation SFMPVLayer {
     mpv_render_context *_rc;
     CGLContextObj _ctx;
-    int _fbRetries;   // CA-Framebuffer noch unfertig: begrenzt erneut zeichnen (Standbild bei Pause)
+    int _fbRetries;   // CA framebuffer not ready yet: redraw a limited number of times (still frame when paused)
 }
 
 - (BOOL)hasRenderContext { return _rc != NULL; }
 
-static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „frameshot“)
+static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for "frameshot")
 
 - (instancetype)init {
     if ((self = [super init])) {
         gDevLayer = self;
-        self.asynchronous = NO;              // gezeichnet wird auf Anforderung (mpv-Update-Callback)
+        self.asynchronous = NO;              // drawn on demand (mpv update callback)
         self.needsDisplayOnBoundsChange = YES;
         self.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
         self.opaque = YES;
@@ -113,7 +113,7 @@ static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „f
         kCGLPFADisplayMask, (CGLPixelFormatAttribute)mask, (CGLPixelFormatAttribute)0 };
     CGLPixelFormatObj pf = NULL; GLint n = 0;
     if (CGLChoosePixelFormat(core, &pf, &n) == kCGLNoError && pf) return pf;
-    return [super copyCGLPixelFormatForDisplayMask:mask];   // Fallback: Legacy-Profil
+    return [super copyCGLPixelFormatForDisplayMask:mask];   // fallback: legacy profile
 }
 
 - (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pf {
@@ -121,16 +121,16 @@ static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „f
     return _ctx;
 }
 
-// Dev: aktuelles Bild im GL-Kontext der Ebene in ein eigenes FBO rendern und als PNG sichern –
-// unabhängig davon, ob CoreAnimation das (Offscreen-)Fenster zeichnet.
+// Dev: render the current frame in the layer's GL context into a separate FBO and save it as PNG -
+// regardless of whether CoreAnimation draws the (offscreen) window.
 - (void)devFrameShot {
     NSString *path = SFMPVDevFrameShotPath;
-    if (!path || !_rc || !_ctx) return;   // nicht diese Ebene (z. B. Ersatz-Engine) – Anforderung bleibt für die spielende
+    if (!path || !_rc || !_ctx) return;   // not this layer (e.g. fallback engine) - the request stays for the playing one
     SFMPVDevFrameShotPath = nil;
     CGLLockContext(_ctx);
     CGLContextObj prev = CGLGetCurrentContext();
     CGLSetCurrentContext(_ctx);
-    // GL-Zustand sichern: der Produktiv-Pfad liest FBO-Bindung und Viewport aus dem Kontext
+    // save GL state: the production path reads FBO binding and viewport from the context
     GLint oDraw = 0, oRead = 0, oTex = 0, oVP[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oDraw);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oRead);
@@ -161,7 +161,7 @@ static __weak SFMPVLayer *gDevLayer;   // Dev: zuletzt erzeugte Ebene (für „f
 }
 
 static void onUpdate(void *ctx) {
-    // mpv-Thread -> Main: neuer Frame bereit
+    // mpv thread -> main: new frame ready
     SFMPVLayer *l = (__bridge SFMPVLayer *)ctx;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (SFMPVDevFrameShotPath) [l devFrameShot];
@@ -193,16 +193,16 @@ static void onUpdate(void *ctx) {
     GLint fbo = 0, vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
     glGetIntegerv(GL_VIEWPORT, vp);
-    // Ohne Größe oder mit unfertigem CA-Framebuffer (erster Aufruf vor dem Erscheinen) nicht rendern –
-    // sonst meldet mpv INVALID_FRAMEBUFFER_OPERATION; der nächste Frame kommt ohnehin.
+    // Don't render without a size or with an incomplete CA framebuffer (first call before appearing) -
+    // otherwise mpv reports INVALID_FRAMEBUFFER_OPERATION; the next frame comes anyway.
     BOOL fbOK = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     BOOL rendered = NO;
     if (_rc && fbOK && vp[2] > 0 && vp[3] > 0) {
         rendered = YES; _fbRetries = 0;
-        // Fehler-Flags von CoreAnimation (z. B. aus dem Aufbau der Ebene) sind „klebrig“ und würden
-        // mpv als eigener Fehler gemeldet – vorher abholen.
+        // Error flags from CoreAnimation (e.g. from setting up the layer) are "sticky" and would be
+        // reported as mpv's own error - collect them first.
         GLenum stale; int n = 0;
-        while ((stale = glGetError()) != GL_NO_ERROR && n++ < 8) if (SFDevMode) SFLog(@"mpv: GL-Fehler vor dem Rendern: 0x%x", stale);
+        while ((stale = glGetError()) != GL_NO_ERROR && n++ < 8) if (SFDevMode) SFLog(@"mpv: GL error before rendering: 0x%x", stale);
         mpv_opengl_fbo f = { .fbo = fbo, .w = vp[2], .h = vp[3], .internal_format = 0 };
         int flip = 1;
         mpv_render_param p[] = {
@@ -214,7 +214,7 @@ static void onUpdate(void *ctx) {
     } else {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
-        // Pausiert kommt kein weiterer Frame-Callback: Standbild nicht schwarz lassen, kurz erneut versuchen
+        // When paused no further frame callback comes: don't leave the still frame black, retry briefly
         if (_rc && _fbRetries < 30) {
             _fbRetries++;
             __weak SFMPVLayer *ws = self;
@@ -225,7 +225,7 @@ static void onUpdate(void *ctx) {
     if (rendered) mpv_render_context_report_swap(_rc);
 }
 
-// Muss vor mpv_terminate_destroy laufen, mit aktivem GL-Kontext der Ebene
+// Must run before mpv_terminate_destroy, with the layer's GL context active
 - (void)freeRenderContext {
     if (!_rc) return;
     mpv_render_context_set_update_callback(_rc, NULL, NULL);
@@ -256,7 +256,7 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
 - (CALayer *)videoLayer { return _layer; }
 
 static void onWakeup(void *ctx) {
-    // mpv-Thread -> Main: Ereignisse abholen. ctx = Engine (lebt, solange der Callback gesetzt ist)
+    // mpv thread -> main: fetch events. ctx = engine (alive as long as the callback is set)
     SFMPVEngine *e = (__bridge SFMPVEngine *)ctx;
     dispatch_async(dispatch_get_main_queue(), ^{ [e drainEvents]; });
 }
@@ -268,7 +268,7 @@ static void onWakeup(void *ctx) {
         _mpv = mpv_create();
         if (!_mpv) return self;
         const char *opts[][2] = {
-            {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox-hwaccel scheitert auf 10.9 (gemessen 2026-11-04)
+            {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox hwaccel fails on 10.9 (measured 2026-11-04)
             {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},
             {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
             {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
@@ -276,9 +276,9 @@ static void onWakeup(void *ctx) {
             {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
         };
         for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
-        // Bewusst ohne TLS-Zertifikatsprüfung (ffmpeg-Standard tls_verify=0, User-Entscheidung
-        // 2026-11-04): reine Mediendaten, ein veraltetes CA-Bundle auf dem eingefrorenen 10.9 soll die
-        // Wiedergabe nie brechen. Code (Updater, yt-dlp/pip, node) wird weiterhin geprüft geladen.
+        // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
+        // 2026-11-04): pure media data, an outdated CA bundle on the frozen 10.9 must never break
+        // playback. Code (updater, yt-dlp/pip, node) is still loaded with verification.
         int r = mpv_initialize(_mpv);
         if (r < 0) { SFLog(@"mpv: init: %s", mpv_error_string(r)); mpv_terminate_destroy(_mpv); _mpv = NULL; return self; }
         mpv_observe_property(_mpv, kPropTime, "time-pos", MPV_FORMAT_DOUBLE);
@@ -287,7 +287,7 @@ static void onWakeup(void *ctx) {
         mpv_observe_property(_mpv, kPropCacheWait, "paused-for-cache", MPV_FORMAT_FLAG);
         mpv_observe_property(_mpv, kPropEOF, "eof-reached", MPV_FORMAT_FLAG);
         mpv_observe_property(_mpv, kPropCacheTime, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
-        mpv_request_log_messages(_mpv, "warn");   // mpv-Warnungen/Fehler ins Sofa-Log
+        mpv_request_log_messages(_mpv, "warn");   // mpv warnings/errors into the Sofa log
         mpv_set_wakeup_callback(_mpv, onWakeup, (__bridge void *)self);
         _layer.mpv = _mpv;
     }
@@ -306,8 +306,8 @@ static void onWakeup(void *ctx) {
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     _status = SFEngineLoading; _error = nil; _loaded = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
     if (!_mpv) { _status = SFEngineFailed; _error = SFError(@"mpv nicht verfügbar"); [self.delegate engineStatusChanged]; return; }
-    // Optionen für die nächste Datei (Start, Pause, getrennte Tonspur). URLs enthalten ':' und ',' ->
-    // keine Pfadlisten-Syntax, sondern change-list … append (ein Element).
+    // Options for the next file (start, pause, separate audio track). URLs contain ':' and ',' ->
+    // no path-list syntax, but change-list ... append (one element).
     mpv_set_property_string(_mpv, "start", start > 0 ? [NSString stringWithFormat:@"%.3f", start].UTF8String : "none");
     mpv_set_property_string(_mpv, "hr-seek", exact ? "yes" : "default");
     mpv_set_property_string(_mpv, "pause", paused ? "yes" : "no");
@@ -418,7 +418,7 @@ static void onWakeup(void *ctx) {
                     BOOL wasLoaded = _loaded;
                     _status = SFEngineFailed; _loaded = NO;
                     _error = SFError([NSString stringWithFormat:@"mpv: %s", mpv_error_string(ef->error)]);
-                    SFLog(@"mpv: Fehler %s", mpv_error_string(ef->error));
+                    SFLog(@"mpv: error %s", mpv_error_string(ef->error));
                     if (wasLoaded) [self.delegate engineInterrupted]; else [self.delegate engineStatusChanged];
                 }
                 break;
@@ -454,7 +454,7 @@ static void onWakeup(void *ctx) {
 
 - (SFEngineStatus)status { return _status; }
 - (NSError *)error { return _error; }
-- (BOOL)playing { return _loaded && !_paused && !_eof; }   // wie AVPlayer.rate: auch beim Nachladen "läuft"
+- (BOOL)playing { return _loaded && !_paused && !_eof; }   // like AVPlayer.rate: "running" while buffering too
 - (BOOL)likelyToKeepUp { return !_waiting; }
 - (NSTimeInterval)currentTime { return _time > 0 ? _time : 0; }
 - (NSTimeInterval)duration { return _dur > 0 ? _dur : 0; }
@@ -480,7 +480,7 @@ static void onWakeup(void *ctx) {
     if (!_mpv) return;
     mpv_set_wakeup_callback(_mpv, NULL, NULL);
     _layer.mpv = NULL;
-    [_layer freeRenderContext];          // vor terminate (GL-Kontext der Ebene)
+    [_layer freeRenderContext];          // before terminate (the layer's GL context)
     mpv_terminate_destroy(_mpv);
     _mpv = NULL;
 }
@@ -488,11 +488,11 @@ static void onWakeup(void *ctx) {
 - (void)dealloc { [self shutdown]; }
 @end
 
-#else   // ohne mpv-Header gebaut: Stub (SFMPVAvailable() == NO)
+#else   // built without mpv headers: stub (SFMPVAvailable() == NO)
 
 @implementation SFMPVEngine
 @synthesize delegate = _delegate, muted = _muted;
-- (NSString *)engineName { return @"mpv (nicht verfügbar)"; }
+- (NSString *)engineName { return @"mpv (not available)"; }
 - (CALayer *)videoLayer { return nil; }
 - (SFEngineStatus)status { return SFEngineFailed; }
 - (NSError *)error { return SFError(@"mpv nicht verfügbar"); }
@@ -518,6 +518,6 @@ void SFMPVDevFrameShot(NSString *path) {
     SFMPVDevFrameShotPath = path;
     dispatch_async(dispatch_get_main_queue(), ^{ [gDevLayer devFrameShot]; });
 #else
-    SFLog(@"mpv: ohne libmpv gebaut – kein frameshot");
+    SFLog(@"mpv: built without libmpv - no frameshot");
 #endif
 }

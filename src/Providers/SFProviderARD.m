@@ -146,7 +146,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     i.kind = SFItemFolder; i.title = title; i.themeName = @"ard"; i.source = @"ard";
     i.identifier = [@"ardnav:" stringByAppendingString:title];
     i.pageLoader = [self loaderForURL:url title:title];
-    i.image = img ?: SFIconArt([title rangeOfString:@"A–Z"].location != NSNotFound ? @"az" : @"grid", @"ard");   // Navigationskacheln ohne Quellbild
+    i.image = img ?: SFIconArt([title rangeOfString:@"A–Z"].location != NSNotFound ? @"az" : @"grid", @"ard");   // navigation tiles without a source image
     i.style = SFTileStyleWide;
     return i;
 }
@@ -157,7 +157,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             if (![j isKindOfClass:[NSDictionary class]]) { done(nil, e ?: SFError(@"ARD Mediathek nicht erreichbar.")); return; }
             SFPage *p = [self pageFromGateway:j title:nil];
             NSMutableArray *shelves = [p.shelves mutableCopy];
-            // Lokale Abos + Weiterschauen vorne, Navigation (Rubriken / A–Z) als eigene Reihe
+            // local subscriptions + continue watching first, navigation (categories / A-Z) as its own row
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"ard"];
             NSMutableArray *front = [NSMutableArray new];
             if (cont.count) [front addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
@@ -179,7 +179,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     };
 }
 
-// Suche: Sendungen (search/grouping) + Videos (search/vod)
+// Search: shows (search/grouping) + videos (search/vod)
 + (SFPageLoader)searchLoader:(NSString *)query {
     return ^(SFPageDone done) {
         NSString *q = [SFNet escape:query];
@@ -213,7 +213,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
 }
 
 + (void)registerResolver {
-    // Abo-Feed ("Neue Folgen automatisch laden")
+    // subscription feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"ardshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil]; });
     SFRegisterShowPage(@"ardshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title]; });
     SFRegisterResolver(@"ard", ^(NSString *itemId, SFURLDone done) {
@@ -239,7 +239,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
                     NSString *mime = str(m[@"mimeType"]);
                     if ([mime isEqualToString:@"application/vnd.apple.mpegurl"]) { if (!hls) hls = str(m[@"url"]); continue; }
                     if (![mime isEqualToString:@"video/mp4"]) continue;
-                    if (![str(m[@"videoCodec"]) isEqualToString:@"H.264"]) continue;   // H.265 kann 10.9 nicht
+                    if (![str(m[@"videoCodec"]) isEqualToString:@"H.264"]) continue;   // 10.9 can't do H.265
                     int v = [nn(m[@"maxVResolutionPx"]) intValue];
                     int sc = v == 720 ? 1000 : (v < 720 ? v : 700 - (v - 720) / 10);
                     if (sc > bestScore) { bestScore = sc; best = m; }
@@ -248,7 +248,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             NSString *url = best ? str(best[@"url"]) : hls;
             if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
             if (!url) { done(nil, SFError(@"Kein abspielbares Format (nur H.265/DRM).")); return; }
-            // Untertitel: mediaCollection.subtitles[].sources[] (kind webvtt), meist Closed Captions
+            // subtitles: mediaCollection.subtitles[].sources[] (kind webvtt), mostly closed captions
             NSMutableArray *subs = [NSMutableArray new];
             for (NSDictionary *st in arr(mc[@"subtitles"])) {
                 for (NSDictionary *so in arr(dict(st)[@"sources"])) {
@@ -258,8 +258,8 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
                     [subs addObject:@{@"lang": str(st[@"languageCode"]) ?: @"deu", @"url": su, @"kind": @"manual"}];
                 }
             }
-            SFSetMPVSource([NSURL URLWithString:url], @{@"subs": subs, @"alang": @"de"});   // gewählt ist immer die Standard-Tonspur (deutsch)
-            // Geo: gesperrte Inhalte liefern sonst einen 30-s-Platzhalterclip
+            SFSetMPVSource([NSURL URLWithString:url], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the standard audio track (German)
+            // geo: blocked content otherwise delivers a 30 s placeholder clip
             NSDictionary *geo = dict(mc[@"geoBlocking"]);
             NSString *check = str(geo[@"regionCheckUrl"]);
             if (!check) { done([NSURL URLWithString:url], nil); return; }

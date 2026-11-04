@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- Sofa-App-Icon, Variante „Bühne“: eigenes Motiv im Stil der 2000er-Mediacenter –
-       glänzendes Schwarz, Spiegelboden mit Reflexion, blaues Bühnenlicht. -->
+  <!-- Sofa app icon, "stage" variant: our own motif in the style of 2000s media centers -
+       glossy black, mirror floor with reflection, blue stage light. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#1a1d24"/>
@@ -55,13 +55,13 @@
   <g clip-path="url(#tile)">
     <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
     <rect x="100" y="100" width="824" height="824" fill="url(#spot)"/>
-    <!-- Spiegelboden + Horizontlinie -->
+    <!-- mirror floor + horizon line -->
     <rect x="100" y="704" width="824" height="220" fill="url(#floor)"/>
     <rect x="160" y="703" width="704" height="2" fill="url(#horizon)"/>
-    <!-- Reflexion (gespiegelt an der Bodenlinie y=704) -->
+    <!-- reflection (mirrored at the floor line y=704) -->
     <g mask="url(#reflmask)"><use xlink:href="#couch" transform="translate(0,1408) scale(1,-1)"/></g>
     <use xlink:href="#couch"/>
-    <!-- Glanz oben -->
+    <!-- gloss on top -->
     <ellipse cx="512" cy="110" rx="520" ry="250" fill="url(#gloss)"/>
   </g>
   <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="3"/>

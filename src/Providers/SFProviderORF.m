@@ -8,7 +8,7 @@
 #import "SFStore.h"
 
 static NSString *const kAPI = @"https://api-tvthek.orf.at/api/v4.3";
-// Öffentlich bekannter App-Schlüssel (MServer OrfOnConstants.AUTH / yt-dlp).
+// Publicly known app key (MServer OrfOnConstants.AUTH / yt-dlp).
 static NSString *const kAuth = @"Basic b3JmX29uX3Y0MzpqRlJzYk5QRmlQU3h1d25MYllEZkNMVU41WU5aMjhtdA==";
 
 
@@ -25,7 +25,7 @@ static NSDate *isoDate(NSString *s) {
 
 @implementation SFProviderORF
 
-// Sofa-eigene Einstiege (ohne Quellbild): Symbol-Kachel statt leerer Fläche
+// Sofa's own entry points (no source image): icon tile instead of an empty area
 + (SFItem *)navFolder:(NSString *)title ident:(NSString *)ident icon:(NSString *)icon loader:(SFPageLoader)loader {
     SFItem *f = [self folder:title ident:ident loader:loader];
     f.image = SFIconArt(icon, @"orf");
@@ -89,7 +89,7 @@ static NSArray *listItems(id j) {
     return a;
 }
 
-#pragma mark Seiten
+#pragma mark Pages
 
 + (SFItem *)folder:(NSString *)title ident:(NSString *)ident loader:(SFPageLoader)l {
     SFItem *f = [SFItem new];
@@ -242,9 +242,9 @@ static NSArray *listItems(id j) {
     };
 }
 
-#pragma mark Suche
+#pragma mark Search
 
-// /search/{q}: Sendungen (episodes), zwei Seiten à 30. Segmente/Archiv bleiben außen vor.
+// /search/{q}: shows (episodes), two pages of 30. Segments/archive are left out.
 + (SFPageLoader)searchLoader:(NSString *)query {
     return ^(SFPageDone done) {
         [self get:[NSString stringWithFormat:@"/search/%@?limit=30", [SFNet escape:query]] cache:600 done:^(id j, NSError *e) {
@@ -283,7 +283,7 @@ static NSArray *listItems(id j) {
         if (!dict(s)) continue;
         if ([nn(s[@"is_drm_protected"]) boolValue] || [str(s[@"quality_key"]) hasSuffix:@"DRM"]) { if (drm) *drm = YES; continue; }
         NSString *q = str(s[@"quality_key"]), *src = str(s[@"src"]);
-        // Nur adaptives QXA: Einzelqualitäten liefern inzwischen einen "nicht verfügbar"-Clip
+        // adaptive QXA only: single qualities now deliver a "not available" clip
         if ([q isEqualToString:@"QXA"] && src) return src;
         if ([nn(s[@"is_adaptive_stream"]) boolValue] && !any) any = src;
     }
@@ -291,7 +291,7 @@ static NSArray *listItems(id j) {
 }
 
 + (void)registerResolver {
-    // Abo-Feed ("Neue Folgen automatisch laden")
+    // subscription feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"orfprofile", ^SFPageLoader(NSString *ref) { return [self profileLoader:ref title:nil]; });
     SFRegisterShowPage(@"orfprofile", ^SFPageLoader(NSString *ref, NSString *title) { return [self profileLoader:ref title:title]; });
     SFRegisterResolver(@"orf", ^(NSString *eid, SFURLDone done) {
@@ -301,13 +301,13 @@ static NSArray *listItems(id j) {
             BOOL drm = NO;
             NSDictionary *src = ep;
             NSString *u = [self hlsFrom:ep drm:&drm];
-            if (!u) {   // segmentierte Sendung: ersten Teil spielen
+            if (!u) {   // segmented show: play the first part
                 NSDictionary *seg = dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject);
                 if (seg) { u = [self hlsFrom:seg drm:&drm]; src = seg; }
             }
             if (!u) { done(nil, SFError(drm ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
-            // Untertitel: _embedded.subtitle.vtt_url (des tatsächlich gespielten Objekts);
-            // ai_subtitles = maschinell erzeugt -> als „automatisch“ kennzeichnen
+            // subtitles: _embedded.subtitle.vtt_url (of the object actually played);
+            // ai_subtitles = machine-generated -> mark as "automatic"
             NSString *vtt = str(dict(dict(src[@"_embedded"])[@"subtitle"])[@"vtt_url"]);
             NSArray *subs = vtt ? @[@{@"lang": @"de", @"url": vtt, @"kind": [nn(src[@"ai_subtitles"]) boolValue] ? @"auto" : @"manual"}] : @[];
             SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});

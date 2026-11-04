@@ -1,7 +1,7 @@
-# Offline-Tests der Auswahllogik von res/ytresolver.py (Tonspur, DASH, Untertitel, Ergebnis).
-# KEIN Netz, kein yt_dlp: ytresolver.py startet beim Import Pools + stdin-Loop, deshalb werden
-# nur die reinen Funktionen per ast aus dem Quelltext geholt und in einem eigenen Namespace
-# ausgeführt. Aufruf: tools/test-resolver
+# Offline tests of the selection logic of res/ytresolver.py (audio track, DASH, subtitles, result).
+# NO network, no yt_dlp: ytresolver.py starts pools + the stdin loop on import, so only the
+# pure functions are taken from the source via ast and executed in a separate namespace.
+# Usage: tools/test-resolver
 import ast, copy, json, os, re, time, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +22,7 @@ def load_resolver():
     found = {n.name for n in body if isinstance(n, ast.FunctionDef)}
     missing = set(PURE) - found
     if missing:
-        raise RuntimeError("ytresolver.py: Funktionen fehlen: %s" % ", ".join(sorted(missing)))
+        raise RuntimeError("ytresolver.py: functions missing: %s" % ", ".join(sorted(missing)))
     logs = []
     ns = {"re": re, "time": time, "log": logs.append, "__name__": "ytresolver_pure"}
     exec(compile(ast.Module(body=body, type_ignores=[]), SRC, "exec"), ns)
@@ -45,7 +45,7 @@ def vid(fid, vcodec, h, fps=30, tbr=1000, proto="https"):
             "tbr": tbr, "protocol": proto, "url": "https://x/videoplayback?itag=%s" % fid}
 
 def strip_lang(formats):
-    """Wie eine Player-Antwort ohne audioTrack: yt-dlp kennt weder Sprache noch Original."""
+    """Like a player response without audioTrack: yt-dlp knows neither language nor original."""
     out = copy.deepcopy(formats)
     for f in out:
         f.pop("language", None); f.pop("language_preference", None)
@@ -66,7 +66,7 @@ class Xtags(unittest.TestCase):
     def test_audio_pref(self):
         p = R["audio_pref"]
         self.assertEqual(p(aud("1", xt="acont=original")), 10)
-        self.assertEqual(p(aud("1", xt="acont=dubbed-auto", lp=10)), -1)   # xtags schlägt language_preference
+        self.assertEqual(p(aud("1", xt="acont=dubbed-auto", lp=10)), -1)   # xtags beats language_preference
         self.assertEqual(p(aud("1", xt="acont=dubbed")), -1)
         self.assertEqual(p(aud("1", xt="acont=descriptive")), -10)
         self.assertEqual(p(aud("1", lp=5)), 5)
@@ -74,7 +74,7 @@ class Xtags(unittest.TestCase):
 
 
 class OriginalAudio(unittest.TestCase):
-    """(1) Original-Ton vor KI-Synchronfassung – auch ohne language/language_preference."""
+    """(1) Original audio before AI dub - even without language/language_preference."""
     def setUp(self):
         self.info = fixture("dagi-dubbed.json")
 
@@ -100,14 +100,14 @@ class OriginalAudio(unittest.TestCase):
 
 
 class AudioTracks(unittest.TestCase):
-    """(2) Auswahl „Ton“: Original zuerst, Synchronfassung markiert, <2 Sprachen -> []."""
+    """(2) "Ton" choice: original first, dub marked, <2 languages -> []."""
     def test_fixture(self):
         tr = R["audio_tracks"](fixture("dagi-dubbed.json")["formats"])
         self.assertEqual(len(tr), 2)
         de, en = tr
         self.assertEqual((de["lang"], de["original"], de["dubbed"]), ("de-DE", True, False))
         self.assertEqual((en["lang"], en["original"], en["dubbed"]), ("en-US", False, True))
-        self.assertIn("itag=251", de["url"])   # Opus vor AAC bei gleicher Sprache
+        self.assertIn("itag=251", de["url"])   # Opus before AAC for the same language
         self.assertNotIn("m3u8", de["url"] + en["url"])
 
     def test_original_first_regardless_of_name(self):
@@ -118,7 +118,7 @@ class AudioTracks(unittest.TestCase):
         self.assertTrue(tr[2]["described"]); self.assertFalse(tr[2]["dubbed"])
 
     def test_unknown_not_dubbed(self):
-        # ohne Kennzeichnung (weder xtags noch language_preference) nicht als „synchronisiert“ anzeigen
+        # without tagging (neither xtags nor language_preference) don't show as "dubbed"
         tr = R["audio_tracks"]([aud("a", lang="de"), aud("b", lang="en"), aud("c", lang="fr", lp=5)])
         self.assertEqual([(t["lang"], t["dubbed"], t["original"]) for t in tr],
                          [("de", False, False), ("en", False, False), ("fr", False, False)])
@@ -138,7 +138,7 @@ class AudioTracks(unittest.TestCase):
 
 
 class DashPick(unittest.TestCase):
-    """(3) Video: VP9 vor AV1 bei gleicher Auflösung, höchstens 1080p60."""
+    """(3) Video: VP9 before AV1 at the same resolution, at most 1080p60."""
     A = [aud("251", xt="acont=original:lang=de-DE")]
 
     def test_vp9_before_av1(self):
@@ -164,7 +164,7 @@ class DashPick(unittest.TestCase):
 
     def test_fixture(self):
         d = R["dash_pick"](fixture("dagi-dubbed.json")["formats"])
-        self.assertIn("itag=399", d["video"])   # nur AV1 in 1080p60, VP9 nur 360p
+        self.assertIn("itag=399", d["video"])   # only AV1 in 1080p60, VP9 only 360p
         self.assertEqual((d["height"], d["fps"], d["acodec"]), (1080, 60, "opus"))
 
     def test_none(self):
@@ -174,7 +174,7 @@ class DashPick(unittest.TestCase):
 
 
 class Drc(unittest.TestCase):
-    """(6) DRC-Spuren (Dynamikkompression) nur nachrangig."""
+    """(6) DRC tracks (dynamic range compression) only as a lower priority."""
     def test_drc_by_format_id(self):
         fm = [vid("248", "vp9", 1080), aud("251-drc", abr=200, xt="acont=original:lang=de"),
               aud("251", abr=120, xt="acont=original:lang=de")]
@@ -198,7 +198,7 @@ class Drc(unittest.TestCase):
 
 
 class Summarize(unittest.TestCase):
-    """(4) Ergebnis: Version, dash, dlaudio nur bei mehreren Tonspuren und nur AAC-Original/Standard."""
+    """(4) Result: version, dash, dlaudio only with several audio tracks and only AAC original/default."""
     def setUp(self):
         R["_logs"].clear()
 
@@ -239,13 +239,13 @@ class Summarize(unittest.TestCase):
         self.assertNotIn("dlaudio", R["summarize"](self.info(fm)))
 
     def test_no_dlaudio_if_best_aac_is_dub(self):
-        # Original nur als Opus, AAC nur synchronisiert -> lieber nichts ändern
+        # original only as Opus, AAC only dubbed -> better change nothing
         fm = [vid("248", "vp9", 1080), aud("251", xt="acont=original:lang=de"),
               aud("140", acodec="mp4a.40.2", xt="acont=dubbed-auto:lang=en")]
         self.assertNotIn("dlaudio", R["summarize"](self.info(fm)))
 
     def test_no_dlaudio_if_unknown(self):
-        # zwei Sprachen, aber keine Kennzeichnung (pref 0) -> unsicher, kein dlaudio
+        # two languages but no tagging (pref 0) -> uncertain, no dlaudio
         fm = [vid("248", "vp9", 1080), aud("140a", acodec="mp4a.40.2", lang="de"),
               aud("140b", acodec="mp4a.40.2", lang="en")]
         r = R["summarize"](self.info(fm))
@@ -253,7 +253,7 @@ class Summarize(unittest.TestCase):
         self.assertNotIn("dlaudio", r)
 
     def test_dlaudio_standard_track(self):
-        # yt-dlp language_preference 5 = Standardspur ohne Original-Kennzeichnung
+        # yt-dlp language_preference 5 = default track without original tagging
         fm = [vid("248", "vp9", 1080), aud("140a", acodec="mp4a.40.2", lang="de", lp=5),
               aud("140b", acodec="mp4a.40.2", lang="en", lp=-1)]
         self.assertTrue(R["summarize"](self.info(fm))["dlaudio"].endswith("itag=140a"))
@@ -269,7 +269,7 @@ class Summarize(unittest.TestCase):
                    url="https://x/hls/itag/95/index.m3u8")]
         r = R["summarize"](self.info(fm, url="https://x/hls/itag/95/index.m3u8"))
         self.assertNotIn("dash", r); self.assertNotIn("dlaudio", r)
-        self.assertEqual(r["alt"], ["https://x/videoplayback?itag=18"])   # gleiche URL nicht doppelt
+        self.assertEqual(r["alt"], ["https://x/videoplayback?itag=18"])   # same URL not twice
         self.assertEqual(r["v"], R["RESULT_VERSION"])
 
     def test_expires(self):
@@ -288,7 +288,7 @@ def caps(*langs):
             for l in langs}
 
 class Subtitles(unittest.TestCase):
-    """(5) Untertitel: manuelle zuerst, Übersetzung ins Deutsche nur bei fremdsprachigem Video."""
+    """(5) Subtitles: manual first, translation into German only for a foreign-language video."""
     def kinds(self, info):
         return [(t["lang"], t["kind"]) for t in R["subtitle_tracks"](info)]
 

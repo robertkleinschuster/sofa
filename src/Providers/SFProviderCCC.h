@@ -1,4 +1,4 @@
-// media.ccc.de (api.media.ccc.de/public): Neu, Beliebt, Konferenzen, Vorträge.
+// media.ccc.de (api.media.ccc.de/public): new, popular, conferences, talks.
 #import "SFModel.h"
 
 @interface SFProviderCCC : NSObject

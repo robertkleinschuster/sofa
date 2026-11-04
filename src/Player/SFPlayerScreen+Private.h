@@ -1,5 +1,5 @@
-// SFPlayerScreen – privater Teil: Ivars und Methoden, die die Kategorien gemeinsam nutzen
-// (SFPlayerScreen.m: Wiedergabe/OSD/Eingabe, SFPlayerScreen+Tracks.m: Ton & Untertitel).
+// SFPlayerScreen - private part: ivars and methods shared by the categories
+// (SFPlayerScreen.m: playback/OSD/input, SFPlayerScreen+Tracks.m: audio & subtitles).
 #import "SFPlayerScreen.h"
 #import "SFSettings.h"
 #import "SFLayers.h"
@@ -18,18 +18,18 @@
     SFItem *_item;
     NSArray *_queue;
     id _powerObs;
-    BOOL _explicitQueue;   // Handy-Playlist: nächster = nächster Queue-Eintrag
-    NSURL *_dashFailedURL; // DASH-Streams dieser Quelle abgelehnt (YouTube 403) -> mpv mit dem HLS-Stream
-    BOOL _openedDash;      // aktueller Versuch: mpv mit getrennten DASH-Streams
-    BOOL _subsApplied;     // bevorzugte Untertitel für diesen Inhalt schon angewandt
-    CALayer *_trackKey; SFLabel *_trackHint;   // OSD: "[OK] halten: Info"
+    BOOL _explicitQueue;   // phone playlist: next = next queue entry
+    NSURL *_dashFailedURL; // DASH streams of this source rejected (YouTube 403) -> mpv with the HLS stream
+    BOOL _openedDash;      // current attempt: mpv with separate DASH streams
+    BOOL _subsApplied;     // preferred subtitles already applied for this item
+    CALayer *_trackKey; SFLabel *_trackHint;   // OSD: "[OK] hold: info"
     NSUInteger _index;
-    id<SFEngine> _engine;        // AVFoundation oder mpv (SFEngine.h)
-    CALayer *_videoHost;         // trägt die Video-Ebene der aktiven Engine
+    id<SFEngine> _engine;        // AVFoundation or mpv (SFEngine.h)
+    CALayer *_videoHost;         // hosts the video layer of the active engine
     IOPMAssertionID _assertion, _sysAssertion;
     BOOL _hasAssertion;
 
-    CALayer *_osd;               // gesamte Einblendung
+    CALayer *_osd;               // whole overlay
     CAGradientLayer *_topShade, *_bottomShade;
     SFLabel *_title, *_channel;
     CALayer *_barBg, *_barFill, *_barBuffer, *_barKnob;
@@ -42,19 +42,19 @@
 
     NSTimer *_osdTimer;
     BOOL _osdVisible;
-    NSTimeInterval _pendingSeek;    // kumulierter Sprung (s), 0 = keiner
-    NSTimeInterval _seekBase;       // letztes Sprungziel, bis der Player dort angekommen ist (-1 = keins)
+    NSTimeInterval _pendingSeek;    // accumulated jump (s), 0 = none
+    NSTimeInterval _seekBase;       // last jump target until the player has arrived there (-1 = none)
     NSDate *_seekBaseAt;
     NSTimer *_seekTimer;
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
     NSURL *_openURL; NSDate *_openAt; NSInteger _openTries; NSTimeInterval _openResume;
-    BOOL _holdPaused;   // „pausiert starten“ gilt über Wiederholungsversuche/Ausweich-Streams hinweg, bis der User Play drückt   // Retry bei sporadischem HLS-Öffnungsfehler
+    BOOL _holdPaused;   // "start paused" holds across retries/fallback streams until the user presses play   // retry on sporadic HLS open errors
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
-    NSURL *_mpvFailedURL;        // mpv scheiterte an dieser URL -> AVFoundation versuchen
-    BOOL _reresolved;            // YouTube: Streams abgelehnt -> einmal frisch auflösen
-    SFItem *_upNext;             // YouTube „Als Nächstes“ (Empfehlung), im Hintergrund geholt
+    NSURL *_mpvFailedURL;        // mpv failed on this URL -> try AVFoundation
+    BOOL _reresolved;            // YouTube: streams rejected -> resolve afresh once
+    SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;
     __weak SFItem *_lastStartedItem;
 }

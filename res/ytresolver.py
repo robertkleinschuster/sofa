@@ -1,16 +1,16 @@
-# Sofa YouTube-Stream-Resolver: langlebiger Prozess, eine YoutubeDL-Instanz pro Client,
-# Protokoll = JSON-Zeilen über stdin/stdout (siehe docs/youtube.md §5.3).
+# Sofa YouTube stream resolver: long-lived process, one YoutubeDL instance per client,
+# protocol = JSON lines over stdin/stdout (see docs/youtube.md §5.3).
 #   -> {"rid": 1, "vid": "OzCYsIrrRyw", "live": false}
 #   <- {"rid": 1, "url": "...m3u8", "alt": ["...95...", "...18..."], "height": 1080,
 #       "live": false, "duration": 2135, "expires": 1762190000}
 #   <- {"rid": 1, "error": "..."}
-#   <- {"ready": true}     (einmal, nach dem Start)
-# Aufruf: python ytresolver.py <cachedir>
-# Ohne Anmeldung/Cookies (User 2026-11-04). JS-Challenges löst node (MacPorts nodejs26, ohnehin
-# für den PO-Token-Server da): ~4 s je Video; QuickJS brauchte ohne Cookies ~20 s.
+#   <- {"ready": true}     (once, after the start)
+# Usage: python ytresolver.py <cachedir>
+# Without sign-in/cookies (user 2026-11-04). JS challenges are solved by node (MacPorts nodejs26,
+# present anyway for the PO token server): ~4 s per video; QuickJS needed ~20 s without cookies.
 import json, os, sys, threading, time, re
 
-CACHE = sys.argv[-1]   # früher: <cookies.txt> <cachedir> – letztes Argument ist immer cachedir
+CACHE = sys.argv[-1]   # formerly: <cookies.txt> <cachedir> - the last argument is always cachedir
 out_lock = threading.Lock()
 
 def emit(obj):
@@ -23,7 +23,7 @@ def log(msg):
     sys.stderr.flush()
 
 try:
-    # Vorverarbeiteten Player-JS-Cache aktivieren (spart je Player-Version die Vorverarbeitung)
+    # enable the preprocessed player JS cache (saves the preprocessing per player version)
     from yt_dlp.extractor.youtube.jsc._builtin import ejs
     ejs.EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = True
 except Exception as e:
@@ -33,15 +33,15 @@ import yt_dlp
 FMT_VOD = ("best[height<=1080][vcodec^=avc1][acodec!=none][protocol^=m3u8]"
            "/best[height<=720][vcodec^=avc1][acodec!=none]/18")
 
-# Version der Ergebnisse: erhöhen, wenn sich die Auswahl ändert -> Sofa verwirft beim Neustart
-# gesicherte ältere Auflösungen (2: Original-Tonspur auch über xtags, dlaudio für Downloads)
+# Version of the results: bump when the selection changes -> on restart Sofa drops saved
+# older resolutions (2: original audio track also via xtags, dlaudio for downloads)
 RESULT_VERSION = 2
 
 def base_opts():
     return {
         "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
         "noplaylist": True, "cachedir": CACHE,
-        # ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04: Daten ungeprüft, Code signiert)
+        # without TLS certificate verification (user decision 2026-11-04: data unverified, code signed)
         "nocheckcertificate": True,
         "js_runtimes": {"node": {"path": os.environ.get("SOFA_NODE", "/opt/local/bin/node")}},
         "format": FMT_VOD,
@@ -55,13 +55,13 @@ def make_web():
         # web_embedded stays as a second client in the same call (HLS, formats mweb lacks).
         # yt-dlp merges both format lists, the first client wins per itag.
         "youtube": {"player_client": ["mweb", "web_embedded"], "player_skip": ["webpage"]},
-        # Script-Provider probt sonst 15 s lang node -> nur HTTP-Provider (127.0.0.1:4416)
+        # the script provider would otherwise probe node for 15 s -> HTTP provider only (127.0.0.1:4416)
         "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
     }
     return yt_dlp.YoutubeDL(o)
 
 def make_vr():
-    # android_vr: ohne JS, ~2 s; liefert HLS bei Lives, sonst nur Format 18
+    # android_vr: no JS, ~2 s; returns HLS for lives, otherwise only format 18
     o = base_opts()
     o["extractor_args"] = {
         "youtube": {"player_client": ["android_vr"]},
@@ -69,13 +69,13 @@ def make_vr():
     }
     return yt_dlp.YoutubeDL(o)
 
-# Zwei Pools mit eigenen YoutubeDL-Instanzen (YoutubeDL ist nicht threadsicher -> je Pool seriell):
-#   fg = Wiedergabe (Klick), bg = Vorwärmen, Vorladen bei Fokus, Downloads.
-# So wartet ein Klick nie hinter einem Vorladen (vorher bis 10 s statt 3,5 s).
+# Two pools with their own YoutubeDL instances (YoutubeDL is not thread-safe -> serial per pool):
+#   fg = playback (click), bg = warm-up, preload on focus, downloads.
+# So a click never waits behind a preload (previously up to 10 s instead of 3.5 s).
 pools = {"bg": (make_web(), make_vr(), threading.Lock()),
          "fg": (make_web(), make_vr(), threading.Lock())}
-# Laufende Auflösungen je (vid, live): eine zweite Anfrage für dasselbe Video wartet auf das
-# Ergebnis statt neu aufzulösen. Eine Wiedergabe-Anfrage überholt ein noch WARTENDES Vorladen.
+# Running resolutions per (vid, live): a second request for the same video waits for the
+# result instead of resolving again. A playback request overtakes a still WAITING preload.
 jobs = {}
 jobs_lock = threading.Lock()
 
@@ -84,10 +84,10 @@ class Job:
         self.key, self.pool = key, pool
         self.started, self.ev = False, threading.Event()
         self.result, self.error = None, None
-        self.superseded_by = None      # Wiedergabe-Job, der diesen wartenden Vorlade-Job überholt hat
+        self.superseded_by = None      # playback job that overtook this waiting preload job
         self.created = time.time()
 
-BG_MAX_WAIT = 60   # Vorladen, das so lange in der Schlange stand, ist veraltet (Fokus längst weiter)
+BG_MAX_WAIT = 60   # a preload that sat in the queue this long is stale (focus moved on long ago)
 
 def expires_of(url):
     m = re.search(r"/expire/(\d+)/", url) or re.search(r"[?&]expire=(\d+)", url)
@@ -96,7 +96,7 @@ def expires_of(url):
 def summarize(info):
     url = info.get("url")
     if not url:
-        raise RuntimeError("kein Stream")
+        raise RuntimeError("no stream")
     alt = []
     by_id = {f.get("format_id"): f for f in info.get("formats") or []}
     for fid in ("95", "18"):
@@ -112,29 +112,29 @@ def summarize(info):
     if d:
         d["audios"] = audio_tracks(info.get("formats") or [])
         r["dash"] = d
-    # Download (gemuxter HLS-Stream = Standardspur, evtl. Synchronfassung): bei mehreren Tonspuren
-    # die Original-Tonspur als AAC (passt in MP4) separat mitgeben -> Downloader legt sie darüber
+    # download (muxed HLS stream = default track, possibly dubbed): with several audio tracks pass
+    # the original audio track as AAC (fits into MP4) separately -> the downloader lays it over it
     if d and d["audios"]:
         aac = [f for f in info.get("formats") or [] if f.get("url") and (f.get("vcodec") or "none") == "none"
                and (f.get("acodec") or "").startswith("mp4a") and not (f.get("protocol") or "").startswith("m3u8")]
         if aac:
             best = max(aac, key=audio_rank)
-            if audio_pref(best) >= 5:   # nur, wenn sicher Original/Standard – sonst lieber nichts ändern
+            if audio_pref(best) >= 5:   # only if surely original/default - otherwise better change nothing
                 r["dlaudio"] = best["url"]
-    # Diagnose „falsche Tonspur“: was hat YouTube an Tonspuren geliefert (Sprache/Rang je Spur)?
-    # Ohne audioTrack fehlt die Sprache (yt-dlp: language None) -> „Ton ?“ im Player-Log.
+    # diagnosis "wrong audio track": which audio tracks did YouTube deliver (language/rank per track)?
+    # Without audioTrack the language is missing (yt-dlp: language None) -> "audio ?" in the player log.
     tracks = sorted({"%s:%s:%s" % (audio_lang(f) or "?", f.get("language_preference"), xtags(f).get("acont", "-"))
                      for f in info.get("formats") or []
                      if (f.get("vcodec") or "none") == "none" and (f.get("acodec") or "none") != "none"})
-    log("audio %s: %s -> %s (Video-Sprache %s, Format %s)" % (info.get("id"), " ".join(tracks) or "nur gemuxt",
+    log("audio %s: %s -> %s (video language %s, format %s)" % (info.get("id"), " ".join(tracks) or "muxed only",
         (d or {}).get("alang"), info.get("language"), info.get("format_id")))
     r["subs"] = subtitle_tracks(info)
     return r
 
 def xtags(f):
-    """Stream-Kennzeichnung aus der googlevideo-URL (xtags=acont=original:lang=de-DE …).
-    Unabhängig von audioTrack in der Player-Antwort, das YouTube nicht immer mitliefert
-    (dann kennt yt-dlp weder Sprache noch Original -> falsche Synchronspur, Dagi-Meldung 2026-11-04)."""
+    """Stream tags from the googlevideo URL (xtags=acont=original:lang=de-DE ...).
+    Independent of audioTrack in the player response, which YouTube does not always include
+    (then yt-dlp knows neither language nor original -> wrong dubbed track, Dagi report 2026-11-04)."""
     from urllib.parse import urlparse, parse_qs
     try:
         v = (parse_qs(urlparse(f.get("url") or "").query).get("xtags") or [""])[0]
@@ -151,7 +151,7 @@ def audio_lang(f):
     return f.get("language") or xtags(f).get("lang")
 
 def audio_pref(f):
-    """10 Original, 5 Standard, 0 unbekannt, -1 Synchronfassung, -10 Audiodeskription."""
+    """10 original, 5 default, 0 unknown, -1 dubbed, -10 audio description."""
     lp = f.get("language_preference")
     acont = xtags(f).get("acont", "")
     if acont == "original":
@@ -163,13 +163,13 @@ def audio_pref(f):
     return lp if isinstance(lp, int) else 0
 
 def audio_rank(f):
-    """Rangfolge der Tonspuren: Original zuerst, ohne DRC, Opus, Bitrate."""
+    """Ranking of audio tracks: original first, without DRC, Opus, bitrate."""
     drc = "drc" in (f.get("format_id") or "").lower() or xtags(f).get("drc") == "1"
     return (audio_pref(f), 0 if drc else 1,
             1 if (f.get("acodec") or "").startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0)
 
 def audio_tracks(formats):
-    """Beste Tonspur je Sprache (für die Auswahl „Ton“), Original zuerst."""
+    """Best audio track per language (for the "Ton" choice), original first."""
     best = {}
     for f in formats:
         if not f.get("url") or (f.get("protocol") or "").startswith("m3u8"):
@@ -180,19 +180,19 @@ def audio_tracks(formats):
         if lang not in best or audio_rank(f) > audio_rank(best[lang]):
             best[lang] = f
     if len(best) < 2:
-        return []   # nur eine Sprache: nichts auszuwählen
+        return []   # only one language: nothing to choose
     out = []
     for lang, f in best.items():
         lp = audio_pref(f)
-        # „synchronisiert“ nur bei Kennzeichnung (acont=dubbed* / yt-dlp -1), nicht bei unbekannt (0)
+        # "dubbed" only when tagged (acont=dubbed* / yt-dlp -1), not when unknown (0)
         out.append({"lang": lang, "url": f["url"], "original": lp == 10,
                     "dubbed": -10 < lp < 0, "described": lp == -10})
     out.sort(key=lambda t: (not t["original"], t["described"], t["lang"]))
     return out
 
 def subtitle_tracks(info):
-    """Untertitel als WebVTT: echte zuerst, dazu die automatischen in Originalsprache
-    („<lang>-orig“) und die automatische Übersetzung ins Deutsche, falls keine echten deutschen."""
+    """Subtitles as WebVTT: real ones first, plus the automatic ones in the original language
+    ("<lang>-orig") and the automatic translation into German if there are no real German ones."""
     def vtt(fmts):
         for f in fmts or []:
             if f.get("ext") == "vtt" and f.get("url"):
@@ -209,8 +209,8 @@ def subtitle_tracks(info):
             u = vtt(fmts)
             if u:
                 out.append({"lang": lang[:-5], "url": u, "kind": "auto"})
-    # Übersetzung ins Deutsche nur bei fremdsprachigem Video: bei deutschem Ton wäre „de“ nur eine
-    # schlechtere Kopie der automatischen deutschen Untertitel (Kurzgesagt-Meldung 2026-11-04)
+    # translation into German only for a foreign-language video: with German audio "de" would only be
+    # a worse copy of the automatic German subtitles (Kurzgesagt report 2026-11-04)
     spoken = (info.get("language") or "").split("-")[0]
     if any(t["lang"].split("-")[0] == "de" for t in out):
         have.add("de")
@@ -221,8 +221,8 @@ def subtitle_tracks(info):
     return out
 
 def dash_pick(formats):
-    """Getrennte Video-/Audio-Streams fuer die mpv-Engine (VP9/AV1, max. 1080p60 – User-Vorgabe).
-    VP9 vor AV1 (gleiche Aufloesung): weniger CPU (gemessen 8,5x vs 6,3x Echtzeit bei 1080p60)."""
+    """Separate video/audio streams for the mpv engine (VP9/AV1, max. 1080p60 - user requirement).
+    VP9 before AV1 (same resolution): less CPU (measured 8.5x vs 6.3x real time at 1080p60)."""
     vids, auds = [], []
     for f in formats:
         if not f.get("url") or (f.get("protocol") or "").startswith("m3u8"):
@@ -233,7 +233,7 @@ def dash_pick(formats):
             if h <= 1080 and fps <= 60:
                 vids.append((h, fps, 1 if vc.startswith("vp") else 0, f.get("tbr") or 0, f))
         elif vc == "none" and ac != "none":
-            # Originalton zuerst (User-Vorgabe 2026-11-04: nie automatisch übersetzte Tonspuren)
+            # original audio first (user requirement 2026-11-04: never auto-translated audio tracks)
             auds.append(audio_rank(f) + (f,))
     if not vids or not auds:
         return None
@@ -253,8 +253,8 @@ def resolve(vid, live, pool):
             t0 = time.time()
             info = ydl.extract_info(u, download=False)
             dt = time.time() - t0
-            if dt > 6:   # langsame Auflösungen nachvollziehbar machen (Client, Formatanzahl, Laufzeit)
-                log("slow %s via %s: %.1fs, %d Formate, live=%s" % (vid, "vr" if ydl is vr else "web", dt,
+            if dt > 6:   # make slow resolutions traceable (client, format count, duration)
+                log("slow %s via %s: %.1fs, %d formats, live=%s" % (vid, "vr" if ydl is vr else "web", dt,
                     len(info.get("formats") or []), bool(info.get("is_live"))))
             r = summarize(info)
             if not live and ydl is vr and r.get("format") == "18":
@@ -263,12 +263,12 @@ def resolve(vid, live, pool):
         except Exception as e:
             last = e
             log("%s via %s: %s" % (vid, "vr" if ydl is vr else "web", str(e)[:200]))
-    raise last or RuntimeError("unbekannter Fehler")
+    raise last or RuntimeError("unknown error")
 
 def run(job):
-    """Job im eigenen Pool ausführen. Wurde er, solange er wartete, von einer
-    Wiedergabe-Anfrage überholt, deren Ergebnis übernehmen statt doppelt aufzulösen –
-    auch wenn jener Job schon fertig und aus `jobs` entfernt ist (superseded_by)."""
+    """Run the job in its own pool. If, while it waited, a playback request overtook it,
+    take over that result instead of resolving twice -
+    even if that job is already done and removed from `jobs` (superseded_by)."""
     try:
         other = None
         with pools[job.pool][2]:
@@ -278,7 +278,7 @@ def run(job):
                 other = job.superseded_by or (cur if cur is not None and cur is not job else None)
             if other is None:
                 if job.pool == "bg" and time.time() - job.created > BG_MAX_WAIT:
-                    job.error = RuntimeError("Vorladen verworfen (veraltet)")
+                    job.error = RuntimeError("preload dropped (stale)")
                 else:
                     try:
                         job.result = resolve(job.key[0], job.key[1], job.pool)
@@ -287,7 +287,7 @@ def run(job):
         if other is not None:
             other.ev.wait(120)
             job.result, job.error = other.result, other.error
-    except BaseException as e:   # nie einen Job ohne Ergebnis hängen lassen
+    except BaseException as e:   # never leave a job hanging without a result
         if job.result is None and job.error is None:
             job.error = e
     finally:
@@ -300,7 +300,7 @@ def handle(req):
     rid = req.get("rid")
     vid = req.get("vid", "")
     if not re.match(r"^[A-Za-z0-9_-]{11}$", vid):
-        emit({"rid": rid, "error": "ungültige Video-ID"}); return
+        emit({"rid": rid, "error": "invalid video ID"}); return
     t0 = time.time()
     key, pool = (vid, bool(req.get("live"))), ("fg" if req.get("prio", True) else "bg")
     with jobs_lock:
@@ -309,7 +309,7 @@ def handle(req):
         if mine:
             new = Job(key, pool)
             if job is not None:
-                job.superseded_by = new   # der wartende Vorlade-Job übernimmt später dieses Ergebnis
+                job.superseded_by = new   # the waiting preload job later takes over this result
             job = jobs[key] = new
     if mine:
         run(job)
@@ -320,14 +320,14 @@ def handle(req):
         r["rid"], r["secs"], r["pool"] = rid, round(time.time() - t0, 2), pool + ("" if mine else "+shared")
         emit(r)
     else:
-        msg = str(job.error or "Zeitüberschreitung")
+        msg = str(job.error or "timeout")
         m = re.search(r"ERROR: \[youtube\] [^:]+: (.*)", msg)
         emit({"rid": rid, "error": (m.group(1) if m else msg)[:300]})
 
 def warmup():
-    # Erster Lauf nach einem YouTube-Player-Rollout dauert ~20 s (JS-Vorverarbeitung):
-    # im Hintergrund vorziehen, damit der erste echte Klick schnell ist. Erst bg (füllt den
-    # Platten-Cache), dann fg – aber nur, solange keine Wiedergabe den fg-Pool braucht.
+    # The first run after a YouTube player rollout takes ~20 s (JS preprocessing):
+    # do it ahead in the background so the first real click is fast. First bg (fills the
+    # disk cache), then fg - but only as long as no playback needs the fg pool.
     for name in ("bg", "fg"):
         web, _, lk = pools[name]
         if not lk.acquire(blocking=(name == "bg")):
@@ -355,8 +355,8 @@ def prune_cache():
 
 prune_cache()
 emit({"ready": True})
-# Dev-Instanzen ohne Vorwärmen: jeder Teststart wären sonst zwei zusätzliche YouTube-Abrufe
-# (trug 2026-11-04 zur Drosselung „Sign in to confirm you're not a bot“ bei)
+# Dev instances without warm-up: every test start would otherwise be two extra YouTube fetches
+# (contributed on 2026-11-04 to the "Sign in to confirm you're not a bot" throttling)
 if not os.environ.get("SOFA_NO_WARMUP"):
     threading.Thread(target=warmup, daemon=True).start()
 for line in sys.stdin:

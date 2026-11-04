@@ -8,13 +8,13 @@
 
 NSString *const SFLoungeRemotesDidChangeNotification = @"SFLoungeRemotesDidChangeNotification";
 static NSString *const kAPI = @"https://www.youtube.com/api/lounge";
-static NSString *const kScreenName = @"Sofa";   // ASCII halten (Doppel-Escape bei Sonderzeichen)
+static NSString *const kScreenName = @"Sofa";   // keep ASCII (double escaping with special characters)
 
 static NSString *formEncode(NSString *s) {
     return (__bridge_transfer NSString *)CFURLCreateStringByAddingPercentEscapes(NULL, (__bridge CFStringRef)(s ?: @""), NULL,
         CFSTR(":/?#[]@!$&'()*+,;=\" %<>{}|\\^`"), kCFStringEncodingUTF8);
 }
-static NSString *formBody(NSArray *pairs) {   // @[@[k,v], …] (Reihenfolge bleibt)
+static NSString *formBody(NSArray *pairs) {   // @[@[k,v], ...] (order is kept)
     NSMutableArray *a = [NSMutableArray new];
     for (NSArray *p in pairs) [a addObject:[NSString stringWithFormat:@"%@=%@", formEncode(p[0]), formEncode(p[1])]];
     return [a componentsJoinedByString:@"&"];
@@ -26,7 +26,7 @@ static NSString *zx(void) {
 }
 static NSString *fmtTime(double t) { return [NSString stringWithFormat:@"%.3f", (isnan(t) || t < 0) ? 0 : t]; }
 
-#pragma mark - Long-Poll (libcurl, eigener Thread)
+#pragma mark - Long poll (libcurl, own thread)
 
 typedef struct { void *self; } SFLPCtx;
 static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
@@ -36,7 +36,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 @end
 
 @implementation SFLounge {
-    dispatch_queue_t _q;            // Sitzungszustand + Senden (seriell)
+    dispatch_queue_t _q;            // session state + sending (serial)
     NSString *_screenID, *_deviceID, *_token;
     NSString *_sid, *_gsid;
     NSInteger _aid, _rid, _ofs;
@@ -77,7 +77,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 - (NSArray *)remoteNames { @synchronized (_remotes) { return [_remotes.allValues sortedArrayUsingSelector:@selector(compare:)]; } }
 - (BOOL)online { return _sid != nil; }
 
-#pragma mark Identität / Token
+#pragma mark Identity / token
 
 - (NSString *)key:(NSString *)k { return [@"lounge." stringByAppendingString:k]; }
 
@@ -89,12 +89,12 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     return d;
 }
 
-- (BOOL)ensureIdentity {   // auf _q
+- (BOOL)ensureIdentity {   // on _q
     SFStore *st = [SFStore shared];
     _deviceID = [st setting:[self key:@"deviceId"]];
     if (!_deviceID) { _deviceID = [[[NSUUID UUID] UUIDString] lowercaseString]; [st setSetting:_deviceID forKey:[self key:@"deviceId"]]; }
     _screenID = [st setting:[self key:@"screenId"]];
-    if (!_screenID.length) {   // leer = „alle Handys getrennt“ -> neue screenId
+    if (!_screenID.length) {   // empty = "all phones disconnected" -> new screenId
         NSInteger code = 0;
         NSData *d = [self http:@"GET" url:[kAPI stringByAppendingString:@"/pairing/generate_screen_id"] body:nil status:&code];
         NSString *s = [[[NSString alloc] initWithData:d ?: [NSData data] encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -108,7 +108,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     return YES;
 }
 
-- (BOOL)refreshToken {     // auf _q
+- (BOOL)refreshToken {     // on _q
     NSInteger code = 0;
     NSData *d = [self http:@"POST" url:[kAPI stringByAppendingString:@"/pairing/get_lounge_token_batch"]
                       body:formBody(@[@[@"screen_ids", _screenID]]) status:&code];
@@ -140,7 +140,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     });
 }
 
-#pragma mark Bind-Kanal
+#pragma mark Bind channel
 
 - (NSString *)commonParams {
     return formBody(@[@[@"device", @"LOUNGE_SCREEN"], @[@"id", _deviceID], @[@"name", kScreenName], @[@"app", @"sofa"],
@@ -152,7 +152,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     return @"{\"brand\":\"Apple\",\"model\":\"iMac\",\"year\":0,\"os\":\"Mac OS X\",\"osVersion\":\"10.9.5\",\"chipset\":\"\",\"clientName\":\"TVHTML5\",\"dialAdditionalDataSupportLevel\":\"unsupported\",\"mdxDialServerType\":\"MDX_DIAL_SERVER_TYPE_UNKNOWN\"}";
 }
 
-// Neue Sitzung (auf _q). Rückgabe: HTTP-Status
+// New session (on _q). Returns: HTTP status
 - (NSInteger)openSession {
     _sid = nil; _gsid = nil; _aid = -1; _ofs = 0;
     _rid = 10000 + arc4random_uniform(80000);
@@ -172,20 +172,20 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 - (void)setPaused:(BOOL)p {
     if (p == self.paused) return;
     [[SFStore shared] setSetting:p ? @"1" : @"0" forKey:[self key:@"paused"]];
-    SFLog(@"lounge: Verbindung %@", p ? @"pausiert" : @"fortgesetzt");
+    SFLog(@"lounge: connection %@", p ? @"paused" : @"resumed");
     if (p) { [self stop]; [self dropSession]; }
     else [self start];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // relabel the phone tile (YouTube -> Mehr)
 }
 - (BOOL)sharesAllPlayback { return [[[SFStore shared] setting:[self key:@"shareAll"]] isEqualToString:@"1"]; }
 - (void)setSharesAllPlayback:(BOOL)s {
     [[SFStore shared] setSetting:s ? @"1" : @"0" forKey:[self key:@"shareAll"]];
     _lastVideo = nil;
-    [self greet];   // Handy sofort auf den neuen Stand bringen (ggf. „nichts läuft“)
+    [self greet];   // bring the phone up to date right away (possibly "nothing playing")
 }
 
-// Session lokal verwerfen (Kopplung/screenId bleibt)
+// Drop the session locally (pairing/screenId stays)
 - (void)dropSession {
     dispatch_sync(_q, ^{ self->_sid = nil; });
     @synchronized (_remotes) { [_remotes removeAllObjects]; }
@@ -200,9 +200,9 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
         self->_screenID = nil; self->_token = nil; self->_sid = nil;
     });
     @synchronized (_remotes) { [_remotes removeAllObjects]; }
-    SFLog(@"lounge: alle Handys getrennt (neue screenId)");
+    SFLog(@"lounge: all phones disconnected (new screenId)");
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // relabel the phone tile (YouTube -> Mehr)
     if (!wasPaused) [self start];
 }
 
@@ -210,11 +210,11 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     if (_running || self.paused) return;
     _running = YES;
     _loopGen++;
-    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];   // Fortsetzen: nicht doppelt
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerStateNotification object:nil];   // resume: not twice
     [[NSNotificationCenter defaultCenter] removeObserver:self name:SFPlayerSubtitlesNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerChanged:) name:SFPlayerStateNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(subtitlesChanged:) name:SFPlayerSubtitlesNotification object:nil];
-    // Laufende Position regelmäßig melden (Handy-Fortschrittsbalken)
+    // report the running position regularly (phone progress bar)
     [_tick invalidate];
     _tick = [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(periodic) userInfo:nil repeats:YES];
     [NSThread detachNewThreadSelector:@selector(runLoop) toTarget:self withObject:nil];
@@ -235,7 +235,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 - (void)runLoop {
     @autoreleasepool { [[NSThread currentThread] setName:@"sofa.lounge.poll"]; }
     double backoff = 1;
-    NSUInteger gen = _loopGen;   // Pausieren/Fortsetzen startet eine neue Schleife; alte endet hier
+    NSUInteger gen = _loopGen;   // pause/resume starts a new loop; the old one ends here
     while (_running && gen == _loopGen) {
         @autoreleasepool {
             __block BOOL ok = NO;
@@ -256,13 +256,13 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
                 continue;
             }
             NSInteger code = [self longPoll];
-            if (gen != _loopGen) break;                              // inzwischen pausiert/neu gestartet: alte Schleife endet still
-            if (code == 200) { backoff = 1; continue; }            // normales Ende nach ~5 min
+            if (gen != _loopGen) break;                              // paused/restarted meanwhile: the old loop ends silently
+            if (code == 200) { backoff = 1; continue; }            // normal end after ~5 min
             __block BOOL reset = NO;
             dispatch_sync(_q, ^{
                 if (code == 400 || code == 404) reset = YES;                         // Unknown SID
                 else if (code == 401 || code == 410) { [self refreshToken]; reset = YES; }
-                else if (-[self->_lastAlive timeIntervalSinceNow] > 40) reset = YES;  // Idle-Limit ≈ 45–60 s
+                else if (-[self->_lastAlive timeIntervalSinceNow] > 40) reset = YES;  // idle limit ~45-60 s
                 if (reset) { self->_sid = nil; SFLog(@"lounge: session reset (%ld)", (long)code); }
             });
             if (!reset) { [NSThread sleepForTimeInterval:backoff]; backoff = MIN(backoff * 2, 8); }
@@ -284,14 +284,14 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, (__bridge void *)self);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1L);     // noop alle ~28 s -> 70 s ohne Daten = tot
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1L);     // noop every ~28 s -> 70 s without data = dead
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 70L);
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
     CURLcode rc = curl_easy_perform(c);
     long code = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
     curl_easy_cleanup(c);
-    if (rc != CURLE_OK && code == 200) return -1;    // Abbruch mitten im Stream
+    if (rc != CURLE_OK && code == 200) return -1;    // aborted midway through the stream
     if (rc != CURLE_OK) SFLog(@"lounge: poll %s", curl_easy_strerror(rc));
     return code ?: -1;
 }
@@ -303,7 +303,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     return size * n;
 }
 
-// Rahmen: "<len>\n<json>" (len inkl. abschließendem \n); auf _q
+// frame: "<len>\n<json>" (len incl. the trailing \n); on _q
 - (void)feed:(NSData *)d {
     _lastAlive = [NSDate date];
     [_frameBuf appendData:d];
@@ -322,7 +322,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         for (NSArray *entry in arr) {
             if (![entry isKindOfClass:[NSArray class]] || entry.count < 2) continue;
             NSInteger idx = [entry[0] integerValue];
-            if (idx <= _aid) continue;     // schon gesehen
+            if (idx <= _aid) continue;     // already seen
             _aid = idx;
             NSArray *msg = entry[1];
             if (![msg isKindOfClass:[NSArray class]] || !msg.count) continue;
@@ -336,9 +336,9 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     }
 }
 
-#pragma mark Senden
+#pragma mark Sending
 
-// auf _q: eine POST mit allen Nachrichten, ofs exakt fortlaufend
+// on _q: one POST with all messages, ofs strictly sequential
 - (void)sendNow:(NSArray *)msgs {
     if (!_sid || !msgs.count) return;
     NSMutableArray *pairs = [NSMutableArray arrayWithObjects:@[@"count", [@(msgs.count) stringValue]], @[@"ofs", [@(_ofs) stringValue]], nil];
@@ -359,7 +359,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
 
 - (void)send:(NSArray *)msgs { dispatch_async(_q, ^{ [self sendNow:msgs]; }); }
 
-#pragma mark Zustand -> Handy
+#pragma mark State -> phone
 
 - (SFPlayerScreen *)player {
     id p = self.playerProvider ? self.playerProvider() : nil;
@@ -367,7 +367,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
 }
 
 - (NSString *)videoIDOf:(SFPlayerScreen *)p {
-    // Privatsphäre: am Sofa gestartete Wiedergabe nur teilen, wenn ausdrücklich erlaubt
+    // privacy: share playback started on the Sofa only when explicitly allowed
     if (!p.remoteListID && !self.sharesAllPlayback) return nil;
     NSString *v = p.item.externalID;
     return [p.item.source isEqualToString:@"youtube"] && v.length == 11 ? v : nil;
@@ -392,8 +392,8 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     return a;
 }
 
-// Untertitelzustand fürs Handy (wie gotubecast): languageCode „“ = aus; vss_id „.de“ = echte,
-// „a.de“ = automatische Untertitel (YouTube-Kennung der Spur, daran markiert das Handy seine Liste)
+// Subtitle state for the phone (like gotubecast): languageCode "" = off; vss_id ".de" = real,
+// "a.de" = automatic subtitles (YouTube's track ID, the phone marks its list by it)
 - (NSArray *)subtitlesMessage:(SFPlayerScreen *)p state:(NSDictionary *)st {
     NSString *vid = [self videoIDOf:p];
     NSString *lang = vid ? st[@"lang"] : nil;
@@ -404,9 +404,9 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
 
 - (void)subtitlesChanged:(NSNotification *)n {
     SFPlayerScreen *p = n.object;
-    if (![self videoIDOf:p]) return;   // Nicht-YouTube / nicht geteilt: nichts zu melden
+    if (![self videoIDOf:p]) return;   // non-YouTube / not shared: nothing to report
     NSArray *m = [self subtitlesMessage:p state:n.userInfo];
-    SFLog(@"lounge: -> onSubtitlesTrackChanged %@", m[1][@"vss_id"] ?: @"aus");
+    SFLog(@"lounge: -> onSubtitlesTrackChanged %@", m[1][@"vss_id"] ?: @"off");
     [self send:@[m]];
 }
 
@@ -435,12 +435,12 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     }
     NSString *vid = [self videoIDOf:p];
     SFPlaybackState s = p.playbackState;
-    if (!vid && !_lastVideo) return;   // Nicht-YouTube-Wiedergabe: nichts zu melden
+    if (!vid && !_lastVideo) return;   // non-YouTube playback: nothing to report
     if (!(vid == _lastVideo || [vid isEqualToString:_lastVideo])) {
         _lastVideo = vid; _lastState = s; _cpn = [self newCPN];
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]], @[@"onStateChange", [self stateArgs:p]],
                      @[@"onHasPreviousNextChanged", @{@"hasPrevious": p.hasPrevious ? @"true" : @"false", @"hasNext": p.hasNext ? @"true" : @"false"}],
-                     [self subtitlesMessage:p state:p.subtitleState]]];   // neues Video: Untertitel des alten gelten nicht mehr
+                     [self subtitlesMessage:p state:p.subtitleState]]];   // new video: the old one's subtitles no longer apply
         return;
     }
     if (s != _lastState) {
@@ -455,7 +455,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     if (p && [self videoIDOf:p] && p.playbackState == SFPlaybackPlaying) [self send:@[@[@"onStateChange", [self stateArgs:p]]]];
 }
 
-#pragma mark Befehle vom Handy (Main-Thread)
+#pragma mark Commands from the phone (main thread)
 
 - (void)updateRemotesFromStatus:(NSDictionary *)args {
     NSArray *devs = [NSJSONSerialization JSONObjectWithData:[args[@"devices"] ?: @"[]" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
@@ -472,11 +472,11 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     }
     if (newOne) [self greet];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // relabel the phone tile (YouTube -> Mehr)
 }
 
 - (void)handle:(NSString *)cmd args:(NSDictionary *)args {
-    if (self.paused) return;   // pausiert: nichts mehr annehmen (auch nicht über eine noch offene alte Verbindung)
+    if (self.paused) return;   // paused: accept nothing more (not even via a still open old connection)
     if (![cmd isEqualToString:@"getNowPlaying"]) SFLog(@"lounge: <- %@", cmd);
     SFPlayerScreen *p = [self player];
     if ([cmd isEqualToString:@"loungeStatus"]) { [self updateRemotesFromStatus:args]; return; }
@@ -484,11 +484,11 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         @synchronized (_remotes) { _remotes[args[@"id"] ?: @"?"] = args[@"name"] ?: @"Handy"; }
         [self greet];
         [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // relabel the phone tile (YouTube -> Mehr)
     } else if ([cmd isEqualToString:@"remoteDisconnected"]) {
         @synchronized (_remotes) { [_remotes removeObjectForKey:args[@"id"] ?: @"?"]; }
         [[NSNotificationCenter defaultCenter] postNotificationName:SFLoungeRemotesDidChangeNotification object:self];
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // Handy-Kachel (YouTube → Mehr) neu beschriften
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"SFLibraryDidChange" object:nil];   // relabel the phone tile (YouTube -> Mehr)
     } else if ([cmd isEqualToString:@"getNowPlaying"]) {
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]]]];
         return;
@@ -510,7 +510,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         [self send:@[@[@"onAutoplayModeChanged", @{@"autoplayMode": @"UNSUPPORTED"}]]];
         return;
     } else if ([cmd isEqualToString:@"setPlaylist"] || [cmd isEqualToString:@"setVideo"]) {
-        // sofort "lädt" melden, das Handy zeigt sonst lange nichts
+        // report "loading" right away, otherwise the phone shows nothing for a long time
         NSString *vid = args[@"videoId"];
         if (vid) [self send:@[@[@"nowPlaying", @{@"videoId": vid, @"state": @"3", @"currentTime": args[@"currentTime"] ?: @"0", @"duration": @"0",
                                                  @"currentIndex": args[@"currentIndex"] ?: @"0", @"listId": args[@"listId"] ?: @"", @"cpn": _cpn,

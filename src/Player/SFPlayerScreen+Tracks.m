@@ -4,25 +4,25 @@ NSString *const SFPlayerSubtitlesNotification = @"SFPlayerSubtitlesNotification"
 
 static NSDictionary *SFSubtitleStateOf(NSDictionary *choice) {
     NSString *lang = choice[@"lang"];
-    if (!lang.length) return nil;   // „Aus“
+    if (!lang.length) return nil;   // "Aus" (off)
     return @{@"lang": lang, @"kind": choice[@"kind"] ?: @"manual", @"title": choice[@"title"] ?: lang};
 }
 
-// Gewählte Spur melden (Handy/Lounge) – mit der Wahl selbst, denn mpv übernimmt sub-add erst asynchron
+// Report the chosen track (phone/Lounge) - with the choice itself, since mpv applies sub-add only asynchronously
 static void SFPostSubtitles(SFPlayerScreen *p, NSDictionary *state) {
     [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerSubtitlesNotification object:p userInfo:state ?: @{}];
 }
 
 @implementation SFPlayerScreen (Tracks)
 
-#pragma mark Ton & Untertitel
+#pragma mark Audio & subtitles
 
 - (BOOL)tracksAvailable {
     return [_engine respondsToSelector:@selector(tracksOfType:)] && _engine.status == SFEngineReady;
 }
 
-// „en-US“ -> „Englisch“ (Region weglassen; Schrift bleibt: „Chinesisch (Vereinfacht)“);
-// ISO 639-2 („deu“) wird ebenfalls verstanden
+// "en-US" -> "Englisch" (drop the region; the script stays: "Chinesisch (Vereinfacht)");
+// ISO 639-2 ("deu") is understood as well
 static NSString *SFLanguageName(NSString *code) {
     if (!code.length || [code isEqualToString:@"und"]) return @"Unbekannte Sprache";
     NSDictionary *c = [NSLocale componentsFromLocaleIdentifier:[NSLocale canonicalLocaleIdentifierFromString:code]];
@@ -40,7 +40,7 @@ static NSString *SFBaseLanguage(NSString *code) {
     return [[canon componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject lowercaseString];
 }
 
-// Auswahlmöglichkeiten: je Eintrag title, selected, apply (Block), lang (für die Vorliebe)
+// Choices: per entry title, selected, apply (block), lang (for the preference)
 - (NSArray *)trackChoices:(NSString *)type {
     NSMutableArray *out = [NSMutableArray new];
     NSDictionary *src = SFMPVSourceFor(_openURL);
@@ -56,11 +56,11 @@ static NSString *SFBaseLanguage(NSString *code) {
         [out addObject:@{@"title": @"Aus", @"selected": @(selectedID == 0),
                          @"apply": ^{ [eng selectTrack:@"sub" trackID:0]; }}];
     }
-    // Quelle mit eigener Spurliste (YouTube): Tonspuren je Sprache, Untertitel als WebVTT
+    // source with its own track list (YouTube): audio tracks per language, subtitles as WebVTT
     NSArray *ext = [type isEqualToString:@"sub"] ? src[@"subs"] : src[@"audios"];
     if (![ext isKindOfClass:[NSArray class]]) ext = @[];
     NSString *dashAudio = src[@"audio"];
-    // Reihenfolge: Deutsch, dann Originalsprache (Ton: Original zuerst), dann alphabetisch
+    // order: German, then the original language (audio: original first), then alphabetical
     NSString *origLang = nil;
     for (NSDictionary *t in src[@"audios"] ?: @[]) if ([t[@"original"] boolValue]) origLang = SFBaseLanguage(t[@"lang"]);
     if (!origLang) origLang = SFBaseLanguage(src[@"alang"]);
@@ -96,7 +96,7 @@ static NSString *SFBaseLanguage(NSString *code) {
         [out addObject:@{@"title": name, @"selected": @(sel), @"lang": t[@"lang"] ?: @"", @"kind": t[@"kind"] ?: @"manual",
                          @"apply": ^{ [eng addTrack:type url:[NSURL URLWithString:url] title:n lang:t[@"lang"]]; }}];
     }
-    // Spuren im Stream selbst (ZDF/ARD/ORF-HLS, Dateien): alles, was nicht oben schon steht
+    // tracks in the stream itself (ZDF/ARD/ORF HLS, files): everything not already listed above
     BOOL haveExt = ext.count > 0;
     for (NSDictionary *t in engineTracks) {
         if (t[@"url"] && ([externalURLs containsObject:t[@"url"]] && (haveExt || [t[@"url"] isEqualToString:dashAudio]))) continue;
@@ -122,10 +122,10 @@ static NSString *SFBaseLanguage(NSString *code) {
     return _openURL.isFileURL && (_item.resolverRef || _item.externalID) && _item.kind == SFItemVideo;
 }
 
-// Vom Download auf den Online-Stream wechseln, an derselben Stelle
+// Switch from the download to the online stream, at the same position
 - (void)switchToStream {
     SFItem *it = [_item copy];
-    it.localPath = nil; it.playURL = nil; it.streamOnly = YES;   // sonst findet die Download-Suche die Datei wieder
+    it.localPath = nil; it.playURL = nil; it.streamOnly = YES;   // otherwise the download lookup finds the file again
     if (!it.resolverRef && it.externalID) it.resolverRef = [@"yt:" stringByAppendingString:it.externalID];
     NSMutableArray *q = [_queue mutableCopy];
     if (_index < q.count) q[_index] = it;
@@ -133,7 +133,7 @@ static NSString *SFBaseLanguage(NSString *code) {
     ps.remoteListID = self.remoteListID;
     NSTimeInterval t = [self currentTime];
     if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
-    SFLog(@"player: Download -> online bei %.0f s", t);
+    SFLog(@"player: Download -> online at %.0f s", t);
     SFNavigator *nav = self.navigator;
     [nav popAbove:self];   // chosen in the info panel: replace the player, not the panel
     [nav replaceTop:ps];
@@ -149,8 +149,8 @@ static NSString *SFBaseLanguage(NSString *code) {
         SFMenuOption *o = [SFMenuOption option:t action:^{
             apply();
             if ([type isEqualToString:@"sub"]) {
-                [self rememberSubtitle:lang choices:choices];   // für die nächsten Videos merken
-                SFPostSubtitles(self, SFSubtitleStateOf(c));                         // Handy (Lounge) auf Stand bringen
+                [self rememberSubtitle:lang choices:choices];   // remember for the next videos
+                SFPostSubtitles(self, SFSubtitleStateOf(c));                         // bring the phone (Lounge) up to date
             }
             [nav toast:[NSString stringWithFormat:@"%@: %@", title, t]];
         }];
@@ -162,8 +162,8 @@ static NSString *SFBaseLanguage(NSString *code) {
     [nav push:m];
 }
 
-// Gemerkte Untertitelsprache anwenden (echte vor automatischen vor übersetzten Untertiteln)
-// Sprache des laufenden Tons (Basis-Code, z.B. "de"); nil = unbekannt
+// Apply the remembered subtitle language (real before automatic before translated subtitles)
+// Language of the playing audio (base code, e.g. "de"); nil = unknown
 - (NSString *)audioLanguage {
     for (NSDictionary *t in [_engine tracksOfType:@"audio"])
         if ([t[@"selected"] boolValue] && [t[@"lang"] length] && ![t[@"lang"] isEqualToString:@"und"]) return SFBaseLanguage(t[@"lang"]);
@@ -173,9 +173,9 @@ static NSString *SFBaseLanguage(NSString *code) {
     return SFBaseLanguage(src[@"alang"]);
 }
 
-// Wahl merken – getrennt nach Zweck: Untertitel in der Tonsprache (Hörgeschädigte) gelten für alle
-// Videos dieser Art; eine andere Sprache ist eine Übersetzung und gilt nur bei fremdsprachigem Ton.
-// So schaltet „Deutsch“ zu einem englischen Video nicht auch bei jeder ZDF-Sendung Untertitel ein.
+// Remember the choice - separated by purpose: subtitles in the audio language (hearing impaired) apply
+// to all videos of that kind; another language is a translation and only applies to foreign-language
+// audio. So "Deutsch" for an English video doesn't also turn on subtitles for every ZDF show.
 - (void)rememberSubtitle:(NSString *)lang choices:(NSArray *)choices {
     NSString *audio = [self audioLanguage], *base = SFBaseLanguage(lang);
     if (base) {
@@ -183,7 +183,7 @@ static NSString *SFBaseLanguage(NSString *code) {
         else SFSetSubtitleLanguage(base);
         return;
     }
-    // „Aus“: nur die Vorliebe abschalten, die hier gerade gegriffen hat
+    // "Aus" (off): only switch off the preference that just applied here
     NSString *was = nil;
     for (NSDictionary *c in choices) if ([c[@"selected"] boolValue]) was = SFBaseLanguage(c[@"lang"]);
     if (!was) return;
@@ -195,7 +195,7 @@ static NSString *SFBaseLanguage(NSString *code) {
     if (![self tracksAvailable]) return;
     NSString *audio = [self audioLanguage];
     NSString *want = SFSubtitleLanguage();
-    if (audio && [want isEqualToString:audio]) want = nil;   // Übersetzung nicht nötig
+    if (audio && [want isEqualToString:audio]) want = nil;   // no translation needed
     if (audio && SFSubtitlesSameLanguage()) want = audio;
     if (!want) return;
     NSDictionary *pick = nil; int best = 0;
@@ -208,12 +208,12 @@ static NSString *SFBaseLanguage(NSString *code) {
     if (!pick) return;
     ((dispatch_block_t)pick[@"apply"])();
     SFPostSubtitles(self, SFSubtitleStateOf(pick));
-    SFLog(@"player: Untertitel %@ (gemerkte Sprache, Ton %@)", pick[@"title"], audio ?: @"?");
+    SFLog(@"player: subtitles %@ (remembered language, audio %@)", pick[@"title"], audio ?: @"?");
 }
 
 @end
 
-#pragma mark - Untertitel vom Handy (Lounge)
+#pragma mark - Subtitles from the phone (Lounge)
 
 @implementation SFPlayerScreen (Subtitles)
 
@@ -223,14 +223,14 @@ static NSString *SFBaseLanguage(NSString *code) {
     return nil;
 }
 
-// Wie die Auswahl im Menü (inkl. Vorliebe merken): exakte Sprache vor Basissprache,
-// gewünschte Art (echt/automatisch) vor der anderen, übersetzte zuletzt
+// Like the choice in the menu (incl. remembering the preference): exact language before base language,
+// the requested kind (real/automatic) before the other, translated last
 - (NSString *)remoteSelectSubtitles:(NSString *)lang autoGenerated:(BOOL)autoGenerated {
     if (![self tracksAvailable]) return nil;
     NSArray *choices = [self trackChoices:@"sub"];
     NSDictionary *pick = nil;
     if (!lang.length) {
-        pick = choices.firstObject;   // „Aus“
+        pick = choices.firstObject;   // "Aus" (off)
     } else {
         NSString *want = SFBaseLanguage(lang);
         int best = 0;
@@ -243,14 +243,14 @@ static NSString *SFBaseLanguage(NSString *code) {
             if (score > best) { best = score; pick = c; }
         }
     }
-    if (!pick) {   // nicht vorhanden: Handy auf den tatsächlichen Stand zurücksetzen
+    if (!pick) {   // not available: reset the phone to the actual state
         SFPostSubtitles(self, [self subtitleState]);
         return nil;
     }
     ((dispatch_block_t)pick[@"apply"])();
     [self rememberSubtitle:pick[@"lang"] choices:choices];
     SFPostSubtitles(self, SFSubtitleStateOf(pick));
-    SFLog(@"player: Untertitel vom Handy: %@", pick[@"title"]);
+    SFLog(@"player: subtitles from the phone: %@", pick[@"title"]);
     return pick[@"title"];
 }
 

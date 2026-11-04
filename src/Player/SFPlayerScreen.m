@@ -33,7 +33,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark Layout
 
-// Einblendungen über der Zeitleiste (U(150) v. u.) statt darauf
+// overlays above the timeline (U(150) from the bottom) instead of on it
 - (CGFloat)toastCenterFromBottom { return U(250); }
 
 - (void)layoutForSize:(CGSize)size {
@@ -127,7 +127,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_endsAt.position = CGPointMake((size.width - U(500)) / 2, by + U(26));
         for (CALayer *l in @[self->_elapsed, self->_remaining, self->_endsAt]) [self->_osd addSublayer:l];
 
-        // Pause-Symbol
+        // pause icon
         [self->_pauseIcon removeFromSuperlayer];
         [self->_message removeFromSuperlayer];
         self->_pauseIcon = [CALayer layer];
@@ -250,18 +250,18 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             return;
         }
         self->_openTries = 0;
-        self->_holdPaused = self.startPaused;   // neuer Inhalt: nur pausiert, wenn ausdrücklich verlangt
+        self->_holdPaused = self.startPaused;   // new item: paused only if explicitly requested
         [self playURL:url];
     }];
 }
 
 - (void)playURL:(NSURL *)url { [self playURL:url forceMPV:NO]; }
 
-// Engine-Wahl (User-Entscheidung 2026-11-04): mpv spielt alles. AVFoundation scheiterte auf 10.9
-// bei YouTube-HLS sporadisch beim Start (docs/youtube.md §6), kann kein VP9/AV1, und mpv dekodiert
-// 1080p50 in Software mit ~1/3 Kern (mpv-Hardwaredekodierung geht auf 10.9 nicht). AVFoundation
-// bleibt Ausweg, wenn mpv an einem Stream scheitert, und per Notschalter (SFPreferAVFoundation)
-// die alte Wahl: H.264 über AVFoundation, mpv nur für Besseres/Fremdes.
+// Engine choice (user decision 2026-11-04): mpv plays everything. AVFoundation sporadically failed on
+// 10.9 at the start of YouTube HLS (docs/youtube.md §6), can't do VP9/AV1, and mpv decodes 1080p50
+// in software with ~1/3 of a core (mpv hardware decoding doesn't work on 10.9). AVFoundation stays
+// the fallback when mpv fails on a stream, and via the emergency switch (SFPreferAVFoundation)
+// the old choice: H.264 via AVFoundation, mpv only for better/foreign formats.
 - (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url {
     if (!SFMPVAvailable() || [url isEqual:_mpvFailedURL]) return NO;
     if (!SFPreferAVFoundation()) return YES;
@@ -287,14 +287,14 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     }
     _engine = useMPV ? (id<SFEngine>)[SFMPVEngine new] : (id<SFEngine>)[SFAVEngine new];
     _engine.delegate = self;
-    _engine.muted = SFDevMode;   // Dev-Modus: niemanden stören
+    _engine.muted = SFDevMode;   // dev mode: don't disturb anyone
     SFNoAnimate(^{
         for (CALayer *l in [self->_videoHost.sublayers copy]) [l removeFromSuperlayer];
         CALayer *v = self->_engine.videoLayer;
         if (v) { [v removeFromSuperlayer]; v.frame = self->_videoHost.bounds; [self->_videoHost addSublayer:v]; }
     });
     SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
-          _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, Ton %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
+          _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, audio %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
     __weak SFPlayerScreen *wself = self;
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
@@ -308,7 +308,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     _openResume = live ? 0 : (exact ? resume : (resume > 15 ? resume - 3 : 0));
     BOOL paused = self.startPaused || _holdPaused;
     [_engine openURL:open audioURL:audio start:_openResume exact:exact paused:paused];
-    if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(_openResume)]];   // = tatsächlicher Startpunkt (3 s Vorlauf)
+    if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(_openResume)]];   // = actual start point (3 s lead-in)
     if (paused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }
     else [self setAssertion:YES];
 }
@@ -317,7 +317,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark SFEngineDelegate
 
-// Fehlertext für den Fernseher: Ursache auf Deutsch statt Systemmeldung („unknown error“)
+// Error text for the TV: the cause in German instead of the system message ("unknown error")
 static NSString *SFFriendlyPlaybackError(NSError *e) {
     NSError *u = e.userInfo[NSUnderlyingErrorKey];
     for (NSError *x in @[e ?: [NSNull null], u ?: [NSNull null]]) {
@@ -336,13 +336,13 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     return @"Das Video ließ sich nicht laden – bitte später noch einmal versuchen.";
 }
 
-// Wo nach einem Fehlschlag weitermachen: Abbruch mitten im Video -> dort, sonst am Startpunkt
+// Where to continue after a failure: aborted midway -> there, otherwise at the start point
 - (NSTimeInterval)failurePosition {
     return MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
 }
 
-// Ausweich-Stufe: dieselbe (oder andere) URL kurz verzögert neu öffnen, an der Fehlerposition.
-// Verworfen, wenn inzwischen geschlossen oder ein anderes Video läuft.
+// Fallback step: reopen the same (or another) URL after a short delay, at the failure position.
+// Dropped if closed meanwhile or another video is playing.
 - (void)reopen:(NSURL *)url forceMPV:(BOOL)forceMPV after:(double)delay resetTries:(BOOL)reset {
     SFItem *it = _item; NSTimeInterval pos = [self failurePosition];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -356,49 +356,49 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
         BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
-        if (SFDevMode) {   // Ursache nachvollziehbar machen (Domain/Code/zugrundeliegender Fehler)
+        if (SFDevMode) {   // make the cause traceable (domain/code/underlying error)
             NSError *e = _engine.error, *u = e.userInfo[NSUnderlyingErrorKey];
             SFLog(@"player: error %@ %ld %@ | underlying %@ %ld | %@", e.domain, (long)e.code, e.localizedFailureReason ?: @"",
                   u.domain, (long)u.code, e.userInfo[NSLocalizedRecoverySuggestionErrorKey] ?: @"");
         }
-        // googlevideo-HLS scheitert auf 10.9 sporadisch sofort (-12643/-12939), derselbe
-        // URL klappt beim nächsten Versuch (docs/youtube.md §6) -> bis zu 3x neu öffnen.
+        // googlevideo HLS sporadically fails immediately on 10.9 (-12643/-12939), the same
+        // URL works on the next attempt (docs/youtube.md §6) -> reopen up to 3x.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
             SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
             [self reopen:_openURL forceMPV:NO after:0.1 resetTries:NO];
             return;
         }
-        // YouTube lehnt die DASH-Streams gelegentlich sofort ab (HTTP 403), der HLS-Stream derselben
-        // Auflösung läuft: erst mpv mit HLS, statt über AVFoundation-Neuversuche (docs/youtube.md §6)
+        // YouTube occasionally rejects the DASH streams right away (HTTP 403), the HLS stream of the same
+        // resolution plays: first mpv with HLS, instead of AVFoundation retries (docs/youtube.md §6)
         if (viaMPV && _openedDash && _openURL && ![_openURL isEqual:_dashFailedURL]) {
-            SFLog(@"player: DASH abgelehnt -> mpv mit HLS");
+            SFLog(@"player: DASH rejected -> mpv with HLS");
             _dashFailedURL = _openURL;
             [self reopen:_openURL forceMPV:YES after:0.1 resetTries:YES];
             return;
         }
-        if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv scheitert -> AVFoundation
-            SFLog(@"player: mpv scheitert -> AVFoundation");
+        if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv fails -> AVFoundation
+            SFLog(@"player: mpv fails -> AVFoundation");
             _mpvFailedURL = _openURL;
             [self reopen:_openURL forceMPV:NO after:0.2 resetTries:YES];
             return;
         }
         NSURL *alt = viaMPV ? nil : SFNextAlternateURL(_openURL);
-        // Formate, die AVFoundation nicht kann (HLS v7, fMP4, …): mpv übernimmt vor schlechteren Ausweich-Streams
+        // formats AVFoundation can't do (HLS v7, fMP4, ...): mpv takes over before worse fallback streams
         BOOL tryMPV = !viaMPV && SFMPVAvailable() && _openURL && ![_openURL isEqual:_mpvFailedURL];
         if (tryMPV || alt) {
             NSURL *next = tryMPV ? _openURL : alt;
-            SFLog(@"player: %@", tryMPV ? @"AVFoundation scheitert -> mpv" : @"switching to alternate stream");
+            SFLog(@"player: %@", tryMPV ? @"AVFoundation fails -> mpv" : @"switching to alternate stream");
             [self reopen:next forceMPV:tryMPV after:0.2 resetTries:YES];
             return;
         }
-        // YouTube-URLs werden sporadisch komplett abgelehnt (403/-1102): einmal frisch auflösen
+        // YouTube URLs are sporadically rejected entirely (403/-1102): resolve afresh once
         NSString *ref = _item.resolverRef ?: _item.identifier;
         if (!_reresolved && [ref hasPrefix:@"yt:"]) {
             _reresolved = YES;
-            SFLog(@"player: alle Streams abgelehnt -> frisch auflösen");
+            SFLog(@"player: all streams rejected -> resolving afresh");
             [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
             _mpvFailedURL = nil;
-            self.startPaused = self.startPaused || _holdPaused;   // „pausiert starten“ übersteht das Neu-Auflösen
+            self.startPaused = self.startPaused || _holdPaused;   // "start paused" survives the re-resolve
             NSTimeInterval pos = [self failurePosition];
             if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
             [self teardownPlayer];
@@ -411,9 +411,9 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@\n\nOK – zurück", SFFriendlyPlaybackError(_engine.error)]];
         [self postState];
     } else if (_engine.status == SFEngineReady) {
-        [self showMessage:@""];   // z. B. „Verbindung unterbrochen“ nach erfolgreichem Ausweichen
+        [self showMessage:@""];   // e.g. "connection interrupted" after a successful fallback
         if (!_subsApplied) { _subsApplied = YES; [self applyPreferredSubtitles]; }
-        if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
+        if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // pause during loading / after an update
         [self postState];
         if (_item.duration <= 0 && _engine.duration > 0) _item.duration = _engine.duration;
         [self updatePauseState];
@@ -429,7 +429,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 - (void)engineTick { [self tick]; }
 
 - (void)teardownPlayer {
-    _engine.delegate = nil;   // keine späten Rückrufe der alten Engine
+    _engine.delegate = nil;   // no late callbacks from the old engine
     [_engine shutdown];
     _engine = nil;
 }
@@ -444,11 +444,11 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (void)setAssertion:(BOOL)on {
     if (on && !_hasAssertion && !SFDevMode) {
-        // Wiedergabe: Display UND System wach (wie früher caffeinate -d -i)
+        // playback: keep display AND system awake (like caffeinate -d -i used to)
         _hasAssertion = IOPMAssertionCreateWithName(kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn,
-                                                    CFSTR("Sofa Wiedergabe"), &_assertion) == kIOReturnSuccess;
+                                                    CFSTR("Sofa playback"), &_assertion) == kIOReturnSuccess;
         if (IOPMAssertionCreateWithName(kIOPMAssertionTypeNoIdleSleep, kIOPMAssertionLevelOn,
-                                        CFSTR("Sofa Wiedergabe"), &_sysAssertion) != kIOReturnSuccess) _sysAssertion = 0;
+                                        CFSTR("Sofa playback"), &_sysAssertion) != kIOReturnSuccess) _sysAssertion = 0;
     } else if (!on && _hasAssertion) {
         IOPMAssertionRelease(_assertion);
         if (_sysAssertion) { IOPMAssertionRelease(_sysAssertion); _sysAssertion = 0; }
@@ -460,8 +460,8 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (NSTimeInterval)current { return _engine.currentTime; }
 
-// Ausgangspunkt für Sprünge: während ein Sprung noch läuft, meldet der Player kurz die alte
-// Position – dann vom letzten Ziel aus rechnen (sonst springt schnelles Vor/Zurück hin und her)
+// Origin for jumps: while a jump is still in progress the player briefly reports the old
+// position - then compute from the last target (otherwise fast forward/back jumps back and forth)
 - (NSTimeInterval)seekOrigin {
     NSTimeInterval c = [self current];
     if (_seekBase >= 0 && _seekBaseAt && -[_seekBaseAt timeIntervalSinceNow] < 4 && fabs(c - _seekBase) > 1.5) return _seekBase;
@@ -485,7 +485,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (void)tick {
     NSTimeInterval c = [self current];
-    // YouTube-Autoplay: ab der Hälfte die Empfehlung „Als Nächstes“ holen (einmal je Video)
+    // YouTube autoplay: from the halfway point fetch the "up next" recommendation (once per video)
     NSTimeInterval dur = [self duration];
     BOOL playlistGoesOn = _item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID];
     if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
@@ -559,7 +559,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 - (BOOL)hasPrevious { return _explicitQueue && _index > 0; }
 - (void)remotePlay { self.startPaused = NO; _holdPaused = NO; if (_engine && !_engine.playing) [self togglePause]; }
 - (void)remotePause {
-    // Pause während des Ladens/Retry: merken, damit der Player pausiert startet
+    // pause during loading/retry: remember it so the player starts paused
     if (!_engine || _engine.status != SFEngineReady) { self.startPaused = YES; [_engine pause]; [self postState]; return; }
     if (_engine.playing) [self togglePause];
 }
@@ -646,9 +646,9 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 #pragma mark End / Next
 
-// Nächste Folge = die nächstneuere Folge derselben lokalen Sendung (Episoden sind
-// neueste-zuerst sortiert). Gemischte Reihen (Neue Folgen, Weiterschauen) springen
-// so nie in eine fremde Sendung.
+// Next episode = the next newer episode of the same local show (episodes are sorted
+// newest first). Mixed rows (new episodes, continue watching) thus never jump
+// into a different show.
 // Index of the next playable queue entry after _index (DRM entries are skipped: they can never
 // play on this Mac, so autoplay must not run into an error screen), NSNotFound if none.
 - (NSUInteger)nextQueueIndex {
@@ -673,7 +673,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (void)didEnd:(NSNotification *)n {
     _ended = YES;
-    [self updatePauseState];   // am Ende kein Pause-Symbol über der „Als Nächstes“-Karte
+    [self updatePauseState];   // at the end no pause icon over the "up next" card
     [self postState];
     [self saveProgress];
     [self setAssertion:NO];
@@ -690,8 +690,8 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self showMessage:@"Die Verbindung wurde unterbrochen."];
 }
 
-// „Als Nächstes“ / „Nächste Folge“: Karte wie bei YouTube – Vorschaubild links, rechts Countdown,
-// Titel, Kanal und Remote-Hinweis; über dem Fortschrittsbalken, damit Zeit und Balken frei bleiben.
+// "Als Nächstes" / "Nächste Folge": card like YouTube's - thumbnail on the left, countdown on the right,
+// title, channel and remote hint; above the progress bar so time and bar stay visible.
 - (void)showNextCard:(SFItem *)next {
     SFTheme *t = self.theme;
     [_nextCard removeFromSuperlayer];
@@ -768,7 +768,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     SFItem *next = [self nextItem];
     if (!next) return;
     [self saveProgress];
-    [self teardownPlayer];      // alten Player lösen, bevor _item wechselt
+    [self teardownPlayer];      // release the old player before _item changes
     _ended = NO;
     NSUInteger q = [_queue indexOfObjectIdenticalTo:next];
     if (q != NSNotFound) _index = q;            // may jump over skipped DRM entries
@@ -800,14 +800,14 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         case SFKeyRight: [self seekBy:30]; return YES;
         case SFKeyPrev: [self seekBy:-120]; return YES;
         case SFKeyNext: [self seekBy:120]; return YES;
-        // Hoch/Runter (+/- am Remote-Ring) = Systemlautstärke, Halten wiederholt
+        // up/down (+/- on the remote ring) = system volume, holding repeats
         case SFKeyUp: case SFKeyUpHold: [self.navigator volumeStep:+1]; return YES;
         case SFKeyDown: case SFKeyDownHold: [self.navigator volumeStep:-1]; return YES;
         case SFKeyMenu:
             if (_pendingSeek != 0) { _pendingSeek = 0; [_seekTimer invalidate]; [self updateBar]; return YES; }
             [self saveProgress];
             _closing = YES;
-            return NO;   // Navigator: zurück
+            return NO;   // navigator: back
         default: return NO;
     }
 }

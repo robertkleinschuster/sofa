@@ -30,8 +30,8 @@ static id path(id root, NSString *p) {
     }
     return nn(cur);
 }
-// Hat ein Kanal den angefragten Tab nicht (z. B. keinen „Live“), liefert YouTube still die
-// „Übersicht“ – dann wäre deren Inhalt fälschlich z. B. als „Livestreams“ zu sehen.
+// If a channel lacks the requested tab (e.g. no "Live"), YouTube silently returns the
+// "Home" tab - its content would then wrongly show up as e.g. "Livestreams".
 static BOOL selectedTabIs(id j, NSString *suffix) {
     for (id t in arr(path(j, @"contents.twoColumnBrowseResultsRenderer.tabs"))) {
         NSDictionary *tr = dict(dict(t)[@"tabRenderer"]);
@@ -40,7 +40,7 @@ static BOOL selectedTabIs(id j, NSString *suffix) {
     }
     return NO;
 }
-// Textknoten: "…" | {simpleText} | {runs:[{text}]} | {content}
+// text node: "..." | {simpleText} | {runs:[{text}]} | {content}
 static NSString *text(id n) {
     if (str(n)) return n;
     NSDictionary *d = dict(n);
@@ -67,8 +67,8 @@ static NSTimeInterval parseDuration(NSString *s) {
     return t;
 }
 
-// "vor 3 Tagen", "vor 1 Stunde", "vor 2 Wochen", "vor 5 Monaten", "vor 1 Jahr" (auch
-// "… gestreamt", "Premiere vor …") -> ungefähres Datum (für Sortierung/Behaltefrist)
+// "vor 3 Tagen", "vor 1 Stunde", "vor 2 Wochen", "vor 5 Monaten", "vor 1 Jahr" (also
+// "... gestreamt", "Premiere vor ...") -> approximate date (for sorting/retention)
 static NSDate *relativeDate(NSString *s) {
     if (!s.length) return nil;
     NSRange v = [s rangeOfString:@"vor "];
@@ -92,8 +92,8 @@ static NSDate *relativeDate(NSString *s) {
 
 #pragma mark - InnerTube
 
-// Ohne Anmeldung (User 2026-11-04: keine Abhängigkeit zu Firefox/Konto) – alles, was Sofa
-// braucht (Kanäle, Playlists, Suche, Player-Daten, Empfehlungen), ist öffentlich.
+// Without sign-in (user 2026-11-04: no dependency on Firefox/account) - everything Sofa
+// needs (channels, playlists, search, player data, recommendations) is public.
 + (void)call:(NSString *)endpoint body:(NSDictionary *)body cache:(NSTimeInterval)age done:(SFJSONDone)done {
     NSMutableDictionary *b = [body mutableCopy];
     b[@"context"] = @{@"client": @{@"clientName": @"WEB", @"clientVersion": kClientVersion, @"hl": @"de", @"gl": @"AT"}};
@@ -104,13 +104,13 @@ static NSDate *relativeDate(NSString *s) {
 
 static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@":"]; return r.location == NSNotFound ? ident : [ident substringFromIndex:NSMaxRange(r)]; }
 
-#pragma mark - Parser (rekursiver Walker, docs/youtube.md §3.0)
+#pragma mark - Parser (recursive walker, docs/youtube.md §3.0)
 
 + (SFItem *)videoItem:(NSString *)vid title:(NSString *)title channel:(NSString *)channel channelID:(NSString *)cid
                   meta:(NSString *)meta thumb:(NSString *)thumb duration:(NSTimeInterval)dur live:(BOOL)live {
     if (vid.length != 11) return nil;
     SFItem *local = [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]] ?: [[SFLibrary shared] episodeForYouTubeID:vid];
-    if (local) {   // schon heruntergeladen: lokale Datei (Qualität, offline, gemeinsamer Fortschritt)
+    if (local) {   // already downloaded: local file (quality, offline, shared progress)
         SFItem *i = [local copy];
         i.subtitle = meta.length ? [NSString stringWithFormat:@"%@ · auf diesem Mac", meta] : @"Auf diesem Mac";
         if (!i.showRef && [cid hasPrefix:@"UC"]) i.showRef = [@"ytchannel:" stringByAppendingString:cid];
@@ -134,7 +134,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     return i;
 }
 
-// Online-Item ohne Ersetzung durch lokale Kopie (für Downloads/Abos)
+// Online item without replacement by the local copy (for downloads/subscriptions)
 + (SFItem *)videoItemOnline:(NSString *)vid {
     if (vid.length != 11) return nil;
     SFItem *i = [SFItem new];
@@ -153,7 +153,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     f.kind = SFItemFolder;
     f.identifier = [@"ytchannel:" stringByAppendingString:cid];
     f.title = title; f.subtitle = meta;
-    // Avatar-Größe frei wählbar (=s88-… -> =s400-…)
+    // avatar size freely selectable (=s88-... -> =s400-...)
     NSRange r = [avatar rangeOfString:@"=s" options:NSBackwardsSearch];
     if (r.location != NSNotFound) {
         NSRange dash = [avatar rangeOfString:@"-" options:0 range:NSMakeRange(NSMaxRange(r), avatar.length - NSMaxRange(r))];
@@ -193,7 +193,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
                 else if (parseDuration(t) > 0) dur = parseDuration(t);
             }
         }
-        if (upcoming) return nil;   // noch nicht abspielbar
+        if (upcoming) return nil;   // not playable yet
         if (channel && meta) meta = [NSString stringWithFormat:@"%@ · %@", channel, meta];
         SFItem *vi = [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
         NSDate *when = nil;
@@ -219,7 +219,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
         f.pageLoader = [self playlistLoader:cid title:title];
         return cid ? f : nil;
     }
-    return nil;   // Shorts, Kanäle-Lockups usw.
+    return nil;   // Shorts, channel lockups etc.
 }
 
 + (SFItem *)fromVideoRenderer:(NSDictionary *)v legacyPlaylist:(BOOL)pl {
@@ -295,7 +295,7 @@ static NSSet *skipKeys(void) {
     return out;
 }
 
-#pragma mark - Seiten
+#pragma mark - Pages
 
 + (SFItem *)folder:(NSString *)title ident:(NSString *)ident loader:(SFPageLoader)l {
     SFItem *f = [SFItem new];
@@ -305,7 +305,7 @@ static NSSet *skipKeys(void) {
     return f;
 }
 
-// Liste mit Nachladen der Fortsetzungsseiten (bis max Einträge)
+// List with loading of continuation pages (up to max entries)
 + (void)collect:(NSString *)endpoint body:(NSDictionary *)body cache:(NSTimeInterval)age max:(NSUInteger)max
            into:(NSMutableArray *)acc json:(void (^)(id first))first done:(void (^)(NSArray *items, NSError *e))done {
     [self call:endpoint body:body cache:age done:^(id j, NSError *e) {
@@ -327,7 +327,7 @@ static NSSet *skipKeys(void) {
         [self collect:@"browse" body:@{@"browseId": [@"VL" stringByAppendingString:pid]} cache:600 max:300
                  into:[NSMutableArray new] json:nil done:^(NSArray *items, NSError *e) {
             if (!items) { done(nil, e); return; }
-            for (SFItem *i in items) i.playlistID = pid;   // Wiedergabe folgt der Playlist-Reihenfolge
+            for (SFItem *i in items) i.playlistID = pid;   // playback follows the playlist order
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Videos", (unsigned long)items.count] style:SFTileStyleLandscape items:items]]];
             if (!items.count) p.emptyText = @"Diese Playlist ist leer.";
             done(p, nil);
@@ -337,8 +337,8 @@ static NSSet *skipKeys(void) {
 
 + (SFPageLoader)channelLoader:(NSString *)cid title:(NSString *)title {
     return ^(SFPageDone done) {
-        // Alle Uploads, neueste zuerst: Playlist "UU" + Kanal-ID ohne "UC"
-        // "UULF" = nur Langvideos (ohne Shorts); Fallback "UU" = alle Uploads
+        // all uploads, newest first: playlist "UU" + channel ID without "UC"
+        // "UULF" = long videos only (no Shorts); fallback "UU" = all uploads
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
         __block NSString *banner = nil, *desc = nil, *meta = nil, *avatar = nil;
         __block NSArray *playlists = nil, *popular = nil, *streams = nil;
@@ -346,15 +346,15 @@ static NSSet *skipKeys(void) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
             for (SFItem *i in items) [(i.kind == SFItemLive ? live : vids) addObject:i];
-            // Live-Tab: laufende Streams zu „Jetzt live“ (ohne Doppelte), vergangene als eigenes Regal
+            // live tab: running streams go to "Jetzt live" (without duplicates), past ones as their own shelf
             NSMutableArray *pastStreams = [NSMutableArray new];
             NSMutableSet *liveIDs = [NSMutableSet setWithArray:[live valueForKey:@"identifier"]];
             for (SFItem *i in streams) {
                 if (i.kind == SFItemLive) { if (i.identifier && ![liveIDs containsObject:i.identifier]) { [liveIDs addObject:i.identifier]; [live addObject:i]; } }
                 else if (i.kind != SFItemFolder) [pastStreams addObject:i];
             }
-            // Kanalkopf wie bei YouTube: kompakte Knöpfe unter Banner/Name statt großer Kachel.
-            // [Folgen] (rot, solange nicht gefolgt) · [Automatisch laden: An/Aus] (nur wenn gefolgt)
+            // channel header like YouTube's: compact buttons under banner/name instead of a big tile.
+            // [Folgen] (red while not followed) · [Automatisch laden: An/Aus] (only when followed)
             SFDownloads *dl = [SFDownloads shared];
             SFFollows *fo = [SFFollows shared];
             NSString *fid = [@"ytchannel:" stringByAppendingString:cid];
@@ -371,8 +371,8 @@ static NSSet *skipKeys(void) {
             fb.backdrop = banner; fb.heroTitle = title; fb.heroMeta = meta; fb.plot = desc;
             fb.action = ^{
                 if ([fo isFollowing:fid]) {
-                    // Wie YouTube („Abo beenden?“): Entfolgen nur mit Rückfrage – der Knopf hat beim
-                    // Öffnen den Fokus, ein reflexhaftes OK darf den Kanal nicht stillschweigend entfernen.
+                    // Like YouTube ("Abo beenden?"): unfollow only with confirmation - the button has focus
+                    // on opening, a reflexive OK must not silently remove the channel.
                     SFNavigator *nav = navi();
                     BOOL dlOn = [dl isSubscribed:fid];
                     SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
@@ -416,7 +416,7 @@ static NSSet *skipKeys(void) {
             if (popular.count >= 4) [shelves addObject:[SFShelf shelf:@"Beliebt" style:SFTileStyleLandscape items:[popular subarrayWithRange:NSMakeRange(0, MIN(popular.count, (NSUInteger)12))]]];
             if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
             if (pastStreams.count) [shelves addObject:[SFShelf shelf:@"Livestreams" style:SFTileStyleLandscape items:[pastStreams subarrayWithRange:NSMakeRange(0, MIN(pastStreams.count, (NSUInteger)12))]]];
-            // Ältere Videos weiter unten als Raster (wie der Videos-Tab), ohne die Reihe oben zu wiederholen
+            // older videos further down as a grid (like the videos tab), without repeating the row above
             if (vids.count > 12) [shelves addObject:[SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(12, vids.count - 12)]]];
             if (!shelves.count && !items) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:shelves];
@@ -425,12 +425,12 @@ static NSSet *skipKeys(void) {
             done(p, nil);
         };
         if (!uploads) { build(nil, SFError(@"Unbekannter Kanal.")); return; }
-        // Kanalkopf (Banner, Abonnenten, Beschreibung) parallel zu den Uploads
+        // channel header (banner, subscribers, description) in parallel to the uploads
         dispatch_group_t g = dispatch_group_create();
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid} cache:86400 done:^(id j, NSError *he) {
             NSDictionary *vm = dict(path(j, @"header.pageHeaderRenderer.content.pageHeaderViewModel"));
-            // Banner-Vorlage ist 2560x1440; ohne fcrop-Ausschnitt = volles TV-Motiv (16:9)
+            // banner template is 2560x1440; without the fcrop crop = full TV image (16:9)
             NSString *bu = str(dict(arr(path(vm, @"banner.imageBannerViewModel.image.sources")).lastObject)[@"url"]);
             NSRange eq = [bu rangeOfString:@"=" options:NSBackwardsSearch];
             if (eq.location != NSNotFound) banner = [[bu substringToIndex:eq.location] stringByAppendingString:@"=w1920-fcrop64=1,00000000ffffffff-k-c0xffffffff-no-nd-rj"];
@@ -442,17 +442,17 @@ static NSSet *skipKeys(void) {
             desc = str(path(vm, @"description.descriptionPreviewViewModel.description.content"));
             dispatch_group_leave(g);
         }];
-        // Playlists-Tab des Kanals (wie bei YouTube): parallel
+        // the channel's playlists tab (like YouTube): in parallel
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EglwbGF5bGlzdHPyBgQKAkIA"} cache:3600 done:^(id j, NSError *pe) {
             if (!selectedTabIs(j, @"/playlists")) j = nil;
             NSMutableArray *pl = [NSMutableArray new];
-            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // Mixe (RD…) sind keine Kanal-Playlists
+            for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // mixes (RD...) are not channel playlists
             playlists = pl;
             dispatch_group_leave(g);
         }];
-        // „Beliebt“ wie im Videos-Tab von YouTube: Tab laden, Sortier-Chip „Beliebt“ → dessen Fortsetzung
-        // liefert die Videos nach Aufrufen sortiert (Chip-Text sprachabhängig; sonst der zweite von drei)
+        // "Beliebt" (popular) like in YouTube's videos tab: load the tab, sort chip "Beliebt" -> its continuation
+        // returns the videos sorted by views (chip text is language-dependent; otherwise the second of three)
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EgZ2aWRlb3PyBgQKAjoA"} cache:86400 done:^(id j, NSError *ve) {
             NSString *tok = nil;
@@ -469,12 +469,12 @@ static NSSet *skipKeys(void) {
             if (!tok) { dispatch_group_leave(g); return; }
             [self call:@"browse" body:@{@"continuation": tok} cache:86400 done:^(id pj, NSError *pe) {
                 NSMutableArray *pv = [NSMutableArray new];
-                for (SFItem *i in (pj ? [self videosIn:pj cont:NULL channels:nil] : @[])) if (i.kind != SFItemFolder && i.kind != SFItemLive) [pv addObject:i];   // auch heruntergeladene (lokale Kopie)
+                for (SFItem *i in (pj ? [self videosIn:pj cont:NULL channels:nil] : @[])) if (i.kind != SFItemFolder && i.kind != SFItemLive) [pv addObject:i];   // downloaded ones too (local copy)
                 popular = pv;
                 dispatch_group_leave(g);
             }];
         }];
-        // Live-Tab (wie bei YouTube): laufende + vergangene Streams; kurz gecacht, Live-Status ändert sich
+        // live tab (like YouTube): running + past streams; cached briefly, live status changes
         dispatch_group_enter(g);
         [self call:@"browse" body:@{@"browseId": cid, @"params": @"EgdzdHJlYW1z8gYECgJ6AA=="} cache:600 done:^(id j, NSError *le) {
             streams = selectedTabIs(j, @"/streams") ? [self videosIn:j cont:NULL channels:nil] : nil;
@@ -495,13 +495,13 @@ static NSSet *skipKeys(void) {
 
 + (SFPageLoader)searchLoader:(NSString *)q {
     return ^(SFPageDone done) {
-        // Erste Seite liefert auch die Kanäle; Fortsetzungsseiten bis ~60 Treffer
+        // the first page also returns the channels; continuation pages up to ~60 hits
         NSMutableArray *channels = [NSMutableArray new];
         [self collect:@"search" body:@{@"query": q ?: @""} cache:600 max:60 into:[NSMutableArray new]
                  json:^(id first) { [self videosIn:first cont:NULL channels:channels]; }
                  done:^(NSArray *all, NSError *e) {
             if (!all) { done(nil, e); return; }
-            // Reihenfolge von YouTube (Relevanz) behalten; Mixe (RD…) sind keine echten Playlists
+            // keep YouTube's order (relevance); mixes (RD...) are not real playlists
             NSMutableArray *results = [NSMutableArray new];
             for (SFItem *i in all) if (![i.identifier hasPrefix:@"ytplaylist:RD"]) [results addObject:i];
             NSMutableArray *shelves = [NSMutableArray new];
@@ -518,7 +518,7 @@ static NSSet *skipKeys(void) {
     NSString *u = [NSString stringWithFormat:@"https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&ds=yt&hl=de&gl=AT&oe=utf-8&xhr=t&q=%@",
                    [SFNet escape:prefix]];
     [SFNet getJSON:u headers:nil cacheAge:0 done:^(id j, NSError *e) {
-        // ["q", [["vorschlag", 0, [...]], ...], {...}]
+        // ["q", [["suggestion", 0, [...]], ...], {...}]
         NSMutableArray *out = [NSMutableArray new];
         for (id s in arr(arr(j).count > 1 ? arr(j)[1] : nil)) {
             NSString *t = str(arr(s).firstObject) ?: str(s);
@@ -537,16 +537,16 @@ static NSSet *skipKeys(void) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"youtube"];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
-            // Folgen-Konzept (User 2026-11-03): eine gemeinsame Sofa-Liste statt Konto-Abos
+            // follow concept (user 2026-11-03): one shared Sofa list instead of account subscriptions
             SFFollows *fo = [SFFollows shared];
             NSArray *news = [fo latest:40 source:@"youtube"];
             if (news.count) [shelves addObject:[SFShelf shelf:@"Neue Videos" style:SFTileStyleLandscape items:news]];
-            else {   // offline / erste Aktualisierung läuft: Heruntergeladenes
+            else {   // offline / first refresh running: downloaded content
                 NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:@"youtube"] copyItems:YES];
                 for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
                 if (latest.count) [shelves addObject:[SFShelf shelf:@"Neu heruntergeladen" style:SFTileStyleLandscape items:latest]];
             }
-            // Kanäle: gefolgte (echte Kanalseiten) + heruntergeladene ohne bekannte Kanal-ID (Offline-Seite)
+            // channels: followed (real channel pages) + downloaded ones without a known channel ID (offline page)
             NSMutableArray *chs = [NSMutableArray new];
             NSMutableSet *names = [NSMutableSet new];
             for (SFItem *c in [fo follows:@"youtube"]) { c.style = SFTileStyleCircle; [chs addObject:c]; [names addObject:c.title.lowercaseString]; }
@@ -564,12 +564,12 @@ static NSSet *skipKeys(void) {
                 };
                 [chs addObject:i];
             }
-            // Handy (YouTube „Mit TV verbinden“): Status + Einstellungen; „Neues Handy verbinden“ steckt im Menü
+            // phone (YouTube "Link with TV code"): status + settings; "Neues Handy verbinden" lives in the menu
             SFItem *pair = [SFHome phoneTile];
             pair.style = SFTileStyleWide; pair.source = @"youtube"; pair.themeName = @"youtube";
             pair.image = SFIconArt(@"phone", @"youtube");
             [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFHome downloadsTile:@"youtube"], pair]]];
-            // Kanäle alphabetisch (online + lokal gemischt), wie man sie im Kopf sucht
+            // channels alphabetically (online + local mixed), the way you look for them in your head
             [chs sortUsingComparator:^NSComparisonResult(SFItem *x, SFItem *y) { return [x.title localizedCaseInsensitiveCompare:y.title]; }];
             if (chs.count) [shelves addObject:[SFShelf grid:@"Kanäle" style:SFTileStyleCircle items:chs]];
             SFPage *p = [SFPage page:nil theme:@"youtube" shelves:shelves];
@@ -579,7 +579,7 @@ static NSSet *skipKeys(void) {
     };
 }
 
-#pragma mark - Einzelvideo (Handy-Koppeln)
+#pragma mark - Single video (phone pairing)
 
 + (SFItem *)itemForVideoID:(NSString *)vid {
     return [self videoItem:vid title:@"YouTube" channel:nil channelID:nil meta:nil thumb:nil duration:0 live:NO];
@@ -617,7 +617,7 @@ static NSSet *skipKeys(void) {
         id sec = path(j, @"contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results");
         for (SFItem *i in (sec ? [self videosIn:sec cont:NULL channels:nil] : @[])) {
             if (i.kind != SFItemVideo || !i.identifier || [i.externalID isEqualToString:vid]) continue;
-            if (i.duration > 0 && i.duration < 90) continue;                 // keine Shorts
+            if (i.duration > 0 && i.duration < 90) continue;                 // no Shorts
             [related addObject:i];
         }
         NSMutableDictionary *d = nil;
@@ -626,7 +626,7 @@ static NSSet *skipKeys(void) {
             for (id c in arr(path(j, @"contents.twoColumnWatchNextResults.results.results.contents")) ?: @[]) {
                 NSDictionary *pri = dict(dict(c)[@"videoPrimaryInfoRenderer"]);
                 NSDictionary *secr = dict(dict(c)[@"videoSecondaryInfoRenderer"]);
-                if (pri) {   // "02.11.2026", also "Premiere am 02.11.2026" / "Live übertragen am …"
+                if (pri) {   // "02.11.2026", also "Premiere am 02.11.2026" / "Live übertragen am ..."
                     NSString *dt = text(pri[@"dateText"]);
                     NSRange r = dt ? [dt rangeOfString:@"[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{4}" options:NSRegularExpressionSearch] : NSMakeRange(NSNotFound, 0);
                     if (r.location != NSNotFound) {
@@ -660,7 +660,7 @@ static NSSet *skipKeys(void) {
 + (void)upNextFor:(NSString *)vid done:(void (^)(SFItem *))done {
     [self relatedFor:vid done:^(NSArray *items) {
         SFItem *pick = nil;
-        for (SFItem *i in items) if (![[SFStore shared] watched:i.identifier]) { pick = i; break; }   // schon gesehen
+        for (SFItem *i in items) if (![[SFStore shared] watched:i.identifier]) { pick = i; break; }   // already watched
         done(pick);
     }];
 }
@@ -677,7 +677,7 @@ static NSSet *skipKeys(void) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
-            if (u) {   // VP9/AV1 (DASH) für die mpv-Engine, dazu Ton-/Untertitelspuren
+            if (u) {   // VP9/AV1 (DASH) for the mpv engine, plus audio/subtitle tracks
                 NSMutableDictionary *d = [r[@"dash"] isKindOfClass:[NSDictionary class]] ? [r[@"dash"] mutableCopy] : [NSMutableDictionary new];
                 if (r[@"height"]) d[@"hlsHeight"] = r[@"height"];
                 if (r[@"fps"]) d[@"hlsFps"] = r[@"fps"];
@@ -687,15 +687,15 @@ static NSSet *skipKeys(void) {
             done(u, e);
         }];
     };
-    SFRegisterOnlineResolver(@"yt", online);   // „Online abspielen“: Downloads überspringen
+    SFRegisterOnlineResolver(@"yt", online);   // "Online abspielen": skip downloads
     SFRegisterResolver(@"yt", ^(NSString *vid, SFURLDone done) {
         SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
         if (local.localPath && [[NSFileManager defaultManager] fileExistsAtPath:local.localPath]) { done([NSURL fileURLWithPath:local.localPath], nil); return; }
         online(vid, done);
     });
-    // Abo-Feed: Langvideos eines Kanals, neueste zuerst (immer als Online-Items)
+    // subscription feed: a channel's long videos, newest first (always as online items)
     SFRegisterShowPage(@"ytchannel", ^SFPageLoader(NSString *cid, NSString *title) { return [self channelLoader:cid title:title]; });
-    // Kanal eines Videos ohne gespeicherte Kanal-ID (ältere Merkliste/Weiterschauen/Downloads): player → videoDetails.channelId
+    // channel of a video without a stored channel ID (older watch-later/continue watching/downloads): player -> videoDetails.channelId
     SFRegisterShowRefLookup(@"youtube", ^(SFItem *item, void (^done)(NSString *)) {
         NSString *vid = item.externalID ?: ([item.identifier hasPrefix:@"yt:"] ? restOfID(item.identifier) : nil);
         if (vid.length != 11) { done(nil); return; }
@@ -710,7 +710,7 @@ static NSSet *skipKeys(void) {
             NSMutableArray *online = [NSMutableArray new];
             for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
                 if (i.kind != SFItemVideo) continue;
-                if (i.localPath) {   // lokale Kopie ersetzt: Online-Identität wiederherstellen
+                if (i.localPath) {   // local copy substituted: restore the online identity
                     SFItem *o = [self videoItemOnline:i.externalID ?: restOfID(i.identifier)];
                     if (!o) continue;
                     o.title = i.title; o.channel = i.channel; o.date = i.date; o.duration = i.duration;
@@ -722,13 +722,13 @@ static NSSet *skipKeys(void) {
             done(j ? online : nil, e);
         }];
     });
-    // Downloads in 720p (wie bisher ytdl-sub): spart Platz, am TV gut genug
+    // downloads in 720p (as ytdl-sub did): saves space, good enough on the TV
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
         [[SFYTResolver shared] prefetch:vid done:^(NSDictionary *r, NSError *e) {
             NSString *u = r[@"url"];
             for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
-            // Mehrere Tonspuren: Originalton separat (der gemuxte Stream hat YouTubes Standardspur)
+            // several audio tracks: original audio separately (the muxed stream has YouTube's default track)
             NSString *au = r[@"dlaudio"];
             done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, e);
         }];

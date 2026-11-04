@@ -49,7 +49,7 @@ static NSDate *parseDate(NSString *s) {
     i.identifier = [@"cccconf:" stringByAppendingString:c[@"acronym"]];
     i.title = nn(c[@"title"]);
     NSString *logo = nn(c[@"logo_url"]);
-    i.image = logo;   // SVG-Logos rastert der Bild-Cache per rsvg-convert
+    i.image = logo;   // SVG logos are rasterized by the image cache via rsvg-convert
     i.imageFit = YES;
     i.date = parseDate(nn(c[@"event_last_released_at"]));
     i.subtitle = SFFormatDateShort(i.date);
@@ -84,7 +84,7 @@ static NSDate *parseDate(NSString *s) {
                 int sc = 0;
                 if ([nn(r[@"high_quality"]) boolValue]) sc += 4;
                 NSString *lang = nn(r[@"language"]);
-                if (orig && [lang isEqualToString:orig]) sc += 2;      // Originalton, eine Sprache
+                if (orig && [lang isEqualToString:orig]) sc += 2;      // original audio, one language
                 else if (orig && [lang hasPrefix:orig]) sc += 1;
                 if (sc > bestScore) { bestScore = sc; best = r; }
             }
@@ -94,7 +94,7 @@ static NSDate *parseDate(NSString *s) {
     });
 }
 
-// /events/search?q= (Relevanz, 25 je Seite): zwei Seiten
+// /events/search?q= (relevance, 25 per page): two pages
 + (SFPageLoader)searchLoader:(NSString *)query {
     return ^(SFPageDone done) {
         NSString *base = [NSString stringWithFormat:@"%@/events/search?q=%@", kAPI, [SFNet escape:query]];
@@ -111,7 +111,7 @@ static NSDate *parseDate(NSString *s) {
             NSMutableSet *seen = [NSMutableSet new];
             for (SFItem *i in [[self eventItems:dict(p1)[@"events"]] arrayByAddingObjectsFromArray:[self eventItems:dict(p2)[@"events"]]])
                 if (![seen containsObject:i.identifier]) { [seen addObject:i.identifier]; i.themeName = @"ccc"; [items addObject:i]; }
-            // Die API sucht unscharf (gpn -> GPU, GPS, GPL): ganze Wort-Treffer nach vorne, sonst API-Reihenfolge
+            // The API searches fuzzily (gpn -> GPU, GPS, GPL): whole-word hits first, otherwise API order
             NSString *pat = [NSString stringWithFormat:@"(^|[^\\p{L}\\p{N}])%@($|[^\\p{L}\\p{N}])", [NSRegularExpression escapedPatternForString:query]];
             NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pat options:NSRegularExpressionCaseInsensitive error:nil];
             NSInteger (^score)(SFItem *) = ^NSInteger(SFItem *i) {
@@ -159,7 +159,7 @@ static NSDate *parseDate(NSString *s) {
                 return [str(b[@"event_last_released_at"]) ?: @"" compare:str(a[@"event_last_released_at"]) ?: @""];
             }];
             for (NSDictionary *c in sorted) [cs addObject:[self conferenceItem:c]];
-            // Congress-Reihe hervorheben
+            // highlight the Congress series
             NSArray *congress = [cs filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SFItem *i, NSDictionary *b) {
                 return i.title && [i.identifier rangeOfString:@"c3" options:NSAnchoredSearch | NSBackwardsSearch].location != NSNotFound && [i.title rangeOfString:@"C3"].location != NSNotFound;
             }]];

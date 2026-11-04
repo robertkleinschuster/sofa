@@ -1,10 +1,10 @@
-// libmpv-Engine: Render-API (OpenGL) in eine CAOpenGLLayer. libmpv kommt aus dem Overlay-Port
-// multimedia/mpv (ohne Cocoa/Swift, 10.9) und ist schwach gelinkt: fehlt sie, meldet
-// SFMPVAvailable() NO und Sofa spielt nur über AVFoundation. Siehe SFEngine.h.
+// libmpv engine: render API (OpenGL) into a CAOpenGLLayer. libmpv comes from the overlay port
+// multimedia/mpv (without Cocoa/Swift, 10.9) and is weakly linked: if it is missing,
+// SFMPVAvailable() reports NO and Sofa plays via AVFoundation only. See SFEngine.h.
 #import "SFEngine.h"
 
-// Dev: nächstes gerendertes mpv-Bild direkt aus dem GL-Framebuffer als PNG sichern (zeigt das
-// echte Videobild, auch wenn das Dev-Fenster für den Window-Server unsichtbar ist).
+// Dev: save the next rendered mpv frame straight from the GL framebuffer as PNG (shows the
+// real video frame even when the dev window is invisible to the window server).
 extern NSString *SFMPVDevFrameShotPath;
 void SFMPVDevFrameShot(NSString *path);
 

@@ -10,7 +10,7 @@ static NSString *const kGQL = @"https://api.zdf.de/graphql";
 static NSString *const kPlayer = @"android_native_6";
 
 
-// GraphQL-Fragmente (frei formulierte Queries; persisted hashes brechen bei Redeploys)
+// GraphQL fragments (free-form queries; persisted hashes break on redeploys)
 #define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title canonical } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
 #define COLL_F  @"canonical title collectionType teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } }"
 
@@ -125,10 +125,10 @@ static NSDate *isoDate(NSString *s) {
     return nil;   // ExternalLink, ZappingChannel, Catalog
 }
 
-#pragma mark Seiten
+#pragma mark Pages
 
 + (SFPageLoader)curatedLoader:(NSString *)canonical title:(NSString *)title {
-    // items(first:) erlaubt seit 11/2026 nur 1…26 (sonst leere Cluster + Fehler)
+    // items(first:) only allows 1...26 since 11/2026 (otherwise empty clusters + errors)
     NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } ... on CuratedCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } } } } }", VIDEO_F, COLL_F];
     return ^(SFPageDone done) {
         [self gql:q vars:@{@"canonical": canonical, @"first": @26} cache:900 done:^(id d, NSError *e) {
@@ -183,7 +183,7 @@ static NSDate *isoDate(NSString *s) {
                         SFItem *f = [SFItem new];
                         f.kind = SFItemFolder; f.themeName = @"zdf"; f.source = @"zdf";
                         f.identifier = [NSString stringWithFormat:@"zdfseason:%@:%ld", canonical, (long)k];
-                        // ZDF benennt Staffeln oft nach Jahr („2026“) – den echten Namen zeigen, Bild der Sendung
+                        // ZDF often names seasons by year ("2026") - show the real name, image of the show
                         NSDictionary *sn2 = k < (NSInteger)named.count ? dict(named[k]) : nil;
                         NSString *nm = str(sn2[@"title"]);
                         if (!nm.length && nn(sn2[@"number"])) nm = [NSString stringWithFormat:@"%@", sn2[@"number"]];
@@ -196,12 +196,12 @@ static NSDate *isoDate(NSString *s) {
                         [other addObject:f];
                     }
                     [shelves insertObject:[SFShelf shelf:@"Weitere Staffeln" style:SFTileStyleWide items:other] atIndex:0];
-                    // Staffel-Kacheln: Bild der Sendung, Titel = Staffelname
+                    // season tiles: image of the show, title = season name
                 }
             }
             SFPage *p = [SFPage page:t theme:@"zdf" shelves:shelves];
             p.backdrop = [self img:dict(sc[@"teaser"]) big:YES];
-            // Staffelauswahl steht oben (wie bei Streamingdiensten), der Fokus startet aber auf den Folgen
+            // season picker sits at the top (like streaming services), but focus starts on the episodes
             if (shelves.count > 1 && [[shelves[0] title] isEqualToString:@"Weitere Staffeln"]) p.focusShelf = 1;
             if (!shelves.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
             done(p, nil);
@@ -215,12 +215,12 @@ static NSDate *isoDate(NSString *s) {
                             @"pagination": @{@"first": @60, @"after": [NSNull null]}, @"user": @{@"abGroup": @"gruppe-d", @"userSegment": @"segment_0"},
                             @"tabId": [NSNull null]};
     return ^(SFPageDone done) {
-        // metaCollectionContent braucht die interne ID (UUID); Markenseiten (z. B. „Bares für Rares“)
-        // kennen wir nur per canonical -> erst auflösen, sonst kommt eine leere Liste.
+        // metaCollectionContent needs the internal ID (UUID); brand pages (e.g. "Bares für Rares")
+        // we only know by canonical -> resolve first, otherwise an empty list comes back.
         BOOL isID = [collectionId rangeOfString:@"^[0-9a-f]{8}-[0-9a-f]{4}-" options:NSRegularExpressionSearch | NSCaseInsensitiveSearch].location != NSNotFound;
         if (!isID) {
-            // Einmal auflösen, dann direkt Inhalte laden (ohne erneute Prüfung: sonst Endlosschleife,
-            // falls die ID anders aussieht – zwei Abstürze am 2026-11-03)
+            // Resolve once, then load content directly (without checking again: otherwise an endless loop
+            // if the ID looks different - two crashes on 2026-11-03)
             [self gql:@"query M($c: String!) { metaCollectionByCanonical(canonical: $c) { id } }" vars:@{@"c": collectionId} cache:86400 done:^(id d, NSError *e) {
                 NSString *mid = str(dict(dict(d)[@"metaCollectionByCanonical"])[@"id"]);
                 if (!mid.length || [mid isEqualToString:collectionId]) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
@@ -258,7 +258,7 @@ static NSDate *isoDate(NSString *s) {
             NSMutableArray *sh = [p.shelves mutableCopy];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"zdf"];
             if (cont.count) [sh insertObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont] atIndex:0];
-            // Kategorien weiter nach oben (Navigation)
+            // categories further up (navigation)
             for (NSUInteger k = 0; k < sh.count; k++) {
                 SFShelf *s = sh[k];
                 if ([s.title isEqualToString:@"Kategorien"] && k > 2) { [sh removeObjectAtIndex:k]; [sh insertObject:s atIndex:MIN((NSUInteger)2, sh.count)]; break; }
@@ -269,9 +269,9 @@ static NSDate *isoDate(NSString *s) {
     };
 }
 
-#pragma mark Suche
+#pragma mark Search
 
-// searchDocuments: TOP_RESULTS = passende Sendungen, ALL_RESULTS_EXCLUDING_TOP_RESULTS = Videos (Seiten à 48)
+// searchDocuments: TOP_RESULTS = matching shows, ALL_RESULTS_EXCLUDING_TOP_RESULTS = videos (pages of 48)
 + (SFPageLoader)searchLoader:(NSString *)query {
     NSString *q = [NSString stringWithFormat:@"query Q($query: String!, $first: Int, $mode: SearchMode) { searchDocuments(query: $query, first: $first, mode: $mode) { results { item { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } }", VIDEO_F, COLL_F];
     return ^(SFPageDone done) {
@@ -314,7 +314,7 @@ static NSDate *isoDate(NSString *s) {
 #pragma mark Stream
 
 + (void)registerResolver {
-    // Abo-Feed ("Neue Folgen automatisch laden")
+    // subscription feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"zdfshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil season:0]; });
     SFRegisterShowPage(@"zdfshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title season:0]; });
     SFRegisterResolver(@"zdf", ^(NSString *canonical, SFURLDone done) {
@@ -348,14 +348,14 @@ static NSDate *isoDate(NSString *s) {
                     }
                     NSString *u = best ?: hls;
                     if (!u) { done(nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
-                    // Untertitel: PTMD captions[] (class hoh = für Hörgeschädigte), WebVTT für mpv
+                    // subtitles: PTMD captions[] (class hoh = hearing impaired), WebVTT for mpv
                     NSMutableArray *subs = [NSMutableArray new];
                     for (NSDictionary *c in arr(dict(p)[@"captions"])) {
                         if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
                         [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
                     }
-                    SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // gewählt ist immer die Hauptspur (deutsch)
-                    // Geo: /de/-Pfade liefern außerhalb DE 403 -> vorab prüfen statt Fehlstart
+                    SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
+                    // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
                     if ([u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"]) {
                         [SFNet checkRegion:u expect:nil done:^(BOOL ok) {
                             if (ok) done([NSURL URLWithString:u], nil);

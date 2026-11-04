@@ -7,8 +7,8 @@ static void *kStatusCtx = &kStatusCtx;
 static void *kKeepUpCtx = &kKeepUpCtx;
 static void *kRateCtx = &kRateCtx;
 
-// 10.9-Bug: Freigabe einer AVPlayerLayer (AVSubtitleLayer dealloc) kann crashen ->
-// eine einzige, nie freigegebene Ebene für alle Wiedergaben.
+// 10.9 bug: releasing an AVPlayerLayer (AVSubtitleLayer dealloc) can crash ->
+// one single, never released layer for all playbacks.
 static AVPlayerLayer *sharedLayer(void) {
     static AVPlayerLayer *shared;
     if (!shared) {
@@ -32,13 +32,13 @@ static AVPlayerLayer *sharedLayer(void) {
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     [self close];
-    url = [[SFStreamProxy shared] playableURLFor:url];   // TLS-Brücke für ORF & Co.
+    url = [[SFStreamProxy shared] playableURLFor:url];   // TLS bridge for ORF & co.
     _startPaused = paused;
     _pitem = [AVPlayerItem playerItemWithAsset:[AVURLAsset URLAssetWithURL:url options:nil]];
     [_pitem addObserver:self forKeyPath:@"status" options:0 context:kStatusCtx];
     [_pitem addObserver:self forKeyPath:@"playbackLikelyToKeepUp" options:0 context:kKeepUpCtx];
     __weak SFAVEngine *ws = self;
-    // Ende-Notifications können off-main kommen -> Main-Queue
+    // end notifications can arrive off-main -> main queue
     _endObs = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:_pitem
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [ws.delegate engineDidEnd]; }];
     _failObs = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification object:_pitem
@@ -102,7 +102,7 @@ static AVPlayerLayer *sharedLayer(void) {
 
 - (void)play { _startPaused = NO; [_player play]; }
 - (void)pause {
-    if (_pitem.status != AVPlayerItemStatusReadyToPlay) _startPaused = YES;   // Pause während des Ladens merken
+    if (_pitem.status != AVPlayerItemStatusReadyToPlay) _startPaused = YES;   // remember a pause during loading
     [_player pause];
 }
 - (void)seekTo:(NSTimeInterval)t exact:(BOOL)exact {
@@ -120,7 +120,7 @@ static AVPlayerLayer *sharedLayer(void) {
         _endObs = _failObs = nil;
         _pitem = nil;
     }
-    // Reihenfolge: Ebene vom Player lösen, DANN Player freigeben.
+    // Order: detach the layer from the player, THEN release the player.
     if (_player) [_player pause];
     SFNoAnimate(^{ if (sharedLayer().player == self->_player) sharedLayer().player = nil; });
     if (_player) {

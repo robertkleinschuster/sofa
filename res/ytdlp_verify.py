@@ -1,17 +1,17 @@
-"""Prüft eine OpenPGP-Signatur (v4, RSA, binär, abgetrennt) ohne gpg – nur Standardbibliothek.
+"""Verifies an OpenPGP signature (v4, RSA, binary, detached) without gpg - standard library only.
 
-Sofa lädt yt-dlp ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04). Die Echtheit sichert
-stattdessen die Signatur der yt-dlp-Maintainer über SHA2-256SUMS (Release-Asset SHA2-256SUMS.sig);
-ihr öffentlicher Schlüssel (public.key aus dem yt-dlp-Repo) liegt in der App.
+Sofa downloads yt-dlp without TLS certificate verification (user decision 2026-11-04). Authenticity is
+ensured instead by the yt-dlp maintainers' signature over SHA2-256SUMS (release asset SHA2-256SUMS.sig);
+their public key (public.key from the yt-dlp repo) ships with the app.
 
-  python3 -I ytdlp_verify.py <public.key> <SHA2-256SUMS> <SHA2-256SUMS.sig> <datei> <name>
-Exit 0 = Signatur gültig und SHA-256 von <datei> steht in den Summen unter <name>.
+  python3 -I ytdlp_verify.py <public.key> <SHA2-256SUMS> <SHA2-256SUMS.sig> <file> <name>
+Exit 0 = signature valid and the SHA-256 of <file> is listed in the sums under <name>.
 """
 import base64
 import hashlib
 import sys
 
-HASHES = {  # OpenPGP-Hash-ID -> (hashlib-Name, DigestInfo-Präfix nach RFC 8017)
+HASHES = {  # OpenPGP hash ID -> (hashlib name, DigestInfo prefix per RFC 8017)
     8: ("sha256", bytes.fromhex("3031300d060960864801650304020105000420")),
     9: ("sha384", bytes.fromhex("3041300d060960864801650304020205000430")),
     10: ("sha512", bytes.fromhex("3051300d060960864801650304020305000440")),
@@ -29,7 +29,7 @@ def dearmor(data):
         if line.startswith("-----END"):
             break
         if not started or ":" in line and not body:
-            continue  # Kopfzeilen (Version: …)
+            continue  # header lines (Version: ...)
         if line.startswith("="):
             break  # CRC24
         body.append(line.strip())
@@ -41,8 +41,8 @@ def packets(data):
     while i < len(data):
         h = data[i]
         if not h & 0x80:
-            raise ValueError("kein OpenPGP-Paket")
-        if h & 0x40:  # neues Format
+            raise ValueError("not an OpenPGP packet")
+        if h & 0x40:  # new format
             tag, i = h & 0x3F, i + 1
             l0 = data[i]
             if l0 < 192:
@@ -52,12 +52,12 @@ def packets(data):
             elif l0 == 255:
                 n, i = int.from_bytes(data[i + 1:i + 5], "big"), i + 5
             else:
-                raise ValueError("Teil-Längen nicht unterstützt")
-        else:  # altes Format
+                raise ValueError("partial lengths not supported")
+        else:  # old format
             tag, lt, i = (h >> 2) & 0x0F, h & 3, i + 1
             size = (1, 2, 4)[lt] if lt < 3 else None
             if size is None:
-                raise ValueError("unbestimmte Länge nicht unterstützt")
+                raise ValueError("indeterminate length not supported")
             n, i = int.from_bytes(data[i:i + size], "big"), i + size
         yield tag, data[i:i + n]
         i += n
@@ -70,7 +70,7 @@ def mpi(b, o):
 
 
 def rsa_keys(keydata):
-    """Fingerprint (v4) -> (n, e) für alle RSA-Schlüssel und -Unterschlüssel."""
+    """Fingerprint (v4) -> (n, e) for all RSA keys and subkeys."""
     keys = {}
     for tag, body in packets(dearmor(keydata)):
         if tag not in (6, 14) or body[0] != 4 or body[5] not in (1, 3):
@@ -101,7 +101,7 @@ def verify(keydata, data, sigdata):
     keys = rsa_keys(keydata)
     for tag, s in packets(dearmor(sigdata)):
         if tag != 2 or s[0] != 4 or s[1] != 0 or s[2] != 1 or s[3] not in HASHES:
-            continue  # nur v4, Binärdokument, RSA
+            continue  # only v4, binary document, RSA
         hl = int.from_bytes(s[4:6], "big")
         hashed = s[6:6 + hl]
         o = 6 + hl
@@ -134,7 +134,7 @@ def main(argv):
     key, sums, sig, path, name = argv[1:6]
     rb = lambda p: open(p, "rb").read()
     if not verify(rb(key), rb(sums), rb(sig)):
-        print("Signatur ungültig", file=sys.stderr)
+        print("signature invalid", file=sys.stderr)
         return 1
     want = None
     for line in rb(sums).decode("utf-8", "replace").splitlines():
@@ -143,7 +143,7 @@ def main(argv):
             want = parts[0].lower()
     have = hashlib.sha256(rb(path)).hexdigest()
     if want != have:
-        print("Prüfsumme passt nicht: %s" % name, file=sys.stderr)
+        print("checksum mismatch: %s" % name, file=sys.stderr)
         return 1
     return 0
 

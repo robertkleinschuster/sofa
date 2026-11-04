@@ -1,16 +1,16 @@
-// YouTube-Stream-Auflösung über einen langlebigen yt-dlp-Prozess (res/ytresolver.py, yt-dlp als
-// signiert geprüftes Zipapp: Bundle bzw. ~/Library/Application Support/Sofa/yt-dlp). JSON-Zeilen über Pipes,
-// Neustart bei Absturz, Ergebnis-Cache bis kurz vor Ablauf der URLs (6 h, IP-gebunden).
+// YouTube stream resolution via a long-lived yt-dlp process (res/ytresolver.py, yt-dlp as a
+// signature-verified zipapp: bundle or ~/Library/Application Support/Sofa/yt-dlp). JSON lines over pipes,
+// restart on crash, result cache until shortly before the URLs expire (6 h, IP-bound).
 #import "SFCore.h"
 
 @interface SFYTResolver : NSObject
 + (instancetype)shared;
-- (void)saveCache;             // vor einem Update-Neustart: Ergebnisse für den neuen Prozess sichern
-- (void)start;                 // idempotent; wärmt den Player-JS-Cache vor
+- (void)saveCache;             // before an update restart: save results for the new process
+- (void)start;                 // idempotent; pre-warms the player JS cache
 - (void)restart;
 // r: url, alt (Array), height, live, duration, title
 - (void)resolve:(NSString *)videoID live:(BOOL)live done:(void (^)(NSDictionary *r, NSError *e))done;
-// Hintergrund (Vorladen bei Fokus, Downloads): eigener Resolver-Pool, blockiert nie eine Wiedergabe
+// background (preload on focus, downloads): own resolver pool, never blocks playback
 - (void)prefetch:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
-- (void)forget:(NSString *)videoID;   // Ergebnis verwerfen (Streams abgelehnt) -> nächster Aufruf löst frisch auf
+- (void)forget:(NSString *)videoID;   // drop the result (streams rejected) -> the next call resolves afresh
 @end
