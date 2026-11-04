@@ -1,7 +1,7 @@
 #import "SFUpdater.h"
-#import <CommonCrypto/CommonDigest.h>
 #import "SFCore.h"
 #import "SFCurl.h"
+#import "SFSignature.h"
 #import "SFRuntime.h"
 #import "SFSettings.h"
 #import "SFScreen.h"
@@ -28,21 +28,6 @@ static NSComparisonResult SFCompareVersions(NSString *a, NSString *b) {
     return NSOrderedSame;
 }
 
-static NSString *SFSHA256OfFile(NSString *path) {
-    NSInputStream *in = [NSInputStream inputStreamWithFileAtPath:path];
-    if (!in) return nil;
-    [in open];
-    CC_SHA256_CTX ctx; CC_SHA256_Init(&ctx);
-    uint8_t buf[1 << 16]; NSInteger n;
-    while ((n = [in read:buf maxLength:sizeof buf]) > 0) CC_SHA256_Update(&ctx, buf, (CC_LONG)n);
-    [in close];
-    if (n < 0) return nil;
-    unsigned char md[CC_SHA256_DIGEST_LENGTH]; CC_SHA256_Final(md, &ctx);
-    NSMutableString *s = [NSMutableString new];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [s appendFormat:@"%02x", md[i]];
-    return s;
-}
-
 static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     NSTask *t = [NSTask new];
     t.launchPath = tool; t.arguments = args;
@@ -59,7 +44,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     __weak SFNavigator *_nav;
     NSTimer *_checkTimer, *_applyTimer;
     BOOL _busy;
-    NSString *_latest, *_dmgURL, *_shaURL, *_notes;
+    NSString *_latest, *_dmgURL, *_sigURL, *_notes;
     NSDate *_lastCheck;
 }
 
@@ -149,18 +134,18 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
             return;
         }
         NSString *tag = rel[@"tag_name"], *ver = [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag;
-        NSString *dmgName = [NSString stringWithFormat:@"Sofa-%@.dmg", ver], *dmgURL = nil, *shaURL = nil;
+        NSString *dmgName = [NSString stringWithFormat:@"Sofa-%@.dmg", ver], *dmgURL = nil, *sigURL = nil;
         for (NSDictionary *a in rel[@"assets"]) {
             if (![a isKindOfClass:[NSDictionary class]]) continue;
             if ([a[@"name"] isEqual:dmgName]) dmgURL = a[@"browser_download_url"];
-            if ([a[@"name"] isEqual:[dmgName stringByAppendingString:@".sha256"]]) shaURL = a[@"browser_download_url"];
+            if ([a[@"name"] isEqual:[dmgName stringByAppendingString:@".sig"]]) sigURL = a[@"browser_download_url"];
         }
         SFMain(^{
             self->_busy = NO;
             self->_lastCheck = [NSDate date];
-            // Release ohne DMG/Prüfsumme (z.B. nur Quellcode) zählt nicht als installierbares Update
-            self->_latest = (dmgURL && shaURL) ? ver : self.installedVersion;
-            self->_dmgURL = dmgURL; self->_shaURL = shaURL;
+            // Release ohne DMG/Signatur (z.B. nur Quellcode, oder vor 0.3) zählt nicht als installierbares Update
+            self->_latest = (dmgURL && sigURL) ? ver : self.installedVersion;
+            self->_dmgURL = dmgURL; self->_sigURL = sigURL;
             self->_notes = [rel[@"body"] isKindOfClass:[NSString class]] ? rel[@"body"] : nil;
             done(self.updateAvailable ? [NSString stringWithFormat:@"Update verfügbar: %@ → %@", self.installedVersion, ver]
                                       : [NSString stringWithFormat:@"Sofa ist aktuell (%@)", self.installedVersion]);
@@ -182,10 +167,10 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
 - (void)fetch:(BOOL)now done:(void (^)(NSString *))done {
     if (_busy) { done(@"Update wird bereits geladen"); return; }
     _busy = YES;
-    NSString *ver = _latest, *dmgURL = _dmgURL, *shaURL = _shaURL;
+    NSString *ver = _latest, *dmgURL = _dmgURL, *sigURL = _sigURL;
     if (now) done([NSString stringWithFormat:@"Lade Sofa %@ … (etwa 100 MB)", ver]);
     SFBackground(^{
-        NSString *err = [self downloadAndStage:dmgURL sha:shaURL version:ver];
+        NSString *err = [self downloadAndStage:dmgURL sig:sigURL version:ver];
         SFMain(^{
             self->_busy = NO;
             if (err) { done(err); return; }
@@ -195,21 +180,26 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     });
 }
 
-// Hintergrund: DMG laden, Prüfsumme, Bundle nach <App>.update. nil = ok, sonst Fehlermeldung.
-- (NSString *)downloadAndStage:(NSString *)dmgURL sha:(NSString *)shaURL version:(NSString *)ver {
+// Hintergrund: DMG laden, Signatur prüfen, Bundle nach <App>.update. nil = ok, sonst Fehlermeldung.
+// Geladen wird ohne TLS-Zertifikatsprüfung (SFCurlNew); die Echtheit belegt allein die Signatur
+// (SFSignature, öffentlicher Schlüssel im Bundle) – unabhängig von CA-Listen, auch in Jahren.
+- (NSString *)downloadAndStage:(NSString *)dmgURL sig:(NSString *)sigURL version:(NSString *)ver {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *work = [self workDir], *dmg = [work stringByAppendingPathComponent:@"Sofa.dmg"];
     NSString *mnt = [work stringByAppendingPathComponent:@"mnt"];
     [fm removeItemAtPath:work error:nil];
     [fm createDirectoryAtPath:mnt withIntermediateDirectories:YES attributes:nil error:nil];
     NSError *e = nil;
-    NSData *shaData = SFCurlFetch(shaURL, @"GET", nil, nil, NULL, &e);
-    NSString *want = [[[[NSString alloc] initWithData:shaData ?: [NSData data] encoding:NSUTF8StringEncoding]
-                       componentsSeparatedByString:@" "].firstObject lowercaseString];
-    if (want.length != 64) return @"Update: Prüfsumme nicht ladbar";
+    NSInteger st = 0;
+    NSData *sig = SFCurlFetch(sigURL, @"GET", nil, nil, &st, &e);
+    if (st != 200 || sig.length < 64) return @"Update: Signatur nicht ladbar";
     SFLog(@"update: lade %@", dmgURL);
     if (!SFCurlDownload(dmgURL, dmg, &e)) return [@"Update-Download fehlgeschlagen: " stringByAppendingString:e.localizedDescription ?: @"?"];
-    if (![SFSHA256OfFile(dmg) isEqualToString:want]) { [fm removeItemAtPath:work error:nil]; return @"Update verworfen: Prüfsumme stimmt nicht"; }
+    if (!SFVerifyFileSignature(dmg, sig, [[NSBundle mainBundle] pathForResource:@"sofa-release-public" ofType:@"pem"])) {
+        [fm removeItemAtPath:work error:nil];
+        SFLog(@"update: Signatur von %@ ungültig – verworfen", dmgURL);
+        return @"Update verworfen: Signatur ungültig";
+    }
 
     // DMG einhängen (unsichtbar, nur lesen), Bundle kopieren, aushängen
     NSString *result = nil;

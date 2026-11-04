@@ -93,9 +93,18 @@ STAGE="$DIST/dmg"; mkdir -p "$STAGE"
 mv "$APP" "$STAGE/"
 trap 'mv "$STAGE/Sofa.app" "$APP" 2>/dev/null; rm -rf "$STAGE"' EXIT   # auch wenn hdiutil scheitert
 ln -s /Applications "$STAGE/Programme"
-hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -format UDBZ -ov "$DIST/Sofa-$VER.dmg"
+# Größe vorgeben: hdiutils Schätzung war bei ~330 MB zu knapp (Fehler -5341)
+MB=$(( $(du -sm "$STAGE/Sofa.app" | cut -f1) * 11 / 10 + 40 ))
+hdiutil create -quiet -volname "Sofa $VER" -srcfolder "$STAGE" -size ${MB}m -format UDBZ -ov "$DIST/Sofa-$VER.dmg" \
+  || { echo "FEHLER: hdiutil create gescheitert"; exit 1; }
 mv "$STAGE/Sofa.app" "$APP"; rm -rf "$STAGE"; trap - EXIT
-# Prüfsumme als eigenes Release-Asset: Sofas Updater lädt sie und vergleicht vor der Installation
+# Signatur (Sofas Updater installiert nur signierte DMGs, SFSignature) + Prüfsumme für Menschen.
+# Der private Schlüssel verlässt diesen Mac nie (~/.config/sofa, 0600, nicht im Repo).
+KEY="${SOFA_SIGNING_KEY:-$HOME/.config/sofa/release-signing-key.pem}"
+[ -f "$KEY" ] || { echo "FEHLER: Signierschlüssel $KEY fehlt"; exit 1; }
+"$MP/bin/openssl" dgst -sha256 -sign "$KEY" -out "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg"
+"$MP/bin/openssl" dgst -sha256 -verify "$SRC/res/sofa-release-public.pem" -signature "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg" >/dev/null \
+  || { echo "FEHLER: Signatur passt nicht zum öffentlichen Schlüssel im Bundle"; exit 1; }
 (cd "$DIST" && shasum -a 256 "Sofa-$VER.dmg" > "Sofa-$VER.dmg.sha256")
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
 cat "$DIST/Sofa-$VER.dmg.sha256"

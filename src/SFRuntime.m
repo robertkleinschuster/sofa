@@ -36,8 +36,11 @@ void SFRuntimeSetup(void) {
     NSString *bin = [(rt ?: kPrefix) stringByAppendingPathComponent:@"bin"];
     setenv("PATH", [bin stringByAppendingString:@":/usr/bin:/bin:/usr/sbin:/sbin"].UTF8String, 1);
     setenv("SOFA_NODE", SFTool(@"node").UTF8String, 1);
+    // node (PO-Token-Server) ohne TLS-Zertifikatsprüfung wie alle Daten-Abrufe der App
+    // (User-Entscheidung 2026-11-04; Code ist eigens signiert, siehe SFCurlNew)
+    setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0", 1);
     if (!rt) return;
-    // Python-ssl/pip/yt-dlp, node (bgutil) und ffmpeg: CA-Liste aus dem Bundle
+    // CA-Liste aus dem Bundle für alles, was doch prüft (Python-Standardbibliothek u. a.)
     setenv("SSL_CERT_FILE", SFCABundle().UTF8String, 1);
     setenv("NODE_EXTRA_CA_CERTS", SFCABundle().UTF8String, 1);
     // fontconfig (librsvg/pango, canvas im PO-Token-Server): Systemschriften, Cache im Benutzer-Cache

@@ -4,6 +4,16 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.0
+
+- **Ein Player für alles:** Sofa spielt jetzt alles mit mpv. YouTube läuft in VP9 bis 1080p60
+  und startet zuverlässiger; die gelegentlichen Fehlstarts beim Öffnen sind weg.
+- **YouTube sofort:** yt-dlp ist in der App enthalten – keine Einrichtungsminute mehr nach der
+  Installation. Sofa hält yt-dlp selbst aktuell und prüft dabei die Signatur der yt-dlp-Entwickler.
+- **Updates sind signiert:** Sofa installiert nur Updates mit gültiger Sofa-Signatur. Dadurch
+  braucht Sofa keine aktuellen Zertifikatslisten mehr und funktioniert auf diesem Mac dauerhaft.
+- Nach einem Update geht ein YouTube-Video in etwa 2 Sekunden weiter (vorher etwa 9).
+
 ## 0.2.0
 
 - **Zum Herunterladen:** Sofa gibt es als DMG – in „Programme“ ziehen, fertig.

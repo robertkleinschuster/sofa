@@ -1,10 +1,10 @@
 #!/bin/bash
 # test-updater -- Ende-zu-Ende-Test des Updaters ohne öffentliches Release.
 #
-# Ein lokaler HTTP-Server spielt „GitHub“: release.json mit einer fiktiven Version 0.2.1
-# (dist/Sofa.app mit erhöhter Versionsnummer als DMG + .sha256). Eine unsichtbare Dev-Instanz
+# Ein lokaler HTTP-Server spielt „GitHub“: release.json mit einer fiktiven nächsten Version
+# (dist/Sofa.app mit erhöhter Versionsnummer als signierte DMG). Eine unsichtbare Dev-Instanz
 # (SOFA_UPDATE_API zeigt auf den Server) wird über die Einstellungen bedient wie von einem Nutzer:
-#   Einstellungen -> Nach Updates suchen -> „Update installieren 0.2.0 → 0.2.1“ -> Release-Notes
+#   Einstellungen -> Nach Updates suchen -> „Update installieren X → X+0.0.1“ -> Release-Notes
 #   -> Jetzt installieren -> Download, Prüfsumme, DMG, Bundle-Prüfung, Übergabe (<App>.staged).
 # Den Tausch selbst übernimmt sonst der Helper (getestet durch jedes sofa-deploy).
 # Screenshots der Schritte bleiben im ausgegebenen Ordner.
@@ -16,7 +16,7 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-updtest.XXXXXX")"
 PORT=47995 INST=updtest
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
 CUR=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SRC/res/Info.plist")
-NEW=0.2.1
+NEW=$(echo "$CUR" | awk -F. '{print $1"."$2"."$3+1}')   # fiktive nächste Version
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 [ -d "$SRC/dist/Sofa.app" ] || { echo "erst tools/make-release"; exit 1; }
 make -C "$SRC" >/dev/null || exit 1
@@ -25,12 +25,17 @@ echo "==> fiktives Release $NEW in $T"
 mkdir -p "$T/stage" "$T/www"
 ditto "$SRC/dist/Sofa.app" "$T/stage/Sofa.app"
 /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $NEW" "$T/stage/Sofa.app/Contents/Info.plist"
-hdiutil create -quiet -volname "Sofa $NEW" -srcfolder "$T/stage" -format UDZO "$T/www/Sofa-$NEW.dmg"
-(cd "$T/www" && shasum -a 256 "Sofa-$NEW.dmg" > "Sofa-$NEW.dmg.sha256")
+hdiutil create -quiet -volname "Sofa $NEW" -srcfolder "$T/stage" -size $(( $(du -sm "$T/stage" | cut -f1) * 11 / 10 + 40 ))m -format UDZO "$T/www/Sofa-$NEW.dmg"
+# TAMPER=1: Signatur eines fremden Schlüssels -> der Updater muss das Release ablehnen
+if [ "${TAMPER:-0}" = 1 ]; then
+  /opt/local/bin/openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$T/fremd.pem" 2>/dev/null
+  SIGKEY="$T/fremd.pem"
+else SIGKEY="$HOME/.config/sofa/release-signing-key.pem"; fi
+/opt/local/bin/openssl dgst -sha256 -sign "$SIGKEY" -out "$T/www/Sofa-$NEW.dmg.sig" "$T/www/Sofa-$NEW.dmg"; rm -f "$T/fremd.pem"
 cat > "$T/www/release.json" <<EOF
 {"tag_name": "v$NEW", "body": "- **Testeintrag:** neue Funktion A\n- Fehler B behoben\n\n<!-- sofa-notes-end -->\n**Installation:** nicht anzeigen",
  "assets": [{"name": "Sofa-$NEW.dmg", "browser_download_url": "http://127.0.0.1:$PORT/Sofa-$NEW.dmg"},
-            {"name": "Sofa-$NEW.dmg.sha256", "browser_download_url": "http://127.0.0.1:$PORT/Sofa-$NEW.dmg.sha256"}]}
+            {"name": "Sofa-$NEW.dmg.sig", "browser_download_url": "http://127.0.0.1:$PORT/Sofa-$NEW.dmg.sig"}]}
 EOF
 /opt/local/bin/python3.14 -m http.server --bind 127.0.0.1 --directory "$T/www" $PORT >/dev/null 2>&1 &
 SRV=$!
@@ -51,13 +56,16 @@ sleep 4; shot 2-gefunden
 grep -q "Update verfügbar: $CUR → $NEW" "$LOG" 2>/dev/null; :   # (Meldung ist ein Toast, nicht im Log)
 cmd key select; sleep 1.5; shot 3-release-notes                         # „Update installieren“
 cmd key select                                                          # „Jetzt installieren“
-for i in $(seq 1 120); do [ -d "$DEV.staged" ] && break; sleep 1; done
+for i in $(seq 1 120); do [ -d "$DEV.staged" ] && break; grep -q 'Signatur von .* ungültig' "$LOG" 2>/dev/null && break; sleep 1; done
 shot 4-installiert
 
 echo "==> Ergebnis"
 grep -q "Update installieren" <(strings "$SRC/build/SofaDev.app/Contents/MacOS/Sofa") && :
 [ -s "$T/2-gefunden.png" ] && ok "Suche + Versionsvergleich (Screenshot 2)" || bad "kein Screenshot nach der Suche"
-if [ -d "$DEV.staged" ]; then
+if [ "${TAMPER:-0}" = 1 ]; then
+  [ ! -d "$DEV.staged" ] && ok "fremd signiertes Update abgelehnt" || bad "fremd signiertes Update wurde installiert!"
+  grep -q 'Signatur von .* ungültig' "$LOG" && ok "Log: Signatur ungültig" || bad "keine Signatur-Meldung im Log"
+elif [ -d "$DEV.staged" ]; then
   V=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEV.staged/Contents/Info.plist")
   [ "$V" = "$NEW" ] && ok "Download, Prüfsumme, DMG, Prüfung, Übergabe: <App>.staged ist $V" || bad "staged hat Version $V"
   [ -d "$DEV.staged/Contents/Runtime/bin" ] && ok "Runtime vollständig übernommen" || bad "Runtime fehlt"

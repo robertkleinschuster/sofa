@@ -21,6 +21,24 @@ static void reachCallback(SCNetworkReachabilityRef r, SCNetworkReachabilityFlags
     setOnline((f & kSCNetworkReachabilityFlagsReachable) && !(f & kSCNetworkReachabilityFlagsConnectionRequired));
 }
 
+@interface SFTrustAll : NSObject <NSURLSessionDelegate>
+@end
+@implementation SFTrustAll
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)ch
+ completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))done {
+    if ([ch.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust] && ch.protectionSpace.serverTrust)
+        done(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:ch.protectionSpace.serverTrust]);
+    else
+        done(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+}
+@end
+
+id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
+    static SFTrustAll *d; static dispatch_once_t o;
+    dispatch_once(&o, ^{ d = [SFTrustAll new]; });
+    return d;
+}
+
 @implementation SFNet
 
 + (BOOL)isOnline { return gOnline && !SFSimulatedOffline(); }
@@ -45,7 +63,7 @@ static void reachCallback(SCNetworkReachabilityRef r, SCNetworkReachabilityFlags
         c.HTTPMaximumConnectionsPerHost = 4;
         c.URLCache = nil;
         c.HTTPAdditionalHeaders = @{@"User-Agent": [self userAgent], @"Accept-Language": @"de-AT,de;q=0.9"};
-        s = [NSURLSession sessionWithConfiguration:c];
+        s = [NSURLSession sessionWithConfiguration:c delegate:SFTrustAllSessionDelegate() delegateQueue:nil];
     });
     return s;
 }

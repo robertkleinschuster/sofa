@@ -60,12 +60,18 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 3. First start: right-click Sofa → **Open** → **Open** (the app is not signed by Apple).
 
 Sofa brings everything it needs inside the app (libmpv/ffmpeg, curl/OpenSSL, Python, Node.js,
-the YouTube PO token service). On first start it sets up the Apple Remote helper and starts
-with the next login; it explains the remote, and on first use of YouTube it creates its own
-yt-dlp environment (`~/Library/Application Support/Sofa/ytdlp`, under a minute), updated daily.
+yt-dlp, the YouTube PO token service). On first start it sets up the Apple Remote helper and
+starts with the next login, and it explains the remote. YouTube works right away; Sofa keeps
+yt-dlp up to date by itself (`~/Library/Application Support/Sofa/yt-dlp`).
 
-**Update:** download the new DMG and drag Sofa onto Programme again (replace). Sofa notices
-the new version on its next start and restarts its remote helper and PO token service.
+**Update:** Sofa updates itself from GitHub releases (Settings → updates; automatic updates
+only while nothing is playing). Alternatively download the new DMG and drag Sofa onto
+Programme again.
+
+**Trust model:** Sofa does not check TLS certificates (an ageing CA list on a frozen macOS
+must never break it). Code is verified by signatures instead: Sofa updates must carry a valid
+signature of the Sofa release key (`res/sofa-release-public.pem`, file `Sofa-<version>.dmg.sig`),
+yt-dlp updates the yt-dlp maintainers' GPG signature over `SHA2-256SUMS`.
 
 **Uninstall:**
 

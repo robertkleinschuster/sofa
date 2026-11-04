@@ -1,0 +1,26 @@
+#!/bin/bash
+# fetch-ytdlp -- yt-dlp (Zipapp) + bgutil-Plugin laut res/ytdlp.lock nach build/vendor/yt-dlp holen
+# und prüfen. Wird vom Makefile aufgerufen, wenn die Dateien fehlen oder das Lock neuer ist.
+#   build/vendor/yt-dlp/yt-dlp            Zipapp (enthält yt-dlp-ejs)
+#   build/vendor/yt-dlp/VERSION           z.B. 2026.10.26
+#   build/vendor/yt-dlp/plugins/yt_dlp_plugins/...
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$SRC/build/vendor/yt-dlp"
+PY="${PYTHON:-/opt/local/bin/python3.14}"
+CURL="${CURL:-/opt/local/bin/curl}"
+YV=$(awk '$1=="yt-dlp"{print $2}' "$SRC/res/ytdlp.lock")
+PV=$(awk '$1=="bgutil-ytdlp-pot-provider"{print $2}' "$SRC/res/ytdlp.lock")
+PS=$(awk '$1=="bgutil-ytdlp-pot-provider"{print $3}' "$SRC/res/ytdlp.lock")
+T="$OUT.tmp"; rm -rf "$T"; mkdir -p "$T/dl" "$T/plugins"
+get() { "$CURL" -fsSL --retry 3 -o "$2" "$1"; }
+R=https://github.com/yt-dlp/yt-dlp/releases/download/$YV
+for f in yt-dlp SHA2-256SUMS SHA2-256SUMS.sig; do get "$R/$f" "$T/dl/$f"; done
+"$PY" -I "$SRC/res/ytdlp_verify.py" "$SRC/res/yt-dlp-public.key" "$T/dl/SHA2-256SUMS" "$T/dl/SHA2-256SUMS.sig" "$T/dl/yt-dlp" yt-dlp
+get "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/$PV/bgutil-ytdlp-pot-provider.zip" "$T/dl/plugin.zip"
+[ "$(shasum -a 256 "$T/dl/plugin.zip" | cut -d' ' -f1)" = "$PS" ] || { echo "Plugin-Prüfsumme passt nicht"; exit 1; }
+(cd "$T/plugins" && unzip -q ../dl/plugin.zip)
+mv "$T/dl/yt-dlp" "$T/yt-dlp"; echo "$YV" > "$T/VERSION"; echo "$PV" > "$T/plugins/VERSION"
+rm -rf "$T/dl" "$OUT"; mv "$T" "$OUT"
+echo "yt-dlp $YV + bgutil-Plugin $PV -> $OUT"

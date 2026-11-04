@@ -16,7 +16,7 @@ HBIN    := $(APP)/Contents/MacOS/SofaRemote
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function -Isrc
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
-           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -L$(MP)/lib -lsqlite3 -lcurl
+           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl
 # libmpv (Overlay-Port multimedia/mpv) optional + schwach gelinkt: fehlt sie, laeuft Sofa nur mit AVFoundation
 ifneq ($(wildcard $(MP)/lib/libmpv.dylib),)
 LDFLAGS += -framework OpenGL -weak-lmpv
@@ -33,15 +33,31 @@ DEVBIN  := $(DEVAPP)/Contents/MacOS/Sofa
 # Ziele sind DATEIEN (Verzeichnis-mtime ändert sich beim Relink nicht)
 LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard res/logos/*.png))
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(APP)/Contents/Resources/ytresolver.py $(DEVAPP)/Contents/Resources/ytresolver.py
+# yt-dlp-Grundausstattung (res/ytdlp.lock, tools/fetch-ytdlp) + Prüfer und öffentliche Schlüssel
+# für Updates (yt-dlp: GPG der Maintainer; Sofa: eigener RSA-Schlüssel, siehe SFSignature.h)
+YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.pem
+YTFILES := $(foreach b,$(APP) $(DEVAPP),$(addprefix $(b)/Contents/Resources/,$(YTRES)) $(b)/Contents/Resources/yt-dlp/VERSION)
+VENDOR  := $(BUILD)/vendor/yt-dlp
+
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES)
 
 $(APP)/Contents/Resources/logos/%.png: res/logos/%.png
 	@mkdir -p $(dir $@)
 	cp $< $@
 
-$(APP)/Contents/Resources/ytresolver.py $(DEVAPP)/Contents/Resources/ytresolver.py: res/ytresolver.py
+$(APP)/Contents/Resources/%: res/%
 	@mkdir -p $(dir $@)
 	cp $< $@
+$(DEVAPP)/Contents/Resources/%: res/%
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+$(VENDOR)/VERSION: res/ytdlp.lock res/ytdlp_verify.py
+	tools/fetch-ytdlp
+
+$(APP)/Contents/Resources/yt-dlp/VERSION $(DEVAPP)/Contents/Resources/yt-dlp/VERSION: $(VENDOR)/VERSION
+	@rm -rf $(dir $@) && mkdir -p $(dir $@)
+	cp -R $(VENDOR)/ $(dir $@)
 
 # Dev-Bundle mit eigener Bundle-ID (de.sofa.dev): unsichtbare Test-/Vorschau-
 # Instanzen dürfen nie mit der echten App (de.sofa.app) verwechselt werden

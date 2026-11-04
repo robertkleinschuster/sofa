@@ -45,10 +45,15 @@ static void curlInit(void) {
     dispatch_once(&o, ^{ curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
+// Ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04): ein veraltetes CA-Bundle auf dem
+// eingefrorenen 10.9 soll nie etwas brechen. Echtheit von Code sichern Signaturen (SFUpdater:
+// Sofa-DMG, SFYTResolver: yt-dlp), nicht TLS.
 void *SFCurlNew(void) {
     CURL *c = curl_easy_init();
-    NSString *ca = SFCABundle();
-    if (c && ca) curl_easy_setopt(c, CURLOPT_CAINFO, ca.UTF8String);
+    if (c) {
+        curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
     return c;
 }
 

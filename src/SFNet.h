@@ -6,6 +6,10 @@ typedef void (^SFJSONDone)(id json, NSError *error);   // Main-Thread
 // Netzstatus (SystemConfiguration-Reachability; Dev: SOFA_OFFLINE=1 simuliert offline)
 extern NSString *const SFNetOnlineDidChangeNotification;
 
+// Sitzungs-Delegate ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04: Sofa lädt nur Daten
+// ungeprüft; Code – App-Updates, yt-dlp – ist eigens signiert). Für jede NSURLSession der App.
+id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
+
 @interface SFNet : NSObject
 + (BOOL)isOnline;
 + (void)startMonitoring;

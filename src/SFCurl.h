@@ -8,8 +8,8 @@
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                     NSInteger *status, NSError **error);
 
-// curl_easy_init() + CA-Liste aus dem Release-Bundle (libcurls eingebauter Pfad zeigt
-// nach /opt/local). Rückgabe ist ein CURL * (void *, damit dieser Header ohne curl.h auskommt).
+// curl_easy_init() ohne TLS-Zertifikatsprüfung (siehe .m). Rückgabe ist ein CURL * (void *,
+// damit dieser Header ohne curl.h auskommt).
 void *SFCurlNew(void);
 
 // Große Datei direkt auf Platte laden (Redirects folgen, HTTP-Fehler = Fehlschlag). Nur im Hintergrund.

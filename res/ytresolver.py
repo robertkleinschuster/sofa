@@ -37,6 +37,8 @@ def base_opts():
     return {
         "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
         "noplaylist": True, "cachedir": CACHE,
+        # ohne TLS-Zertifikatsprüfung (User-Entscheidung 2026-11-04: Daten ungeprüft, Code signiert)
+        "nocheckcertificate": True,
         "js_runtimes": {"node": {"path": os.environ.get("SOFA_NODE", "/opt/local/bin/node")}},
         "format": FMT_VOD,
     }

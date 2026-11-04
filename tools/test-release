@@ -1,7 +1,7 @@
 #!/bin/bash
 # test-release [Sofa.app] -- prüft ein Release-Bundle wie auf einem Mac OHNE MacPorts:
 # alles läuft unter sandbox-exec mit verbotenem Lesezugriff auf /opt/local.
-#   Bundle-Abhängigkeiten, ffmpeg/node/rsvg-convert, Python + TLS, venv + pip (yt-dlp),
+#   Bundle-Abhängigkeiten, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (Zipapp, Signaturprüfer),
 #   PO-Token-Server (eigener Port), YouTube-Auflösung mit node für die JS-Challenge.
 # Braucht Internet. Fasst nichts außerhalb eines Temp-Ordners an.
 set -u
@@ -38,8 +38,19 @@ np "$RT/bin/rsvg-convert" -o "$T/t.png" "$T/t.svg" 2>/dev/null && [ -s "$T/t.png
 PY="$RT/Python.framework/Versions/3.14/bin/python3.14"
 np "$PY" -c 'import ssl, sqlite3, lzma, ctypes, urllib.request as u; u.urlopen("https://www.youtube.com", timeout=20)' \
   && ok "python + TLS" || bad "python + TLS"
-if np "$PY" -m venv "$T/venv" && np "$T/venv/bin/python" -m pip install -q --disable-pip-version-check \
-     yt-dlp yt-dlp-ejs bgutil-ytdlp-pot-provider >/dev/null 2>&1; then ok "venv + pip (yt-dlp)"; else bad "venv + pip"; fi
+YT="$APP/Contents/Resources/yt-dlp"
+export PYTHONPATH="$YT/yt-dlp:$YT/plugins"
+V=$(np "$PY" -s "$YT/yt-dlp" --version 2>&1)
+[ "$V" = "$(cat "$YT/VERSION")" ] && ok "yt-dlp $V (Zipapp im Bundle)" || bad "yt-dlp: $V"
+np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_bgutil_http' 2>/dev/null && ok "yt-dlp-ejs + bgutil-Plugin" || bad "ejs/Plugin nicht importierbar"
+# Signaturprüfer (Updates von yt-dlp): echtes Release gültig, verfälschte Summen ungültig
+R="https://github.com/yt-dlp/yt-dlp/releases/download/$(cat "$YT/VERSION")"
+curl -fsSL -o "$T/sums" "$R/SHA2-256SUMS" && curl -fsSL -o "$T/sums.sig" "$R/SHA2-256SUMS.sig"
+if np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums" "$T/sums.sig" "$YT/yt-dlp" yt-dlp; then
+  sed 's/^./0/' "$T/sums" > "$T/sums.bad"
+  np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums.bad" "$T/sums.sig" "$YT/yt-dlp" yt-dlp 2>/dev/null \
+    && bad "Signaturprüfer nimmt verfälschte Summen an" || ok "Signaturprüfer (yt-dlp-GPG)"
+else bad "Signaturprüfer lehnt echtes yt-dlp ab"; fi
 
 (cd "$RT/bgutil" && exec sandbox-exec -f "$T/nomp.sb" "$RT/bin/node" build/main.js --host 127.0.0.1 --port $POT_PORT >"$T/pot.log" 2>&1) &
 POT=$!
@@ -47,7 +58,7 @@ for i in $(seq 1 30); do curl -sf "127.0.0.1:$POT_PORT/ping" >/dev/null && break
 if curl -sf -X POST "127.0.0.1:$POT_PORT/get_pot" -H 'Content-Type: application/json' \
      -d '{"content_binding":"jNQXAC9IVRw"}' | /usr/bin/grep -q poToken; then ok "PO-Token-Server"; else bad "PO-Token-Server ($(tail -1 "$T/pot.log"))"; fi
 
-F=$(np "$T/venv/bin/yt-dlp" --no-warnings --js-runtimes "node:$RT/bin/node" \
+F=$(np "$PY" -s "$YT/yt-dlp" --no-warnings --no-check-certificates --js-runtimes "node:$RT/bin/node" \
       --extractor-args "youtube:player_client=web_embedded;youtubepot-bgutilhttp:base_url=http://127.0.0.1:$POT_PORT" \
       -f 'best[vcodec^=avc1][acodec!=none]/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>&1 | tail -1)
 [[ "$F" =~ ^[0-9]+$ ]] && ok "YouTube-Auflösung (Format $F)" || bad "YouTube-Auflösung: $F"

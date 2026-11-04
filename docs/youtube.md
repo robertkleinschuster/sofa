@@ -11,7 +11,7 @@ All numbers below are measurements from this machine.
 ```
  Sofa.app (ObjC, NSURLSession)                     sofa-ytresolver (own process, long-lived)
  ───────────────────────────────                   ─────────────────────────────────────────
- YTClient  ── POST youtubei/v1/{search,browse,     python3 (venv) + yt_dlp as library,
+ YTClient  ── POST youtubei/v1/{search,browse,     python3 + yt-dlp zipapp as library,
               next,guide,player}  (WEB client)       one YoutubeDL instance, JSON lines on
  YTAuth    ── Firefox cookies.sqlite (copy) →        stdin/stdout:  {"id":"…"} → {"url":…,
               Cookie + SAPISIDHASH header            "kind":"hls|progressive","height":…,

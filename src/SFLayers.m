@@ -1,4 +1,5 @@
 #import "SFLayers.h"
+#import "SFNet.h"
 #import <ImageIO/ImageIO.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "SFCurl.h"
@@ -123,7 +124,7 @@
         c.HTTPMaximumConnectionsPerHost = 4;
         c.timeoutIntervalForRequest = 20;
         c.URLCache = nil;
-        _session = [NSURLSession sessionWithConfiguration:c];
+        _session = [NSURLSession sessionWithConfiguration:c delegate:SFTrustAllSessionDelegate() delegateQueue:nil];
         _pending = [NSMutableDictionary new];
     }
     return self;

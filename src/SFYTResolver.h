@@ -1,5 +1,5 @@
-// YouTube-Stream-Auflösung über einen langlebigen yt-dlp-Prozess (res/ytresolver.py,
-// eigenes venv in ~/Library/Application Support/Sofa/ytdlp). JSON-Zeilen über Pipes,
+// YouTube-Stream-Auflösung über einen langlebigen yt-dlp-Prozess (res/ytresolver.py, yt-dlp als
+// signiert geprüftes Zipapp: Bundle bzw. ~/Library/Application Support/Sofa/yt-dlp). JSON-Zeilen über Pipes,
 // Neustart bei Absturz, Ergebnis-Cache bis kurz vor Ablauf der URLs (6 h, IP-gebunden).
 #import "SFCore.h"
 
