@@ -6,7 +6,22 @@
 // aktualisiert werden, schneller als jede Sofa-/MacPorts-Version. Sofa legt das venv beim
 // ersten Bedarf selbst an und hält es täglich aktuell (pip install -U).
 static NSString *const kBasePython = @"/opt/local/bin/python3.14";   // MacPorts python314 (Port-Abhängigkeit)
-static NSArray *YTPackages(void) { return @[@"yt-dlp", @"yt-dlp-ejs", @"bgutil-ytdlp-pot-provider"]; }
+static NSString *const kPotPlugin = @"bgutil-ytdlp-pot-provider";
+// Plugin-Version muss zur Version des PO-Token-Servers passen (Port bgutil-pot-server) ->
+// wird an dessen /ping-Antwort gepinnt; Server nicht erreichbar -> neueste Version.
+static NSArray *YTPackages(NSString *potVersion) {
+    return @[@"yt-dlp", @"yt-dlp-ejs", potVersion ? [kPotPlugin stringByAppendingFormat:@"==%@", potVersion] : kPotPlugin];
+}
+static NSString *YTServerVersion(void) {
+    NSURLRequest *r = [NSURLRequest requestWithURL:[NSURL URLWithString:@"http://127.0.0.1:4416/ping"]
+                                       cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:5];
+    NSData *d = [NSURLConnection sendSynchronousRequest:r returningResponse:NULL error:NULL];
+    id j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL] : nil;
+    NSString *v = [j isKindOfClass:[NSDictionary class]] ? j[@"version"] : nil;
+    if (![v isKindOfClass:[NSString class]]) return nil;
+    NSRegularExpression *ok = [NSRegularExpression regularExpressionWithPattern:@"^[0-9]+(\\.[0-9]+)*$" options:0 error:NULL];
+    return [ok numberOfMatchesInString:v options:0 range:NSMakeRange(0, v.length)] ? v : nil;
+}
 static NSString *const kUpdatedKey = @"ytdlp.updated";
 static const NSTimeInterval kUpdateEvery = 24 * 3600;
 
@@ -28,9 +43,10 @@ static int YTRun(NSString *path, NSArray *args, NSString **out) {
     return t.terminationStatus;
 }
 static NSString *YTTail(NSString *s) { return s.length > 400 ? [s substringFromIndex:s.length - 400] : s; }
+// installierte Versionen von yt-dlp und Plugin, z.B. "2026.10.26 2.0.2"
 static NSString *YTVersion(NSString *py) {
     NSString *o = nil;
-    if (YTRun(py, @[@"-c", @"import yt_dlp.version as v; print(v.__version__)"], &o) != 0) return nil;
+    if (YTRun(py, @[@"-c", @"import importlib.metadata as m; print(m.version('yt-dlp'), m.version('bgutil-ytdlp-pot-provider'))"], &o) != 0) return nil;
     return [o stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
@@ -135,18 +151,23 @@ static NSString *YTVersion(NSString *py) {
     BOOL due = now - [[[SFStore shared] setting:kUpdatedKey] doubleValue] > kUpdateEvery;
     // Dev-Instanzen teilen sich das venv der echten App: dort nur lesen, nie umbauen
     BOOL custom = [(NSString *)[NSProcessInfo processInfo].environment[@"SOFA_YTDLP_DIR"] length] > 0;
-    if (exists && (!due || (SFDevMode && !custom))) return;
+    if (exists && SFDevMode && !custom) return;
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:kBasePython]) {
         SFLog(@"yt: %@ fehlt – YouTube-Wiedergabe nicht möglich (MacPorts-Port python314)", kBasePython);
         return;
     }
     _settingUp = YES;
-    SFLog(@"yt: %@ venv %@", exists ? @"aktualisiere" : @"lege an", dir);
     SFBackground(^{
         NSFileManager *fm = [NSFileManager defaultManager];
-        NSString *out = nil, *before = nil, *after = nil;
+        NSString *server = YTServerVersion();
+        NSString *before = exists ? YTVersion(py) : nil;
+        NSString *plugin = [before componentsSeparatedByString:@" "].lastObject;
+        BOOL mismatch = server && before && ![plugin isEqualToString:server];   // Server wurde aktualisiert
+        if (exists && !due && !mismatch) { SFMain(^{ self->_settingUp = NO; }); return; }
+        SFLog(@"yt: %@ venv %@ (PO-Server %@)", exists ? @"aktualisiere" : @"lege an", dir, server ?: @"nicht erreichbar");
+        NSString *out = nil, *after = nil;
         NSMutableArray *pip = [@[@"-m", @"pip", @"install", @"--upgrade", @"--quiet"] mutableCopy];
-        [pip addObjectsFromArray:YTPackages()];
+        [pip addObjectsFromArray:YTPackages(server)];
         BOOL ok;
         if (!exists) {
             // in ein Nachbarverzeichnis bauen, erst fertig an den echten Ort -> nie halbes venv
@@ -158,7 +179,6 @@ static NSString *YTVersion(NSString *py) {
             if (ok) { [fm removeItemAtPath:dir error:nil]; ok = [fm moveItemAtPath:tmp toPath:dir error:nil]; }
             else [fm removeItemAtPath:tmp error:nil];
         } else {
-            before = YTVersion(py);
             ok = YTRun(py, pip, &out) == 0;
         }
         if (ok) after = YTVersion(py);
@@ -167,7 +187,7 @@ static NSString *YTVersion(NSString *py) {
             self->_settingUp = NO;
             if (!ok) { SFLog(@"yt: venv fehlgeschlagen: %@", YTTail(out)); return; }
             [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", now] forKey:kUpdatedKey];
-            SFLog(@"yt: yt-dlp %@%@", after, before && ![before isEqualToString:after] ? [@" (vorher " stringByAppendingFormat:@"%@)", before] : @"");
+            SFLog(@"yt: yt-dlp + Plugin %@%@", after, before && ![before isEqualToString:after] ? [@" (vorher " stringByAppendingFormat:@"%@)", before] : @"");
             if (!exists) { if (self->_wantRunning) [self start]; }
             else if (![before isEqualToString:after]) [self restartWhenIdle];
         });
@@ -180,7 +200,7 @@ static NSString *YTVersion(NSString *py) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self restartWhenIdle]; });
         return;
     }
-    SFLog(@"yt: Resolver-Neustart für neue yt-dlp-Version");
+    SFLog(@"yt: Resolver-Neustart für neue yt-dlp-/Plugin-Version");
     [self restart];
 }
 
