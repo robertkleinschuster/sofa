@@ -216,12 +216,22 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
         (de.sofa.remote, de.sofa.app) via `startupitems … location LaunchAgents custom_file`.
         Erst `port -n destroot` testen (echte App nicht anfassen).
   - [~] Tag v0.1.0 gesetzt (Port baut daraus); GitHub-Release-Seite + Lizenz (fehlt noch, User entscheidet) offen.
-  - [ ] Diese Maschine auf den Port umstellen (manuelles /Applications/Sofa.app, ~/Library/LaunchAgents/de.sofa.*,
+  - [x] (2026-11-04 09:36, v0.1.1) Diese Maschine auf den Port umgestellt: Sofa läuft aus
+        /Applications/MacPorts/Sofa.app, Agents = /Library/LaunchAgents/org.macports.sofa{,-remote}.plist
+        (Labels de.sofa.app/de.sofa.remote). Alte Hand-Agents → ~/Library/LaunchAgents/disabled-handbuilt/,
+        altes Bundle → /Applications/Sofa-handbuilt-backup (kein .app mehr → keine doppelte Bundle-ID).
+        Agents aus SSH laden geht nur per `sudo launchctl bsexec $(pgrep -x Dock) sudo -u imac launchctl load -w …`
+        (`port load` scheitert ohne GUI-Sitzung). Live-Update: `SUDO_PW=… tools/sofa-deploy` (externer Tausch
+        per sudo, ~2 s); Port-Stand zurück: `sudo port -n upgrade --force sofa`.
+        Ursprünglicher Punkt: (manuelles /Applications/Sofa.app, ~/Library/LaunchAgents/de.sofa.*,
         Hand-Daemon ablösen); Dev-Kreislauf bleibt `sofa-dev` auf build/; klären, wie `sofa-deploy`
         (Live-Update) mit port-verwalteten Dateien zusammenspielt.
   - [ ] `port mdmg sofa` → .dmg mit allen Laufzeit-Abhängigkeiten als Release-Asset (für Macs ohne MacPorts).
   - [x] README: Installation über `sudo port -n install sofa` + `port load`.
   - [ ] Ersteinrichtung in der App (YouTube-Login über Firefox erklären, Apple-Remote prüfen) – nichts im Terminal.
+- [ ] **Ferne Zukunft (Idee User 2026-11-04):** Mehrbenutzer + YouTube-Konto-Sync nativ in Sofa –
+      nur falls anonyme Auflösung unzuverlässig wird. Dann Anmeldung IN Sofa selbst (kein Browser),
+      evtl. bequem übers Handy (Code/QR wie „Mit TV verbinden“).
 - [ ] Periodisch Background-Review-Agents (User-Wunsch) — nach jedem größeren Baustein.
 - [ ] Video-Frames im Dev-Stream (AVPlayerItemVideoOutput), sonst schwarz.
 - [ ] MacPorts-Port im Overlay (Endzustand), /Applications-Kopie ist Übergang.
