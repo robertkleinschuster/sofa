@@ -840,6 +840,8 @@ static void auditImages(SFPage *page) {
 #pragma mark - Öffnen
 
 void SFOpenItem(SFNavigator *nav, SFItem *item, NSArray *queue, NSUInteger index) {
+    // Kopiergeschützt: sofort ehrlich sagen statt Spinner + Fehlerbildschirm
+    if (item.drm && (item.kind == SFItemVideo || item.kind == SFItemLive)) { [nav toast:SFDRMNotice]; return; }
     switch (item.kind) {
         case SFItemVideo:
         case SFItemLive: {

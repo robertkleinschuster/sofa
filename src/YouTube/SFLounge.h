@@ -20,7 +20,7 @@ extern NSString *const SFLoungeRemotesDidChangeNotification;
 - (void)forgetAllPhones;                        // Kopplung aufheben: neue screenId, Handys brauchen einen neuen Code
 
 // Vom Handy kommende Befehle (Main-Thread). cmd: setPlaylist, play, pause, seekTo,
-// next, previous, stopVideo, setVolume, remoteConnected …; args = Payload (Strings).
+// next, previous, stopVideo, setVolume, setSubtitlesTrack, remoteConnected …; args = Payload (Strings).
 @property (nonatomic, copy) void (^commandHandler)(NSString *cmd, NSDictionary *args);
 // Liefert den aktuell sichtbaren Player (oder nil) – setzt die App.
 @property (nonatomic, copy) id (^playerProvider)(void);

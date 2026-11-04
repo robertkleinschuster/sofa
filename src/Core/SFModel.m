@@ -26,6 +26,8 @@ void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r) { onlineResolve
 void SFResolveRef(NSString *ref, SFURLDone done) { resolveWith(resolvers(), ref, done); }
 void SFResolveRefOnline(NSString *ref, SFURLDone done) { resolveWith(onlineResolvers(), ref, done); }
 
+NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar";
+
 @implementation SFItem
 
 - (NSDictionary *)dictionaryRepresentation {
@@ -46,6 +48,7 @@ void SFResolveRefOnline(NSString *ref, SFURLDone done) { resolveWith(onlineResol
     if (self.externalID) d[@"externalID"] = self.externalID;
     else if (self.playURL) d[@"url"] = self.playURL.absoluteString;   // YouTube-URLs laufen ab -> nur ohne externalID speichern
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
+    if (self.drm) d[@"drm"] = @YES;
     return d;
 }
 
@@ -77,6 +80,7 @@ void SFResolveRefOnline(NSString *ref, SFURLDone done) { resolveWith(onlineResol
     if (i.localPath) i.playURL = [NSURL fileURLWithPath:i.localPath];
     else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
     i.resolverRef = d[@"ref"];
+    i.drm = [d[@"drm"] boolValue];
     return i;
 }
 
