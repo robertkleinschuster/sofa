@@ -275,7 +275,10 @@ static uint16_t gPort = 8765;
     [[SFStore shared] flush];
     SFLog(@"update: gesichert, beende");
     // _exit statt exit: alles ist gespeichert; exit() blieb in Framework-Aufräumhandlern hängen.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ _exit(0); });
+    // Auf einer Hintergrund-Queue: ein Main-Queue-Block lief nicht, solange der Main-Runloop
+    // in einem anderen Modus steckte -> Helper musste nach 5 s hart beenden (Log „erzwinge“).
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{ _exit(0); });
 }
 
 - (void)restoreAfterUpdate {
