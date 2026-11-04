@@ -139,6 +139,12 @@
             NSString *p = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:[SFDownloads ffmpegToolPath]];
             SFLog(@"dev: dlverify %@ -> %@", path.lastPathComponent, p ?: @"ok");
         });
+    } else if ([cmd isEqualToString:@"proctest"]) {          // Dev: SFRunProcess timeout path (sleep 30 with 1 s limit)
+        SFBackground(^{
+            NSDate *t0 = [NSDate date];
+            int st = SFRunProcess(@"/bin/sleep", @[@"30"], 1, NO, NULL);
+            SFLog(@"dev: proctest status %d after %.1f s", st, -[t0 timeIntervalSinceNow]);
+        });
     } else if ([cmd isEqualToString:@"dlget"] && arg) {     // Dev: download a resolver ref (orf:…) like the context menu
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";

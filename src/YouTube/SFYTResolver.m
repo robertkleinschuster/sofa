@@ -20,21 +20,14 @@ static NSString *const kReleaseAPI = @"https://api.github.com/repos/yt-dlp/yt-dl
 // Läuft synchron (nur im Hintergrund aufrufen); liefert Exit-Status, *out = stdout+stderr.
 // Hängt ein Lauf länger als `timeout`, wird er beendet.
 static int YTRun(NSString *path, NSArray *args, NSString **out, NSTimeInterval timeout) {
-    NSTask *t = [NSTask new];
-    t.launchPath = path; t.arguments = args;
-    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
-    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    [env removeObjectForKey:@"PYTHONPATH"];
-    t.environment = env;
-    NSPipe *p = [NSPipe pipe];
-    t.standardOutput = p; t.standardError = p;
-    @try { [t launch]; } @catch (NSException *e) { if (out) *out = e.reason; return -1; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ if (t.isRunning) [t terminate]; });
-    NSData *d = [p.fileHandleForReading readDataToEndOfFile];
-    [t waitUntilExit];
-    if (out) *out = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
-    return t.terminationStatus;
+    // PYTHONPATH must not leak into the bundled Python; SFRunProcess handles timeout and DYLD
+    NSString *pp = [[NSProcessInfo processInfo] environment][@"PYTHONPATH"];
+    if (pp) unsetenv("PYTHONPATH");
+    NSData *d = nil;
+    int st = SFRunProcess(path, args, timeout, YES, &d);
+    if (st == -2) SFLog(@"yt: %@ timed out after %.0f s and was killed", path.lastPathComponent, timeout);
+    if (out) *out = [[NSString alloc] initWithData:d ?: [NSData data] encoding:NSUTF8StringEncoding] ?: @"";
+    return st;
 }
 static NSString *YTTail(NSString *s) { return s.length > 400 ? [s substringFromIndex:s.length - 400] : s; }
 static NSString *YTTrim(NSString *s) { return [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]; }

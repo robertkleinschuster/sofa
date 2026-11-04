@@ -102,28 +102,12 @@ static NSArray *SFProcessArgs(pid_t pid) {
 
 #pragma mark Verification
 
-// Runs ffmpeg synchronously (call off the main thread); returns stderr.
+// Runs ffmpeg (niced) synchronously - call off the main thread; returns stderr, nil if it could not
+// run or timed out (callers then treat the file as fine: verification never destroys on doubt).
 static NSString *SFRunFF(NSString *ff, NSArray *args, double timeout) {
-    NSTask *t = [NSTask new];
-    t.launchPath = @"/usr/bin/nice";
-    t.arguments = [@[@"-n", @"15", ff, @"-nostdin", @"-hide_banner"] arrayByAddingObjectsFromArray:args];
-    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
-    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    t.environment = env;
-    NSPipe *err = [NSPipe pipe];
-    t.standardError = err; t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
-    t.standardInput = [NSFileHandle fileHandleWithNullDevice];
-    // No -waitUntilExit: on 10.9 it spins a run loop and hung forever on a GCD thread although
-    // ffmpeg had long exited (2026-11-04). terminationHandler + semaphore, with a hard timeout.
-    dispatch_semaphore_t done = dispatch_semaphore_create(0);
-    t.terminationHandler = ^(NSTask *x) { dispatch_semaphore_signal(done); };
-    @try { [t launch]; } @catch (NSException *e) { return nil; }
-    NSData *d = [err.fileHandleForReading readDataToEndOfFile];   // EOF when ffmpeg exits
-    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC))) != 0) {
-        SFLog(@"downloads: verification ffmpeg did not exit within %.0f s - killing it", timeout);
-        kill(t.processIdentifier, SIGKILL);
-        return nil;   // could not check -> treated as "fine", never destroys anything
-    }
+    NSData *d = nil;
+    int st = SFRunProcess(@"/usr/bin/nice", [@[@"-n", @"15", ff, @"-nostdin", @"-hide_banner"] arrayByAddingObjectsFromArray:args], timeout, YES, &d);
+    if (st == -1 || st == -2) return nil;
     return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
 }
 

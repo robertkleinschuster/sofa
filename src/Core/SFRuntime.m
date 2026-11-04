@@ -1,4 +1,5 @@
 #import "SFRuntime.h"
+#import <signal.h>
 
 static NSString *const kPrefix = @"/opt/local";   // Port: reinplace auf ${prefix}
 
@@ -85,14 +86,7 @@ static BOOL SFWriteAgent(NSString *label, NSString *exe, BOOL keepAlive) {
     return [want writeToFile:path atomically:YES];
 }
 
-static void SFLaunchctl(NSArray *args) {
-    NSTask *t = [NSTask new];
-    t.launchPath = @"/bin/launchctl";
-    t.arguments = args;
-    t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
-    t.standardError = [NSFileHandle fileHandleWithNullDevice];
-    @try { [t launch]; [t waitUntilExit]; } @catch (NSException *e) {}
-}
+static void SFLaunchctl(NSArray *args) { SFRunProcess(@"/bin/launchctl", args, 20, NO, NULL); }
 
 BOOL SFRuntimeMisplaced(void) {
     if (!SFRuntimeDir()) return NO;
@@ -132,4 +126,38 @@ void SFInstallAgents(void) {
     }
     // Autostart: erst ab der nächsten Anmeldung aktiv (jetzt laden startete ein zweites Sofa)
     SFWriteAgent(@"de.sofa.app", [app stringByAppendingPathComponent:@"Contents/MacOS/Sofa"], NO);
+}
+
+int SFRunProcess(NSString *path, NSArray *args, NSTimeInterval timeout, BOOL mergeStderr, NSData **output) {
+    NSTask *t = [NSTask new];
+    t.launchPath = path; t.arguments = args ?: @[];
+    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
+    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
+    t.environment = env;
+    NSPipe *p = [NSPipe pipe];
+    t.standardOutput = p;
+    t.standardError = mergeStderr ? p : [NSFileHandle fileHandleWithNullDevice];
+    t.standardInput = [NSFileHandle fileHandleWithNullDevice];
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    t.terminationHandler = ^(NSTask *x) { dispatch_semaphore_signal(done); };
+    @try { [t launch]; } @catch (NSException *e) { return -1; }
+    pid_t pid = t.processIdentifier;
+    __block BOOL timedOut = NO;
+    // watchdog: the pipe read below only returns once the child (and anything holding the pipe) exits
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        if (dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) == 0) { dispatch_semaphore_signal(done); return; }
+        timedOut = YES;
+        // (no SFLog here: SFRuntime is also linked into SofaRemote; callers log the -2 result)
+        kill(pid, SIGTERM);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            if (dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) == 0) { dispatch_semaphore_signal(done); return; }
+            kill(pid, SIGKILL);
+        });
+    });
+    NSData *d = [p.fileHandleForReading readDataToEndOfFile];
+    dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((timeout + 5) * NSEC_PER_SEC)));
+    dispatch_semaphore_signal(done);   // keep it signalled for the watchdog checks
+    if (output) *output = d;
+    if (timedOut) return -2;
+    return t.isRunning ? -2 : t.terminationStatus;
 }

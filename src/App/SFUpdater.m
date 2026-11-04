@@ -29,15 +29,9 @@ static NSComparisonResult SFCompareVersions(NSString *a, NSString *b) {
 }
 
 static int SFRun(NSString *tool, NSArray *args, NSData **out) {
-    NSTask *t = [NSTask new];
-    t.launchPath = tool; t.arguments = args;
-    NSPipe *p = [NSPipe pipe];
-    t.standardOutput = p; t.standardError = [NSFileHandle fileHandleWithNullDevice];
-    @try { [t launch]; } @catch (NSException *e) { return -1; }
-    NSData *d = [p.fileHandleForReading readDataToEndOfFile];
-    [t waitUntilExit];
-    if (out) *out = d;
-    return t.terminationStatus;
+    int st = SFRunProcess(tool, args, 300, NO, out);
+    if (st == -2) SFLog(@"update: %@ timed out and was killed", tool.lastPathComponent);
+    return st;
 }
 
 @implementation SFUpdater {

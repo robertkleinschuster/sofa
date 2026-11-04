@@ -77,6 +77,11 @@ for i in $(seq 1 120); do [ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16
 [ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16 ] && ok "15 verifications in a row finished (no hang)" \
   || bad "verifier hung ($(grep -c 'dlverify good.mp4 -> ok' "$LOG")/16 finished)"
 
+cmd proctest
+for i in $(seq 1 20); do grep -q 'proctest status' "$LOG" && break; sleep 0.5; done
+grep -q 'proctest status -2 after [12]\.' "$LOG" && ok "hung child process is killed at its timeout" \
+  || bad "process timeout did not work: $(grep 'proctest' "$LOG")"
+
 echo "==> 3. quit during a download"
 cmd "dlget $REF"
 for i in $(seq 1 60); do grep -q "downloads: lade" "$LOG" && break; sleep 0.5; done

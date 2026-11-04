@@ -155,17 +155,8 @@ static NSData *rasterizeSVG(NSData *svg) {
     NSString *tmp = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     NSString *in = [tmp stringByAppendingPathExtension:@"svg"], *out = [tmp stringByAppendingPathExtension:@"png"];
     if (![svg writeToFile:in atomically:NO]) return nil;
-    NSTask *t = [NSTask new];
-    t.launchPath = tool;
-    t.arguments = @[@"-a", @"-w", @"1024", @"-f", @"png", @"-o", out, in];   // Seitenverhältnis halten, 1024 px breit
-    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
-    [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    t.environment = env;
-    t.standardError = [NSFileHandle fileHandleWithNullDevice];
-    t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
-    NSData *png = nil;
-    @try { [t launch]; [t waitUntilExit]; if (t.terminationStatus == 0) png = [NSData dataWithContentsOfFile:out]; }
-    @catch (NSException *e) { png = nil; }
+    NSData *png = nil;   // keep the aspect ratio, 1024 px wide
+    if (SFRunProcess(tool, @[@"-a", @"-w", @"1024", @"-f", @"png", @"-o", out, in], 20, NO, NULL) == 0) png = [NSData dataWithContentsOfFile:out];
     [[NSFileManager defaultManager] removeItemAtPath:in error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:out error:nil];
     if (!png.length) SFLog(@"image: SVG nicht gerastert");

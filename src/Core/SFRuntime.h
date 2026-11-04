@@ -19,3 +19,10 @@ void SFInstallAgents(void);
 BOOL SFRuntimeMisplaced(void);
 // Einmal früh in main(): PATH, SSL_CERT_FILE, FONTCONFIG_*, SOFA_NODE für Kindprozesse.
 void SFRuntimeSetup(void);
+
+// Run a tool synchronously and return its exit status (-1 = could not launch, -2 = timed out and
+// killed). Never use -[NSTask waitUntilExit] instead: on 10.9 it spins a run loop and can hang
+// forever on a GCD thread although the child has exited (2026-11-04). Waits via terminationHandler +
+// semaphore; after `timeout` seconds SIGTERM, 2 s later SIGKILL. DYLD_INSERT_LIBRARIES is removed
+// from the child environment. *output (optional) = stdout (+ stderr when mergeStderr).
+int SFRunProcess(NSString *path, NSArray *args, NSTimeInterval timeout, BOOL mergeStderr, NSData **output);
