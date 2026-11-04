@@ -639,10 +639,11 @@ static NSSet *skipKeys(void) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
-            if (u && [r[@"dash"] isKindOfClass:[NSDictionary class]]) {   // VP9/AV1 für die mpv-Engine
-                NSMutableDictionary *d = [r[@"dash"] mutableCopy];
+            if (u) {   // VP9/AV1 (DASH) für die mpv-Engine, dazu Ton-/Untertitelspuren
+                NSMutableDictionary *d = [r[@"dash"] isKindOfClass:[NSDictionary class]] ? [r[@"dash"] mutableCopy] : [NSMutableDictionary new];
                 if (r[@"height"]) d[@"hlsHeight"] = r[@"height"];
                 if (r[@"fps"]) d[@"hlsFps"] = r[@"fps"];
+                if ([r[@"subs"] isKindOfClass:[NSArray class]]) d[@"subs"] = r[@"subs"];
                 SFSetMPVSource(u, d);
             }
             done(u, e);

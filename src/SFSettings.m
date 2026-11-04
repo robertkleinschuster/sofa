@@ -25,3 +25,14 @@ BOOL SFStartupQuestionsAsked(void) { return SFGetBool(CFSTR("startupAsked"), NO)
 void SFSetStartupQuestionsAsked(void) { SFSetBool(CFSTR("startupAsked"), YES); }
 // Versteckter Notschalter (keine Oberfläche): defaults write de.sofa.app preferAVFoundation -bool YES
 BOOL SFPreferAVFoundation(void) { return SFGetBool(CFSTR("preferAVFoundation"), NO); }
+
+NSString *SFSubtitleLanguage(void) {
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("subtitleLanguage"), SFDomain());
+    NSString *s = v && CFGetTypeID(v) == CFStringGetTypeID() ? [(__bridge NSString *)v copy] : nil;
+    if (v) CFRelease(v);
+    return s.length ? s : nil;
+}
+void SFSetSubtitleLanguage(NSString *lang) {
+    CFPreferencesSetAppValue(CFSTR("subtitleLanguage"), (__bridge CFStringRef)(lang.length ? lang : nil), SFDomain());
+    CFPreferencesAppSynchronize(SFDomain());
+}

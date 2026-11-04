@@ -359,6 +359,7 @@ static CGFloat textWidth(SFLabel *l) {
 
 - (void)willAppear {
     [self updateClock];
+    [_clockTimer invalidate];   // nach einem Overlay (Menü) kommt willAppear ohne willDisappear davor
     _clockTimer = [NSTimer scheduledTimerWithTimeInterval:15 target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
     if (!_page && !_loading) [self reload];
     else {

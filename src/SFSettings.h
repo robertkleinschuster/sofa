@@ -12,3 +12,7 @@ BOOL SFStartupQuestionsAsked(void);       // Ersteinrichtung hat beides abgefrag
 void SFSetStartupQuestionsAsked(void);
 // mpv ist der Standard-Player; YES = alte Wahl (H.264 über AVFoundation). Nur per defaults, Notschalter.
 BOOL SFPreferAVFoundation(void);
+// Bevorzugte Untertitelsprache (z.B. "de"); nil = Untertitel aus (Standard). Wird bei jeder
+// Auswahl im Player gemerkt und beim nächsten Video angewandt, wenn die Sprache verfügbar ist.
+NSString *SFSubtitleLanguage(void);
+void SFSetSubtitleLanguage(NSString *lang);

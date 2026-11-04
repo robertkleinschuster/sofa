@@ -4,6 +4,15 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.2
+
+- **Ton & Untertitel wählbar:** Während der Wiedergabe **OK gedrückt halten** öffnet das Menü
+  „Ton & Untertitel“. Dort lassen sich die Tonspur (Original zuerst, synchronisierte Fassungen
+  gekennzeichnet) und Untertitel wählen. Bei YouTube gibt es auch automatische und automatisch
+  übersetzte deutsche Untertitel. Ein Hinweis oben rechts zeigt, wann das Menü verfügbar ist.
+- Die gewählte Untertitelsprache bleibt gespeichert und gilt automatisch für die nächsten Videos.
+- Ein Menü über dem Video unterbricht die Wiedergabe nicht mehr.
+
 ## 0.3.1
 
 - **Neues App-Icon.**

@@ -88,7 +88,9 @@ NSCursor *SFBlankCursor(void) {
 - (void)push:(SFScreen *)s {
     SFScreen *old = self.top;
     [self prepare:s];
-    [old willDisappear];
+    // Nur ein deckender Bildschirm verdrängt den darunter. Ein Overlay (Menü, Dialog) lässt ihn
+    // weiterlaufen – z.B. das Video unter „Ton & Untertitel“ (vorher: Wiedergabe abgebaut).
+    if (s.isOpaque) [old willDisappear];
     [s willAppear];
     [_stack addObject:s];
     SFNoAnimate(^{

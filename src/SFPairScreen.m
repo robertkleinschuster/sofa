@@ -60,6 +60,7 @@
 - (void)willAppear {
     [super willAppear];
     _visible = YES;
+    [_second invalidate]; [_refresh invalidate]; _refresh = nil;   // idempotent (Overlay davor)
     [self updatePhones];
     [self loadCode];
     // Countdown sekündlich; neuer Code kurz vor Ablauf (Code lebt gemessen 300–307 s)

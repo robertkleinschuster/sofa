@@ -40,6 +40,14 @@ typedef NS_ENUM(NSInteger, SFEngineStatus) {
 - (void)seekTo:(NSTimeInterval)t exact:(BOOL)exact;
 - (void)close;                    // Wiedergabe beenden (Engine bleibt nutzbar)
 - (void)shutdown;                 // endgültig freigeben – VOR dem Loslassen aufrufen (mpv: Thread-Callbacks lösen)
+@optional
+// Ton-/Untertitelspuren (nur mpv). type = @"audio" | @"sub". Einträge: id (NSNumber), lang, title,
+// selected (BOOL), url (nur externe Spuren).
+- (NSArray *)tracksOfType:(NSString *)type;
+- (void)selectTrack:(NSString *)type trackID:(NSInteger)tid;   // 0 = aus
+// Externe Spur (z.B. YouTube-Untertitel als WebVTT, andere Sprachfassung) laden und auswählen;
+// war dieselbe URL schon geladen, wird nur ausgewählt.
+- (void)addTrack:(NSString *)type url:(NSURL *)url title:(NSString *)title lang:(NSString *)lang;
 @end
 
 // mpv-Quelle zu einer aufgelösten URL (z. B. YouTube-DASH: video/audio/height/fps/hlsHeight/hlsFps)

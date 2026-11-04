@@ -10,6 +10,7 @@
 #import "SFLibrary.h"
 #import "SFCurl.h"
 #import "SFPower.h"
+#import "SFMenuScreen.h"
 
 NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
@@ -23,6 +24,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     BOOL _explicitQueue;   // Handy-Playlist: nächster = nächster Queue-Eintrag
     NSURL *_dashFailedURL; // DASH-Streams dieser Quelle abgelehnt (YouTube 403) -> mpv mit dem HLS-Stream
     BOOL _openedDash;      // aktueller Versuch: mpv mit getrennten DASH-Streams
+    BOOL _subsApplied;     // bevorzugte Untertitel für diesen Inhalt schon angewandt
+    CALayer *_trackKey; SFLabel *_trackHint;   // OSD: „[OK] halten: Ton & Untertitel“
     NSUInteger _index;
     id<SFEngine> _engine;        // AVFoundation oder mpv (SFEngine.h)
     CALayer *_videoHost;         // trägt die Video-Ebene der aktiven Engine
@@ -108,6 +111,25 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_channel = [SFLabel labelWithFont:[t medium:28] color:[NSColor colorWithDeviceWhite:1 alpha:0.75]];
         self->_channel.position = CGPointMake(x, U(70));
         [self->_osd addSublayer:self->_channel];
+        // rechts oben wie in den Listen: „[OK] halten: Ton & Untertitel“ (Geste sichtbar machen)
+        self->_trackHint = [SFLabel labelWithFont:[t medium:26] color:[NSColor colorWithDeviceWhite:1 alpha:0.85]];
+        self->_trackHint.text = @"halten: Ton & Untertitel";
+        self->_trackHint.alignment = NSRightTextAlignment;
+        [self->_trackHint sizeToFitWidth:U(420)];
+        self->_trackHint.position = CGPointMake(x + w - U(420), U(72));
+        CGFloat hw = [self->_trackHint.text sizeWithAttributes:@{NSFontAttributeName: [t medium:26]}].width;
+        self->_trackKey = [CALayer layer];
+        self->_trackKey.borderColor = [NSColor colorWithDeviceWhite:1 alpha:0.85].CGColor;
+        self->_trackKey.borderWidth = U(2); self->_trackKey.cornerRadius = U(8);
+        self->_trackKey.frame = CGRectMake(x + w - hw - U(12) - U(52), U(70), U(52), U(34));
+        SFLabel *ok = [SFLabel labelWithFont:[t bold:20] color:[NSColor colorWithDeviceWhite:1 alpha:0.85]];
+        ok.text = @"OK"; ok.alignment = NSCenterTextAlignment;
+        [ok sizeToFitWidth:U(52)];
+        ok.position = CGPointMake(0, (U(34) - ok.bounds.size.height) / 2);
+        [self->_trackKey addSublayer:ok];
+        [self->_osd addSublayer:self->_trackKey];
+        [self->_osd addSublayer:self->_trackHint];
+        [self updateTrackHint];
         self->_title = [SFLabel labelWithFont:[t bold:50] color:[NSColor whiteColor]];
         self->_title.maxLines = 2;
         [self->_osd addSublayer:self->_title];
@@ -231,7 +253,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
-    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -397,6 +419,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [self postState];
     } else if (_engine.status == SFEngineReady) {
         [self showMessage:@""];   // z. B. „Verbindung unterbrochen“ nach erfolgreichem Ausweichen
+        [self updateTrackHint];
+        if (!_subsApplied) { _subsApplied = YES; [self applyPreferredSubtitles]; }
         if (self.startPaused || _holdPaused) { [_engine pause]; self.startPaused = NO; }   // Pause während des Ladens / nach Update
         [self postState];
         if (_item.duration <= 0 && _engine.duration > 0) _item.duration = _engine.duration;
@@ -728,6 +752,167 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     [self startItem];
 }
 
+#pragma mark Ton & Untertitel
+
+- (BOOL)tracksAvailable {
+    return [_engine respondsToSelector:@selector(tracksOfType:)] && _engine.status == SFEngineReady;
+}
+
+- (void)updateTrackHint {
+    float op = [self tracksAvailable] ? 1 : 0;
+    SFNoAnimate(^{ self->_trackHint.opacity = op; self->_trackKey.opacity = op; });
+}
+
+// „en-US“ -> „Englisch“ (Region weglassen; Schrift bleibt: „Chinesisch (Vereinfacht)“);
+// ISO 639-2 („deu“) wird ebenfalls verstanden
+static NSString *SFLanguageName(NSString *code) {
+    if (!code.length || [code isEqualToString:@"und"]) return @"Unbekannte Sprache";
+    NSDictionary *c = [NSLocale componentsFromLocaleIdentifier:[NSLocale canonicalLocaleIdentifierFromString:code]];
+    NSMutableDictionary *k = [NSMutableDictionary new];
+    if (c[NSLocaleLanguageCode]) k[NSLocaleLanguageCode] = c[NSLocaleLanguageCode];
+    if (c[NSLocaleScriptCode]) k[NSLocaleScriptCode] = c[NSLocaleScriptCode];
+    NSString *canon = [NSLocale localeIdentifierFromComponents:k];
+    NSString *n = [[NSLocale localeWithLocaleIdentifier:@"de"] displayNameForKey:NSLocaleIdentifier value:canon];
+    if (!n.length) return code;
+    return [[n substringToIndex:1].uppercaseString stringByAppendingString:[n substringFromIndex:1]];
+}
+static NSString *SFBaseLanguage(NSString *code) {
+    if (!code.length) return nil;
+    NSString *canon = [NSLocale canonicalLanguageIdentifierFromString:code];
+    return [[canon componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"-_"]].firstObject lowercaseString];
+}
+
+// Auswahlmöglichkeiten: je Eintrag title, selected, apply (Block), lang (für die Vorliebe)
+- (NSArray *)trackChoices:(NSString *)type {
+    NSMutableArray *out = [NSMutableArray new];
+    NSDictionary *src = SFMPVSourceFor(_openURL);
+    NSArray *engineTracks = [_engine tracksOfType:type];
+    NSMutableSet *externalURLs = [NSMutableSet new];
+    NSString *selectedURL = nil; NSInteger selectedID = 0;
+    for (NSDictionary *t in engineTracks) {
+        if (t[@"url"]) [externalURLs addObject:t[@"url"]];
+        if ([t[@"selected"] boolValue]) { selectedURL = t[@"url"]; selectedID = [t[@"id"] integerValue]; }
+    }
+    id<SFEngine> eng = _engine;
+    if ([type isEqualToString:@"sub"]) {
+        [out addObject:@{@"title": @"Aus", @"selected": @(selectedID == 0),
+                         @"apply": ^{ [eng selectTrack:@"sub" trackID:0]; }}];
+    }
+    // Quelle mit eigener Spurliste (YouTube): Tonspuren je Sprache, Untertitel als WebVTT
+    NSArray *ext = [type isEqualToString:@"sub"] ? src[@"subs"] : src[@"audios"];
+    if (![ext isKindOfClass:[NSArray class]]) ext = @[];
+    NSString *dashAudio = src[@"audio"];
+    // Reihenfolge: Deutsch, dann Originalsprache (Ton: Original zuerst), dann alphabetisch
+    NSString *origLang = nil;
+    for (NSDictionary *t in src[@"audios"] ?: @[]) if ([t[@"original"] boolValue]) origLang = SFBaseLanguage(t[@"lang"]);
+    if (!origLang) origLang = SFBaseLanguage(src[@"alang"]);
+    NSInteger (^rank)(NSDictionary *) = ^NSInteger(NSDictionary *t) {
+        if ([t[@"original"] boolValue]) return 0;
+        NSString *b = SFBaseLanguage(t[@"lang"]);
+        if ([b isEqualToString:@"de"]) return 1;
+        if (origLang && [b isEqualToString:origLang]) return 2;
+        return 3;
+    };
+    ext = [ext sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        NSInteger ra = rank(a), rb = rank(b);
+        if (ra != rb) return ra < rb ? NSOrderedAscending : NSOrderedDescending;
+        int ka = [a[@"kind"] isEqual:@"manual"] ? 0 : [a[@"kind"] isEqual:@"auto"] ? 1 : 2;
+        int kb = [b[@"kind"] isEqual:@"manual"] ? 0 : [b[@"kind"] isEqual:@"auto"] ? 1 : 2;
+        if (ka != kb) return ka < kb ? NSOrderedAscending : NSOrderedDescending;
+        return [SFLanguageName(a[@"lang"]) localizedCaseInsensitiveCompare:SFLanguageName(b[@"lang"])];
+    }];
+    for (NSDictionary *t in ext) {
+        NSString *name = SFLanguageName(t[@"lang"]);
+        if ([type isEqualToString:@"sub"]) {
+            if ([t[@"kind"] isEqual:@"auto"]) name = [name stringByAppendingString:@" (automatisch)"];
+            if ([t[@"kind"] isEqual:@"translated"]) name = [name stringByAppendingString:@" (automatisch übersetzt)"];
+        } else {
+            if ([t[@"original"] boolValue]) name = [name stringByAppendingString:@" · Original"];
+            else if ([t[@"described"] boolValue]) name = [name stringByAppendingString:@" · Audiodeskription"];
+            else if ([t[@"dubbed"] boolValue]) name = [name stringByAppendingString:@" · synchronisiert"];
+        }
+        NSString *url = t[@"url"];
+        BOOL sel = selectedURL ? [selectedURL isEqualToString:url]
+                               : ([type isEqualToString:@"audio"] && _openedDash && [url isEqualToString:dashAudio]);
+        NSString *n = name;
+        [out addObject:@{@"title": name, @"selected": @(sel), @"lang": t[@"lang"] ?: @"",
+                         @"apply": ^{ [eng addTrack:type url:[NSURL URLWithString:url] title:n lang:t[@"lang"]]; }}];
+    }
+    // Spuren im Stream selbst (ZDF/ARD/ORF-HLS, Dateien): alles, was nicht oben schon steht
+    BOOL haveExt = ext.count > 0;
+    for (NSDictionary *t in engineTracks) {
+        if (t[@"url"] && ([externalURLs containsObject:t[@"url"]] && (haveExt || [t[@"url"] isEqualToString:dashAudio]))) continue;
+        NSString *name = t[@"lang"] ? SFLanguageName(t[@"lang"]) : nil;
+        NSString *title = t[@"title"];
+        if (title.length && ![title isEqualToString:name]) name = name ? [NSString stringWithFormat:@"%@ – %@", name, title] : title;
+        if (!name) name = [NSString stringWithFormat:@"Spur %@", t[@"id"]];
+        NSInteger tid = [t[@"id"] integerValue];
+        [out addObject:@{@"title": name, @"selected": t[@"selected"] ?: @NO, @"lang": t[@"lang"] ?: @"",
+                         @"apply": ^{ [eng selectTrack:type trackID:tid]; }}];
+    }
+    return out;
+}
+
+- (NSString *)currentChoice:(NSArray *)choices {
+    for (NSDictionary *c in choices) if ([c[@"selected"] boolValue]) return c[@"title"];
+    return choices.count ? [choices.firstObject[@"title"] isEqual:@"Aus"] ? @"Aus" : @"Standard" : @"–";
+}
+
+- (void)showTrackMenu {
+    SFNavigator *nav = self.navigator;
+    NSArray *audio = [self trackChoices:@"audio"], *subs = [self trackChoices:@"sub"];
+    NSMutableArray *opts = [NSMutableArray new];
+    __weak SFPlayerScreen *ws = self;
+    SFMenuOption *a = [SFMenuOption option:@"Ton" action:^{
+        dispatch_async(dispatch_get_main_queue(), ^{ [ws showChoices:audio type:@"audio" title:@"Ton" on:nav]; });
+    }];
+    a.detail = audio.count > 1 ? [self currentChoice:audio] : (audio.count ? [self currentChoice:audio] : @"nur eine Tonspur");
+    SFMenuOption *u = [SFMenuOption option:@"Untertitel" action:^{
+        dispatch_async(dispatch_get_main_queue(), ^{ [ws showChoices:subs type:@"sub" title:@"Untertitel" on:nav]; });
+    }];
+    u.detail = subs.count > 1 ? [self currentChoice:subs] : @"keine vorhanden";
+    if (audio.count > 1) [opts addObject:a];
+    if (subs.count > 1) [opts addObject:u];
+    if (!opts.count) { [nav toast:@"Dieses Video hat nur eine Tonspur und keine Untertitel"]; return; }
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Ton & Untertitel" subtitle:_item.title options:opts theme:self.theme]];
+}
+
+- (void)showChoices:(NSArray *)choices type:(NSString *)type title:(NSString *)title on:(SFNavigator *)nav {
+    NSMutableArray *opts = [NSMutableArray new];
+    NSInteger sel = 0;
+    for (NSDictionary *c in choices) {
+        if ([c[@"selected"] boolValue]) sel = opts.count;
+        dispatch_block_t apply = c[@"apply"];
+        NSString *t = c[@"title"], *lang = c[@"lang"];
+        SFMenuOption *o = [SFMenuOption option:t action:^{
+            apply();
+            if ([type isEqualToString:@"sub"]) SFSetSubtitleLanguage(lang.length ? SFBaseLanguage(lang) : nil);   // für die nächsten Videos merken
+            [nav toast:[NSString stringWithFormat:@"%@: %@", title, t]];
+        }];
+        if ([c[@"selected"] boolValue]) o.detail = @"✓";
+        [opts addObject:o];
+    }
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:title subtitle:_item.title options:opts theme:self.theme];
+    m.initialSelection = sel;
+    [nav push:m];
+}
+
+// Gemerkte Untertitelsprache anwenden (echte vor automatischen vor übersetzten Untertiteln)
+- (void)applyPreferredSubtitles {
+    NSString *want = SFSubtitleLanguage();
+    if (!want || ![self tracksAvailable]) return;
+    NSDictionary *pick = nil; int best = 0;
+    for (NSDictionary *c in [self trackChoices:@"sub"]) {
+        if (![SFBaseLanguage(c[@"lang"]) isEqualToString:want]) continue;
+        NSString *t = c[@"title"];
+        int score = [t hasSuffix:@"(automatisch übersetzt)"] ? 1 : [t hasSuffix:@"(automatisch)"] ? 2 : 3;
+        if (score > best) { best = score; pick = c; }
+    }
+    if (!pick) return;
+    ((dispatch_block_t)pick[@"apply"])();
+    SFLog(@"player: Untertitel %@ (gemerkte Sprache)", pick[@"title"]);
+}
+
 #pragma mark Input
 
 - (BOOL)handleKey:(SFKey)key {
@@ -741,6 +926,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             if (_failed) { [self.navigator pop]; return YES; }
             if (!_osdVisible) [self showOSD:YES autoHide:YES];
             else [self togglePause];
+            return YES;
+        case SFKeySelectHold:
+            if ([self tracksAvailable]) [self showTrackMenu];
+            else {
+                SFLog(@"player: Ton/Untertitel nicht wählbar (Engine %@, Status %ld)", _engine.engineName, (long)_engine.status);
+                [self.navigator toast:@"Ton und Untertitel sind bei diesem Video nicht wählbar"];
+            }
             return YES;
         case SFKeyLeft: [self seekBy:-10]; return YES;
         case SFKeyRight: [self seekBy:30]; return YES;

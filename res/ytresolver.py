@@ -101,8 +101,64 @@ def summarize(info):
          "expires": expires_of(url)}
     d = dash_pick(info.get("formats") or [])
     if d:
+        d["audios"] = audio_tracks(info.get("formats") or [])
         r["dash"] = d
+    r["subs"] = subtitle_tracks(info)
     return r
+
+def audio_rank(f):
+    """Rangfolge der Tonspuren: Original zuerst (yt-dlp language_preference: 10 Original,
+    5 Standard, -1 Synchronfassung, -10 Audiodeskription), ohne DRC, Opus, Bitrate."""
+    lp = f.get("language_preference")
+    drc = "drc" in (f.get("format_id") or "").lower()
+    return (lp if isinstance(lp, int) else 0, 0 if drc else 1,
+            1 if (f.get("acodec") or "").startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0)
+
+def audio_tracks(formats):
+    """Beste Tonspur je Sprache (für die Auswahl „Ton“), Original zuerst."""
+    best = {}
+    for f in formats:
+        if not f.get("url") or (f.get("protocol") or "").startswith("m3u8"):
+            continue
+        if (f.get("vcodec") or "none") != "none" or (f.get("acodec") or "none") == "none":
+            continue
+        lang = f.get("language") or "und"
+        if lang not in best or audio_rank(f) > audio_rank(best[lang]):
+            best[lang] = f
+    if len(best) < 2:
+        return []   # nur eine Sprache: nichts auszuwählen
+    out = []
+    for lang, f in best.items():
+        lp = f.get("language_preference")
+        out.append({"lang": lang, "url": f["url"], "original": lp == 10,
+                    "dubbed": isinstance(lp, int) and lp < 5 and lp > -10, "described": lp == -10})
+    out.sort(key=lambda t: (not t["original"], t["described"], t["lang"]))
+    return out
+
+def subtitle_tracks(info):
+    """Untertitel als WebVTT: echte zuerst, dazu die automatischen in Originalsprache
+    („<lang>-orig“) und die automatische Übersetzung ins Deutsche, falls keine echten deutschen."""
+    def vtt(fmts):
+        for f in fmts or []:
+            if f.get("ext") == "vtt" and f.get("url"):
+                return f["url"]
+        return None
+    out, have = [], set()
+    for lang, fmts in (info.get("subtitles") or {}).items():
+        u = vtt(fmts)
+        if u and lang != "live_chat":
+            out.append({"lang": lang, "url": u, "kind": "manual"}); have.add(lang.split("-")[0])
+    auto = info.get("automatic_captions") or {}
+    for lang, fmts in auto.items():
+        if lang.endswith("-orig"):
+            u = vtt(fmts)
+            if u:
+                out.append({"lang": lang[:-5], "url": u, "kind": "auto"})
+    if "de" not in have and auto.get("de"):
+        u = vtt(auto["de"])
+        if u:
+            out.append({"lang": "de", "url": u, "kind": "translated"})
+    return out
 
 def dash_pick(formats):
     """Getrennte Video-/Audio-Streams fuer die mpv-Engine (VP9/AV1, max. 1080p60 – User-Vorgabe).
@@ -117,13 +173,8 @@ def dash_pick(formats):
             if h <= 1080 and fps <= 60:
                 vids.append((h, fps, 1 if vc.startswith("vp") else 0, f.get("tbr") or 0, f))
         elif vc == "none" and ac != "none":
-            # Originalton zuerst (User-Vorgabe 2026-11-04: nie automatisch übersetzte Tonspuren).
-            # yt-dlp: language_preference 10 = Original, 5 = Standard, -1 = Synchronfassung,
-            # -10 = Audiodeskription. Dann ohne DRC (Lautheits-Variante), Opus, Bitrate.
-            lp = f.get("language_preference")
-            drc = "drc" in (f.get("format_id") or "").lower()
-            auds.append((lp if isinstance(lp, int) else 0, 0 if drc else 1,
-                         1 if ac.startswith("opus") else 0, f.get("abr") or f.get("tbr") or 0, f))
+            # Originalton zuerst (User-Vorgabe 2026-11-04: nie automatisch übersetzte Tonspuren)
+            auds.append(audio_rank(f) + (f,))
     if not vids or not auds:
         return None
     v = max(vids, key=lambda t: t[:4])[4]

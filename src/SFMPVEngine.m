@@ -309,6 +309,44 @@ static void onWakeup(void *ctx) {
     _tick = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(onTick) userInfo:nil repeats:YES];
 }
 
+- (NSString *)prop:(NSString *)name {
+    if (!_mpv) return nil;
+    char *v = mpv_get_property_string(_mpv, name.UTF8String);
+    NSString *s = v ? @(v) : nil;
+    if (v) mpv_free(v);
+    return s;
+}
+
+- (NSArray *)tracksOfType:(NSString *)type {
+    NSMutableArray *out = [NSMutableArray new];
+    NSInteger n = [[self prop:@"track-list/count"] integerValue];
+    for (NSInteger i = 0; i < n; i++) {
+        NSString *(^p)(NSString *) = ^NSString *(NSString *k) { return [self prop:[NSString stringWithFormat:@"track-list/%ld/%@", (long)i, k]]; };
+        if (![p(@"type") isEqualToString:type]) continue;
+        NSMutableDictionary *t = [NSMutableDictionary new];
+        t[@"id"] = @([p(@"id") integerValue]);
+        t[@"selected"] = @([p(@"selected") isEqualToString:@"yes"]);
+        if (p(@"lang").length) t[@"lang"] = p(@"lang");
+        if (p(@"title").length) t[@"title"] = p(@"title");
+        if ([p(@"external") isEqualToString:@"yes"] && p(@"external-filename").length) t[@"url"] = p(@"external-filename");
+        [out addObject:t];
+    }
+    return out;
+}
+
+- (void)selectTrack:(NSString *)type trackID:(NSInteger)tid {
+    if (!_mpv) return;
+    NSString *prop = [type isEqualToString:@"sub"] ? @"sid" : @"aid";
+    mpv_set_property_string(_mpv, prop.UTF8String, tid > 0 ? @(tid).stringValue.UTF8String : "no");
+}
+
+- (void)addTrack:(NSString *)type url:(NSURL *)url title:(NSString *)title lang:(NSString *)lang {
+    if (!_mpv || !url) return;
+    for (NSDictionary *t in [self tracksOfType:type])
+        if ([t[@"url"] isEqualToString:url.absoluteString]) { [self selectTrack:type trackID:[t[@"id"] integerValue]]; return; }
+    [self command:@[[type isEqualToString:@"sub"] ? @"sub-add" : @"audio-add", url.absoluteString, @"select", title ?: @"", lang ?: @""]];
+}
+
 - (void)onTick { if (_loaded) [self.delegate engineTick]; }
 
 - (void)drainEvents {
