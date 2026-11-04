@@ -5,8 +5,8 @@
 // Abos ("Neue Folgen automatisch laden") ersetzen ytdl-sub.
 #import "SFModel.h"
 
-extern NSString *const SFDownloadsDidChangeNotification;
-extern NSString *const SFUnsortedChannel;   // Sendungsname für Videos ohne Kanal   // object = identifier (oder nil = viele)
+extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (oder nil = viele)
+extern NSString *const SFUnsortedChannel;   // Sendungsname für Videos ohne Kanal
 
 typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLNone = -1,
@@ -42,26 +42,29 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 - (void)remove:(NSString *)identifier;           // abbrechen bzw. Datei löschen
 - (NSArray *)items:(NSString *)source;           // fertige Downloads (SFItem, neueste zuerst); nil = alle
 - (NSArray *)active;                             // laufend/wartend (SFItem)
-- (unsigned long long)bytesUsed;
 @property (nonatomic, readonly) NSUInteger generation;   // ändert sich bei jeder Zustandsänderung (nicht bei Fortschritt)
 - (unsigned long long)bytesUsedFor:(NSString *)source;   // nil = alle
 - (unsigned long long)freeBytes;                           // freier Platz auf dem Speicher-Volume
 - (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"
-- (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
 - (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // Anzahl gelöschter Downloads
 - (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // Ordner einer Sendung im Sofa-Speicher
 
-// Abos (Kanal/Sendung automatisch laden)
+// Migration (einmalig): vorhandene Datei übernehmen (wird in den Sofa-Speicher verschoben)
+- (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;
+@end
+
+// Abos (Kanal/Sendung automatisch laden) – SFDownloads+Subscriptions.m
+@interface SFDownloads (Subscriptions)
 - (BOOL)isSubscribed:(NSString *)folderIdentifier;
 - (void)subscribe:(SFItem *)folder;              // folder.identifier = "ytchannel:UC…", "zdfshow:…", …
 - (void)unsubscribe:(NSString *)folderIdentifier;
 - (BOOL)canSubscribe:(SFItem *)folder;           // gibt es einen Feed für diesen Ordnertyp?
 - (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays)
 - (void)checkSubscriptionsNow;
+- (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
 // Smart Downloads: gesehene Abo-Folgen 1 Tag nach dem Ansehen löschen (Standard: an; manuelle nie)
 @property (nonatomic) BOOL deletesWatched;
 
-// Migration (einmalig): vorhandene Datei übernehmen (wird in den Sofa-Speicher verschoben)
-- (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;
+// Migration (einmalig): Abo übernehmen
 - (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image, keepDays
 @end
