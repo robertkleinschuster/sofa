@@ -240,11 +240,13 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
 + (void)showSettingsOn:(SFNavigator *)nav { [nav push:[self settingsMenu:nav selection:0]]; }
 
 // Einstellungen: Schalter + Update. Jede Änderung baut das Menü an derselben Zeile neu auf.
+// gSettingsMenu = das gerade sichtbare Einstellungsmenü (auch spätere Rückrufe, z.B. nach der
+// Update-Suche, bauen das aktuelle neu auf – nicht das, aus dem sie gestartet wurden).
+static __weak SFMenuScreen *gSettingsMenu;
 + (SFMenuScreen *)settingsMenu:(SFNavigator *)nav selection:(NSInteger)sel {
     SFUpdater *up = [SFUpdater shared];
-    __block __weak SFMenuScreen *wm = nil;
     void (^refresh)(void) = ^{
-        SFMenuScreen *m = wm;
+        SFMenuScreen *m = gSettingsMenu;
         if (m && nav.top == m) [nav replaceTop:[SFHome settingsMenu:nav selection:m.selectedIndex]];
     };
     SFMenuOption *(^toggle)(NSString *, BOOL, void (^)(BOOL), NSString *, NSString *) =
@@ -291,7 +293,7 @@ NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download", sourc
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Einstellungen" subtitle:subtitle
                                                   options:opts theme:[SFTheme themeNamed:@"home"]];
     m.initialSelection = sel;
-    wm = m;
+    gSettingsMenu = m;
     return m;
 }
 

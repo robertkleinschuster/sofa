@@ -8,6 +8,8 @@
 #import "SFPlayerScreen.h"
 
 static NSString *const kReleasesAPI = @"https://api.github.com/repos/robertkleinschuster/sofa/releases/latest";
+// Nur für Tests (tools/test-updater): andere Release-Quelle; erlaubt den Updater auch in Dev-Instanzen.
+static NSString *SFTestAPI(void) { return [NSProcessInfo processInfo].environment[@"SOFA_UPDATE_API"]; }
 static const NSTimeInterval kFirstCheck = 5 * 60, kCheckEvery = 6 * 3600, kIdleFor = 15 * 60;
 
 static NSString *SFAppVersion(NSString *bundle) {
@@ -73,8 +75,9 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
 - (NSString *)workDir { return [SFCacheDir() stringByAppendingPathComponent:@"update"]; }
 
 - (BOOL)available {
-    return SFRuntimeDir() && !SFDevMode && !SFRuntimeMisplaced() &&
-           [[NSFileManager defaultManager] isWritableFileAtPath:[[self appPath] stringByDeletingLastPathComponent]];
+    BOOL writable = [[NSFileManager defaultManager] isWritableFileAtPath:[[self appPath] stringByDeletingLastPathComponent]];
+    if (SFTestAPI().length) return writable;
+    return SFRuntimeDir() && !SFDevMode && !SFRuntimeMisplaced() && writable;
 }
 
 - (void)startWithNavigator:(SFNavigator *)nav {
@@ -137,7 +140,7 @@ static int SFRun(NSString *tool, NSArray *args, NSData **out) {
     _busy = YES;
     SFBackground(^{
         NSInteger status = 0;
-        NSData *d = SFCurlFetch(kReleasesAPI, @"GET", @{@"Accept": @"application/vnd.github+json"}, nil, &status, NULL);
+        NSData *d = SFCurlFetch(SFTestAPI().length ? SFTestAPI() : kReleasesAPI, @"GET", @{@"Accept": @"application/vnd.github+json"}, nil, &status, NULL);
         NSDictionary *rel = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL] : nil;
         NSString *msg;
         if (status != 200 || ![rel isKindOfClass:[NSDictionary class]] || ![rel[@"tag_name"] isKindOfClass:[NSString class]]) {

@@ -1,0 +1,70 @@
+#!/bin/bash
+# test-updater -- Ende-zu-Ende-Test des Updaters ohne öffentliches Release.
+#
+# Ein lokaler HTTP-Server spielt „GitHub“: release.json mit einer fiktiven Version 0.2.1
+# (dist/Sofa.app mit erhöhter Versionsnummer als DMG + .sha256). Eine unsichtbare Dev-Instanz
+# (SOFA_UPDATE_API zeigt auf den Server) wird über die Einstellungen bedient wie von einem Nutzer:
+#   Einstellungen -> Nach Updates suchen -> „Update installieren 0.2.0 → 0.2.1“ -> Release-Notes
+#   -> Jetzt installieren -> Download, Prüfsumme, DMG, Bundle-Prüfung, Übergabe (<App>.staged).
+# Den Tausch selbst übernimmt sonst der Helper (getestet durch jedes sofa-deploy).
+# Screenshots der Schritte bleiben im ausgegebenen Ordner.
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+DEV="$SRC/build/SofaDev.app"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-updtest.XXXXXX")"
+PORT=47995 INST=updtest
+FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
+CUR=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SRC/res/Info.plist")
+NEW=0.2.1
+fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+[ -d "$SRC/dist/Sofa.app" ] || { echo "erst tools/make-release"; exit 1; }
+make -C "$SRC" >/dev/null || exit 1
+
+echo "==> fiktives Release $NEW in $T"
+mkdir -p "$T/stage" "$T/www"
+ditto "$SRC/dist/Sofa.app" "$T/stage/Sofa.app"
+/usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $NEW" "$T/stage/Sofa.app/Contents/Info.plist"
+hdiutil create -quiet -volname "Sofa $NEW" -srcfolder "$T/stage" -format UDZO "$T/www/Sofa-$NEW.dmg"
+(cd "$T/www" && shasum -a 256 "Sofa-$NEW.dmg" > "Sofa-$NEW.dmg.sha256")
+cat > "$T/www/release.json" <<EOF
+{"tag_name": "v$NEW", "body": "- **Testeintrag:** neue Funktion A\n- Fehler B behoben\n\n<!-- sofa-notes-end -->\n**Installation:** nicht anzeigen",
+ "assets": [{"name": "Sofa-$NEW.dmg", "browser_download_url": "http://127.0.0.1:$PORT/Sofa-$NEW.dmg"},
+            {"name": "Sofa-$NEW.dmg.sha256", "browser_download_url": "http://127.0.0.1:$PORT/Sofa-$NEW.dmg.sha256"}]}
+EOF
+/opt/local/bin/python3.14 -m http.server --bind 127.0.0.1 --directory "$T/www" $PORT >/dev/null 2>&1 &
+SRV=$!
+rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"
+defaults delete de.sofa.dev >/dev/null 2>&1
+: > "$LOG"
+SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
+APP=$!
+trap 'kill $APP $SRV 2>/dev/null; rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged" "$T/stage" "$T/www"' EXIT
+for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
+cmd() { echo "$*" > "$FIFO"; }
+shot() { cmd shot "$T/$1.png"; sleep 1.5; }
+
+sleep 6
+cmd open settings; sleep 1; shot 1-einstellungen
+cmd key down; cmd key down; cmd key down; sleep 0.5; cmd key select    # „Nach Updates suchen“
+sleep 4; shot 2-gefunden
+grep -q "Update verfügbar: $CUR → $NEW" "$LOG" 2>/dev/null; :   # (Meldung ist ein Toast, nicht im Log)
+cmd key select; sleep 1.5; shot 3-release-notes                         # „Update installieren“
+cmd key select                                                          # „Jetzt installieren“
+for i in $(seq 1 120); do [ -d "$DEV.staged" ] && break; sleep 1; done
+shot 4-installiert
+
+echo "==> Ergebnis"
+grep -q "Update installieren" <(strings "$SRC/build/SofaDev.app/Contents/MacOS/Sofa") && :
+[ -s "$T/2-gefunden.png" ] && ok "Suche + Versionsvergleich (Screenshot 2)" || bad "kein Screenshot nach der Suche"
+if [ -d "$DEV.staged" ]; then
+  V=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEV.staged/Contents/Info.plist")
+  [ "$V" = "$NEW" ] && ok "Download, Prüfsumme, DMG, Prüfung, Übergabe: <App>.staged ist $V" || bad "staged hat Version $V"
+  [ -d "$DEV.staged/Contents/Runtime/bin" ] && ok "Runtime vollständig übernommen" || bad "Runtime fehlt"
+else
+  bad "kein <App>.staged nach 120 s"; grep 'update' "$LOG" | tail -5
+fi
+grep -E 'update: ' "$LOG" | sed 's/^/        /'
+echo "Screenshots: $T"
+[ $fail = 0 ] && echo "==> alles ok" || echo "==> FEHLER"
+exit $fail
