@@ -217,6 +217,14 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     [self showSpinner:YES];
     [self showOSD:YES autoHide:YES];
     SFItem *it = _item;
+    if (it.drm && it.kind != SFItemLive) {       // defense in depth: any path that still lands on DRM
+        SFLog(@"player: %@ is DRM-protected - not playable here", it.identifier);
+        _failed = YES;
+        [self showSpinner:NO];
+        [self showMessage:[SFDRMNotice stringByAppendingString:@"\n\nOK – zurück"]];
+        if ([self nextItem]) { _ended = YES; [self playNext]; }   // queue/autoplay: just move on
+        return;
+    }
     SFLog(@"player: resolve %@ (%@)", it.title, it.identifier);
     [it resolveURL:^(NSURL *url, NSError *err) {
         if (self->_closing || it != self->_item) return;
@@ -628,16 +636,25 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 // Nächste Folge = die nächstneuere Folge derselben lokalen Sendung (Episoden sind
 // neueste-zuerst sortiert). Gemischte Reihen (Neue Folgen, Weiterschauen) springen
 // so nie in eine fremde Sendung.
+// Index of the next playable queue entry after _index (DRM entries are skipped: they can never
+// play on this Mac, so autoplay must not run into an error screen), NSNotFound if none.
+- (NSUInteger)nextQueueIndex {
+    for (NSUInteger k = _index + 1; k < _queue.count; k++) if (![_queue[k] drm]) return k;
+    return NSNotFound;
+}
+
 - (SFItem *)nextItem {
-    if (_explicitQueue) return _index + 1 < _queue.count ? _queue[_index + 1] : nil;
-    // Aus einer Playlist gestartet: nächstes Video der Playlist (vor Empfehlungen)
-    if (_item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID]) return _queue[_index + 1];
-    if (!_item.localPath || !_item.channel) return _upNext;   // gestreamtes YouTube: Empfehlung
+    NSUInteger q = [self nextQueueIndex];
+    if (_explicitQueue) return q != NSNotFound ? _queue[q] : nil;
+    // Started from a playlist: next video of the playlist (before recommendations)
+    if (_item.playlistID.length && q != NSNotFound && [[_queue[q] playlistID] isEqualToString:_item.playlistID]) return _queue[q];
+    SFItem *up = _upNext.drm ? nil : _upNext;
+    if (!_item.localPath || !_item.channel) return up;        // streamed YouTube: recommendation
     SFShow *show = [[SFLibrary shared] showNamed:_item.channel source:_item.source];
     NSUInteger i = NSNotFound;
     for (NSUInteger k = 0; k < show.episodes.count; k++)
         if ([[show.episodes[k] localPath] isEqualToString:_item.localPath]) { i = k; break; }
-    if (i == NSNotFound || i == 0) return _upNext;           // letzte heruntergeladene Folge: Empfehlung
+    if (i == NSNotFound || i == 0) return up;                 // last downloaded episode: recommendation
     return show.episodes[i - 1];
 }
 
@@ -715,8 +732,9 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self saveProgress];
     [self teardownPlayer];      // alten Player lösen, bevor _item wechselt
     _ended = NO;
-    _index++;
-    if (_explicitQueue) _index = MIN(_index, _queue.count - 1);
+    NSUInteger q = [_queue indexOfObjectIdenticalTo:next];
+    if (q != NSNotFound) _index = q;            // may jump over skipped DRM entries
+    else if (!_explicitQueue) _index++;
     _item = next;
     _lastSaved = 0;
     _upNext = nil; _upNextAsked = NO;
