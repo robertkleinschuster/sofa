@@ -192,6 +192,29 @@ Im Player: Hoch/Runter (+/-) = Systemlautstärke (CoreAudio VirtualMasterVolume,
 - [x] 2026-11-03 23:30 (6) YouTube-Start: Resolver zwei Pools (fg = Wiedergabe, bg = Vorwärmen/Vorladen/Downloads; vorher wartete ein Klick hinter dem Vorladen: 10,6 s statt 3,5 s), Job-Sharing je Video (Klick während Vorladen: 2,8 s), ObjC-Dedupe + `prefetch:`. AVFoundation-Neuversuch 0,1 s statt 0,3 s – Messung aus 46 echten Starts: 23 sofort, 13 nach 1., 8 nach 2. Neuversuch, 2 → mpv; Ursache immer CoreMedia -12643 auf googlevideo-HLS, Neuversuche bleiben (H.264-Hardware). Kanal: Live-/Playlists-Regal nur, wenn der ausgewählte Tab wirklich /streams bzw. /playlists ist (sonst liefert YouTube still „Übersicht“ → Kurzgesagt zeigte normale Videos als „Livestreams“). Review-Agent „Später ansehen“: keine Absturz-/Thread-/Dev-Lecks; 2 Fokus-Fehler im Raster behoben.
 - [x] 2026-11-04 00:15 Explorativ ZDF/ARD/ORF: Kontextmenü „Zur Sendung „X““ / „Zum Kanal „X““ für Folgen aller Quellen (`SFItem.showRef`: YouTube Kanal-ID aus Lockup/Renderer, ZDF `smartCollection.canonical`, ARD `show.id` (89/89 Teaser), ORF `_links.profile` – nur mit profile_title, nicht bei Genre „Film“); ältere gespeicherte YouTube-Einträge (Merkliste/Weiterschauen/Downloads) per `SFRegisterShowRefLookup` → InnerTube `player` → `videoDetails.channelId` beim Auswählen. Nicht auf der eigenen Sendungs-/Kanalseite (`folderIdentifier`). „Später ansehen“-Import des YouTube-Kontos beim Start. Sendungsseiten: `SFPage.focusShelf` – Fokus startet auf den Folgen, „Weitere Staffeln“ bleibt oben sichtbar (kein Scrollen, solange die Zeile passt). Raster-Zeilenabstand 40→58 (Titel der vergrößerten Fokus-Kachel lagen auf der nächsten Reihe).
 - [x] 2026-11-04 07:45 Review-Agent (Resolver-Pools + showRef): `SFItem` speicherte `url` auch MIT externalID (else hing am showRef-if) → behoben. Resolver: überholter Vorlade-Job reicht das Ergebnis per `superseded_by` an die Wiedergabe weiter (auch nach dessen Ende), bg-Jobs > 60 s in der Schlange werden verworfen („veraltet“), `run()` mit finally (Job wird immer ausgetragen). ObjC: gescheiterte Wiedergabe-Anfrage meldet sofort, Neustart des Resolvers ruft Wartende erst nach dem Leeren zurück. „Zum Kanal“ öffnet nur, wenn man noch auf der Seite ist (Lookup asynchron).
+- [ ] **Sauberes, einfach installierbares Endprodukt** (User 2026-11-04: „ist auf unserer Maschine
+      entstanden, soll ein sauberes einfach installierbares Endprodukt werden“ – macht auch Sofa
+      hier + die Entwicklung stabiler/unabhängiger). Repo: github.com/robertkleinschuster/sofa (public).
+  - [x] yt-dlp-venv legt Sofa selbst an + täglich `pip install -U` (42d30c4; getestet isoliert mit
+        `SOFA_YTDLP_DIR`, 20 s, Resolve 1080p ok).
+  - [x] Makefile: `MP` (MacPorts-Prefix), `PREFIX`, `DESTDIR`; SofaRemote findet Sofa.app über das
+        eigene Bundle (kein fester /Applications-Pfad mehr).
+  - [ ] Port `net/bgutil-pot-server` (Overlay): bgutil-ytdlp-pot-provider 1.3.1 server (node26,
+        node_modules als vendor-Tarball am toolkit-Release `distfiles`, `canvas` nativ gegen
+        MacPorts-cairo), LaunchDaemon per startupitem. Ersetzt den Handaufbau
+        `~/bgutil-ytdlp-pot-provider` + `/Library/LaunchDaemons/com.bgutil.potserver.plist`.
+  - [ ] Port `multimedia/sofa` (Overlay): Quelle = GitHub-Tag; build mit clang-22 (`make CC= MP=`),
+        depends_lib curl sqlite3 mpv ffmpeg quickjs librsvg python314, depends_run bgutil-pot-server;
+        `reinplace /opt/local -> ${prefix}`; Sofa.app nach ${applications_dir}; zwei LaunchAgents
+        (de.sofa.remote, de.sofa.app) via `startupitems … location LaunchAgents custom_file`.
+        Erst `port -n destroot` testen (echte App nicht anfassen).
+  - [ ] Tag v0.1.0 + GitHub-Release.
+  - [ ] Diese Maschine auf den Port umstellen (manuelles /Applications/Sofa.app, ~/Library/LaunchAgents/de.sofa.*,
+        Hand-Daemon ablösen); Dev-Kreislauf bleibt `sofa-dev` auf build/; klären, wie `sofa-deploy`
+        (Live-Update) mit port-verwalteten Dateien zusammenspielt.
+  - [ ] `port mdmg sofa` → .dmg mit allen Laufzeit-Abhängigkeiten als Release-Asset (für Macs ohne MacPorts).
+  - [ ] README: Voraussetzungen/Installation auf Port-Weg aktualisieren.
+  - [ ] Ersteinrichtung in der App (YouTube-Login über Firefox erklären, Apple-Remote prüfen) – nichts im Terminal.
 - [ ] Periodisch Background-Review-Agents (User-Wunsch) — nach jedem größeren Baustein.
 - [ ] Video-Frames im Dev-Stream (AVPlayerItemVideoOutput), sonst schwarz.
 - [ ] MacPorts-Port im Overlay (Endzustand), /Applications-Kopie ist Übergang.

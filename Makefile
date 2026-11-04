@@ -1,18 +1,24 @@
 # Sofa — Build mit clang-22 gegen die 10.9-System-Frameworks (kein SDK/Xcode nötig).
 # ARC nur beim Kompilieren: der Link mit -fobjc-arc verlangt libarclite (fehlt, auf
 # 10.9 unnötig, die Runtime kann ARC nativ).
-CC      := /opt/local/bin/clang   # clang-22 (Doktrin); ?= greift nicht, make setzt CC=cc
+# MP = MacPorts-Prefix (Port: MP=${prefix}); PREFIX = Zielordner für Sofa.app
+# (Port: ${applications_dir}). CC = clang-22 (Doktrin); ?= greift bei CC nicht
+# (make setzt CC=cc), daher := und Übergabe auf der Kommandozeile (make CC=...).
+# Kommentare nie hinter Werte schreiben: make übernähme die Leerzeichen davor.
+MP      ?= /opt/local
+CC      := $(MP)/bin/clang
 PREFIX  ?= /Applications
+DESTDIR ?=
 BUILD   := build
 APP     := $(BUILD)/Sofa.app
 BIN     := $(APP)/Contents/MacOS/Sofa
 HBIN    := $(APP)/Contents/MacOS/SofaRemote
-CFLAGS  := -I/opt/local/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
+CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function -Isrc
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
-           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -lsqlite3 -L/opt/local/lib -lcurl
+           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -L$(MP)/lib -lsqlite3 -lcurl
 # libmpv (Overlay-Port multimedia/mpv) optional + schwach gelinkt: fehlt sie, laeuft Sofa nur mit AVFoundation
-ifneq ($(wildcard /opt/local/lib/libmpv.dylib),)
+ifneq ($(wildcard $(MP)/lib/libmpv.dylib),)
 LDFLAGS += -framework OpenGL -weak-lmpv
 endif
 SRC     := $(wildcard src/*.m)
@@ -69,6 +75,7 @@ clean:
 	rm -rf $(BUILD)
 
 install: all
-	rm -rf $(PREFIX)/Sofa.app && cp -R $(APP) $(PREFIX)/
+	mkdir -p $(DESTDIR)$(PREFIX)
+	rm -rf $(DESTDIR)$(PREFIX)/Sofa.app && cp -R $(APP) $(DESTDIR)$(PREFIX)/
 
 .PHONY: all clean install

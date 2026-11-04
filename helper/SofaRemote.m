@@ -42,6 +42,8 @@ static BOOL displayOff(void) {
     return off;
 }
 
+static NSString *SofaAppPath(void) { return [[NSBundle mainBundle] bundlePath]; }
+
 @implementation SRHelper {
     IOHIDDeviceRef _dev;
     NSTimer *_retry;
@@ -65,12 +67,10 @@ static BOOL displayOff(void) {
 - (void)start {
     NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/SofaRemote.log"];
     _log = fopen(lp.fileSystemRepresentation, "a");
-    // Sofa-Pfad: /Applications bevorzugt, sonst Entwicklungs-Build neben dem Helper
-    NSString *inApp = [[[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent]
-                        stringByAppendingPathComponent:@"Sofa"];
-    _sofaPath = [[NSFileManager defaultManager] fileExistsAtPath:@"/Applications/Sofa.app"] ? @"/Applications/Sofa.app" : nil;
-    if (!_sofaPath && [[NSFileManager defaultManager] fileExistsAtPath:inApp])
-        _sofaPath = [[inApp stringByDeletingLastPathComponent] stringByDeletingLastPathComponent].stringByDeletingLastPathComponent;
+    // Sofa-Pfad = das Bundle, in dem der Helper selbst liegt (Sofa.app/Contents/MacOS/SofaRemote):
+    // egal ob /Applications, /Applications/MacPorts (Port) oder Entwicklungs-Build
+    _sofaPath = [[NSFileManager defaultManager] fileExistsAtPath:
+                 [SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]] ? SofaAppPath() : nil;
     [self log:[NSString stringWithFormat:@"SofaRemote start, Sofa=%@", _sofaPath]];
     [self open];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
@@ -83,7 +83,6 @@ static BOOL displayOff(void) {
 // die Bundles (alt -> Sofa.app.prev), startet Sofa neu und beendet sich selbst —
 // launchd startet ihn dann aus dem neuen Bundle.
 
-static NSString *const kApp = @"/Applications/Sofa.app";
 
 - (NSArray *)realSofaProcesses {
     NSMutableArray *a = [NSMutableArray new];
@@ -95,7 +94,7 @@ static NSString *const kApp = @"/Applications/Sofa.app";
 
 - (void)checkUpdate {
     if (_updating) return;
-    NSString *staged = [kApp stringByAppendingString:@".staged"];
+    NSString *staged = [SofaAppPath() stringByAppendingString:@".staged"];
     NSString *bin = [staged stringByAppendingPathComponent:@"Contents/MacOS/Sofa"];
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) return;
     _updating = YES;
@@ -124,12 +123,12 @@ static NSString *const kApp = @"/Applications/Sofa.app";
     }
     for (NSRunningApplication *r in procs) { [self log:@"Sofa beendet sich nicht, erzwinge"]; [r forceTerminate]; }
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *prev = [kApp stringByAppendingString:@".prev"], *staged = [kApp stringByAppendingString:@".staged"];
+    NSString *prev = [SofaAppPath() stringByAppendingString:@".prev"], *staged = [SofaAppPath() stringByAppendingString:@".staged"];
     NSError *e = nil;
     [fm removeItemAtPath:prev error:nil];
-    if (![fm moveItemAtPath:kApp toPath:prev error:&e] || ![fm moveItemAtPath:staged toPath:kApp error:&e]) {
+    if (![fm moveItemAtPath:SofaAppPath() toPath:prev error:&e] || ![fm moveItemAtPath:staged toPath:SofaAppPath() error:&e]) {
         [self log:[NSString stringWithFormat:@"Update-Tausch fehlgeschlagen: %@ — Rollback", e]];
-        if (![fm fileExistsAtPath:kApp]) [fm moveItemAtPath:prev toPath:kApp error:nil];
+        if (![fm fileExistsAtPath:SofaAppPath()]) [fm moveItemAtPath:prev toPath:SofaAppPath() error:nil];
         [fm removeItemAtPath:staged error:nil];
         _updating = NO;
         if (wasRunning) [self launchSofa];
