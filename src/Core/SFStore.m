@@ -75,6 +75,9 @@
         },
         // 3: the response cache is trimmed by age (trimCache)
         ^{ [self exec:@"CREATE INDEX IF NOT EXISTS jcache_t ON jcache(t)"]; },
+        // 4: settings the dev mode once wrote into the real database (dev.*, lounge.dev.*); dev
+        // instances have their own database now
+        ^{ [self exec:@"DELETE FROM settings WHERE k LIKE 'dev.%' OR k LIKE 'lounge.dev.%'"]; },
     ];
 }
 
