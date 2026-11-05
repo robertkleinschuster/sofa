@@ -67,7 +67,8 @@ static NSString *YTActiveDir(void) {
 NSString *const SFYTBlockDidChangeNotification = @"SFYTBlockDidChange";
 
 @implementation SFYTResolver {
-    NSTimeInterval _blockedUntil;     // 0 = not read yet, 1 = no pause
+    NSTimeInterval _blockedUntil;     // from the last resolver answer (1 = no pause)
+    NSTimeInterval _blockedFile, _blockReadAt;   // breaker file (shared with the SABR sidecar)
     NSTask *_task;
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
@@ -409,13 +410,17 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 - (void)forget:(NSString *)videoID { if (videoID) [_cache removeObjectForKey:videoID]; }
 
 - (NSTimeInterval)blockedUntil {
-    if (!_blockedUntil) {   // before the first answer of this run: the resolver's persisted state
+    // the breaker file is written by both the yt-dlp resolver and the SABR sidecar: re-read it
+    // (at most every 2 s; it is tiny), and take the later of file and last resolver answer
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    if (now - _blockReadAt > 2) {
+        _blockReadAt = now;
         NSData *d = [NSData dataWithContentsOfFile:YTBlockFile()];
         NSDictionary *j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
-        _blockedUntil = [j isKindOfClass:[NSDictionary class]] ? [j[@"until"] doubleValue] : 0;
-        if (!_blockedUntil) _blockedUntil = 1;   // read once
+        _blockedFile = [j isKindOfClass:[NSDictionary class]] ? [j[@"until"] doubleValue] : 0;
     }
-    return _blockedUntil > [NSDate date].timeIntervalSince1970 ? _blockedUntil : 0;
+    NSTimeInterval until = MAX(_blockedFile, _blockedUntil);
+    return until > now ? until : 0;
 }
 
 - (void)simulateBlockForTesting:(NSTimeInterval)secs {

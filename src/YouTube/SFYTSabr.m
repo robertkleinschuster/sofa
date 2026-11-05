@@ -158,13 +158,20 @@ static id SabrClean(id v) {
 }
 
 - (void)open:(NSString *)vid background:(BOOL)bg done:(void (^)(NSDictionary *, NSError *))done {
+    [self open:vid query:[NSString stringWithFormat:@"bg=%d&maxHeight=1080&lang=de&prefetch=0", bg ? 1 : 0] done:done];
+}
+
+- (void)openForDownload:(NSString *)vid maxHeight:(NSInteger)h done:(void (^)(NSDictionary *, NSError *))done {
+    [self open:vid query:[NSString stringWithFormat:@"bg=1&maxHeight=%ld&vcodec=avc1&acodec=mp4a&prefetch=0", (long)h] done:done];
+}
+
+- (void)open:(NSString *)vid query:(NSString *)query done:(void (^)(NSDictionary *, NSError *))done {
     if (!vid.length) { done(nil, SFError(@"Video nicht abspielbar.")); return; }
     NSDate *t0 = [NSDate date];
     [self whenReady:^(NSInteger port) {
         if (!port) { done(nil, SFError(@"YouTube-Wiedergabe startet gerade.")); return; }
         // prefetch=0: mpv's own reads (at the resume position) drive what SABR pulls
-        NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/open?v=%@&bg=%d&maxHeight=1080&lang=de&prefetch=0",
-                       (long)port, vid, bg ? 1 : 0];
+        NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/open?v=%@&%@", (long)port, vid, query];
         [[self->_session dataTaskWithURL:[NSURL URLWithString:u] completionHandler:^(NSData *d, NSURLResponse *resp, NSError *e) {
             NSDictionary *j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
             SFMain(^{

@@ -744,12 +744,28 @@ static NSSet *skipKeys(void) {
     // downloads in 720p (as ytdl-sub did): saves space, good enough on the TV
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
+        void (^viaYTDLP)(void) = ^{
         [[SFYTResolver shared] prefetch:vid done:^(NSDictionary *r, NSError *e) {
             NSString *u = r[@"url"];
             for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
             // several audio tracks: original audio separately (the muxed stream has YouTube's default track)
             NSString *au = r[@"dlaudio"];
             done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, e);
+        }];
+        };
+        // first choice SABR: H.264 720p + original AAC track as two local streams (ffmpeg muxes them;
+        // ffmpeg's -readrate 3 also paces what SABR pulls). yt-dlp's HLS 720p stays the fallback
+        // (2026-11-05: yt-dlp's stream address of _4O-me6dWfc answered 404 for hours).
+        SFYTSabr *sabr = [SFYTSabr shared];
+        if (!sabr.available) { viaYTDLP(); return; }
+        [sabr openForDownload:vid maxHeight:720 done:^(NSDictionary *r, NSError *e) {
+            if (!r) {
+                // a bot check pauses both paths alike: don't spend a yt-dlp request then
+                if ([e.userInfo[@"bot"] boolValue]) { done(nil, nil, e); return; }
+                SFLog(@"yt: SABR download of %@ unavailable (%@) -> yt-dlp", vid, e.localizedDescription);
+                viaYTDLP(); return;
+            }
+            done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
         }];
     });
     SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {

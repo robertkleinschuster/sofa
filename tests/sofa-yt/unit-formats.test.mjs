@@ -106,3 +106,14 @@ test('Range header parsing', () => {
   assert.equal(parseRange('bytes=100-', 100), 'bad');
   assert.equal(parseRange('bytes=0-5,10-20', 100), null, 'multi-range -> whole file');
 });
+
+test('downloads: codec preference gives H.264 720p + AAC (plain MP4), still non-DRC', () => {
+  const f = F.describeFormats(oz.adaptiveFormats);
+  const v = F.pickVideo(f, 720, 'avc1');
+  assert.equal(v.itag, 136, 'H.264 720p');
+  assert.equal(F.pickVideo(f, 1080, 'avc1').itag, 137);
+  const a = F.pickAudio(f, 'mp4a');
+  assert.equal(a.itag, 140);
+  assert.equal(a.drc, false);
+  assert.equal(F.pickVideo(F.describeFormats(jnq.adaptiveFormats), 720, 'avc1').codec, 'avc1', 'small video too');
+});

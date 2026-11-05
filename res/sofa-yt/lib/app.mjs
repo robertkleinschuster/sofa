@@ -1,6 +1,6 @@
 // HTTP API of the sidecar (127.0.0.1 only). See docs/sofa-yt.md for the contract.
 //   GET /health
-//   GET /open?v=<id>&bg=0|1&maxHeight=1080&lang=de&start=<sec>&prefetch=0|1
+//   GET /open?v=<id>&bg=0|1&maxHeight=1080&lang=de&start=<sec>&prefetch=0|1&vcodec=avc1|vp9|av01&acodec=mp4a|opus
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
 //   GET /s/<sid>/subs/<key>.vtt
 //   GET /s/<sid>/status       (diagnostics)
@@ -112,6 +112,9 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     const maxHeight = Number(q.get('maxHeight')) || DEFAULT_MAX_HEIGHT;
     const lang = (q.get('lang') || 'de').slice(0, 12);
     const startSec = Math.max(0, Number(q.get('start')) || 0);
+    // codec preferences (downloads ask for avc1 + mp4a: an MP4 without re-encoding)
+    const vcodec = ['avc1', 'vp9', 'av01'].includes(q.get('vcodec')) ? q.get('vcodec') : null;
+    const acodec = ['mp4a', 'opus'].includes(q.get('acodec')) ? q.get('acodec') : null;
     const prefetch = q.has('prefetch') ? q.get('prefetch') === '1' : !bg;
     let info; let cached;
     try {
@@ -123,15 +126,16 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     }
     // an existing healthy session for the same choice keeps its buffered media
     for (const s of sessions.values()) {
-      if (!s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang) {
+      if (!s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
+          && s.vcodec === vcodec && s.acodec === acodec) {
         s.lastActivity = Date.now();
         if (prefetch && startSec) s.hint(startSec * 1000);
         return sendJson(res, 200, describeSession(s, { cached: true, reused: true, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() }));
       }
     }
     const formats = describeFormats(info.formats);
-    const video = pickVideo(formats, maxHeight);
-    const audio = pickAudio(formats);
+    const video = pickVideo(formats, maxHeight, vcodec);
+    const audio = pickAudio(formats, acodec);
     if (!video || !audio) {
       return sendJson(res, 200, { id: vid, error: 'no usable video/audio format', bot: false, blocked_until: breaker.blockedUntil() });
     }
@@ -144,6 +148,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     s.audioList = list;
     s.maxHeight = maxHeight;
     s.lang = lang;
+    s.vcodec = vcodec; s.acodec = acodec;
     sessions.set(s.sid, s);
     if (prefetch) s.hint(startSec * 1000);
     log(`open ${vid}${bg ? ' (bg)' : ''}: ${video.itag} ${video.codec} ${video.height}p${video.fps} + ${audio.key} ${audio.codec} ${audio.lang || '?'}`

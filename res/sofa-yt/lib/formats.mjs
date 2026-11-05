@@ -97,21 +97,29 @@ const VIDEO_CODEC_RANK = { vp9: 2, av01: 1, avc1: 0 };
  * VP9 > AV1 > H.264 (mpv decodes in software; VP9 is the cheapest, see docs/codecs-research.md).
  * HDR and super-resolution variants only if nothing else is left.
  */
-export function pickVideo(formats, maxHeight = DEFAULT_MAX_HEIGHT) {
+export function pickVideo(formats, maxHeight = DEFAULT_MAX_HEIGHT, preferCodec = null) {
   const vids = formats.filter((f) => !f.isAudio && f.codec in VIDEO_CODEC_RANK && f.height > 0);
   const ok = (f) => f.height <= maxHeight && (f.fps || 30) <= MAX_FPS;
   const plain = vids.filter((f) => ok(f) && !f.hdr && !f.sr);
   const pool = plain.length ? plain : vids.filter(ok).length ? vids.filter(ok) : vids;
   if (!pool.length) return null;
-  const key = (f) => [ok(f) ? 1 : 0, ok(f) ? f.height : -f.height, f.fps, VIDEO_CODEC_RANK[f.codec], f.bitrate];
+  // preferCodec (downloads: avc1, so the file is a plain MP4) wins at equal resolution and fps
+  const rank = (f) => (f.codec === preferCodec ? 9 : VIDEO_CODEC_RANK[f.codec]);
+  const key = (f) => [ok(f) ? 1 : 0, ok(f) ? f.height : -f.height, f.fps, rank(f), f.bitrate];
   return pool.reduce((best, f) => (cmpTuple(key(f), key(best)) > 0 ? f : best));
 }
 
 /** Best audio format overall (original language first, never auto-dubbed when anything else exists). */
-export function pickAudio(formats) {
+export function pickAudio(formats, preferCodec = null) {
   const auds = formats.filter((f) => f.isAudio && (f.codec === 'opus' || f.codec === 'mp4a'));
   if (!auds.length) return null;
-  return auds.reduce((best, f) => (cmpTuple(audioRank(f), audioRank(best)) > 0 ? f : best));
+  // preferCodec (downloads: mp4a) replaces the opus preference; the original track still wins first
+  const rank = (f) => {
+    const r = audioRank(f);
+    if (preferCodec) r[2] = f.codec === preferCodec ? 1 : 0;
+    return r;
+  };
+  return auds.reduce((best, f) => (cmpTuple(rank(f), rank(best)) > 0 ? f : best));
 }
 
 /** Best audio format per language (for the language choice), original first; [] for one language. */
