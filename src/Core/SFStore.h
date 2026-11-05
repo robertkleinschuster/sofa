@@ -22,6 +22,8 @@
 - (void)cacheJSON:(id)obj forKey:(NSString *)key;
 // Generic access for other modules (downloads). Values: NSString/NSNumber/NSData/NSNull.
 - (void)run:(NSString *)sql args:(NSArray *)args;                // asynchronous (writes)
+// several writes as one transaction (asynchronous): @[@[sql, args], ...] - all or nothing visible
+- (void)runAll:(NSArray *)statements;
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchronous, array of dictionaries
 // Re-key progress/history to a new ID (migration local:… -> yt:…); only if the target is free
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // migration: replace id + item

@@ -374,6 +374,15 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
     dispatch_async(_q, ^{ [self runNow:sql args:args]; });
 }
 
+- (void)runAll:(NSArray *)statements {
+    if (!statements.count) return;
+    dispatch_async(_q, ^{
+        [self exec:@"BEGIN IMMEDIATE"];
+        for (NSArray *s in statements) [self runNow:s[0] args:s.count > 1 ? s[1] : nil];
+        [self exec:@"COMMIT"];
+    });
+}
+
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args {
     __block NSArray *out;
     dispatch_sync(_q, ^{ out = [self rowsNow:sql args:args]; });

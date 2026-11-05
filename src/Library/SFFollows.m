@@ -40,7 +40,8 @@ static const NSTimeInterval kRefresh = 30 * 60;
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
-        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY date DESC" args:nil]) {
+        // in the order they were written: the feed's order (refreshOne compares against it)
+        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY rowid" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
             if (![d isKindOfClass:[NSDictionary class]]) continue;
             NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
@@ -197,14 +198,17 @@ static const NSTimeInterval kRefresh = 30 * 60;
                     [keep addObject:c];
                     if ((NSInteger)keep.count >= kPerShow) break;
                 }
+                NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
+                BOOL same = [dicts isEqualToArray:[self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"]];
                 self->_items[f[@"id"]] = keep;
-                SFStore *st = [SFStore shared];
-                [st run:@"DELETE FROM follow_items WHERE follow=?" args:@[f[@"id"]]];
-                for (SFItem *c in keep) {
-                    NSData *j = [NSJSONSerialization dataWithJSONObject:[c dictionaryRepresentation] options:0 error:nil];
-                    [st run:@"INSERT OR REPLACE INTO follow_items (follow,id,item,date) VALUES (?,?,?,?)"
-                       args:@[f[@"id"], c.identifier, j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}", @(c.date.timeIntervalSince1970)]];
-                }
+                if (same) { finish(); return; }   // most refreshes: nothing new, nothing to write
+                NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
+                [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
+                    NSData *j = [NSJSONSerialization dataWithJSONObject:dicts[n] options:0 error:nil];
+                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,item,date) VALUES (?,?,?,?)",
+                                        @[f[@"id"], c.identifier, j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}", @(c.date.timeIntervalSince1970)]]];
+                }];
+                [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
             }
             finish();
         });
