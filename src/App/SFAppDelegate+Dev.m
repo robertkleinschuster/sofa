@@ -116,6 +116,7 @@
             if (pt.count > 1) { it.resolverRef = pt[1]; it.identifier = pt[1]; }
         } else {
             it.resolverRef = arg;
+            if ([arg hasPrefix:@"ytlive:"]) it.kind = SFItemLive;   // like a "Jetzt live" tile (no resume, live end handling)
             SFItem *dl = [[SFDownloads shared] itemFor:arg];   // downloaded: with its metadata, as from the Downloads page
             if (dl) it = dl;
         }

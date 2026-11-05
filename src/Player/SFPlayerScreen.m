@@ -456,7 +456,22 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     double d = [self duration], c = _engine.currentTime;
     return !(d > 0) || c < d - 30;
 }
-- (void)engineDidEnd { if ([self sabrCutShort]) { [self sabrFailed:@"stream ended early"]; return; } [self didEnd:nil]; }
+- (void)engineDidEnd {
+    // live via the sidecar: the end of the playlist is either the end of the broadcast (upstream
+    // EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the sidecar knows
+    NSDictionary *src = SFMPVSourceFor(_openURL);
+    if ([src[@"sabr"] boolValue] && [src[@"hls"] boolValue] && [src[@"live"] boolValue]) {
+        NSURL *opened = _openURL; SFItem *it = _item;
+        [[SFYTSabr shared] sessionStatus:src[@"sid"] done:^(NSDictionary *st) {
+            if (self->_closing || it != self->_item || ![opened isEqual:self->_openURL]) return;
+            if ([st[@"ended"] boolValue]) { SFLog(@"player: live broadcast ended"); [self didEnd:nil]; }
+            else [self sabrFailed:@"live playlist ended"];
+        }];
+        return;
+    }
+    if ([self sabrCutShort]) { [self sabrFailed:@"stream ended early"]; return; }
+    [self didEnd:nil];
+}
 - (void)engineInterrupted { if ([self sabrCutShort]) { [self sabrFailed:@"stream interrupted"]; return; } [self failedToEnd:nil]; }
 - (void)engineTick { [self tick]; }
 

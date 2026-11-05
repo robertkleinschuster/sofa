@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isBotCheck } from './breaker.mjs';
+import { prepareManifestUrl, pathExpire } from './hls.mjs';
 import { log } from './log.mjs';
 
 const SESSION_TIMEOUT_MS = 30000;
@@ -20,6 +21,7 @@ const SESSION_RETRY_MIN_MS = 30 * 1000;
 const SESSION_RETRY_MAX_MS = 10 * 60 * 1000;
 
 const RELOAD_FRESH_S = 300;
+const UPCOMING_CACHE_MS = 60 * 1000;   // an upcoming/offline answer is reused this long (no request storm)
 const RELOAD_MAX = 2;
 const RELOAD_WINDOW_S = 600;
 
@@ -51,12 +53,45 @@ export function endscreenElements(raw) {
 }
 
 export class YouTubeError extends Error {
-  constructor(message, { bot = false, live = false, status = null } = {}) {
+  constructor(message, { bot = false, live = false, status = null, upcoming = false, startTime = null } = {}) {
     super(message);
     this.bot = bot;
     this.live = live;
     this.status = status;
+    this.upcoming = upcoming;
+    this.startTime = startTime;   // epoch seconds of a scheduled live/premiere, if known
   }
+}
+
+/**
+ * What kind of playback a raw WEB player response describes:
+ *   {kind:'upcoming', startTime}  scheduled live / premiere (videoDetails.isUpcoming, or
+ *                                 LIVE_STREAM_OFFLINE with a scheduled start in the offline slate)
+ *   {kind:'offline'}              LIVE_STREAM_OFFLINE without a schedule (broadcast paused/gone)
+ *   {kind:'live'}                 running broadcast (videoDetails.isLive)
+ *   {kind:'postlive'}             ended broadcast still served from the live chunks
+ *                                 (videoDetails.isPostLiveDvr; formats lack index/init ranges)
+ *   {kind:'vod'}                  everything else (status OK)
+ *   {kind:'error'}                any other non-OK status (the caller reports the reason)
+ */
+export function classifyPlayer(raw) {
+  const ps = raw?.playabilityStatus || {};
+  const vd = raw?.videoDetails || {};
+  const slate = ps.liveStreamability?.liveStreamabilityRenderer?.offlineSlate?.liveStreamOfflineSlateRenderer;
+  let startTime = Number(slate?.scheduledStartTime) || null;
+  if (!startTime) {
+    const iso = raw?.microformat?.playerMicroformatRenderer?.liveBroadcastDetails?.startTimestamp;
+    const t = iso ? Date.parse(iso) / 1000 : NaN;
+    if (Number.isFinite(t) && t > Date.now() / 1000 - 3600) startTime = Math.floor(t);   // a future (or just missed) start only
+  }
+  if (vd.isUpcoming || (ps.status === 'LIVE_STREAM_OFFLINE' && (startTime || slate?.scheduledStartTime))) {
+    return { kind: 'upcoming', startTime };
+  }
+  if (ps.status === 'LIVE_STREAM_OFFLINE') return { kind: 'offline' };
+  if (ps.status !== 'OK') return { kind: 'error' };
+  if (vd.isLive) return { kind: 'live' };
+  if (vd.isPostLiveDvr) return { kind: 'postlive' };
+  return { kind: 'vod' };
 }
 
 function withTimeout(p, ms, what) {
@@ -121,6 +156,7 @@ export class YouTube {
     this.inflight = new Map();  // videoId -> Promise<info>
     this.reloading = new Map(); // videoId -> Promise<info> (reloads requested by SABR)
     this.reloads = new Map();   // videoId -> [ms] recent reloads (rate limit)
+    this.notYet = new Map();    // videoId -> {at, err}: recent upcoming/offline answers
     this.pruneDisk();
   }
 
@@ -186,6 +222,8 @@ export class YouTube {
   async info(videoId, { bg = false } = {}) {
     const c = this.cached(videoId);
     if (c) return { info: c, cached: true };
+    const ny = this.notYet.get(videoId);
+    if (ny && Date.now() - ny.at < UPCOMING_CACHE_MS) throw ny.err;
     if (this.inflight.has(videoId)) return { info: await this.inflight.get(videoId), cached: false };
     if (bg) {
       const until = this.breaker.blockedUntil();
@@ -267,6 +305,16 @@ export class YouTube {
       (ps.errorScreen?.playerErrorMessageRenderer?.subreason?.runs || []).map((r) => r.text).join('')]
       .filter(Boolean).join(' - ');
     log(`player request #${n} ${videoId}: ${ps.status || '?'}${reason ? ` (${reason})` : ''} in ${ms.toFixed(0)} ms`);
+    const cls = classifyPlayer(raw);
+    if (cls.kind === 'upcoming' || cls.kind === 'offline') {
+      // a valid answer (not a bot check); scheduled lives/premieres are not playable yet
+      this.breaker.note(false);
+      const err = cls.kind === 'upcoming'
+        ? new YouTubeError('upcoming', { live: true, upcoming: true, startTime: cls.startTime, status: ps.status })
+        : new YouTubeError('offline', { live: true, status: ps.status });
+      this.notYet.set(videoId, { at: Date.now(), err });
+      throw err;
+    }
     if (ps.status !== 'OK') {
       const bot = isBotCheck(reason) || (ps.status === 'LOGIN_REQUIRED' && /bot/i.test(reason));
       this.breaker.note(bot);
@@ -274,10 +322,10 @@ export class YouTube {
     }
     this.breaker.note(false);
     const vd = raw.videoDetails || {};
-    if (vd.isLive || vd.isUpcoming) {
-      throw new YouTubeError(vd.isUpcoming ? 'upcoming' : 'live', { live: true });
-    }
     const sd = raw.streamingData || {};
+    if (cls.kind === 'live' || cls.kind === 'postlive') {
+      return this.store(await this.liveInfo(videoId, raw, { player, poToken, client: yt.session.context.client, live: cls.kind === 'live' }));
+    }
     if (!sd.serverAbrStreamingUrl) throw new YouTubeError('no SABR streaming URL in player response');
     const ustreamer = raw.playerConfig?.mediaCommonConfig?.mediaUstreamerRequestConfig?.videoPlaybackUstreamerConfig;
     if (!ustreamer) throw new YouTubeError('no ustreamer config in player response');
@@ -304,9 +352,52 @@ export class YouTube {
       endscreen: endscreenElements(raw),
       fetchedAt: Math.floor(Date.now() / 1000),
     };
-    this.cache.set(videoId, info);
-    try { fs.writeFileSync(this.cacheFile(videoId), JSON.stringify(info)); } catch (e) { log('cannot cache player response:', e.message); }
+    return this.store(info);
+  }
+
+  store(info) {
+    this.cache.set(info.id, info);
+    try { fs.writeFileSync(this.cacheFile(info.id), JSON.stringify(info)); } catch (e) { log('cannot cache player response:', e.message); }
     return info;
+  }
+
+  /**
+   * Live / post-live DVR: the HLS manifest of the same response, prepared like yt-dlp does it for
+   * web clients - the n challenge in the URL path solved with the SAME player as the request,
+   * the PO token appended as `/pot/<token>` (both propagate into every segment URL). Measured
+   * 2026-11-05 (DW News, LuKwFajn37U): without the n transform every segment answers 403; with
+   * it (with or without pot) segments play.
+   */
+  async liveInfo(videoId, raw, { player, poToken, client, live }) {
+    const vd = raw.videoDetails || {};
+    const sd = raw.streamingData || {};
+    if (!sd.hlsManifestUrl) throw new YouTubeError(`${live ? 'live' : 'post-live'} without HLS manifest`, { live: true });
+    let hlsUrl;
+    try {
+      hlsUrl = await withTimeout(prepareManifestUrl(sd.hlsManifestUrl, {
+        poToken,
+        solve: async (n) => new URL(await player.decipher(`https://rr1---sn-x.googlevideo.com/videoplayback?n=${encodeURIComponent(n)}`)).searchParams.get('n'),
+      }), 15000, 'decipher');
+    } catch (e) {
+      throw new YouTubeError(`decipher failed: ${e.message}`, { live: true });
+    }
+    return {
+      id: videoId,
+      kind: 'hls',
+      live,
+      postLiveDvr: !live,
+      title: vd.title || '',
+      author: vd.author || '',
+      durationMs: live ? 0 : Number(vd.lengthSeconds || 0) * 1000,
+      expires: pathExpire(hlsUrl) || Math.floor(Date.now() / 1000) + Number(sd.expiresInSeconds || 0),
+      hlsUrl,
+      clientName: 1,
+      clientVersion: client.clientVersion,
+      playerId: player.player_id,
+      captions: live ? null : raw.captions || null,   // live captions are in-band (608) or none
+      endscreen: [],
+      fetchedAt: Math.floor(Date.now() / 1000),
+    };
   }
 
   /**
@@ -317,10 +408,15 @@ export class YouTube {
    * background sessions send nothing while the breaker is open.
    */
   async reload(videoId, reloadContext, { bg = false } = {}) {
-    const asResult = (info) => ({ serverAbrStreamingUrl: info.sabrUrl, videoPlaybackUstreamerConfig: info.ustreamer });
+    const info = await this.refresh(videoId, reloadContext, { bg });
+    return { serverAbrStreamingUrl: info.sabrUrl, videoPlaybackUstreamerConfig: info.ustreamer };
+  }
+
+  /** Fresh info with the guards of reload() (also used by live sessions to renew the manifest URL). */
+  async refresh(videoId, reloadContext = null, { bg = false } = {}) {
     const recent = this.cache.get(videoId);
-    if (recent && Date.now() / 1000 - (recent.fetchedAt || 0) < RELOAD_FRESH_S) return asResult(recent);
-    if (this.reloading.has(videoId)) return asResult(await this.reloading.get(videoId));
+    if (recent && Date.now() / 1000 - (recent.fetchedAt || 0) < RELOAD_FRESH_S) return recent;
+    if (this.reloading.has(videoId)) return this.reloading.get(videoId);
     if (bg && this.breaker.blockedUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no reload sent)", { bot: true });
     const now = Date.now();
     const times = (this.reloads.get(videoId) || []).filter((t) => now - t < RELOAD_WINDOW_S * 1000);
@@ -329,7 +425,7 @@ export class YouTube {
     this.reloads.set(videoId, times);
     const p = this.request(videoId, reloadContext || null).finally(() => this.reloading.delete(videoId));
     this.reloading.set(videoId, p);
-    return asResult(await p);
+    return p;
   }
 
   /** Memory bound for a process that runs for weeks: drop expired and least recently stored responses. */
@@ -337,6 +433,7 @@ export class YouTube {
     const now = Date.now() / 1000;
     for (const [id, c] of this.cache) if (c.expires <= now) this.cache.delete(id);
     while (this.cache.size > max) this.cache.delete(this.cache.keys().next().value);
+    for (const [id, ny] of this.notYet) if (Date.now() - ny.at >= UPCOMING_CACHE_MS) this.notYet.delete(id);
     for (const [id, times] of this.reloads) if (!times.some((t) => Date.now() - t < RELOAD_WINDOW_S * 1000)) this.reloads.delete(id);
   }
 

@@ -690,6 +690,45 @@ static NSSet *skipKeys(void) {
             done(u, e);
         }];
     };
+    // Result of the sofa-yt sidecar -> what the player opens. VOD: the DASH pair of local tracks;
+    // lives and post-live DVR recordings: the sidecar's local HLS playlist (muxed, opened as is).
+    void (^sabrPlay)(NSString *, NSDictionary *, SFURLDone) = ^(NSString *vid, NSDictionary *r, SFURLDone done) {
+        NSMutableDictionary *d = [r mutableCopy];
+        d[@"sabr"] = @YES; d[@"vid"] = vid;
+        NSURL *u;
+        if ([r[@"hls"] isKindOfClass:[NSString class]]) {
+            u = [NSURL URLWithString:r[@"hls"]];
+            [d removeObjectsForKeys:@[@"video", @"audio", @"audios"]];   // no DASH pair: playURL opens `u` itself
+            d[@"hls"] = @YES;   // flag (the URL is `u`): SFPlayerScreen asks the sidecar whether a live really ended
+        } else {
+            u = [NSURL URLWithString:r[@"video"]];
+        }
+        SFSetMPVSource(u, d);
+        done(u, nil);
+    };
+    // A sidecar error that needs no fallback request: bot check (yt-dlp from the same IP would only
+    // prolong the flag, review 2026-11-05) and streams that are not on air (yt-dlp can't play them
+    // either). Returns the message for the user, nil = fall back to yt-dlp.
+    NSString *(^sabrFinal)(NSError *) = ^NSString *(NSError *e) {
+        if ([e.userInfo[@"bot"] boolValue]) {
+            [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];
+            return @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
+        }
+        if ([e.userInfo[@"upcoming"] boolValue]) {
+            double t = [e.userInfo[@"startTime"] doubleValue];
+            if (!(t > 0)) return @"Dieser Livestream hat noch nicht begonnen.";
+            NSDate *at = [NSDate dateWithTimeIntervalSince1970:t];
+            NSDateFormatter *f = [NSDateFormatter new];
+            f.locale = [NSLocale localeWithLocaleIdentifier:@"de_AT"];
+            NSCalendar *cal = [NSCalendar currentCalendar];
+            BOOL today = [cal isDateInToday:at];
+            f.dateFormat = today ? @"'heute um' HH:mm 'Uhr'" : [cal isDateInTomorrow:at] ? @"'morgen um' HH:mm 'Uhr'" : @"'am' d. MMMM 'um' HH:mm 'Uhr'";
+            return [NSString stringWithFormat:@"Dieser Livestream beginnt %@.", [f stringFromDate:at]];
+        }
+        if ([e.userInfo[@"live"] boolValue] && [e.localizedDescription isEqualToString:@"offline"])
+            return @"Dieser Livestream ist gerade nicht auf Sendung.";
+        return nil;
+    };
     // First choice: SABR via the sofa-yt sidecar (looks like the web player: one request per video,
     // passes where yt-dlp gets bot checks). Needs mpv (local WebM/MP4 tracks). Any failure -> yt-dlp.
     SFRefResolver online = ^(NSString *vid, SFURLDone done) {
@@ -697,22 +736,13 @@ static NSSet *skipKeys(void) {
         if (!sabr.available || !SFMPVAvailable() || SFPreferAVFoundation() || [sabr failedFor:vid]) { ytdlp(vid, done); return; }
         [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
             if (!r) {
-                if ([e.userInfo[@"bot"] boolValue]) {
-                    // YouTube flagged the web-player request: yt-dlp from the same IP would only add a
-                    // request (and prolong the flag) - show the message instead (review 2026-11-05)
-                    [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];
-                    done(nil, SFError(@"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen."));
-                    return;
-                }
-                if ([e.userInfo[@"live"] boolValue]) [sabr markFailed:vid];   // lives: yt-dlp directly next time
+                NSString *msg = sabrFinal(e);
+                if (msg) { done(nil, SFError(msg)); return; }
+                if ([e.userInfo[@"live"] boolValue]) [sabr markFailed:vid];   // live the sidecar can't play: yt-dlp directly next time
                 SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
                 ytdlp(vid, done); return;
             }
-            NSURL *u = [NSURL URLWithString:r[@"video"]];
-            NSMutableDictionary *d = [r mutableCopy];
-            d[@"sabr"] = @YES; d[@"vid"] = vid;
-            SFSetMPVSource(u, d);
-            done(u, nil);
+            sabrPlay(vid, r, done);   // a video that turned out to be live comes back as HLS
         }];
     };
     SFRegisterOnlineResolver(@"yt", online);   // "Online abspielen": skip downloads
@@ -791,9 +821,27 @@ static NSSet *skipKeys(void) {
             done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
         }];
     });
-    SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {
+    // Lives: the sidecar first (the web player's HLS manifest from its own session - yt-dlp's live
+    // requests got the bot check on this IP), yt-dlp as fallback. The local playlist is plain HLS:
+    // mpv and AVFoundation both play it, so no mpv requirement here.
+    SFRefResolver ytdlpLive = ^(NSString *vid, SFURLDone done) {
         [[SFYTResolver shared] resolve:vid live:YES done:^(NSDictionary *r, NSError *e) {
             done(r ? [NSURL URLWithString:r[@"url"]] : nil, e);
+        }];
+    };
+    SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {
+        SFYTSabr *sabr = [SFYTSabr shared];
+        if (!sabr.available || [sabr failedFor:vid]) { ytdlpLive(vid, done); return; }
+        [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+            if (!r) {
+                NSString *msg = sabrFinal(e);
+                if (msg) { done(nil, SFError(msg)); return; }
+                SFLog(@"yt: SABR live unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
+                ytdlpLive(vid, done); return;
+            }
+            // a former live that is a processed video by now comes back as a DASH pair: needs mpv
+            if (!r[@"hls"] && (!SFMPVAvailable() || SFPreferAVFoundation())) { ytdlpLive(vid, done); return; }
+            sabrPlay(vid, r, done);
         }];
     });
     [[SFYTResolver shared] start];

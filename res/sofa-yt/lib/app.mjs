@@ -2,10 +2,12 @@
 //   GET /health
 //   GET /open?v=<id>&bg=0|1&maxHeight=1080&lang=de&start=<sec>&prefetch=0|1&vcodec=avc1|vp9|av01&acodec=mp4a|opus
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
+//   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the proxied HLS media playlist)
 //   GET /s/<sid>/subs/<key>.vtt
 //   GET /s/<sid>/status       (diagnostics)
 //   GET /close?sid=<sid>
 import { PlaybackSession } from './session.mjs';
+import { LiveSession, codecShort } from './hls.mjs';
 import { describeFormats, pickVideo, pickAudio, audioTracks, subtitleTracks, DEFAULT_MAX_HEIGHT } from './formats.mjs';
 import { fetchVtt } from './subs.mjs';
 import { log } from './log.mjs';
@@ -48,7 +50,8 @@ export function parseRange(header, total) {
  */
 const IN_USE_MS = 60000;   // read within this time = in use (mpv reconnects, pauses between reads)
 
-export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS, sweepMs = 30000 }) {
+export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS, sweepMs = 30000,
+  fetchFn = fetch, liveCfg = {} }) {
   const sessions = new Map();
   let port = 0;
   const fetchedTotal = { ms: 0, bytes: 0, runs: 0 }; // media pulled by closed sessions
@@ -94,6 +97,56 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     }
   }
 
+  function describeLive(s, extra) {
+    const u = `${base()}/s/${s.sid}`;
+    const v = s.variant || {};
+    return {
+      id: s.info.id, sid: s.sid, title: s.info.title, duration: Math.round((s.info.durationMs || 0) / 1000),
+      live: !!s.info.live, postLiveDvr: !!s.info.postLiveDvr, expires: s.info.expires,
+      hls: `${u}/live.m3u8`,
+      height: v.height || 0, fps: v.fps || 0, vcodec: codecShort(v.codecs), acodec: /mp4a/.test(v.codecs || '') ? 'mp4a' : null,
+      vitag: v.itag || null, audios: [],
+      subs: s.subs.map((t) => ({ lang: t.lang, url: `${u}/subs/${encodeURIComponent(t.key)}.vtt`, kind: t.kind, name: t.name })),
+      endscreen: [],
+      ...extra,
+    };
+  }
+
+  /** Live / post-live DVR: choose the variant now (an unplayable manifest fails /open, not mpv). */
+  async function openLive(info, { vid, bg, maxHeight, lang, cached, t0 }) {
+    const extra = () => ({ cached, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() });
+    if (bg) {
+      // downloads/preloads of lives are yt-dlp's job (a live never ends; post-live DVR chunks expire)
+      return { id: vid, error: info.live ? 'live' : 'post-live', live: true, bot: false, blocked_until: breaker.blockedUntil() };
+    }
+    for (const s of sessions.values()) {
+      if (s.kind === 'hls' && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang) {
+        s.lastActivity = Date.now();
+        return describeLive(s, { ...extra(), cached: true, reused: true });
+      }
+    }
+    makeRoom();
+    const s = new LiveSession({
+      info, maxHeight, fetchFn, cfg: liveCfg,
+      headers: () => youtube.webHeaders(),
+      refresh: (why) => youtube.refresh(info.id, null, { bg }),
+      subs: info.captions ? subtitleTracks(info.captions, lang) : [],
+    });
+    s.lang = lang;
+    try {
+      await s.choose();
+    } catch (e) {
+      log(`open ${vid}: HLS manifest unusable: ${e.message}`);
+      // a cached URL may have been revoked: forget it so the next open asks afresh
+      if (cached) youtube.forget(vid);
+      return { id: vid, error: `HLS manifest unavailable: ${e.message}`, live: true, bot: false, blocked_until: breaker.blockedUntil() };
+    }
+    sessions.set(s.sid, s);
+    const v = s.variant;
+    log(`open ${vid}: ${info.live ? 'live' : 'post-live DVR'} HLS ${v.itag || '?'} ${v.height}p${v.fps} (${s.variants.length} variants), ${cached ? 'cached' : 'player request'} -> ${s.sid.slice(0, 6)}`);
+    return describeLive(s, extra());
+  }
+
   function describeSession(s, extra) {
     const u = `${base()}/s/${s.sid}`;
     const v = s.video.fmt;
@@ -131,13 +184,20 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     try {
       ({ info, cached } = await youtube.info(vid, { bg }));
     } catch (e) {
-      if (e.live) return sendJson(res, 200, { id: vid, error: 'live', live: true, blocked_until: breaker.blockedUntil() });
+      if (e.upcoming) {
+        return sendJson(res, 200, { id: vid, error: 'upcoming', live: true, upcoming: true, startTime: e.startTime || null, bot: false, blocked_until: breaker.blockedUntil() });
+      }
+      if (e.live) {
+        log(`open ${vid}: ${e.message}`);
+        return sendJson(res, 200, { id: vid, error: String(e.message).slice(0, 300), live: true, bot: false, blocked_until: breaker.blockedUntil() });
+      }
       log(`open ${vid}${bg ? ' (bg)' : ''} failed: ${e.message}`);
       return sendJson(res, 200, { id: vid, error: String(e.message).slice(0, 300), bot: !!e.bot, blocked_until: breaker.blockedUntil() });
     }
+    if (info.kind === 'hls') return sendJson(res, 200, await openLive(info, { vid, bg, maxHeight, lang, cached, t0 }));
     // an existing healthy session for the same choice keeps its buffered media
     for (const s of sessions.values()) {
-      if (!s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
+      if (s.kind !== 'hls' && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
           && s.vcodec === vcodec && s.acodec === acodec) {
         s.lastActivity = Date.now();
         if (prefetch && startSec) s.hint(startSec * 1000);
@@ -167,7 +227,23 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     return sendJson(res, 200, describeSession(s, { cached, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() }));
   }
 
+  async function livePlaylist(s, req, res) {
+    if (s.kind !== 'hls') return sendJson(res, 404, { error: 'not a live session' });
+    if (s.failed) return sendJson(res, 503, { error: s.failed.message });
+    let body;
+    try {
+      body = await s.playlist();
+    } catch (e) {
+      // mpv retries a failed playlist reload; after MAX_FAILURES the session is failed (503)
+      return sendJson(res, s.failed ? 503 : 502, { error: e.message });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
+    if (req.method === 'HEAD') return res.end();
+    res.end(body);
+  }
+
   async function media(s, key, req, res) {
+    if (s.kind === 'hls') return sendJson(res, 404, { error: 'live session: use live.m3u8' });
     const t = s.track(key);
     if (!t) return sendJson(res, 404, { error: 'no such track' });
     if (s.failed) return sendJson(res, 503, { error: s.failed.message });
@@ -230,6 +306,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     if (parts[0] === 's' && parts.length >= 3) {
       const s = sessions.get(parts[1]);
       if (!s || s.closed) return sendJson(res, 404, { error: 'no such session (expired?)' });
+      if (parts[2] === 'live.m3u8' && parts.length === 3) return livePlaylist(s, req, res);
       if (parts[2] === 'video' && parts.length === 3) return media(s, 'video', req, res);
       if (parts[2] === 'audio' && parts.length === 3) return media(s, s.mainAudioKey, req, res);
       if (parts[2] === 'audio' && parts.length === 4) return media(s, parts[3], req, res);

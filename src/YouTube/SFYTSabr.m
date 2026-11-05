@@ -60,6 +60,17 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
 }
 - (BOOL)failedFor:(NSString *)vid { return vid && [_failed containsObject:vid]; }
 
+- (void)sessionStatus:(NSString *)sid done:(void (^)(NSDictionary *))done {
+    if (!sid.length || !_port) { done(nil); return; }
+    NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/s/%@/status", (long)_port, sid];
+    NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:u]];
+    rq.timeoutInterval = 3;   // a hanging sidecar must not hold up the player's decision
+    [[_session dataTaskWithRequest:rq completionHandler:^(NSData *d, NSURLResponse *resp, NSError *e) {
+        NSDictionary *j = d && [(NSHTTPURLResponse *)resp statusCode] == 200 ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+        SFMain(^{ done([j isKindOfClass:[NSDictionary class]] ? j : nil); });
+    }] resume];
+}
+
 #pragma mark Process
 
 // A run shorter than this counts as a crash for the backoff. Resetting on the ready line was wrong:
@@ -196,15 +207,19 @@ static id SabrClean(id v) {
                     SFLog(@"sabr: open %@ failed: %@", vid, e.localizedDescription ?: @"no answer");
                     done(nil, e ?: SFError(@"YouTube-Wiedergabe antwortet nicht.")); return;
                 }
-                if (j[@"error"] || ![j[@"video"] isKindOfClass:[NSString class]]) {
+                BOOL playable = [j[@"video"] isKindOfClass:[NSString class]] || [j[@"hls"] isKindOfClass:[NSString class]];
+                if (j[@"error"] || !playable) {
                     SFLog(@"sabr: open %@ failed: %@%@", vid, j[@"error"] ?: @"no video", [j[@"bot"] boolValue] ? @" (bot check)" : @"");
                     NSError *err = [NSError errorWithDomain:@"SFYTSabr" code:1 userInfo:@{
                         NSLocalizedDescriptionKey: [j[@"error"] description] ?: @"no video",
                         @"bot": @([j[@"bot"] boolValue]), @"live": @([j[@"live"] boolValue]),
+                        @"upcoming": @([j[@"upcoming"] boolValue]), @"startTime": @([j[@"startTime"] doubleValue]),
                         @"blocked_until": @([j[@"blocked_until"] doubleValue])}];
                     done(nil, err); return;
                 }
-                SFLog(@"sabr: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],
+                if (j[@"hls"]) SFLog(@"sabr: opened %@ -> %@ HLS %@p%@ in %.1fs%@", vid, [j[@"live"] boolValue] ? @"live" : @"post-live",
+                                     j[@"height"], j[@"fps"], -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
+                else SFLog(@"sabr: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],
                       [j[@"alang"] isKindOfClass:[NSString class]] ? j[@"alang"] : @"?", -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
                 done(SabrClean(j), nil);
             });

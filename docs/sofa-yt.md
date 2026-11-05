@@ -3,7 +3,8 @@
 A long-lived node process that looks like YouTube's own web player (one persistent Innertube session,
 WEB-client player requests with a BotGuard/WebPO token, SABR streaming) and hands mpv plain local HTTP
 files with Range support. It replaces yt-dlp for VOD playback on IPs where yt-dlp gets "Sign in to
-confirm you're not a bot"; yt-dlp stays for lives and as fallback.
+confirm you're not a bot"; lives and post-live DVR recordings are served as a local HLS playlist from
+the same session (see "Lives"). yt-dlp stays the fallback.
 
 ## Layout
 
@@ -14,6 +15,7 @@ confirm you're not a bot"; yt-dlp stays for lives and as fallback.
 | `res/sofa-yt/lib/session.mjs` | playback session: demands, SABR scheduling, pacing, eviction, Range serving |
 | `res/sofa-yt/lib/vfile.mjs` | sparse virtual file per track (segments placed by absolute byte offset) |
 | `res/sofa-yt/lib/mediaindex.mjs` | WebM Cues / MP4 sidx parser (byte offset -> media time) |
+| `res/sofa-yt/lib/hls.mjs` | lives / post-live DVR: manifest URL preparation (n, PO token), variant choice, playlist proxy session |
 | `res/sofa-yt/lib/sabrpump.mjs` | one googlevideo `SabrStream` run, segments with their byte position |
 | `res/sofa-yt/lib/youtube.mjs` | Innertube session, player requests, decipher, per-video cache, budget |
 | `res/sofa-yt/lib/webpo.mjs` | in-process BotGuard (bgutils-js + jsdom) WebPO minter |
@@ -23,7 +25,7 @@ confirm you're not a bot"; yt-dlp stays for lives and as fallback.
 | `res/sofa-yt/package.json`, `package-lock.json` | exact dependency pins (googlevideo 5.0.1, youtubei.js 18.3.0, bgutils-js 4.0.3, jsdom 25.0.1) |
 | `tools/fetch-sofa-yt` | `npm ci` (lockfile integrity, no install scripts) -> `build/vendor/sofa-yt/node_modules` |
 | `tools/test-sofa-yt` | tests (offline; `SOFA_YT_LIVE=1` adds the live smoke test) |
-| `tests/sofa-yt/` | tests + fixtures (init segments, trimmed player responses, recorded SABR segment table) |
+| `tests/sofa-yt/` | tests + fixtures (init segments, trimmed player responses, recorded SABR segment table, a recorded live response + HLS playlists) |
 
 `make` installs the dependencies when the lockfile changed and copies sources + `node_modules` to
 `Contents/Resources/sofa-yt` of both `Sofa.app` and `SofaDev.app`. `tools/make-release` strips source maps
@@ -96,13 +98,26 @@ Success (keys of ytresolver's `dash` dict + metadata; all URLs local):
 - `cached`: the player response came from the cache (no player request). `reused`: an existing healthy
   session of the same video/choice was returned (its buffer is kept).
 
+Live / post-live DVR success (no `video`/`audio`: one muxed HLS stream):
+```json
+{"id":"LuKwFajn37U","sid":"d38f66f1757b3b63","title":"DW News livestream | ...","duration":0,
+ "live":true,"postLiveDvr":false,"expires":1793888018,
+ "hls":"http://127.0.0.1:N/s/<sid>/live.m3u8","height":1080,"fps":60,"vcodec":"avc1","acodec":"mp4a",
+ "vitag":301,"audios":[],"subs":[],"endscreen":[],"cached":false,"secs":0.82,"blocked_until":0}
+```
+Post-live DVR (an ended broadcast YouTube still serves from its live chunks): `live:false`,
+`postLiveDvr:true`, `duration` = the recording's length, seekable like a VOD. `bg=1` opens of either
+answer `{"error":"live"|"post-live","live":true}` (downloads stay with yt-dlp).
+
 Failure (HTTP 200):
 ```json
 {"id":"...","error":"Sign in to confirm you're not a bot","bot":true,"blocked_until":1793880000}
-{"id":"...","error":"live","live":true,"blocked_until":0}
+{"id":"...","error":"upcoming","live":true,"upcoming":true,"startTime":1793900000,"bot":false,"blocked_until":0}
 ```
-`error` texts: YouTube's playability reason (e.g. `Video unavailable`), `upcoming`/`live` (with
-`live:true` - play those via yt-dlp), `... (paused, no request sent)` (bg while blocked),
+`error` texts: YouTube's playability reason (e.g. `Video unavailable`), `upcoming` (scheduled live or
+premiere; `startTime` epoch seconds or `null`; the answer is reused for 60 s without a request),
+`offline` (`LIVE_STREAM_OFFLINE` without a schedule), other errors with `live:true` (no HLS manifest,
+`HLS manifest unavailable: ...`, decipher failed: fall back to yt-dlp), `... (paused, no request sent)` (bg while blocked),
 `player-request budget exhausted ...`, `PO token unavailable: ...`, `YouTube session unavailable: ...`,
 `no usable video/audio format`, `invalid video ID` (HTTP 400).
 
@@ -111,6 +126,13 @@ A file of exactly `contentLength` bytes, byte-identical to googlevideo's file. `
 `206` + `Content-Range` with `bytes=a-b`, `a-`, `-n`; `416` beyond the end. Missing bytes are waited for
 (25 s per gap, then the response ends early so the client reconnects). `404` unknown/expired session,
 `503` + JSON when the session failed (3 SABR runs in a row failed before delivering anything).
+
+### `GET|HEAD /s/<sid>/live.m3u8` (live sessions)
+The chosen variant's media playlist, fetched fresh from googlevideo on every request (1 s micro cache),
+all URIs absolute (mpv loads the TS segments directly from googlevideo). `502` + JSON when one fetch
+failed (mpv retries), `503` once 3 fetches in a row failed (session failed). `/s/<sid>/status` of a live
+session: `{"kind":"hls","live":true,"ended":false,"failures":0,"renewals":0,"variant":{...},...}` -
+`ended` = upstream sent `#EXT-X-ENDLIST` (the broadcast is over).
 
 ### `GET /s/<sid>/subs/<key>.vtt`
 WebVTT, fetched on demand from timedtext (`fmt=vtt`, PO token for `exp=xpe` URLs), cached per session;
@@ -159,6 +181,83 @@ window. Plus ~170 MB for node + jsdom/BotGuard (measured RSS after warm-up).
 **Breaker.** Same file and rules as ytresolver.py (5 min doubling to 1 h, reset by a success; only
 background requests are held back). The file is re-read on every check.
 
+## Lives
+
+### Research (2026-11-05; googlevideo 5.0.1, youtubei.js 18.3.0, yt-dlp master, FreeTube, invidious-companion)
+
+Recorded with one WEB player request for DW News' 24/7 live `LuKwFajn37U` (found via one search request
+with the `live` filter, no player request), same identity/payload as `/open`
+(`tests/sofa-yt/fixtures/player-LuKwFajn37U-live.json`, trimmed and sanitized):
+
+- `playabilityStatus.status` `OK`, `liveStreamability.liveStreamabilityRenderer` (`broadcastId`,
+  `pollDelayMs`); `videoDetails.isLive`, `isLiveDvrEnabled`, `lengthSeconds` `0`; `heartbeatParams`.
+- `streamingData`: `hlsManifestUrl`, `serverAbrStreamingUrl` (`source=yt_live_broadcast`),
+  `adaptiveFormats` (299/303 1080p60 ... 140 audio) **without** `contentLength`, `indexRange`,
+  `initRange` (only `targetDurationSec` 5), `expiresInSeconds` 21540. **No `dashManifestUrl`** for WEB.
+- The HLS URL is path-style (`.../hls_variant/expire/<t>/.../n/<challenge>/.../playlist_type/DVR/.../file/index.m3u8`).
+  `n` is **in the path** and not in `sparams`. Measured: master and variant playlists load either way,
+  but every segment answers **403** unless `n` was transformed with the player whose
+  `signatureTimestamp` went into the request (`player.decipher` on a dummy `?n=` URL, like the SABR
+  URL). The transformed `n` and an appended `/pot/<PO token>` propagate into every variant and segment
+  URL; segments load with and without the token.
+- Master: 6 muxed TS variants (itags 91-94 144p-480p, 300 720p60, 301 1080p60; H.264 + AAC, no separate
+  audio group). Variant playlist: 6 x 5 s (`playlist_duration/30`), `EXT-X-PROGRAM-DATE-TIME`,
+  `MEDIA-SEQUENCE`, `DISCONTINUITY-SEQUENCE`.
+- yt-dlp (`extractor/youtube/_video.py`) does exactly this for web clients: `get_manifest_n_challenge`
+  (`/n/([^/]+)/` in the path) -> solved n replaced in the path, only uses the manifest if solved; PO token
+  appended as `/pot/<token>` before `/file/index.m3u8` (GVS PO token policy for HLS: recommended, not
+  required); `isPostLiveDvr` -> `post_live`; `LIVE_STREAM_OFFLINE` + `isUpcoming` -> upcoming.
+- FreeTube (`helpers/api/local.js`): deciphers `hls_manifest_url` / `dash_manifest_url` with the player
+  (path segments converted to query and back) and appends `/pot/`; refetches `streamingData` with MWEB
+  when a live/post-live response lacks `hlsManifestUrl`; keeps the start time for `LIVE_STREAM_OFFLINE`
+  (upcoming). invidious-companion only proxies `videoplayback` (no manifest handling).
+- googlevideo 5.0.1 `SabrStream` **does** support live SABR: `isBroadcast` from `source=yt_live_broadcast`,
+  start at the live edge (`LIVE_EDGE_SENTINEL_MS`) unless `isPostLiveDvr`, `LIVE_METADATA` parts
+  (`liveMetadataUpdate`, broadcast id check), heartbeat callback (`HEARTBEAT_CHECK_TYPE_LIVE_STREAM_STATUS`),
+  stall = end of stream, no initialization formats (segments are self-initializing; duplicate inits
+  stripped). Its output is a growing byte stream per track with **no byte offsets and no length**.
+- youtubei.js refuses to generate DASH manifests for lives (`MediaInfo.toDash`); post-live DVR formats
+  lack index/init ranges (`StreamingInfo.getFormatGroupings`).
+
+### Decision: the web player response's HLS manifest, proxied
+
+Live SABR would need a second serving model (no `contentLength`/Cues -> no virtual files; mpv would get
+two endless, unseekable streams to sync, or we would generate an HLS/DASH playlist from SABR segments
+ourselves, plus heartbeats and sequence/DVR-window bookkeeping) - a reimplementation of what YouTube's HLS
+manifest already is. The HLS manifest comes from the same WEB player request (one request, same
+identity, PO-token-bound like the web player's media requests), is one muxed stream mpv (and
+AVFoundation) plays natively, and the DVR window/sequence numbers are YouTube's. The real desktop web
+player uses SABR for lives; Safari's web player uses this HLS manifest - so the requests still look like
+a YouTube web player. Live SABR stays an option if YouTube ever drops HLS for WEB.
+
+### How it works
+
+- `youtube.mjs` classifies the response (`classifyPlayer`): `live` (`isLive`) and `postlive`
+  (`isPostLiveDvr`) -> `liveInfo()`: `hlsManifestUrl` with the path `n` solved by the pinned player and
+  `/pot/<token>` (the request's video-bound token) appended (`hls.mjs prepareManifestUrl`); cached like VOD
+  responses (`players/<id>.json`, until 15 min before the path `expire`). No HLS manifest / unsolved n ->
+  `live:true` error (yt-dlp fallback). `upcoming` (`isUpcoming`, or `LIVE_STREAM_OFFLINE` with a
+  `scheduledStartTime` in the offline slate; premieres: `liveBroadcastDetails.startTimestamp`) and
+  `offline` throw before anything is cached; the answer is reused for 60 s (no request storm from
+  repeated clicks), the breaker counts it as a success (it was no bot check).
+- `/open` (`app.mjs openLive`) creates a `LiveSession`, loads the master playlist right away (an unusable
+  URL fails `/open`, not mpv; a cached URL that fails is forgotten) and picks the best variant within
+  `maxHeight` (height, fps, bandwidth).
+- `/s/<sid>/live.m3u8` serves that variant's media playlist, fetched with the session's web headers
+  on every mpv reload. Self-healing: 10 min before `expire`, or once on 403/404/410, the manifest URL is
+  renewed through `YouTube#refresh` - the same guards as SABR reloads (shared in-flight request, a
+  response younger than 5 min is reused, max 2 per 10 min, nothing for background sessions while the
+  breaker is open, budget) - and the same itag is chosen again. 5xx/network errors never cost a player
+  request. 3 failed fetches in a row fail the session (`503`).
+- Sessions share the registry, idle expiry (mpv reloads the playlist every target duration, so a playing
+  live never idles) and the 4-session limit with VOD sessions.
+
+### Verified (2026-11-05)
+Sidecar `/open` of `LuKwFajn37U`: 1 player request, 0.8 s, 1080p60 itag 301; `mpv --vo=null --ao=null
+--length=20 http://127.0.0.1:N/s/<sid>/live.m3u8` played 20 s of H.264 1080p60 + AAC, 4 playlist reloads,
+0 failures. Not verifiable on a given day without a matching stream: post-live DVR and upcoming answers
+(covered by synthetic fixtures in `unit-live.test.mjs` built from the recorded live response).
+
 ## Integration notes for Sofa (ObjC)
 
 - Spawn with the bundled node, stdin = a pipe Sofa keeps open, read the first stdout line (timeout ~10 s);
@@ -175,4 +274,10 @@ background requests are held back). The file is re-read on every check.
 - Failure modes: `/open` error JSON (fall back to yt-dlp unless `bot` and the user did not ask); media
   URLs ending early (mpv reconnects) or `503` (session failed: reopen once, then fall back); `404` =
   session expired (reopen: the cached player response makes this cheap). URLs die with the process.
-- Lives/upcoming: `{"error":"live","live":true}` - keep yt-dlp for them.
+- Lives (`ytlive:` resolver) and videos that turn out to be live (`yt:` resolver) go to the sidecar first:
+  an `hls` answer is opened as is (`SFSetMPVSource` flags `sabr`, `hls`, `live`, `sid`; no `video`/`audio`
+  pair); bot check -> message, no yt-dlp request; `upcoming` -> "Dieser Livestream beginnt ..." (with the
+  start time), `offline` -> message, both without yt-dlp; any other error -> yt-dlp (`live:YES`).
+- mpv reaching the end of a live playlist: SFPlayerScreen asks `/s/<sid>/status`; `ended` -> normal end,
+  otherwise the SABR failure path (reopen once via the sidecar, then yt-dlp). The stall watchdog and the
+  sidecar-exit notification apply to lives like to VODs.
