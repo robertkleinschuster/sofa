@@ -1,6 +1,6 @@
 # Sofa architecture: framework, core, apps
 
-Status: target design (2026-11-05), migration in progress on branch `arch/apps`.
+Status: implemented (2026-11-05); keep this document current with the code.
 User requirement: adding a new app reuses almost all UI; it is obvious where app-specific
 logic lives; integration happens through clearly defined APIs (including how the home page is
 composed). This document is the contract.
@@ -70,40 +70,36 @@ its own) and `remoteStatusNotification`. The shell implements `SFPlayerHost`
 (`src/Core/SFPlayerHost.h`: navigator, visible player, present a player, wake the display)
 and hands it to remotes and to app dev commands (`handleDevCommand:arg:host:`).
 
+## Home composition
+
+Sofa's home page is a list of `SFHomeSection`s (`src/Core/SFHomeSection.h`: id, title,
+priority, tile style, grid, items block). `SFHome homeSections` (Shell) contributes the
+app tiles (0), Weiterschauen (100), Später ansehen (200), Neue Folgen (300) and Meine
+Sendungen (400); apps add theirs through `homeSections` (500+, e.g. YouTube "Meine Kanäle"
+as circles). Sections are sorted by priority (stable) and empty ones disappear.
+An app's start page is framed the same way for every app (`SFHome appScreen:`): the app's
+`homeLoader` shelves + followed shows/Neue Folgen (unless `homeIncludesFollows`) + Später
+ansehen + the Suche tile and header button.
+
 ## Design system (Framework)
 
-- Tokens: `SFTheme` holds every visual decision as a named token – colors (background,
-  text, textDim, accent, focus, onFocus, progress, tile placeholder), type scale, spacing
-  (`U()`), radii, motion (durations/curves), opacities (backdrop hero/grid, dim). Apps define
-  their theme by tokens; no `if (theme.identifier == …)` in components. Header decoration
-  (ZDF/ARD/ORF accent marks) becomes a theme token (`headerMark`).
+- Tokens: `SFTheme` (`src/Framework/SFTheme.h`) holds the visual decisions as named tokens –
+  colors (background, surface, text, textDim, accent, accentText, focus), fonts, corner,
+  logo/wordmark, and derived tokens with defaults (`focusText`, `progressColor`,
+  `seekBarColor`, `wordmarkColor`, `headerMark` + `headerMarkColor`). Themes are registered
+  by name (`registerTheme:builder:`; apps via `configureTheme:`). Components never compare
+  theme names – a new visual decision becomes a token.
 - Components: SFTile (styles), shelf/grid, hero, header bar, side menu (rows, toggles,
   details, scroll + edge fade), confirm dialog, toast, keyboard, image layer (fallback,
   fades), icon art, subtitle builder (`SFDotJoin`), empty/offline states.
 - Interaction: SFNavigator + SFScreen key handling, focus model (row/grid, focus memory,
   Up to header), remote grammar (OK, OK halten = Optionen, MENU, MENU halten = Start, ▶❚❚,
-  hold Left/Right = seek), context menu builder. Documented in docs/ui-framework.md.
-- Gallery: dev page `open gallery` renders every component in every theme for screenshots.
+  hold Left/Right = seek), context menu builder.
 
-## Adding an app (docs/new-app.md)
+## Adding an app
 
-1. `src/Apps/<Name>/` with `SF<Name>App.{h,m}` conforming to `SFApp`.
-2. Theme tokens + logo in the app folder (`res/logos/<id>.png`).
-3. Implement `homeLoader` and the capabilities it supports.
-4. Register in `SFAppRegistry` (one line in Shell).
-5. `tools/test-app <id>`: loads home/search/resolve through the protocol.
-The template app `src/Apps/Example` (dev builds only) is the executable reference.
+See docs/new-app.md; `src/Apps/Example` (dev instances with `SOFA_EXAMPLE_APP=1`) is the
+executable template.
 
-## Migration plan (big bang on `arch/apps`, merged when complete)
-
-1. Folders + `SFApp`/`SFAppRegistry`; apps become `SFApp` classes; replace main.m
-   registrations, home tiles, app screen routing, search routing, theme lookup, the 9
-   `SFRegister…` hooks → protocol methods. Verify: test-all + screenshots of every app.
-2. Player hooks: move SABR/yt-dlp recovery, up next, endscreen, preload into the YouTube
-   app delegate. Verify: test-playback (incl. SABR/live opt-in suites).
-3. Home composer + app start page frame; app home sections; settings/actions contributions.
-4. Theme tokens instead of identifier checks; header marks; gallery page.
-5. Remote service (phone) behind `SFRemoteService`.
-6. `tools/check-arch`, docs/new-app.md, template app, docs/ui-framework.md.
-Each step keeps the app working; merge to main after full test-all + exploratory pass in all
-themes; then release.
+Not extracted yet (add when a second user appears): settings contributions per app, extra
+context-menu actions per app, the component gallery dev page, docs/ui-framework.md.
