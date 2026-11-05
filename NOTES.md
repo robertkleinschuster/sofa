@@ -276,6 +276,15 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       explicitly (live, downloads, follow/new episodes, availability check, show-ref lookup,
       phone pairing) – the core asks the app instead of `if source == …`.
     - App registry: one list of apps; home tiles, search, follows, downloads, stats iterate it.
+    - **Clearly defined integration APIs (user 2026-11-05):** how an app plugs into Sofa AND how the
+      Sofa home page is composed. Home = composition of contributions: each app (and core
+      services: continue watching, watch later, new episodes, downloads, history, settings,
+      phone) contributes home sections via a declared API (section id, title, priority/order
+      rules, item source, refresh trigger, empty/offline behaviour); the home layout engine
+      merges them – no app code in SFHome. Same for search (app search providers + merged
+      results), context menu actions (core actions + app actions per item kind) and settings
+      (app settings pages registered, not hard-coded). Versioned, documented in
+      docs/app-api.md with the template app as the executable example.
     - Shared core stays app-agnostic: library (downloads/storage/keep), progress/history, follows,
       watch later, player + engines, net/cache, settings.
     - Folder layout: src/Framework (UI + interaction + page model), src/Core, src/Apps/<App>/
