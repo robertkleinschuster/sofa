@@ -46,6 +46,8 @@ export function parseRange(header, total) {
  * @param {(opts) => {abort}} o.startPump   factory(info, formats, opts) for real SABR or a fake
  * @param {object} [o.sessionCfg]
  */
+const IN_USE_MS = 60000;   // read within this time = in use (mpv reconnects, pauses between reads)
+
 export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS, sweepMs = 30000 }) {
   const sessions = new Map();
   let port = 0;
@@ -75,10 +77,18 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     return { videoSec: Math.round(f.ms / 1000), MB: +(f.bytes / 1048576).toFixed(1), sabrRuns: f.runs };
   }
 
+  // A session in use is never evicted (review 2026-11-05: a playing session with a reader that was
+  // just reconnecting got closed for a preload, mpv saw 404). Victims: failed, then never read
+  // (preloads), then the least recently used idle one; if all are in use the limit is exceeded.
+  function inUse(s) { return s.activeReaders > 0 || (s.everRead && Date.now() - s.lastReadAt < IN_USE_MS); }
   function makeRoom() {
     sweep();
+    youtube.prune?.();
     while (sessions.size >= maxSessions) {
-      const victim = [...sessions.values()].sort((a, b) => (a.activeReaders - b.activeReaders) || (a.lastActivity - b.lastActivity))[0];
+      const idle = [...sessions.values()].filter((s) => s.failed || !inUse(s));
+      if (!idle.length) { log(`session limit ${maxSessions} exceeded: all sessions in use`); return; }
+      const rank = (s) => [s.failed ? 0 : 1, s.everRead ? 1 : 0, s.lastActivity];
+      const victim = idle.sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; })[0];
       victim.close('session limit');
       forget(victim);
     }
@@ -143,7 +153,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     makeRoom();
     const s = new PlaybackSession({
       info, formats, video, audio, audioChoices: list.map((t) => t.format), subs: subtitleTracks(info.captions, lang),
-      startPump: (opts) => startPump(info, formats, opts), cfg: sessionCfg,
+      startPump: (opts) => startPump(info, formats, { ...opts, bg }), cfg: sessionCfg,
     });
     s.audioList = list;
     s.maxHeight = maxHeight;

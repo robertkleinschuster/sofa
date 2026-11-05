@@ -423,6 +423,11 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     return until > now ? until : 0;
 }
 
+- (void)noteBlockedUntil:(NSTimeInterval)until {
+    if (until > _blockedUntil) _blockedUntil = until;
+    _blockReadAt = 0;   // re-read the shared file on the next check
+}
+
 - (void)simulateBlockForTesting:(NSTimeInterval)secs {
     _blockedUntil = secs > 0 ? [NSDate date].timeIntervalSince1970 + secs : 1;
     SFLog(@"dev: YouTube pause simulated for %.0f s", secs);

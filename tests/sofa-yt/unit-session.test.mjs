@@ -285,3 +285,16 @@ test('stalled SABR runs are restarted by the watchdog, then the session fails', 
     assert.equal(pumps.log.live, 0, 'stalled runs were aborted');
   } finally { await app.close(); }
 });
+
+test('session limit: a session in use is never evicted, a never-read preload goes first', async () => {
+  const { app } = await setup({ appOpts: { maxSessions: 2 } });
+  try {
+    const a = JSON.parse(await openJson(app, `v=${ID}&prefetch=0&maxHeight=1080`));
+    assert.equal((await get(a.video, { range: 'bytes=0-999' })).status, 206);   // A is being played
+    const b = JSON.parse(await openJson(app, `v=${ID}&prefetch=0&maxHeight=720`));   // preload, never read
+    const c = JSON.parse(await openJson(app, `v=${ID}&prefetch=0&maxHeight=480`));
+    assert.notEqual(c.sid, a.sid);
+    assert.equal((await get(a.video, { range: 'bytes=0-999' })).status, 206, 'playing session survives');
+    assert.equal((await get(b.video, { range: 'bytes=0-999' }).catch(() => ({ status: 0 }))).status, 404, 'preload evicted');
+  } finally { await app.close(); }
+});

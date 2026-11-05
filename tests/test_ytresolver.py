@@ -338,7 +338,7 @@ def load_breaker(block_file):
     """The bot-check circuit breaker (is_bot_check, blocked_until, note_result) with its constants."""
     import threading, json as _json
     tree = ast.parse(open(SRC, encoding="utf-8").read(), SRC)
-    body = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in ("is_bot_check", "blocked_until", "note_result"))
+    body = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in ("is_bot_check", "blocked_until", "note_result", "sync_block"))
             or (isinstance(n, ast.Assign) and any(getattr(t, "id", None) in ("BLOCK_MIN", "BLOCK_MAX") for t in getattr(n.targets[0], "elts", n.targets)))]
     ns = {"time": time, "json": _json, "os": os, "log": lambda m: None, "threading": threading,
           "block_lock": threading.Lock(), "block": {"until": 0, "backoff": 0}, "BLOCK_FILE": block_file}
@@ -370,6 +370,15 @@ class BotCheckBreaker(unittest.TestCase):
         B["note_result"](False)
         self.assertEqual(B["blocked_until"](), 0)
         self.assertEqual(B["block"]["backoff"], 0)
+    def test_longer_pause_in_the_shared_file_wins(self):
+        # the SABR sidecar escalated to 1 h; a bot check here must not shorten it to 5 min
+        with open(self.file, "w") as f:
+            json.dump({"until": time.time() + 3600, "backoff": 3600}, f)
+        self.assertGreater(self.B["blocked_until"](), time.time() + 3500)
+        self.B["note_result"](True)
+        self.assertEqual(self.B["block"]["backoff"], 3600)
+        self.assertGreater(self.B["block"]["until"], time.time() + 3500)
+
     def test_expired_pause_is_no_pause(self):
         self.B["block"].update(until=time.time() - 1, backoff=300)
         self.assertEqual(self.B["blocked_until"](), 0)

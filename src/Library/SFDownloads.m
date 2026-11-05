@@ -422,10 +422,16 @@ static NSString *gb(unsigned long long b) {
                               // streaming on the TV or other connections); short unthrottled start.
                               // -rw_timeout: a dead connection must end the run (30 s), never hang the queue forever
                               @"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000",
-                              @"-i", src.absoluteString] mutableCopy];
+                              ] mutableCopy];
+    // local SABR streams (sofa-yt): a response cut after a wait must reconnect, not end the file early
+    NSArray *local = @[@"-reconnect", @"1", @"-reconnect_on_network_error", @"1", @"-reconnect_delay_max", @"5"];
+    if ([src.host isEqualToString:@"127.0.0.1"]) [args addObjectsFromArray:local];
+    [args addObjectsFromArray:@[@"-i", src.absoluteString]];
     if (audio) {   // separate audio track (original audio): video from the stream, audio from the second source
         NSURL *asrc = [[SFStreamProxy shared] playableURLFor:audio];
-        [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000", @"-i", asrc.absoluteString,
+        [args addObjectsFromArray:@[@"-readrate", @"3", @"-readrate_initial_burst", @"10", @"-rw_timeout", @"30000000"]];
+        if ([asrc.host isEqualToString:@"127.0.0.1"]) [args addObjectsFromArray:local];
+        [args addObjectsFromArray:@[@"-i", asrc.absoluteString,
                                     @"-map", @"0:v:0", @"-map", @"1:a:0", @"-shortest"]];
         SFLog(@"downloads: %@ with separate audio track (original audio)", item.title);
     }

@@ -80,7 +80,7 @@ function startPump(info, formats, opts) {
         ...opts, info, formats, poToken,
         mintPoToken: () => po.mintBytes(info.id),
         reload: async (ctx) => {
-          const r = await youtube.reload(info.id, ctx);
+          const r = await youtube.reload(info.id, ctx, { bg: !!opts.bg });
           // the session keeps the info object: point it at the fresh URL for future runs
           const fresh = youtube.cached(info.id);
           if (fresh) { info.sabrUrl = fresh.sabrUrl; info.ustreamer = fresh.ustreamer; info.expires = fresh.expires; }

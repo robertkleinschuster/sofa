@@ -16,7 +16,9 @@ NSString *const SFYTSabrDidExitNotification = @"SFYTSabrDidExit";
     NSFileHandle *_in;          // kept open: the sidecar exits when its stdin reaches EOF (no orphans)
     NSMutableData *_out, *_err;
     NSInteger _port;            // 0 = not ready
-    NSInteger _crashes;
+    NSInteger _crashes;         // consecutive short-lived runs (reset only after a long healthy run)
+    NSDate *_launchedAt;
+    NSTimeInterval _nextStartAt; // backoff: no start before this (epoch)
     NSMutableArray *_queued;    // blocks waiting for readiness: ^(NSInteger port)
     NSMutableSet *_failed;      // video IDs whose SABR playback failed this run
     NSURLSession *_session;
@@ -50,12 +52,24 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
 }
 
 - (void)markFailed:(NSString *)vid { if (vid) [_failed addObject:vid]; }
+
+- (void)closeSession:(NSString *)sid {
+    if (!sid.length || !_port) return;
+    NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/close?sid=%@", (long)_port, sid];
+    [[_session dataTaskWithURL:[NSURL URLWithString:u]] resume];
+}
 - (BOOL)failedFor:(NSString *)vid { return vid && [_failed containsObject:vid]; }
 
 #pragma mark Process
 
+// A run shorter than this counts as a crash for the backoff. Resetting on the ready line was wrong:
+// the sidecar is ready before its warm-up, so a crash during warm-up restarted it every 2 s, each
+// time contacting YouTube again (review 2026-11-05).
+static const NSTimeInterval kHealthyRun = 300;
+
 - (void)start {
     if (_task.isRunning || !self.available) return;
+    if ([NSDate date].timeIntervalSince1970 < _nextStartAt) return;   // backing off after crashes
     signal(SIGPIPE, SIG_IGN);
     NSString *state = [SFAppSupportDir() stringByAppendingPathComponent:SFDevMode ? @"sofa-yt-dev" : @"sofa-yt"];
     NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
@@ -80,7 +94,7 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
     t.terminationHandler = ^(NSTask *tt) { SFMain(^{ [ws terminated:tt]; }); };
     @try { [t launch]; }
     @catch (NSException *ex) { SFLog(@"sabr: launch failed %@", ex); return; }
-    _task = t; _in = pin.fileHandleForWriting; _port = 0;
+    _task = t; _in = pin.fileHandleForWriting; _port = 0; _launchedAt = [NSDate date];
     SFLog(@"sabr: sidecar started pid %d", t.processIdentifier);
 }
 
@@ -99,7 +113,6 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
         NSDictionary *j = [NSJSONSerialization JSONObjectWithData:[line dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data] options:0 error:nil];
         if ([j isKindOfClass:[NSDictionary class]] && [j[@"ready"] boolValue] && [j[@"port"] integerValue] > 0) {
             _port = [j[@"port"] integerValue];
-            _crashes = 0;
             SFLog(@"sabr: ready on port %ld", (long)_port);
             NSArray *q = [_queued copy]; [_queued removeAllObjects];
             for (void (^w)(NSInteger) in q) w(_port);
@@ -116,10 +129,13 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
     NSArray *q = [_queued copy]; [_queued removeAllObjects];
     for (void (^w)(NSInteger) in q) w(0);
     [[NSNotificationCenter defaultCenter] postNotificationName:SFYTSabrDidExitNotification object:self];
-    // restart lazily with backoff (the next open starts it again anyway)
-    _crashes++;
-    double delay = MIN(60, 2 * _crashes);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // backoff: 5 s, 10 s, 20 s ... up to 10 min for runs that died early; opens meanwhile go to yt-dlp
+    BOOL healthy = _launchedAt && -[_launchedAt timeIntervalSinceNow] > kHealthyRun;
+    _crashes = healthy ? 0 : _crashes + 1;
+    double delay = healthy ? 2 : MIN(600, 5 * pow(2, MAX(0, _crashes - 1)));
+    _nextStartAt = [NSDate date].timeIntervalSince1970 + delay;
+    if (_crashes > 1) SFLog(@"sabr: %ld short runs in a row - next start in %.0f s", (long)_crashes, delay);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((delay + 0.1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (!self->_task && !SFDevMode) [self start];
     });
 }
@@ -127,6 +143,7 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
 // Calls back with the port once ready (0 = not available / timed out). Main thread.
 - (void)whenReady:(void (^)(NSInteger port))block {
     if (_port) { block(_port); return; }
+    if (!_task && [NSDate date].timeIntervalSince1970 < _nextStartAt) { block(0); return; }   // backing off
     [self start];
     if (!_task) { block(0); return; }
     __block BOOL called = NO;
@@ -183,7 +200,8 @@ static id SabrClean(id v) {
                     SFLog(@"sabr: open %@ failed: %@%@", vid, j[@"error"] ?: @"no video", [j[@"bot"] boolValue] ? @" (bot check)" : @"");
                     NSError *err = [NSError errorWithDomain:@"SFYTSabr" code:1 userInfo:@{
                         NSLocalizedDescriptionKey: [j[@"error"] description] ?: @"no video",
-                        @"bot": @([j[@"bot"] boolValue]), @"live": @([j[@"live"] boolValue])}];
+                        @"bot": @([j[@"bot"] boolValue]), @"live": @([j[@"live"] boolValue]),
+                        @"blocked_until": @([j[@"blocked_until"] doubleValue])}];
                     done(nil, err); return;
                 }
                 SFLog(@"sabr: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],

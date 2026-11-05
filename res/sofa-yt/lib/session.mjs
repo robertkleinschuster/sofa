@@ -366,6 +366,8 @@ export class PlaybackSession {
     t.lastPos = start;
     t.lastReadAt = Date.now();
     this.lastActivity = Date.now();
+    this.everRead = true;          // eviction: sessions that were never read are preloads
+    this.lastReadAt = Date.now();
     const ac = new AbortController();
     const onClose = () => ac.abort();
     res.on('close', onClose);

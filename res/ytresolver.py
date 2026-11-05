@@ -99,12 +99,20 @@ BLOCK_FILE = os.path.join(CACHE, "youtube-block.json")
 BLOCK_MIN, BLOCK_MAX = 300, 3600
 block_lock = threading.Lock()
 block = {"until": 0, "backoff": 0}
-try:
-    with open(BLOCK_FILE) as f:
-        b = json.load(f)
-        block = {"until": float(b.get("until", 0)), "backoff": float(b.get("backoff", 0))}
-except Exception:
-    pass
+
+def sync_block():
+    """Merge the shared file into `block` (caller holds block_lock). The SABR sidecar writes the same
+    file: without re-reading, a stale 5-min state here overwrote its 1-h pause (review 2026-11-05)."""
+    try:
+        with open(BLOCK_FILE) as f:
+            b = json.load(f)
+        block["until"] = max(block["until"], float(b.get("until", 0)))
+        if float(b.get("until", 0)) > time.time():
+            block["backoff"] = max(block["backoff"], float(b.get("backoff", 0)))
+        elif block["until"] <= time.time():
+            block["backoff"] = float(b.get("backoff", 0))
+    except Exception:
+        pass
 
 def is_bot_check(e):
     m = str(e).lower()
@@ -112,10 +120,12 @@ def is_bot_check(e):
 
 def blocked_until():
     with block_lock:
+        sync_block()
         return block["until"] if block["until"] > time.time() else 0
 
 def note_result(bot_check):
     with block_lock:
+        sync_block()
         if bot_check:
             block["backoff"] = min(BLOCK_MAX, max(BLOCK_MIN, block["backoff"] * 2))
             block["until"] = time.time() + block["backoff"]

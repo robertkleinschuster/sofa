@@ -19,6 +19,10 @@ const REUSE_MARGIN_S = 15 * 60;                // a cached response must stay va
 const SESSION_RETRY_MIN_MS = 30 * 1000;
 const SESSION_RETRY_MAX_MS = 10 * 60 * 1000;
 
+const RELOAD_FRESH_S = 300;
+const RELOAD_MAX = 2;
+const RELOAD_WINDOW_S = 600;
+
 export class YouTubeError extends Error {
   constructor(message, { bot = false, live = false, status = null } = {}) {
     super(message);
@@ -88,6 +92,8 @@ export class YouTube {
     this.ytError = null;
     this.cache = new Map();     // videoId -> info
     this.inflight = new Map();  // videoId -> Promise<info>
+    this.reloading = new Map(); // videoId -> Promise<info> (reloads requested by SABR)
+    this.reloads = new Map();   // videoId -> [ms] recent reloads (rate limit)
     this.pruneDisk();
   }
 
@@ -275,10 +281,35 @@ export class YouTube {
     return info;
   }
 
-  /** googlevideo onReloadPlayerResponse: fresh URL + ustreamer config (costs a player request). */
-  async reload(videoId, reloadContext) {
-    const info = await this.request(videoId, reloadContext || null);
-    return { serverAbrStreamingUrl: info.sabrUrl, videoPlaybackUstreamerConfig: info.ustreamer };
+  /**
+   * googlevideo onReloadPlayerResponse: fresh URL + ustreamer config (costs a player request).
+   * Guarded like info() (review 2026-11-05: every pump of every session could reload on its own,
+   * ignoring the breaker): concurrent reloads of a video share one request, a response fetched
+   * in the last RELOAD_FRESH_S is reused, at most RELOAD_MAX per video per RELOAD_WINDOW_S, and
+   * background sessions send nothing while the breaker is open.
+   */
+  async reload(videoId, reloadContext, { bg = false } = {}) {
+    const asResult = (info) => ({ serverAbrStreamingUrl: info.sabrUrl, videoPlaybackUstreamerConfig: info.ustreamer });
+    const recent = this.cache.get(videoId);
+    if (recent && Date.now() / 1000 - (recent.fetchedAt || 0) < RELOAD_FRESH_S) return asResult(recent);
+    if (this.reloading.has(videoId)) return asResult(await this.reloading.get(videoId));
+    if (bg && this.breaker.blockedUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no reload sent)", { bot: true });
+    const now = Date.now();
+    const times = (this.reloads.get(videoId) || []).filter((t) => now - t < RELOAD_WINDOW_S * 1000);
+    if (times.length >= RELOAD_MAX) throw new YouTubeError(`reload limit reached for ${videoId}`);
+    times.push(now);
+    this.reloads.set(videoId, times);
+    const p = this.request(videoId, reloadContext || null).finally(() => this.reloading.delete(videoId));
+    this.reloading.set(videoId, p);
+    return asResult(await p);
+  }
+
+  /** Memory bound for a process that runs for weeks: drop expired and least recently stored responses. */
+  prune(max = 64) {
+    const now = Date.now() / 1000;
+    for (const [id, c] of this.cache) if (c.expires <= now) this.cache.delete(id);
+    while (this.cache.size > max) this.cache.delete(this.cache.keys().next().value);
+    for (const [id, times] of this.reloads) if (!times.some((t) => Date.now() - t < RELOAD_WINDOW_S * 1000)) this.reloads.delete(id);
   }
 
   /** Headers that make a plain fetch (captions) look like this session's web player. */

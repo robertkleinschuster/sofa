@@ -696,7 +696,18 @@ static NSSet *skipKeys(void) {
         SFYTSabr *sabr = [SFYTSabr shared];
         if (!sabr.available || !SFMPVAvailable() || SFPreferAVFoundation() || [sabr failedFor:vid]) { ytdlp(vid, done); return; }
         [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
-            if (!r) { SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription); ytdlp(vid, done); return; }
+            if (!r) {
+                if ([e.userInfo[@"bot"] boolValue]) {
+                    // YouTube flagged the web-player request: yt-dlp from the same IP would only add a
+                    // request (and prolong the flag) - show the message instead (review 2026-11-05)
+                    [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];
+                    done(nil, SFError(@"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen."));
+                    return;
+                }
+                if ([e.userInfo[@"live"] boolValue]) [sabr markFailed:vid];   // lives: yt-dlp directly next time
+                SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
+                ytdlp(vid, done); return;
+            }
             NSURL *u = [NSURL URLWithString:r[@"video"]];
             NSMutableDictionary *d = [r mutableCopy];
             d[@"sabr"] = @YES; d[@"vid"] = vid;
@@ -762,10 +773,15 @@ static NSSet *skipKeys(void) {
         [sabr openForDownload:vid done:^(NSDictionary *r, NSError *e) {
             if (!r) {
                 // a bot check pauses both paths alike: don't spend a yt-dlp request then
-                if ([e.userInfo[@"bot"] boolValue]) { done(nil, nil, e); return; }
+                if ([e.userInfo[@"bot"] boolValue]) {
+                    [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];   // -> deferred, no attempt used
+                    done(nil, nil, e); return;
+                }
                 SFLog(@"yt: SABR download of %@ unavailable (%@) -> yt-dlp", vid, e.localizedDescription);
                 viaYTDLP(); return;
             }
+            // the verifier needs the real length to catch a truncated file (cut-off local stream)
+            if ([r[@"duration"] doubleValue] > 0) item.duration = [r[@"duration"] doubleValue];
             done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
         }];
     });

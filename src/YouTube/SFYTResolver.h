@@ -21,5 +21,6 @@ extern NSString *const SFYTBlockDidChangeNotification;   // the bot-check pause 
 // > now: YouTube answered with a bot check, background requests are paused until then (the
 // resolver's circuit breaker, persisted across restarts). 0 = no pause.
 @property (nonatomic, readonly) NSTimeInterval blockedUntil;
-- (void)simulateBlockForTesting:(NSTimeInterval)secs;   // dev command ytblock: in memory only   // drop the result (streams rejected) -> the next call resolves afresh
+- (void)simulateBlockForTesting:(NSTimeInterval)secs;
+- (void)noteBlockedUntil:(NSTimeInterval)until;   // pause reported by the SABR sidecar (same breaker)   // dev command ytblock: in memory only   // drop the result (streams rejected) -> the next call resolves afresh
 @end

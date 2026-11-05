@@ -60,7 +60,8 @@ async function createMinter() {
   const minter = await WebPoMinter.create({ integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken },
     webPoSignalOutput);
   log(`webpo: integrity token ttl=${estimatedTtlSecs}s, setup ${(performance.now() - t0).toFixed(0)} ms`);
-  return { minter, ttlMs: (Number(estimatedTtlSecs) || 3600) * 1000, refreshMs: (Number(mintRefreshThreshold) || 100) * 1000 };
+  // dispose: the renewal (every ~12 h) must not keep the old jsdom window alive (review 2026-11-05)
+  return { minter, dispose: () => { try { dom.window.close(); } catch { /* already closed */ } }, ttlMs: (Number(estimatedTtlSecs) || 3600) * 1000, refreshMs: (Number(mintRefreshThreshold) || 100) * 1000 };
 }
 
 export class PoTokenProvider {
@@ -85,10 +86,12 @@ export class PoTokenProvider {
       if (!this.current) this.state = 'pending';
       this.inflight = (async () => {
         try {
-          const { minter, ttlMs, refreshMs } = await this.factory();
+          const { minter, ttlMs, refreshMs, dispose } = await this.factory();
+          const old = this.current;
           // renew a little before YouTube's refresh threshold
-          this.current = { minter, expiresAt: Date.now() + Math.max(60000, ttlMs - refreshMs - 5 * 60000) };
+          this.current = { minter, dispose, expiresAt: Date.now() + Math.max(60000, ttlMs - refreshMs - 5 * 60000) };
           this.state = 'ready';
+          old?.dispose?.();
           this.retryMs = RETRY_MIN_MS;
           this.lastError = null;
           return minter;

@@ -22,5 +22,7 @@ extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process end
 // it until the app restarts
 - (void)markFailed:(NSString *)videoID;
 - (BOOL)failedFor:(NSString *)videoID;
+// drop a sidecar session (a retry then opens a fresh one instead of reattaching to the broken state)
+- (void)closeSession:(NSString *)sid;
 @property (nonatomic, readonly) BOOL available;   // sidecar present in the bundle and node found
 @end

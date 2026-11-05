@@ -365,6 +365,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     NSDictionary *src = SFMPVSourceFor(_openURL);
     SFLog(@"player: SABR stream failed (%@) -> %@", why, _sabrRetried ? @"yt-dlp" : @"reopening via SABR");
     if (_sabrRetried) [[SFYTSabr shared] markFailed:src[@"vid"]];
+    else [[SFYTSabr shared] closeSession:src[@"sid"]];   // the retry gets a fresh session, not the broken one
     _sabrRetried = YES;
     self.startPaused = self.startPaused || _holdPaused;
     NSTimeInterval pos = [self failurePosition];
@@ -448,8 +449,15 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self showSpinner:!_engine.likelyToKeepUp && _engine.playing && !_failed];
     [self postState];
 }
-- (void)engineDidEnd { [self didEnd:nil]; }
-- (void)engineInterrupted { [self failedToEnd:nil]; }
+// A SABR stream that ends or breaks well before the end of the video lost its local source (sidecar
+// session failed, evicted or gone): fallback instead of "finished" or a dead "connection interrupted"
+- (BOOL)sabrCutShort {
+    if (![SFMPVSourceFor(_openURL)[@"sabr"] boolValue]) return NO;
+    double d = [self duration], c = _engine.currentTime;
+    return !(d > 0) || c < d - 30;
+}
+- (void)engineDidEnd { if ([self sabrCutShort]) { [self sabrFailed:@"stream ended early"]; return; } [self didEnd:nil]; }
+- (void)engineInterrupted { if ([self sabrCutShort]) { [self sabrFailed:@"stream interrupted"]; return; } [self failedToEnd:nil]; }
 - (void)engineTick { [self tick]; }
 
 - (void)teardownPlayer {
