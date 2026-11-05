@@ -8,6 +8,7 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:-$SRC/dist/Sofa.app}"
+APP="$(cd "$APP" && pwd)"   # absolute: sandbox-exec and the PO token server run from other folders
 RT="$APP/Contents/Runtime"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-test.XXXXXX")"
 POT_PORT=4419
