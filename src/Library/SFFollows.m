@@ -182,6 +182,14 @@ static const NSTimeInterval kRefresh = 30 * 60;
 
 #pragma mark Refresh (background, one after another)
 
+// A follow's items without what changes on every refresh (view counts): "nothing new" must not
+// mean a rewrite. Stored counts update with the next real change; memory always has fresh ones.
+static NSArray *stable(NSArray *dicts) {
+    NSMutableArray *a = [NSMutableArray new];
+    for (NSDictionary *d in dicts) { NSMutableDictionary *m = [d mutableCopy]; [m removeObjectForKey:@"views"]; [a addObject:m]; }
+    return a;
+}
+
 - (void)refreshOne:(NSDictionary *)f done:(dispatch_block_t)done {
     if (!SFHasFeed(f[@"id"])) { if (done) done(); return; }
     __block BOOL finished = NO;
@@ -190,8 +198,10 @@ static const NSTimeInterval kRefresh = 30 * 60;
         SFMain(^{
             if (items && self->_follows[f[@"id"]]) {
                 NSMutableArray *keep = [NSMutableArray new];
+                NSMutableSet *seen = [NSMutableSet new];
                 for (SFItem *i in items) {
-                    if (i.kind != SFItemVideo || !i.identifier) continue;
+                    if (i.kind != SFItemVideo || !i.identifier || [seen containsObject:i.identifier]) continue;
+                    [seen addObject:i.identifier];
                     SFItem *c = [i copy];
                     c.channel = f[@"title"];   // uniform: the name it is followed under
                     c.style = SFTileStyleLandscape;
@@ -199,7 +209,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
                     if ((NSInteger)keep.count >= kPerShow) break;
                 }
                 NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
-                BOOL same = [dicts isEqualToArray:[self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"]];
+                BOOL same = [stable(dicts) isEqualToArray:stable([self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"])];
                 self->_items[f[@"id"]] = keep;
                 if (same) { finish(); return; }   // most refreshes: nothing new, nothing to write
                 NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];

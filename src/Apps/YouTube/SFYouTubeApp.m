@@ -1034,14 +1034,19 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
     [[SFStore shared] cacheJSON:d forKey:feedKey(cid)];
 }
 
+static NSArray *itemsFrom(NSArray *dicts) {
+    NSMutableArray *a = [NSMutableArray new];
+    for (NSDictionary *d in dicts)
+        if ([d isKindOfClass:[NSDictionary class]]) { SFItem *i = [SFItem itemWithDictionary:d]; if (i.identifier) [a addObject:i]; }
+    return a;
+}
+
+// kept as long as the response cache keeps it (SFStore trimCache: 14 days without a change, 64 MB)
 + (NSArray *)storedFeed:(NSString *)cid sig:(NSString **)sig {
-    id e = [[SFStore shared] cachedJSON:feedKey(cid) maxAge:30 * 86400];
+    id e = [[SFStore shared] cachedJSON:feedKey(cid) maxAge:DBL_MAX];
     NSDictionary *d = [e isKindOfClass:[NSDictionary class]] ? e : nil;
     if (sig) *sig = [d[@"sig"] isKindOfClass:[NSString class]] ? d[@"sig"] : nil;
-    NSMutableArray *a = [NSMutableArray new];
-    for (NSDictionary *i in ([d[@"items"] isKindOfClass:[NSArray class]] ? d[@"items"] : @[]))
-        if ([i isKindOfClass:[NSDictionary class]]) { SFItem *it = [SFItem itemWithDictionary:i]; if (it.identifier) [a addObject:it]; }
-    return a;
+    return itemsFrom([d[@"items"] isKindOfClass:[NSArray class]] ? d[@"items"] : @[]);
 }
 
 // One-time move to the stored feeds (2026-11-05). Until 0.3.9 the raw browse answers (~1 MB each)
@@ -1054,24 +1059,27 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
         SFStore *st = [SFStore shared];
         if ([st setting:@"yt.feeds.v2"]) return;
         NSMutableDictionary *lists = [NSMutableDictionary new];   // cid -> items
-        for (NSDictionary *r in [st rows:@"SELECT k, v FROM jcache WHERE k LIKE 'POST https://www.youtube.com/youtubei/v1/browse%VLUULF%'" args:nil]) {
+        NSMutableArray *drop = [NSMutableArray new];
+        // keys first, then one ~1 MB answer at a time (not all of them in memory at once)
+        for (NSDictionary *r in [st rows:@"SELECT k FROM jcache WHERE k LIKE 'POST https://www.youtube.com/youtubei/v1/browse%VLUULF%'" args:nil]) {
             NSString *rest = [r[@"k"] substringFromIndex:NSMaxRange([r[@"k"] rangeOfString:@"VLUULF"])];
-            id j = [r[@"v"] isKindOfClass:[NSData class]] ? [NSJSONSerialization JSONObjectWithData:r[@"v"] options:0 error:nil] : nil;
-            NSArray *items = j && rest.length >= 22 ? [self feedItemsIn:j] : nil;
-            if (items.count) lists[[@"UC" stringByAppendingString:[rest substringToIndex:22]]] = items;
-            [st run:@"DELETE FROM jcache WHERE k=?" args:@[r[@"k"]]];
+            @autoreleasepool {
+                id j = rest.length >= 22 ? [st cachedJSON:r[@"k"] maxAge:DBL_MAX] : nil;
+                NSArray *items = j ? [self feedItemsIn:j] : nil;
+                if (items.count) lists[[@"UC" stringByAppendingString:[rest substringToIndex:22]]] = items;
+            }
+            [drop addObject:@[@"DELETE FROM jcache WHERE k=?", @[r[@"k"]]]];
         }
-        for (NSDictionary *r in [st rows:@"SELECT k, v FROM jcache WHERE k LIKE 'yt.feed.%'" args:nil]) {   // 0.3.9 builds: bare lists
-            id j = [r[@"v"] isKindOfClass:[NSData class]] ? [NSJSONSerialization JSONObjectWithData:r[@"v"] options:0 error:nil] : nil;
-            if (![j isKindOfClass:[NSArray class]]) continue;
-            NSMutableArray *items = [NSMutableArray new];
-            for (NSDictionary *d in j) if ([d isKindOfClass:[NSDictionary class]]) [items addObject:[SFItem itemWithDictionary:d]];
+        for (NSDictionary *r in [st rows:@"SELECT k FROM jcache WHERE k LIKE 'yt.feed.%'" args:nil]) {   // 0.3.9 builds: bare lists
+            id j = [st cachedJSON:r[@"k"] maxAge:DBL_MAX];
+            NSArray *items = [j isKindOfClass:[NSArray class]] ? itemsFrom(j) : nil;
             if (items.count) lists[[r[@"k"] substringFromIndex:8]] = items;
         }
         [lists enumerateKeysAndObjectsUsingBlock:^(NSString *cid, NSArray *items, BOOL *stop) {
             [self storeFeed:items sig:[st setting:[@"yt.feedsig." stringByAppendingString:cid]] channel:cid];
         }];
-        [st run:@"DELETE FROM settings WHERE k LIKE 'yt.feedsig.%' OR k = 'yt.feeds.adopted'" args:nil];
+        [drop addObject:@[@"DELETE FROM settings WHERE k LIKE 'yt.feedsig.%' OR k = 'yt.feeds.adopted'"]];
+        [st runAll:drop];
         [st setSetting:@"1" forKey:@"yt.feeds.v2"];
         if (lists.count) SFLog(@"yt: %lu channel feeds moved to the stored feeds", (unsigned long)lists.count);
     });
@@ -1085,7 +1093,7 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
             NSDate *exact = published[restOfID(i.identifier)];
             if (exact) { i.date = exact; oldest = oldest ? [oldest earlierDate:exact] : exact; }
         }
-        // beyond the 15 RSS entries only the approximation exists (relative to a possibly week-old
+        // beyond the 15 RSS entries only the approximation exists (relative to a possibly days-old
         // answer): never newer than the oldest exact entry, so the order stays right
         for (SFItem *i in items)
             if (oldest && !published[restOfID(i.identifier)] && (!i.date || [i.date compare:oldest] != NSOrderedAscending))
@@ -1097,7 +1105,8 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
     NSArray *parts = [stored componentsSeparatedByString:@"@"];
     BOOL unchanged = sig && [parts.firstObject isEqualToString:sig] &&
                      (parts.count == 1 || [NSDate date].timeIntervalSince1970 - [parts.lastObject doubleValue] < 2 * 3600);
-    if (unchanged && last.count) { finish(last, nil); return; }
+    // RSS failed (no signature): nothing known to have changed - the stored list, signature kept
+    if ((unchanged || !sig) && last.count) { finish(last, nil); return; }
     [self feedItems:cid done:^(NSArray *online, NSError *e) {
         if (!online) { finish(last.count ? last : nil, last.count ? nil : e); return; }   // failed: the last known list
         NSString *newSig = sig;
@@ -1278,6 +1287,7 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
         SFBackground(^{
             NSDictionary *pub = rssPublished(arg, NULL);
             SFLog(@"dev: ytfeed %@: rss %lu dates", arg, (unsigned long)pub.count);
+            [self migrateFeedStorage];
             [self feed:arg published:pub done:^(NSArray *items, NSError *e) {
                 for (SFItem *i in items)
                     SFLog(@"dev: ytfeed %@ %@ %@ %@", restOfID(i.identifier), i.date, pub[restOfID(i.identifier)] ? @"rss" : @"relative", i.title);

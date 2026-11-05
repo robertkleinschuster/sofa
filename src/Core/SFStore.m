@@ -116,8 +116,8 @@
 
 #pragma mark Response cache housekeeping
 // SFNet keeps raw answers here (fresh for their cacheAge; older ones are the fallback when a source
-// fails). Kept for 14 days - twice the longest intended reuse (YouTube feeds, 7 days) - and 64 MB
-// at most, oldest first. Without this the cache grew to 217 MB (2026-11-05).
+// fails) and apps keep derived data under their own keys (YouTube's stored feeds, rewritten when
+// they change). Kept for 14 days and 64 MB at most, oldest first. Without this the cache grew to 217 MB (2026-11-05).
 static const NSTimeInterval kCacheKeep = 14 * 86400;
 static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
 
@@ -367,9 +367,9 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
 
 - (void)runNow:(NSString *)sql args:(NSArray *)args {
     sqlite3_stmt *st;
-    if (sqlite3_prepare_v2(_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db)); return; }
+    if (sqlite3_prepare_v2(_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { _errors++; SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db)); return; }
     for (NSUInteger i = 0; i < args.count; i++) bindAny(st, (int)i + 1, args[i]);
-    if (sqlite3_step(st) != SQLITE_DONE) SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db));
+    if (sqlite3_step(st) != SQLITE_DONE) { _errors++; SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(_db)); }
     sqlite3_finalize(st);
 }
 
@@ -380,9 +380,15 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
 - (void)runAll:(NSArray *)statements {
     if (!statements.count) return;
     dispatch_async(_q, ^{
+        NSUInteger before = self->_errors;
         [self exec:@"BEGIN IMMEDIATE"];
-        for (NSArray *s in statements) [self runNow:s[0] args:s.count > 1 ? s[1] : nil];
-        [self exec:@"COMMIT"];
+        if (self->_errors != before) return;   // no transaction: write nothing rather than half
+        for (NSArray *s in statements) {
+            [self runNow:s[0] args:s.count > 1 ? s[1] : nil];
+            if (self->_errors != before) break;
+        }
+        if (self->_errors != before) { [self exec:@"ROLLBACK"]; SFLog(@"store: %lu writes rolled back", (unsigned long)statements.count); }
+        else [self exec:@"COMMIT"];
     });
 }
 
