@@ -148,8 +148,15 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     return out;
 }
 
+// Subtitle for every "Weiterschauen" shelf (home, apps): "Kanal · noch 12:34" - parts that are
+// unknown (no channel, no duration) are left out instead of leaving "· noch".
 - (NSArray *)continueWatching:(NSInteger)limit source:(NSString *)source {
-    return [self query:@"watched=0 AND pos>0" limit:limit source:source];
+    NSArray *items = [self query:@"watched=0 AND pos>0" limit:limit source:source];
+    for (SFItem *e in items) {
+        NSTimeInterval left = e.duration > 0 ? MAX(0, e.duration - [self positionFor:e.identifier]) : 0;
+        e.subtitle = SFDotJoin(e.channel, left >= 1 ? [@"noch " stringByAppendingString:SFFormatDuration(left)] : nil);
+    }
+    return items;
 }
 - (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source {
     return [self query:@"1=1" limit:limit source:source];

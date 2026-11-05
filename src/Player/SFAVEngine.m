@@ -118,7 +118,7 @@ static SFAVPlayerLayer *sharedLayer(void) {
 // delivers pixel buffers to an AVPlayerItemVideoOutput on 10.9 (tested: before/after ready, with and
 // without the layer, IOSurface buffers) - so HLS items get no output and stay exactly like production.
 - (void)attachDevOutput {
-    if (!SFDevMode || !_pitem || _pitem.outputs.count) return;
+    if (!SFDevMode || !_pitem || _pitem.outputs.count || sharedLayer().player != _player) return;
     if (_hls) return;
     AVPlayerItemVideoOutput *o = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{
         (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA) }];

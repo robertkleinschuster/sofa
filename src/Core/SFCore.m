@@ -50,9 +50,12 @@ NSString *SFFormatDuration(NSTimeInterval secs) {
     return [NSString stringWithFormat:@"%ld:%02ld", s / 60, s % 60];
 }
 
-NSString *SFDotJoinN(NSString *__unsafe_unretained const *parts, NSUInteger n) {
+NSString *SFDotJoinN(NSUInteger n, ...) {
     NSMutableArray *a = [NSMutableArray arrayWithCapacity:n];
-    for (NSUInteger i = 0; i < n; i++) if (parts[i].length) [a addObject:parts[i]];
+    va_list ap;
+    va_start(ap, n);
+    for (NSUInteger i = 0; i < n; i++) { NSString *p = va_arg(ap, NSString *); if (p.length) [a addObject:p]; }
+    va_end(ap);
     return [a componentsJoinedByString:@" · "];
 }
 

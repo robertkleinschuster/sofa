@@ -53,7 +53,6 @@ static NSDictionary *appInfo(void) {
             NSMutableArray *shelves = [NSMutableArray new];
             [shelves addObject:[SFShelf shelf:nil style:SFTileStyleApp items:apps]];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:nil];
-            for (SFItem *e in cont) e.subtitle = [NSString stringWithFormat:@"%@ · noch %@", e.channel ?: @"", SFFormatDuration(MAX(0, e.duration - [[SFStore shared] positionFor:e.identifier]))];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
             NSArray *later = [[SFWatchLater shared] items:nil];
             if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
@@ -231,7 +230,6 @@ static NSDictionary *appInfo(void) {
         [[SFLibrary shared] whenReady:^{
             NSMutableArray *shelves = [NSMutableArray new];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:source];
-            for (SFItem *e in cont) e.subtitle = [NSString stringWithFormat:@"%@ · noch %@", e.channel ?: @"", SFFormatDuration(MAX(0, e.duration - [[SFStore shared] positionFor:e.identifier]))];
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
             NSArray *latest = [[SFLibrary shared] latestEpisodes:40 source:source];
             latest = [[NSArray alloc] initWithArray:latest copyItems:YES];

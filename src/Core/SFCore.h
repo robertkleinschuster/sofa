@@ -32,9 +32,10 @@ NSString *SFFormatDuration(NSTimeInterval secs);   // 1:02:03 / 4:05
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
 // channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)
-NSString *SFDotJoinN(NSString *__unsafe_unretained const *parts, NSUInteger n);
-#define SFDotJoin(...) SFDotJoinN((NSString *__unsafe_unretained const[]){__VA_ARGS__}, \
-    sizeof((NSString *__unsafe_unretained const[]){__VA_ARGS__}) / sizeof(NSString *))
+// Variadic call: ARC keeps every argument (also temporaries) alive for the whole call; the
+// sizeof literal only counts the arguments and is never evaluated.
+NSString *SFDotJoinN(NSUInteger n, ...);
+#define SFDotJoin(...) SFDotJoinN(sizeof((NSString *__unsafe_unretained const[]){__VA_ARGS__}) / sizeof(NSString *), __VA_ARGS__)
 NSString *SFAppSupportDir(void);                   // ~/Library/Application Support/Sofa
 NSString *SFCacheDir(void);                        // ~/Library/Caches/Sofa
 
