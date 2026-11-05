@@ -1,5 +1,7 @@
 #import "SFYTResolver.h"
 #import "SFYTSabr.h"
+#import "SFYTBreaker.h"
+#import "SFStats.h"
 #import "SFEngine.h"
 #import "SFSettings.h"
 #import "SFCurl.h"
@@ -8,8 +10,8 @@
 #import "SFRuntime.h"
 
 // yt-dlp comes as the official zipapp (contains yt-dlp-ejs) - no venv, no pip:
-//  - Base install in the app bundle (Resources/yt-dlp, res/ytdlp.lock), plus the bgutil plugin
-//    matching the bundled PO token server.
+//  - Base install in the app bundle (Resources/yt-dlp, res/ytdlp.lock); PO tokens via Sofa's own
+//    provider plugin (Resources/yt-dlp-plugins), which asks the sofa-yt sidecar.
 //  - Sofa fetches newer yt-dlp releases itself (daily) into Application Support/Sofa/yt-dlp.
 //    Network without TLS certificate verification (user decision 2026-11-04); authenticity is ensured
 //    by the yt-dlp maintainers' signature over SHA2-256SUMS (res/ytdlp_verify.py, key in the bundle).
@@ -64,11 +66,7 @@ static NSString *YTActiveDir(void) {
     return bv ? b : nil;
 }
 
-NSString *const SFYTBlockDidChangeNotification = @"SFYTBlockDidChange";
-
 @implementation SFYTResolver {
-    NSTimeInterval _blockedUntil;     // from the last resolver answer (1 = no pause)
-    NSTimeInterval _blockedFile, _blockReadAt;   // breaker file (shared with the SABR sidecar)
     NSTask *_task;
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
@@ -77,19 +75,14 @@ NSString *const SFYTBlockDidChangeNotification = @"SFYTBlockDidChange";
     NSMutableSet *_prioKeys;          // keys with a playback request already running
     NSMutableDictionary *_cache;      // vid -> result (until expires - 1 h)
     NSInteger _rid;
-    NSInteger _crashes;
-    BOOL _wantRunning;
+    NSTimer *_idleTimer;              // ends the process when nothing was asked for a while
     BOOL _updating;                   // yt-dlp update running
     NSTimer *_updateTimer;
-    NSMutableArray *_preloads;        // times of recent focus preloads (budget)
 }
 
-// Focus preloads: at most this many player requests per window. Browsing a row quickly used to
-// resolve every video the focus rested on - each one two player requests on a bot-flagged IP.
-static const NSUInteger kPreloadBudget = 8;
-static const NSTimeInterval kPreloadWindow = 600;
-
-static NSString *YTBlockFile(void) { return [[SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"]; }
+// The fallback runs on demand: Python + yt-dlp (~85 MB) only while it is needed, and a while
+// longer for follow-up requests (a reopen, the next download).
+static const NSTimeInterval kIdleExit = 600;
 
 + (instancetype)shared {
     static SFYTResolver *s; static dispatch_once_t o;
@@ -135,8 +128,9 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         [[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: @0600} ofItemAtPath:path error:nil];
 }
 
+// App start: housekeeping and the yt-dlp update schedule. The process itself starts with the first
+// request (-launch).
 - (void)start {
-    _wantRunning = YES;
     // YouTube cookies formerly copied from Firefox (sign-in no longer exists) -> delete the copy
     static dispatch_once_t cleanup;
     dispatch_once(&cleanup, ^{
@@ -149,9 +143,6 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         });
     });
     signal(SIGPIPE, SIG_IGN);   // writing into a dead pipe must not kill the app
-    if (_task.isRunning) return;
-    NSString *py = kBasePython, *ytdir = YTActiveDir();
-    NSString *script = [[NSBundle mainBundle] pathForResource:@"ytresolver" ofType:@"py"];
     if (!_updateTimer) {   // Sofa runs for weeks -> check regularly whether an update is due
         _updateTimer = [NSTimer scheduledTimerWithTimeInterval:6 * 3600 target:self
                                                       selector:@selector(updateTick:) userInfo:nil repeats:YES];
@@ -159,6 +150,12 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
             [self updateYTDLP];   // only after the start, not in the middle of starting up
         });
     }
+}
+
+- (void)launch {
+    if (_task.isRunning) return;
+    NSString *py = kBasePython, *ytdir = YTActiveDir();
+    NSString *script = [[NSBundle mainBundle] pathForResource:@"ytresolver" ofType:@"py"];
     if (!script || !ytdir) { SFLog(@"yt: ytresolver.py or yt-dlp missing from the bundle"); return; }
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:py]) { SFLog(@"yt: %@ missing - YouTube not possible", py); return; }
     NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
@@ -169,10 +166,9 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
     env[@"PYTHONUNBUFFERED"] = @"1";
-    if (SFDevMode) env[@"SOFA_NO_WARMUP"] = @"1";   // test starts must not load YouTube
-    // yt-dlp from the zipapp, plugins (bgutil) always from the bundle (matching the PO token server)
+    // yt-dlp from the zipapp (bundle or update), Sofa's PO token plugin always from the bundle
     env[@"PYTHONPATH"] = [NSString stringWithFormat:@"%@:%@", [ytdir stringByAppendingPathComponent:@"yt-dlp"],
-                          [YTBundledDir() stringByAppendingPathComponent:@"plugins"]];
+                          [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"yt-dlp-plugins"]];
     t.environment = env;
     NSPipe *pin = [NSPipe pipe], *pout = [NSPipe pipe], *perr = [NSPipe pipe];
     t.standardInput = pin; t.standardOutput = pout; t.standardError = perr;
@@ -193,7 +189,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     @catch (NSException *ex) { SFLog(@"yt: resolver launch failed %@", ex); return; }
     _task = t;
     _in = pin.fileHandleForWriting;
-    SFLog(@"yt: resolver started pid %d (yt-dlp %@%@)", t.processIdentifier, YTDirVersion(ytdir),
+    SFLog(@"yt: fallback resolver started pid %d (yt-dlp %@%@)", t.processIdentifier, YTDirVersion(ytdir),
           [ytdir isEqualToString:YTBundledDir()] ? @", Grundausstattung" : @"");
 }
 
@@ -269,13 +265,17 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self restartWhenIdle]; });
         return;
     }
-    SFLog(@"yt: resolver restart for new yt-dlp/plugin version");
-    [self restart];
+    if (_task.isRunning) { SFLog(@"yt: resolver ends for the new yt-dlp version (next request starts it)"); [_task terminate]; }
 }
 
-- (void)restart {
-    if (_task.isRunning) { [_task terminate]; }   // terminated: restarts
-    else [self start];
+- (void)armIdleExit {
+    [_idleTimer invalidate];
+    _idleTimer = [NSTimer scheduledTimerWithTimeInterval:kIdleExit target:self selector:@selector(idleExit:) userInfo:nil repeats:NO];
+}
+- (void)idleExit:(NSTimer *)t {
+    _idleTimer = nil;
+    if (_pending.count) { [self armIdleExit]; return; }
+    if (_task.isRunning) { SFLog(@"yt: fallback resolver idle - ending it"); [_task terminate]; }
 }
 
 - (void)terminated:(NSTask *)t {
@@ -290,10 +290,8 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     [_waiters removeAllObjects]; [_prioKeys removeAllObjects];
     NSError *err = SFError(@"YouTube-Auflösung abgebrochen.");
     for (NSString *key in w) for (void (^done)(NSDictionary *, NSError *) in w[key]) done(nil, err);
-    if (!_wantRunning) return;
-    _crashes++;
-    double delay = MIN(60, 2 * _crashes);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self start]; });
+    [_idleTimer invalidate]; _idleTimer = nil;
+    // no restart here: the next request starts it again (a crash loop costs one try per request)
 }
 
 - (void)gotData:(NSData *)d err:(BOOL)isErr {
@@ -309,17 +307,14 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         if (isErr) { NSString *s = [[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding]; if (s.length) SFLog(@"%@", s); continue; }
         NSDictionary *j = [NSJSONSerialization JSONObjectWithData:line options:0 error:nil];
         if (![j isKindOfClass:[NSDictionary class]]) continue;
-        if (j[@"ready"]) { _crashes = 0; continue; }
+        if (j[@"ready"]) continue;
         NSNumber *rid = j[@"rid"];
         NSArray *p = rid ? _pending[rid] : nil;
         if (!p) continue;
         [_pending removeObjectForKey:rid];
         NSString *key = p[0], *vid = p[1];
-        if (j[@"blocked_until"]) {
-            NSTimeInterval was = self.blockedUntil, now = [j[@"blocked_until"] doubleValue];
-            _blockedUntil = now ?: 1;
-            if (!was != !now) [[NSNotificationCenter defaultCenter] postNotificationName:SFYTBlockDidChangeNotification object:self];
-        }
+        if ([j[@"blocked_until"] doubleValue] > 0) [[SFYTBreaker shared] noteBlockedUntil:[j[@"blocked_until"] doubleValue]];
+        SFCount([j[@"url"] isKindOfClass:[NSString class]] ? @"yt.ytdlp.ok" : @"yt.ytdlp.failed");
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
             SFLog(@"yt: resolved %@ -> %@p %@ in %.1fs (%@)", vid, j[@"height"], j[@"format"], [j[@"secs"] doubleValue], j[@"pool"]);
             if (![key hasPrefix:@"live:"]) _cache[vid] = j;
@@ -374,7 +369,8 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         if (prio) [[SFStreamProxy shared] warmPlaylist:[NSURL URLWithString:c[@"url"]]];
         done(c, nil); return;
     }
-    [self start];
+    [self launch];
+    [self armIdleExit];
     if (!_in) {
         done(nil, SFError(@"YouTube startet gerade – bitte gleich noch einmal versuchen."));
         return;
@@ -392,7 +388,9 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     if (prio) [_prioKeys addObject:key];
     NSNumber *rid = @(++_rid);
     _pending[rid] = @[key, vid, @(prio)];
-    NSData *line = [NSJSONSerialization dataWithJSONObject:@{@"rid": rid, @"vid": vid, @"live": @(live), @"prio": @(prio)} options:0 error:nil];
+    // pot: where the PO token plugin asks (the sidecar; its port changes with every sidecar start)
+    NSData *line = [NSJSONSerialization dataWithJSONObject:@{@"rid": rid, @"vid": vid, @"live": @(live), @"prio": @(prio),
+                                                             @"pot": [SFYTSabr shared].baseURL ?: @""} options:0 error:nil];
     NSMutableData *m = [line mutableCopy]; [m appendBytes:"\n" length:1];
     @try { [_in writeData:m]; }
     @catch (NSException *ex) {
@@ -409,46 +407,4 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 }
 - (void)forget:(NSString *)videoID { if (videoID) [_cache removeObjectForKey:videoID]; }
 
-- (NSTimeInterval)blockedUntil {
-    // the breaker file is written by both the yt-dlp resolver and the SABR sidecar: re-read it
-    // (at most every 2 s; it is tiny), and take the later of file and last resolver answer
-    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
-    if (now - _blockReadAt > 2) {
-        _blockReadAt = now;
-        NSData *d = [NSData dataWithContentsOfFile:YTBlockFile()];
-        NSDictionary *j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
-        _blockedFile = [j isKindOfClass:[NSDictionary class]] ? [j[@"until"] doubleValue] : 0;
-    }
-    NSTimeInterval until = MAX(_blockedFile, _blockedUntil);
-    return until > now ? until : 0;
-}
-
-- (void)noteBlockedUntil:(NSTimeInterval)until {
-    if (until > _blockedUntil) _blockedUntil = until;
-    _blockReadAt = 0;   // re-read the shared file on the next check
-}
-
-- (void)simulateBlockForTesting:(NSTimeInterval)secs {
-    _blockedUntil = secs > 0 ? [NSDate date].timeIntervalSince1970 + secs : 1;
-    SFLog(@"dev: YouTube pause simulated for %.0f s", secs);
-}
-
-- (BOOL)preloadOnFocus:(NSString *)vid {
-    NSDictionary *c = _cache[vid];
-    if (c && [c[@"expires"] doubleValue] - 3600 > [NSDate date].timeIntervalSince1970) return NO;   // already resolved
-    if (_waiters[vid] || self.blockedUntil) return NO;
-    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
-    if (!_preloads) _preloads = [NSMutableArray array];
-    while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
-    if (_preloads.count >= kPreloadBudget) return NO;
-    [_preloads addObject:@(now)];
-    SFYTSabr *sabr = [SFYTSabr shared];
-    if (sabr.available && SFMPVAvailable() && !SFPreferAVFoundation() && ![sabr failedFor:vid]) {
-        // playback goes through SABR: preload its player response (cached in the sidecar), not yt-dlp's
-        [sabr open:vid background:YES done:^(NSDictionary *r, NSError *e) {}];
-        return YES;
-    }
-    [self prefetch:vid done:nil];
-    return YES;
-}
 @end

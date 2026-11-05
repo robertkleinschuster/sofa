@@ -3,6 +3,8 @@
 #import "SFMenuScreen.h"
 #import "SFYTResolver.h"
 #import "SFYTSabr.h"
+#import "SFYTBreaker.h"
+#import "SFStats.h"
 #import "SFSettings.h"
 #import "SFNet.h"
 #import "SFStore.h"
@@ -679,7 +681,12 @@ static NSSet *skipKeys(void) {
 }
 
 + (void)setup {
-    // yt-dlp: HLS (+ DASH for mpv) via the resolver process - fallback for SABR, and for lives
+    // YouTube concept (docs/youtube.md): the sofa-yt sidecar is the one way to YouTube (playback,
+    // lives, downloads, preloads, PO tokens); yt-dlp (SFYTResolver) is the fallback when the sidecar
+    // could not serve a video - never after a bot check (SFYTBreaker). Every decision is counted
+    // (SFCount, "yt.<what>.<path>[.<reason>]") so unused fallbacks can be retired on data.
+    //
+    // yt-dlp: HLS (+ DASH for mpv) via the resolver process
     SFRefResolver ytdlp = ^(NSString *vid, SFURLDone done) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
@@ -714,10 +721,8 @@ static NSSet *skipKeys(void) {
     // prolong the flag, review 2026-11-05) and streams that are not on air (yt-dlp can't play them
     // either). Returns the message for the user, nil = fall back to yt-dlp.
     NSString *(^sabrFinal)(NSError *) = ^NSString *(NSError *e) {
-        if ([e.userInfo[@"bot"] boolValue]) {
-            [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];
+        if ([e.userInfo[@"bot"] boolValue])   // SFYTSabr took the pause into SFYTBreaker
             return @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
-        }
         if ([e.userInfo[@"upcoming"] boolValue]) {
             double t = [e.userInfo[@"startTime"] doubleValue];
             if (!(t > 0)) return @"Dieser Livestream hat noch nicht begonnen.";
@@ -737,15 +742,20 @@ static NSSet *skipKeys(void) {
     // passes where yt-dlp gets bot checks). Needs mpv (local WebM/MP4 tracks). Any failure -> yt-dlp.
     SFRefResolver online = ^(NSString *vid, SFURLDone done) {
         SFYTSabr *sabr = [SFYTSabr shared];
-        if (!sabr.available || !SFMPVAvailable() || SFPreferAVFoundation() || [sabr failedFor:vid]) { ytdlp(vid, done); return; }
+        if (![sabr usableFor:vid]) {
+            SFCount(!sabr.available ? @"yt.play.ytdlp.no-sidecar" : [sabr failedFor:vid] ? @"yt.play.ytdlp.marked-failed" : @"yt.play.ytdlp.no-mpv");
+            ytdlp(vid, done); return;
+        }
         [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
             if (!r) {
                 NSString *msg = sabrFinal(e);
-                if (msg) { done(nil, SFError(msg)); return; }
+                if (msg) { SFCount([e.userInfo[@"bot"] boolValue] ? @"yt.play.bot-check" : @"yt.play.not-on-air"); done(nil, SFError(msg)); return; }
                 if ([e.userInfo[@"live"] boolValue]) [sabr markFailed:vid];   // live the sidecar can't play: yt-dlp directly next time
                 SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
+                SFCount(@"yt.play.ytdlp.sidecar-error");
                 ytdlp(vid, done); return;
             }
+            SFCount(r[@"hls"] ? @"yt.play.sabr-hls" : @"yt.play.sabr");
             sabrPlay(vid, r, done);   // a video that turned out to be live comes back as HLS
         }];
     };
@@ -785,8 +795,7 @@ static NSSet *skipKeys(void) {
         }];
     });
     // YouTube downloads wait during a bot-check pause (no request, no attempt used up)
-    SFRegisterDownloadPause(@"yt", ^NSTimeInterval { return [SFYTResolver shared].blockedUntil; });
-    // downloads in 720p (as ytdl-sub did): saves space, good enough on the TV
+    SFRegisterDownloadPause(@"yt", ^NSTimeInterval { return [SFYTBreaker shared].blockedUntil; });
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
         void (^viaYTDLP)(void) = ^{
@@ -806,20 +815,20 @@ static NSSet *skipKeys(void) {
         };
         // first choice SABR: the playback format (up to 1080p60 VP9/AV1 + Opus, original audio track)
         // as two local streams, muxed by ffmpeg into MP4 without re-encoding (ffmpeg's -readrate 3
-        // also paces what SABR pulls). yt-dlp's HLS 720p stays the fallback (2026-11-05: yt-dlp's
-        // stream address of _4O-me6dWfc answered 404 for hours).
+        // also paces what SABR pulls). yt-dlp stays the fallback (2026-11-05: yt-dlp's stream address
+        // of _4O-me6dWfc answered 404 for hours; the SABR repair worked at once).
         SFYTSabr *sabr = [SFYTSabr shared];
-        if (!sabr.available) { viaYTDLP(); return; }
+        if (!sabr.available) { SFCount(@"yt.download.ytdlp.no-sidecar"); viaYTDLP(); return; }
         [sabr openForDownload:vid done:^(NSDictionary *r, NSError *e) {
             if (!r) {
-                // a bot check pauses both paths alike: don't spend a yt-dlp request then
-                if ([e.userInfo[@"bot"] boolValue]) {
-                    [[SFYTResolver shared] noteBlockedUntil:[e.userInfo[@"blocked_until"] doubleValue]];   // -> deferred, no attempt used
-                    done(nil, nil, e); return;
-                }
+                // a bot check pauses both paths alike (SFYTSabr noted it in SFYTBreaker): no yt-dlp
+                // request; the download is deferred without using up an attempt
+                if ([e.userInfo[@"bot"] boolValue]) { SFCount(@"yt.download.bot-check"); done(nil, nil, e); return; }
                 SFLog(@"yt: SABR download of %@ unavailable (%@) -> yt-dlp", vid, e.localizedDescription);
+                SFCount(@"yt.download.ytdlp.sidecar-error");
                 viaYTDLP(); return;
             }
+            SFCount(@"yt.download.sabr");
             // the verifier needs the real length to catch a truncated file (cut-off local stream)
             if ([r[@"duration"] doubleValue] > 0) item.duration = [r[@"duration"] doubleValue];
             done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
@@ -835,20 +844,25 @@ static NSSet *skipKeys(void) {
     };
     SFRegisterResolver(@"ytlive", ^(NSString *vid, SFURLDone done) {
         SFYTSabr *sabr = [SFYTSabr shared];
-        if (!sabr.available || [sabr failedFor:vid]) { ytdlpLive(vid, done); return; }
+        if (!sabr.available || [sabr failedFor:vid]) {
+            SFCount(!sabr.available ? @"yt.live.ytdlp.no-sidecar" : @"yt.live.ytdlp.marked-failed");
+            ytdlpLive(vid, done); return;
+        }
         [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
             if (!r) {
                 NSString *msg = sabrFinal(e);
-                if (msg) { done(nil, SFError(msg)); return; }
+                if (msg) { SFCount([e.userInfo[@"bot"] boolValue] ? @"yt.live.bot-check" : @"yt.live.not-on-air"); done(nil, SFError(msg)); return; }
                 SFLog(@"yt: SABR live unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
+                SFCount(@"yt.live.ytdlp.sidecar-error");
                 ytdlpLive(vid, done); return;
             }
             // a former live that is a processed video by now comes back as a DASH pair: needs mpv
-            if (!r[@"hls"] && (!SFMPVAvailable() || SFPreferAVFoundation())) { ytdlpLive(vid, done); return; }
+            if (!r[@"hls"] && (!SFMPVAvailable() || SFPreferAVFoundation())) { SFCount(@"yt.live.ytdlp.no-mpv"); ytdlpLive(vid, done); return; }
+            SFCount(@"yt.live.sabr");
             sabrPlay(vid, r, done);
         }];
     });
-    [[SFYTResolver shared] start];
+    [[SFYTResolver shared] start];   // housekeeping + update schedule; the process starts on demand
     if (!SFDevMode) [[SFYTSabr shared] start];   // warm session + BotGuard before the first click
 }
 

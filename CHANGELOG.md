@@ -15,6 +15,10 @@ Einstellungen → „Update installieren“.
 - **YouTube-Livestreams** laufen jetzt ebenfalls über den neuen Weg (bis 1080p mit 60 Bildern/s).
   Noch nicht gestartete Livestreams sagen, wann es losgeht („Dieser Livestream beginnt heute um
   20:15 Uhr“), statt mit einem Fehler abzubrechen.
+- **Abspann-Empfehlungen:** Am Ende von YouTube-Videos erscheinen die vom Kanal verlinkten
+  Videos, Playlists und Kanäle über dem Bild – mit ▼ auswählen, OK öffnet, MENU zurück zum Video.
+- **Schlanker im Hintergrund:** Sofa braucht für YouTube einen Hintergrunddienst weniger
+  (~125 MB weniger Arbeitsspeicher, kleinerer Download); der Ausweichweg startet nur noch bei Bedarf.
 - **Weitere Folgen im Player:** Die Info (OK halten) zeigt jetzt auch bei ZDF, ARD und ORF die
   anderen Folgen der Sendung – nicht nur bei heruntergeladenen.
 - **Vorpremieren:** Folgen, die schon vor der TV-Ausstrahlung online sind, zeigen „TV am …“

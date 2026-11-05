@@ -2,16 +2,15 @@
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
 #   bundle dependencies, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (zipapp, signature verifier),
-#   PO token server (own port), YouTube resolving with node for the JS challenge, SABR sidecar.
+#   SABR sidecar (session + PO tokens), the yt-dlp fallback resolving with tokens from the sidecar.
 # Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:-$SRC/dist/Sofa.app}"
-APP="$(cd "$APP" && pwd)"   # absolute: sandbox-exec and the PO token server run from other folders
+APP="$(cd "$APP" && pwd)"   # absolute: sandbox-exec runs from other folders
 RT="$APP/Contents/Runtime"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-test.XXXXXX")"
-POT_PORT=4419
 fail=0
 ok()  { echo "  ok    $*"; }
 bad() { echo "  FAIL  $*"; fail=1; }
@@ -40,10 +39,11 @@ PY="$RT/Python.framework/Versions/3.14/bin/python3.14"
 np "$PY" -c 'import ssl, sqlite3, lzma, ctypes, urllib.request as u; u.urlopen("https://www.youtube.com", timeout=20)' \
   && ok "python + TLS" || bad "python + TLS"
 YT="$APP/Contents/Resources/yt-dlp"
-export PYTHONPATH="$YT/yt-dlp:$YT/plugins"
+export PYTHONPATH="$YT/yt-dlp:$APP/Contents/Resources/yt-dlp-plugins"
 V=$(np "$PY" -s "$YT/yt-dlp" --version 2>&1)
 [ "$V" = "$(cat "$YT/VERSION")" ] && ok "yt-dlp $V (zipapp in the bundle)" || bad "yt-dlp: $V"
-np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_bgutil_http' 2>/dev/null && ok "yt-dlp-ejs + bgutil plugin" || bad "ejs/plugin not importable"
+np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_sofa' 2>/dev/null && ok "yt-dlp-ejs + Sofa PO token plugin" || bad "ejs/plugin not importable"
+[ -e "$RT/bgutil" ] && bad "obsolete bgutil server still in the bundle" || ok "no separate PO token server"
 # signature verifier (yt-dlp updates): real release valid, tampered sums invalid
 R="https://github.com/yt-dlp/yt-dlp/releases/download/$(cat "$YT/VERSION")"
 curl -fsSL -o "$T/sums" "$R/SHA2-256SUMS" && curl -fsSL -o "$T/sums.sig" "$R/SHA2-256SUMS.sig"
@@ -52,17 +52,6 @@ if np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resource
   np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums.bad" "$T/sums.sig" "$YT/yt-dlp" yt-dlp 2>/dev/null \
     && bad "signature verifier accepts tampered sums" || ok "signature verifier (yt-dlp GPG)"
 else bad "signature verifier rejects the real yt-dlp"; fi
-
-(cd "$RT/bgutil" && exec sandbox-exec -f "$T/nomp.sb" "$RT/bin/node" build/main.js --host 127.0.0.1 --port $POT_PORT >"$T/pot.log" 2>&1) &
-POT=$!
-for i in $(seq 1 30); do curl -sf "127.0.0.1:$POT_PORT/ping" >/dev/null && break; sleep 1; done
-if curl -sf -X POST "127.0.0.1:$POT_PORT/get_pot" -H 'Content-Type: application/json' \
-     -d '{"content_binding":"jNQXAC9IVRw"}' | /usr/bin/grep -q poToken; then ok "PO token server"; else bad "PO token server ($(tail -1 "$T/pot.log"))"; fi
-
-F=$(np "$PY" -s "$YT/yt-dlp" --no-warnings --no-check-certificates --js-runtimes "node:$RT/bin/node" \
-      --extractor-args "youtube:player_client=web_embedded;youtubepot-bgutilhttp:base_url=http://127.0.0.1:$POT_PORT" \
-      -f 'best[vcodec^=avc1][acodec!=none]/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>&1 | tail -1)
-[[ "$F" =~ ^[0-9]+$ ]] && ok "YouTube resolving (format $F)" || bad "YouTube resolving: $F"
 
 # SABR sidecar with the bundled node only: dependencies load, it gets ready, and its warm-up
 # (youtube.com session + BotGuard PO token, no player request) works with the bundle's TLS setup
@@ -75,6 +64,15 @@ for i in $(seq 1 30); do SYPORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$T/sy.o
 H=; for i in $(seq 1 40); do [ -n "${SYPORT:-}" ] || break; H=$(curl -s "127.0.0.1:$SYPORT/health"); echo "$H" | /usr/bin/grep -q '"poToken":"\(ready\|error\)"' && break; sleep 1; done
 echo "$H" | /usr/bin/grep -q '"session":"ready".*"poToken":"ready"\|"poToken":"ready".*"session":"ready"' && ok "sofa-yt session + PO token ready" \
   || bad "sofa-yt not ready: ${H:-no port} $(tail -2 "$T/sy.log")"
+# the yt-dlp fallback as Sofa runs it: mweb client, PO tokens from the sidecar via Sofa's plugin
+# (one player request); -v shows which provider answered
+F=$(SOFA_POT_URL="http://127.0.0.1:${SYPORT:-1}" np "$PY" -s "$YT/yt-dlp" -v --no-check-certificates --js-runtimes "node:$RT/bin/node" \
+      --extractor-args "youtube:player_client=mweb;player_skip=webpage" \
+      -f 'bv*[height<=1080]+ba/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>"$T/ytdlp.log" | tail -1)
+[[ "$F" =~ ^[0-9+]+$ ]] && ok "YouTube resolving via yt-dlp (format $F)" || bad "YouTube resolving: $F $(tail -2 "$T/ytdlp.log")"
+/usr/bin/grep -qi 'PO Token Providers: .*sofa' "$T/ytdlp.log" && ok "yt-dlp uses Sofa's PO token provider" \
+  || bad "Sofa's PO token provider not registered: $(/usr/bin/grep -i 'PO Token Providers' "$T/ytdlp.log")"
+/usr/bin/grep -qi 'error.*sofa\|sofa-yt /pot' "$T/ytdlp.log" && bad "PO token from the sidecar failed: $(/usr/bin/grep -i 'sofa-yt /pot' "$T/ytdlp.log" | head -1)" || ok "PO tokens from the sidecar"
 pkill -f "sleep 120" 2>/dev/null; wait $SYJOB 2>/dev/null
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"

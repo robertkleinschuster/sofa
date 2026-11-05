@@ -143,6 +143,14 @@ Diagnostics (tracks, demands, pumps, fetched media); `/close` frees a session at
 expire after 10 min without reads (and no open response); at most 4 sessions exist (least recently
 used without readers is closed).
 
+### `GET /pot?binding=<content binding>`
+PO token for the yt-dlp fallback: `{"poToken": "..."}` minted by this process's BotGuard (the same
+minter as the sidecar's own player requests), so both YouTube paths are one web identity. Called by
+Sofa's yt-dlp provider plugin (`res/yt-dlp-plugins/.../getpot_sofa.py`, provider "Sofa"), which gets
+the sidecar's address per request (`SOFA_POT_URL`). 400 without a binding, 503 when the minter is
+unavailable (yt-dlp then goes on without a token). No YouTube request unless the minter has to be
+(re)created (integrity token, ~every 12 h).
+
 ## How it works
 
 **One web identity.** `Innertube.create` with a disk cache keeps visitorData, the user agent (set to

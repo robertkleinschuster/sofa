@@ -7,7 +7,7 @@
 #import "SFNet.h"
 #import "SFLounge.h"
 #import "SFFollows.h"
-#import "SFYTResolver.h"
+#import "SFYTSabr.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
 #import "SFHome.h"
@@ -285,7 +285,7 @@ static CGFloat textWidth(SFLabel *l) {
     SFItem *it = [self focusedItem];
     NSString *ref = it.resolverRef ?: it.identifier;
     if (it.kind != SFItemVideo || ![ref hasPrefix:@"yt:"] || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
-    [[SFYTResolver shared] preloadOnFocus:[ref substringFromIndex:3]];
+    [[SFYTSabr shared] preloadOnFocus:[ref substringFromIndex:3]];
 }
 
 - (void)updatePhoneStatus {

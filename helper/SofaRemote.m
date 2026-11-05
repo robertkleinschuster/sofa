@@ -10,9 +10,7 @@
 #import <Cocoa/Cocoa.h>
 #import <IOKit/hid/IOHIDLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
-#import <sys/socket.h>
 #import <sys/stat.h>
-#import <netinet/in.h>
 #import "../src/Core/SFCore.h"
 #import "../src/App/SFRemote.h"
 #import "../src/Core/SFRuntime.h"
@@ -54,24 +52,6 @@ static NSString *ExternalUpdateDir(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa/update"];
 }
 
-#pragma mark PO token server (release bundle only)
-// yt-dlp fetches YouTube PO tokens from the bgutil server on 127.0.0.1:4416. The release bundle
-// ships it (Contents/Runtime/bgutil) and the helper runs it as a child process: if one is already
-// running (e.g. the MacPorts daemon bgutil-pot-server), that one is used. When the helper exits
-// (update, logout), the server ends with it -> never a server from an old bundle.
-static pid_t gPotPid;   // 0 = no server of our own (also after it ended: terminationHandler)
-static void SRStopPot(void) { pid_t p = gPotPid; gPotPid = 0; if (p > 0) kill(p, SIGTERM); }
-static BOOL SRPortOpen(uint16_t port) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return NO;
-    struct sockaddr_in a = {0};
-    a.sin_len = sizeof a; a.sin_family = AF_INET; a.sin_port = htons(port);
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    BOOL ok = connect(s, (struct sockaddr *)&a, sizeof a) == 0;
-    close(s);
-    return ok;
-}
-
 @implementation SRHelper {
     IOHIDDeviceRef _dev;
     NSTimer *_retry;
@@ -83,8 +63,6 @@ static BOOL SRPortOpen(uint16_t port) {
     NSTimer *_updateTimer;
     BOOL _updating;
     BOOL _external;     // update in progress: swap done by tools/sofa-deploy (app folder not writable)
-    NSTask *_pot;
-    int _potFails;
     ino_t _selfIno;     // file ID of our own executable at launch (Sofa.app replaced? -> restart)
     BOOL _replaced;     // "update" in progress: bundle was replaced from outside (new DMG), no swap
 }
@@ -109,58 +87,6 @@ static BOOL SRPortOpen(uint16_t port) {
     _selfIno = [self selfInode];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
-    atexit(SRStopPot);
-    // launchctl unload / logout send SIGTERM: without a handler the helper would end at once, atexit
-    // wouldn't run and node would stay orphaned on 4416 (NSTask children have their own process group).
-    static dispatch_source_t sigs[2];
-    int nums[2] = {SIGTERM, SIGINT};
-    for (int i = 0; i < 2; i++) {
-        signal(nums[i], SIG_IGN);
-        sigs[i] = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, nums[i], 0, dispatch_get_main_queue());
-        dispatch_source_set_event_handler(sigs[i], ^{ [self log:@"signal - exiting (with PO token server)"]; exit(0); });
-        dispatch_resume(sigs[i]);
-    }
-    [self superviseServer];
-}
-
-- (void)superviseServer {
-    NSString *rt = SFRuntimeDir();
-    if (!rt) return;   // port/development build: the server comes from the port bgutil-pot-server
-    if (!_pot.isRunning && !SRPortOpen(4416)) {
-        NSFileManager *fm = [NSFileManager defaultManager];
-        NSString *lp = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Sofa-potserver.log"];
-        [fm createDirectoryAtPath:[lp stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
-        // keep the log small: start over above 1 MB
-        if ([[fm attributesOfItemAtPath:lp error:nil] fileSize] > 1024 * 1024) [fm removeItemAtPath:lp error:nil];
-        if (![fm fileExistsAtPath:lp]) [fm createFileAtPath:lp contents:nil attributes:nil];
-        NSFileHandle *lh = [NSFileHandle fileHandleForWritingAtPath:lp] ?: [NSFileHandle fileHandleWithNullDevice];
-        [lh seekToEndOfFile];
-        NSTask *t = [NSTask new];
-        t.launchPath = SFTool(@"node");
-        t.arguments = @[[rt stringByAppendingPathComponent:@"bgutil/build/main.js"], @"--host", @"127.0.0.1"];
-        t.currentDirectoryPath = [rt stringByAppendingPathComponent:@"bgutil"];
-        t.standardOutput = lh; t.standardError = lh;
-        t.standardInput = [NSFileHandle fileHandleWithNullDevice];
-        t.terminationHandler = ^(NSTask *x) { if (gPotPid == x.processIdentifier) gPotPid = 0; };
-        _potFails = 0;
-        @try { [t launch]; _pot = t; gPotPid = t.processIdentifier; [self log:@"PO token server started"]; }
-        @catch (NSException *e) { [self log:[@"PO token server: " stringByAppendingString:e.reason]]; }
-    }
-    else if (_pot.isRunning) {
-        // if our own server hangs (3 unanswered /ping), restart it
-        NSTask *t = _pot;
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSURLRequest *r = [NSURLRequest requestWithURL:[NSURL URLWithString:@"http://127.0.0.1:4416/ping"]
-                                               cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10];
-            BOOL ok = [NSURLConnection sendSynchronousRequest:r returningResponse:NULL error:NULL] != nil;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self->_potFails = ok ? 0 : self->_potFails + 1;
-                if (self->_potFails >= 3 && t.isRunning) { [self log:@"PO token server hangs - restarting"]; [t terminate]; }
-            });
-        });
-    }
-    // check every 30 s (crashed -> restart)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self superviseServer]; });
 }
 
 #pragma mark Update
@@ -188,7 +114,7 @@ static BOOL SRPortOpen(uint16_t port) {
     if (_updating) return;
     [self syncRemote];
     // New version dragged over the old one in Finder: restart Sofa (saving state) and the helper,
-    // otherwise the old helper + old PO token server would keep running until the next login.
+    // otherwise the old helper would keep running until the next login.
     ino_t ino = [self selfInode];
     if (!_selfIno) _selfIno = ino;
     else if (ino && ino != _selfIno &&

@@ -36,7 +36,8 @@ LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard r
 
 # yt-dlp baseline (res/ytdlp.lock, tools/fetch-ytdlp) + verifier and public keys
 # for updates (yt-dlp: maintainers' GPG; Sofa: its own RSA key, see SFSignature.h)
-YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.pem
+YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.pem \
+           yt-dlp-plugins/yt_dlp_plugins/extractor/getpot_sofa.py
 YTFILES := $(foreach b,$(APP) $(DEVAPP),$(addprefix $(b)/Contents/Resources/,$(YTRES)) $(b)/Contents/Resources/yt-dlp/VERSION)
 VENDOR  := $(BUILD)/vendor/yt-dlp
 

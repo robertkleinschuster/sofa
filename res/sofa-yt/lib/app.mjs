@@ -298,6 +298,15 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
         bufferedMB: +([...sessions.values()].reduce((n, s) => n + s.bytes, 0) / 1048576).toFixed(1), fetched: fetchedNow() });
     }
     if (url.pathname === '/open') return open(url.searchParams, res);
+    // PO token for yt-dlp (the fallback resolver): its token provider plugin (res/yt-dlp-plugins,
+    // provider "sofa") asks here, so both YouTube paths use the one BotGuard identity of this
+    // process. binding = yt-dlp's content binding (visitor data for GVS, video id for player).
+    if (url.pathname === '/pot') {
+      const binding = url.searchParams.get('binding') || '';
+      if (!binding || binding.length > 512) return sendJson(res, 400, { error: 'binding missing or too long' });
+      try { return sendJson(res, 200, { poToken: await po.mintString(binding) }); }
+      catch (e) { return sendJson(res, 503, { error: 'no PO token: ' + e.message }); }
+    }
     if (url.pathname === '/close') {
       const s = sessions.get(url.searchParams.get('sid') || '');
       if (s) { s.close('closed by client'); forget(s); }

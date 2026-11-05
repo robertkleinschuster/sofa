@@ -1,4 +1,5 @@
 #import "SFPlayerScreen.h"
+#import "SFStats.h"
 #import "SFSettings.h"
 #import "SFLayers.h"
 #import "SFStore.h"
@@ -367,6 +368,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 - (void)sabrFailed:(NSString *)why {
     NSDictionary *src = SFMPVSourceFor(_openURL);
     SFLog(@"player: SABR stream failed (%@) -> %@", why, _sabrRetried ? @"yt-dlp" : @"reopening via SABR");
+    SFCount(_sabrRetried ? @"player.sabr-to-ytdlp" : @"player.sabr-reopen");
     if (_sabrRetried) [[SFYTSabr shared] markFailed:src[@"vid"]];
     else [[SFYTSabr shared] closeSession:src[@"sid"]];   // the retry gets a fresh session, not the broken one
     _sabrRetried = YES;
@@ -393,6 +395,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         // URL works on the next attempt (docs/youtube.md §6) -> reopen up to 3x.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
             SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
+            SFCount(@"player.av-open-retry");
             [self reopen:_openURL forceMPV:NO after:0.1 resetTries:NO];
             return;
         }
@@ -400,12 +403,14 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         // resolution plays: first mpv with HLS, instead of AVFoundation retries (docs/youtube.md §6)
         if (viaMPV && _openedDash && _openURL && ![_openURL isEqual:_dashFailedURL]) {
             SFLog(@"player: DASH rejected -> mpv with HLS");
+            SFCount(@"player.dash-to-hls");
             _dashFailedURL = _openURL;
             [self reopen:_openURL forceMPV:YES after:0.1 resetTries:YES];
             return;
         }
         if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv fails -> AVFoundation
             SFLog(@"player: mpv fails -> AVFoundation");
+            SFCount(@"player.mpv-to-av");
             _mpvFailedURL = _openURL;
             [self reopen:_openURL forceMPV:NO after:0.2 resetTries:YES];
             return;
@@ -416,6 +421,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         if (tryMPV || alt) {
             NSURL *next = tryMPV ? _openURL : alt;
             SFLog(@"player: %@", tryMPV ? @"AVFoundation fails -> mpv" : @"switching to alternate stream");
+            SFCount(tryMPV ? @"player.av-to-mpv" : @"player.alternate-stream");
             [self reopen:next forceMPV:tryMPV after:0.2 resetTries:YES];
             return;
         }
@@ -424,6 +430,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         if (!_reresolved && [ref hasPrefix:@"yt:"]) {
             _reresolved = YES;
             SFLog(@"player: all streams rejected -> resolving afresh");
+            SFCount(@"player.re-resolve");
             [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
             _mpvFailedURL = nil;
             self.startPaused = self.startPaused || _holdPaused;   // "start paused" survives the re-resolve
@@ -436,6 +443,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         [self showSpinner:NO];
         _failed = YES;
         SFLog(@"player: failed (%@) %@", _engine.engineName, _engine.error);
+        SFCount(@"player.failed");
         [self showMessage:[NSString stringWithFormat:@"Wiedergabe fehlgeschlagen\n%@\n\nOK – zurück", SFFriendlyPlaybackError(_engine.error)]];
         [self postState];
     } else if (_engine.status == SFEngineReady) {

@@ -37,14 +37,14 @@ void SFRuntimeSetup(void) {
     NSString *bin = [(rt ?: kPrefix) stringByAppendingPathComponent:@"bin"];
     setenv("PATH", [bin stringByAppendingString:@":/usr/bin:/bin:/usr/sbin:/sbin"].UTF8String, 1);
     setenv("SOFA_NODE", SFTool(@"node").UTF8String, 1);
-    // node (PO token server) without TLS certificate verification like all data fetches of the app
+    // node (the sofa-yt sidecar) without TLS certificate verification like all data fetches of the app
     // (user decision 2026-11-04; code is signed separately, see SFCurlNew)
     setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0", 1);
     if (!rt) return;
     // CA list from the bundle for anything that does verify (Python standard library etc.)
     setenv("SSL_CERT_FILE", SFCABundle().UTF8String, 1);
     setenv("NODE_EXTRA_CA_CERTS", SFCABundle().UTF8String, 1);
-    // fontconfig (librsvg/pango, canvas in the PO token server): system fonts, cache in the user cache
+    // fontconfig (librsvg/pango): system fonts, cache in the user cache
     setenv("FONTCONFIG_FILE", [rt stringByAppendingPathComponent:@"etc/fonts/fonts.conf"].UTF8String, 1);
     setenv("FONTCONFIG_PATH", [rt stringByAppendingPathComponent:@"etc/fonts"].UTF8String, 1);
     // Neutralise the libraries' built-in MacPorts paths: otherwise the bundle copies of
@@ -56,7 +56,7 @@ void SFRuntimeSetup(void) {
 }
 
 // Bundle version in the agent: when it changes (new DMG dragged over the old one), Sofa reloads the
-// helper -- otherwise the old helper plus the old PO token server would run until the next login.
+// helper -- otherwise the old helper would run until the next login.
 static NSString *SFBuildID(void) {
     NSDictionary *i = [[NSBundle mainBundle] infoDictionary];
     return [NSString stringWithFormat:@"%@ (%@)", i[@"CFBundleShortVersionString"], i[@"CFBundleVersion"]];
@@ -120,7 +120,7 @@ void SFInstallAgents(void) {
     NSString *app = [[NSBundle mainBundle] bundlePath];
     if (SFWriteAgent(@"de.sofa.remote", [app stringByAppendingPathComponent:@"Contents/MacOS/SofaRemote"], YES)) {
         NSString *p = SFAgentPath(@"de.sofa.remote");
-        SFLaunchctl(@[@"unload", p]);   // the old helper exits along with the PO token server (SIGTERM)
+        SFLaunchctl(@[@"unload", p]);   // the old helper exits (SIGTERM)
         SFLaunchctl(@[@"load", @"-w", p]);
         NSLog(@"Sofa: remote helper set up (%@, %@)", app, SFBuildID());
     }

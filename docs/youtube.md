@@ -1,6 +1,33 @@
-# Sofa – YouTube part: InnerTube browsing (native ObjC) + yt-dlp stream resolver
+# Sofa – YouTube part: InnerTube browsing (native ObjC) + streams via the sofa-yt sidecar
 
-Status: researched and **live-tested on 2026-11-03** on the iMac itself (macOS 10.9.5,
+## Current concept (2026-11-05) – read this first
+
+What we learned (bot-flagged IP, yt-dlp's player requests got "not a bot" while the web player's
+did not, every extra request prolongs a flag) led to one rule: **Sofa has exactly one YouTube
+identity, and every request to YouTube is counted and justified.**
+
+| Layer | What | Runs |
+|---|---|---|
+| Browsing | InnerTube `browse`/`search`/`next` from ObjC (`SFYouTube`) | in the app |
+| **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted); **PO tokens for the fallback** (`GET /pot`) | always (node, ~50 MB) |
+| yt-dlp fallback (`res/ytresolver.py`, `SFYTResolver`) | only when the sidecar could not serve a video (error other than a bot check, video marked failed after two SABR failures, no mpv); one client per request; tokens from the sidecar via Sofa's own provider plugin (`res/yt-dlp-plugins`, provider "Sofa") | **on demand**, ends after 10 min idle |
+| Breaker (`SFYTBreaker`, shared file `Caches/Sofa/yt-dlp/youtube-block.json`) | a bot check pauses background work (preloads, downloads) 5 min → 1 h; playback never falls back to the other path after a bot check | both paths read/write it |
+| Counters (`SFStats`, table `stats`) | `yt.play.sabr`, `yt.play.ytdlp.<reason>`, `yt.download.*`, `yt.live.*`, `yt.ytdlp.ok/failed`, `player.<fallback step>` per day | dev command `stats [days]` |
+
+Retired 2026-11-05: the bgutil PO token server (separate node process, ~125 MB, native `canvas`,
+port `bgutil-pot-server`) and its yt-dlp plugin – the sidecar mints the same tokens with the same
+BotGuard library; the resolver warm-up (the sidecar warms up, and yt-dlp is no longer the first
+path); yt-dlp preloading. **Fallbacks stay as long as the counters show they are needed** (user
+2026-11-05): yt-dlp is an independent implementation that is updated daily (signed), the sidecar's
+libraries only with Sofa updates.
+
+Everything ships in the app bundle (user requirement): node, Python, yt-dlp, the sidecar's
+node_modules - nothing to install.
+
+The sections below are the original research (2026-11-03) and the yt-dlp resolver's history;
+bgutil details there are historical.
+
+Original status: researched and **live-tested on 2026-11-03** on the iMac itself (macOS 10.9.5,
 yt-dlp 2026.10.21, QuickJS 2026-06-04, bgutil POT server 1.3.1 on 127.0.0.1:4416).
 All numbers below are measurements from this machine.
 

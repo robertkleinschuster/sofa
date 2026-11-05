@@ -1,13 +1,16 @@
-# Sofa YouTube stream resolver: long-lived process, one YoutubeDL instance per client,
+# Sofa YouTube stream resolver = the yt-dlp FALLBACK behind the sofa-yt sidecar (docs/youtube.md).
+# Started on demand by SFYTResolver and ended again when idle; one YoutubeDL instance per client,
 # protocol = JSON lines over stdin/stdout (see docs/youtube.md §5.3).
-#   -> {"rid": 1, "vid": "OzCYsIrrRyw", "live": false}
+#   -> {"rid": 1, "vid": "OzCYsIrrRyw", "live": false, "pot": "http://127.0.0.1:<sidecar port>"}
 #   <- {"rid": 1, "url": "...m3u8", "alt": ["...95...", "...18..."], "height": 1080,
 #       "live": false, "duration": 2135, "expires": 1762190000}
 #   <- {"rid": 1, "error": "..."}
 #   <- {"ready": true}     (once, after the start)
 # Usage: python ytresolver.py <cachedir>
-# Without sign-in/cookies (user 2026-11-04). JS challenges are solved by node (MacPorts nodejs26,
-# present anyway for the PO token server): ~4 s per video; QuickJS needed ~20 s without cookies.
+# Without sign-in/cookies (user 2026-11-04). JS challenges are solved by node (the bundled one):
+# ~4 s per video. PO tokens: Sofa's provider plugin (res/yt-dlp-plugins) asks the sidecar given in
+# "pot" - one BotGuard identity for both YouTube paths. No warm-up and no preloading: the sidecar
+# does both; this process only answers when the sidecar could not (each answer = player requests).
 import json, os, sys, threading, time, re
 
 CACHE = sys.argv[-1]   # formerly: <cookies.txt> <cachedir> - the last argument is always cachedir
@@ -51,31 +54,26 @@ def make_web(client="mweb"):
     o = base_opts()
     o["extractor_args"] = {
         # ONE client per call - every client is a player request (bot-flagged IP). mweb: DASH up
-        # to 1080p with a GVS PO token (bgutil) for mpv + itag 18 as the muxed fallback; enough for
-        # playback (2026-11-05 measured: 36 formats, no HLS). web_embedded (HLS) is only asked when
-        # mweb fails (resolve() chain); before, both were asked in every call.
+        # to 1080p with a GVS PO token (from the sidecar) for mpv + itag 18 as the muxed fallback;
+        # enough for playback (2026-11-05 measured: 36 formats, no HLS). web_embedded (HLS) is only
+        # asked when mweb fails (resolve() chain); before, both were asked in every call.
         "youtube": {"player_client": [client], "player_skip": ["webpage"]},
-        # the script provider would otherwise probe node for 15 s -> HTTP provider only (127.0.0.1:4416)
-        "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
     }
     return yt_dlp.YoutubeDL(o)
 
 def make_vr():
     # android_vr: no JS, ~2 s; returns HLS for lives, otherwise only format 18
     o = base_opts()
-    o["extractor_args"] = {
-        "youtube": {"player_client": ["android_vr"]},
-        "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
-    }
+    o["extractor_args"] = {"youtube": {"player_client": ["android_vr"]}}
     return yt_dlp.YoutubeDL(o)
 
 # Two pools with their own YoutubeDL instances (YoutubeDL is not thread-safe -> serial per pool):
-#   fg = playback (click), bg = warm-up, preload on focus, downloads.
-# So a click never waits behind a preload (previously up to 10 s instead of 3.5 s).
+#   fg = playback (click), bg = downloads.
+# So a click never waits behind a download's resolution.
 pools = {"bg": (make_web(), make_vr(), threading.Lock(), make_web("web_embedded")),
          "fg": (make_web(), make_vr(), threading.Lock(), make_web("web_embedded"))}
 # Running resolutions per (vid, live): a second request for the same video waits for the
-# result instead of resolving again. A playback request overtakes a still WAITING preload.
+# result instead of resolving again. A playback request overtakes a still WAITING background job.
 jobs = {}
 jobs_lock = threading.Lock()
 
@@ -84,7 +82,7 @@ class Job:
         self.key, self.pool = key, pool
         self.started, self.ev = False, threading.Event()
         self.result, self.error = None, None
-        self.superseded_by = None      # playback job that overtook this waiting preload job
+        self.superseded_by = None      # playback job that overtook this waiting background job
         self.created = time.time()
 
 BG_MAX_WAIT = 60
@@ -92,9 +90,9 @@ BG_MAX_WAIT = 60
 # --- Bot-check circuit breaker -------------------------------------------------------------
 # YouTube answers player requests from a flagged IP with "Sign in to confirm you're not a bot".
 # Every further request while flagged prolongs the flag, so after a bot check the background
-# (preload, downloads, warm-up) sends nothing until the pause is over: 5 min, doubling up to
+# (downloads) sends nothing until the pause is over: 5 min, doubling up to
 # 1 h, reset by the first success. Playback the user starts still tries (the flag is often
-# intermittent). Persisted, because Sofa restarts the resolver with every app start.
+# intermittent). Persisted: shared with the sidecar, and this process comes and goes.
 BLOCK_FILE = os.path.join(CACHE, "youtube-block.json")
 BLOCK_MIN, BLOCK_MAX = 300, 3600
 block_lock = threading.Lock()
@@ -140,7 +138,7 @@ def note_result(bot_check):
                 json.dump(block, f)
             os.rename(BLOCK_FILE + ".tmp", BLOCK_FILE)
         except Exception:
-            pass   # a preload that sat in the queue this long is stale (focus moved on long ago)
+            pass   # best effort: the in-memory state still applies
 
 def expires_of(url):
     m = re.search(r"/expire/(\d+)/", url) or re.search(r"[?&]expire=(\d+)", url)
@@ -336,7 +334,7 @@ def run(job):
                 other = job.superseded_by or (cur if cur is not None and cur is not job else None)
             if other is None:
                 if job.pool == "bg" and time.time() - job.created > BG_MAX_WAIT:
-                    job.error = RuntimeError("preload dropped (stale)")
+                    job.error = RuntimeError("background job dropped (waited too long)")
                 elif job.pool == "bg" and blocked_until():
                     job.error = RuntimeError("Sign in to confirm you're not a bot (paused, no request sent)")
                 else:
@@ -359,6 +357,9 @@ def run(job):
 def handle(req):
     rid = req.get("rid")
     vid = req.get("vid", "")
+    # the sidecar's address for PO tokens (its port changes with every sidecar start); read by
+    # the provider plugin at token time. Empty = sidecar down: yt-dlp goes on without a token.
+    os.environ["SOFA_POT_URL"] = req.get("pot") or ""
     if not re.match(r"^[A-Za-z0-9_-]{11}$", vid):
         emit({"rid": rid, "error": "invalid video ID"}); return
     t0 = time.time()
@@ -369,7 +370,7 @@ def handle(req):
         if mine:
             new = Job(key, pool)
             if job is not None:
-                job.superseded_by = new   # the waiting preload job later takes over this result
+                job.superseded_by = new   # the waiting background job later takes over this result
             job = jobs[key] = new
     if mine:
         run(job)
@@ -385,43 +386,6 @@ def handle(req):
         m = re.search(r"ERROR: \[youtube\] [^:]+: (.*)", msg)
         emit({"rid": rid, "error": (m.group(1) if m else msg)[:300], "blocked_until": blocked_until()})
 
-def current_player_id():
-    """Id of the current web player script (iframe_api is a static script, no player request)."""
-    import ssl, urllib.request
-    ctx = ssl._create_unverified_context()   # no TLS verification (user decision 2026-11-04)
-    with urllib.request.urlopen("https://www.youtube.com/iframe_api", timeout=10, context=ctx) as r:
-        m = re.search(r"player\\?/([0-9a-fA-F]{8})\\?/", r.read(200000).decode("utf-8", "replace"))
-    return m.group(1) if m else None
-
-def warmup():
-    # The first resolution after a YouTube player rollout takes ~20 s (JS preprocessing), so it
-    # is done ahead - but it costs player requests, and Sofa starts often (updates, deploys):
-    # 2026-11-04 the warm-up alone made ~80 player requests on a bot-flagged IP. Now: only when
-    # the player script is new (preprocessed result not in the disk cache yet), only in the bg
-    # pool (the fg pool reads the same disk cache), never during a bot-check pause.
-    if blocked_until():
-        log("warm-up skipped: requests paused after a bot check")
-        return
-    try:
-        pid = current_player_id()
-    except Exception as e:
-        log("warm-up: player version unknown (%s)" % str(e)[:100]); pid = None
-    solved = os.path.join(CACHE, "challenge-solver")
-    if pid and os.path.isdir(solved) and any(("2F" + pid + ",2F") in f for f in os.listdir(solved)):
-        log("warm-up not needed: player %s already prepared" % pid)
-        return
-    web, _, lk, _ = pools["bg"]
-    with lk:
-        try:
-            t0 = time.time()
-            web.extract_info("https://www.youtube.com/watch?v=jNQXAC9IVRw", download=False)
-            note_result(False)
-            log("warm bg in %.1fs (player %s)" % (time.time() - t0, pid))
-        except Exception as e:
-            if is_bot_check(e):
-                note_result(True)
-            log("warmup bg failed: %s" % str(e)[:200])
-
 def prune_cache():
     d = os.path.join(CACHE, "challenge-solver")
     cutoff = time.time() - 14 * 86400
@@ -436,10 +400,6 @@ def prune_cache():
 
 prune_cache()
 emit({"ready": True})
-# Dev instances without warm-up: every test start would otherwise be two extra YouTube fetches
-# (contributed on 2026-11-04 to the "Sign in to confirm you're not a bot" throttling)
-if not os.environ.get("SOFA_NO_WARMUP"):
-    threading.Thread(target=warmup, daemon=True).start()
 for line in sys.stdin:
     line = line.strip()
     if not line:

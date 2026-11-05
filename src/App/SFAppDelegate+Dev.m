@@ -17,6 +17,8 @@
 #import "SFProviderORF.h"
 #import "SFYouTube.h"
 #import "SFYTResolver.h"
+#import "SFYTBreaker.h"
+#import "SFStats.h"
 #import "SFLounge.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
@@ -174,7 +176,11 @@
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
         [[SFDownloads shared] download:it];
     } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // Dev: simulate a bot-check pause for <secs> (this instance only)
-        [[SFYTResolver shared] simulateBlockForTesting:arg.doubleValue];
+        [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
+    } else if ([cmd isEqualToString:@"stats"]) {            // Dev: usage counters of the last <days> days (default 30)
+        NSInteger days = arg.integerValue > 0 ? arg.integerValue : 30;
+        [SFStatsTotals(days) enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSNumber *n, BOOL *stop) { SFLog(@"stats: %@ = %@", k, n); }];
+        SFLog(@"stats: end (%ld days)", (long)days);
     } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
         [[SFDownloads shared] expireRepairBackoffForTesting];
         [[SFDownloads shared] retryDueRepairs];

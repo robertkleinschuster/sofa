@@ -2,8 +2,8 @@
 // to open videos. The sidecar looks like YouTube's own web player (one persistent session, WEB
 // player request with a video-bound PO token, SABR streaming) and serves the chosen video/audio
 // tracks as local Range-capable URLs for mpv; lives as a local HLS playlist (the web player
-// response's manifest, deciphered and kept fresh by the sidecar). yt-dlp (SFYTResolver) stays the
-// fallback.
+// response's manifest, deciphered and kept fresh by the sidecar). It is Sofa's one YouTube identity:
+// it also mints the PO tokens for the yt-dlp fallback (SFYTResolver). Concept: docs/youtube.md.
 #import "SFCore.h"
 
 extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process ended (its URLs are dead)
@@ -31,4 +31,11 @@ extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process end
 // the sidecar does not answer within a few seconds or the session is gone. Main thread.
 - (void)sessionStatus:(NSString *)sid done:(void (^)(NSDictionary *status))done;
 @property (nonatomic, readonly) BOOL available;   // sidecar present in the bundle and node found
+// SABR can play this video here: sidecar available, mpv present and not overridden, not marked failed
+- (BOOL)usableFor:(NSString *)videoID;
+// http://127.0.0.1:<port> while the sidecar runs (PO tokens for the yt-dlp fallback: /pot), else nil
+@property (nonatomic, readonly) NSString *baseURL;
+// Preload on focus: the player response into the sidecar's cache, within a request budget and never
+// while the bot-check breaker is open. Returns NO if nothing was sent.
+- (BOOL)preloadOnFocus:(NSString *)videoID;
 @end

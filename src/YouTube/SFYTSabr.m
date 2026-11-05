@@ -1,6 +1,10 @@
 #import "SFYTSabr.h"
 #import "SFRuntime.h"
 #import "SFModel.h"
+#import "SFYTBreaker.h"
+#import "SFEngine.h"
+#import "SFSettings.h"
+#import "SFStats.h"
 #import <signal.h>
 
 // Opens wait at most this long for the sidecar to become ready (then the caller falls back to yt-dlp)
@@ -22,7 +26,13 @@ NSString *const SFYTSabrDidExitNotification = @"SFYTSabrDidExit";
     NSMutableArray *_queued;    // blocks waiting for readiness: ^(NSInteger port)
     NSMutableSet *_failed;      // video IDs whose SABR playback failed this run
     NSURLSession *_session;
+    NSMutableArray *_preloads;  // times of recent focus preloads (budget)
 }
+
+// Focus preloads: at most this many player requests per window. Browsing a row quickly used to
+// resolve every video the focus rested on - each one a player request on a bot-flagged IP.
+static const NSUInteger kPreloadBudget = 8;
+static const NSTimeInterval kPreloadWindow = 600;
 
 + (instancetype)shared {
     static SFYTSabr *s;
@@ -51,7 +61,26 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
     return [fm fileExistsAtPath:SabrMain()] && [fm isExecutableFileAtPath:SFTool(@"node")];
 }
 
-- (void)markFailed:(NSString *)vid { if (vid) [_failed addObject:vid]; }
+- (void)markFailed:(NSString *)vid { if (vid) { [_failed addObject:vid]; SFCount(@"yt.sabr.marked-failed"); } }
+
+- (NSString *)baseURL { return _port ? [NSString stringWithFormat:@"http://127.0.0.1:%ld", (long)_port] : nil; }
+
+- (BOOL)usableFor:(NSString *)vid {
+    return self.available && SFMPVAvailable() && !SFPreferAVFoundation() && ![self failedFor:vid];
+}
+
+- (BOOL)preloadOnFocus:(NSString *)vid {
+    if (!vid.length || ![self usableFor:vid] || [SFYTBreaker shared].blockedUntil) return NO;
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    if (!_preloads) _preloads = [NSMutableArray array];
+    while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
+    if (_preloads.count >= kPreloadBudget) return NO;
+    [_preloads addObject:@(now)];
+    // the sidecar caches the player response: the click then opens without a player request
+    // (a cached one costs nothing, so the budget only limits what reaches YouTube)
+    [self open:vid background:YES done:^(NSDictionary *r, NSError *e) {}];
+    return YES;
+}
 
 - (void)closeSession:(NSString *)sid {
     if (!sid.length || !_port) return;
@@ -210,6 +239,8 @@ static id SabrClean(id v) {
                 BOOL playable = [j[@"video"] isKindOfClass:[NSString class]] || [j[@"hls"] isKindOfClass:[NSString class]];
                 if (j[@"error"] || !playable) {
                     SFLog(@"sabr: open %@ failed: %@%@", vid, j[@"error"] ?: @"no video", [j[@"bot"] boolValue] ? @" (bot check)" : @"");
+                    // the sidecar wrote the shared breaker file; take its pause over right away
+                    if ([j[@"bot"] boolValue]) [[SFYTBreaker shared] noteBlockedUntil:[j[@"blocked_until"] doubleValue]];
                     NSError *err = [NSError errorWithDomain:@"SFYTSabr" code:1 userInfo:@{
                         NSLocalizedDescriptionKey: [j[@"error"] description] ?: @"no video",
                         @"bot": @([j[@"bot"] boolValue]), @"live": @([j[@"live"] boolValue]),

@@ -1,7 +1,5 @@
 # yt-dlp base install in the app bundle (tools/fetch-ytdlp). Afterwards Sofa keeps yt-dlp up to date
-# itself (signed releases, SFYTResolver). The bgutil plugin must match the version of the bundled
-# PO token server (port bgutil-pot-server) and only comes with Sofa updates.
-# yt-dlp: authenticity via SHA2-256SUMS.sig (key res/yt-dlp-public.key,
-#         fingerprint AC0CBBE6848D6A873464AF4E57CF65933B5A7581); plugin: SHA-256 here.
+# itself (signed releases, SFYTResolver). PO tokens come from Sofa's own plugin (res/yt-dlp-plugins).
+# Authenticity via SHA2-256SUMS.sig (key res/yt-dlp-public.key,
+# fingerprint AC0CBBE6848D6A873464AF4E57CF65933B5A7581).
 yt-dlp 2026.10.26
-bgutil-ytdlp-pot-provider 2.0.2 a26b980bf6d8e8400d8f21445daa4d8381bf6183d20f0be309391f86b31e27ef
