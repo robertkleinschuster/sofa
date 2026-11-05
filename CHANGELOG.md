@@ -15,6 +15,11 @@ Einstellungen → „Update installieren“.
   auch ältere Folgen, die du von Hand geladen hast.
 - **Aufgeräumte Untertitel der Kacheln:** kein einzelnes „·“ oder „noch“ mehr, wenn Kanal,
   Datum oder Länge fehlen.
+- **media.ccc.de** zeigt jetzt wie die anderen Mediatheken „Meine Sendungen“ mit deinen
+  Downloads, sobald du dort etwas heruntergeladen hast.
+- **Unter der Haube:** Sofa ist neu gegliedert – jede App (YouTube, ZDF, ARD, ORF,
+  media.ccc.de) steckt in einem eigenen Modul mit klarer Schnittstelle. Für dich ändert sich
+  nichts, neue Apps lassen sich aber künftig viel leichter ergänzen.
 
 ## 0.3.8
 

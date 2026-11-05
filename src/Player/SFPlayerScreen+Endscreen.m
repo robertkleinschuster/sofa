@@ -603,7 +603,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     SFItem *first = [vapp respondsToSelector:@selector(itemForRef:title:image:)] ? [vapp itemForRef:vid title:title image:nil] : nil;
     if (first) {
         first = [first copy];
-        first.playlistID = pid;
+        first.playlistID = SFRefID(pid);   // raw list id, as the list loader tags its items (autoplay continues in the list)
         _esEndDeferred = NO;
         [self playItem:first];
     } else {

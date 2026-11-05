@@ -91,6 +91,7 @@
 // the header search button.
 + (SFScreen *)appScreen:(NSString *)source {
     Class<SFApp> app = [SFAppRegistry appNamed:source];
+    if (!app) return [self homeScreen];   // unknown/removed app (stale restore key, dev command)
     SFTheme *t = [SFTheme themeNamed:source];
     SFPageLoader online = [app homeLoader];
     if (!([app respondsToSelector:@selector(homeIncludesFollows)] && [app homeIncludesFollows]))

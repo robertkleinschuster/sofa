@@ -70,6 +70,7 @@ static uint16_t gPort = 8765;
     self.window.contentView = self.nav;
 
     [SFAppRegistry startAll];   // app services (YouTube sidecar warm-up, yt-dlp housekeeping)
+    [SFTileLayer setStatusSource:[SFTileStatus new]];   // download chips + progress on tiles - before the first page builds
     [self.nav push:[SFHome homeScreen]];
     __weak SFNavigator *wnav = self.nav;
     self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
@@ -79,7 +80,6 @@ static uint16_t gPort = 8765;
     [[SFFollows shared] start];   // after the apps (feeds)
     [SFLibraryPages watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
-    [SFTileLayer setStatusSource:[SFTileStatus new]];   // download chips + progress on tiles
     // remote control services (phone pairing): real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
         [SFAppRegistry startRemotesWithHost:self];
