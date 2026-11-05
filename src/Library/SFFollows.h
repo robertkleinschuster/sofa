@@ -9,13 +9,10 @@
 extern NSString *const SFFollowsDidChangeNotification;
 
 // build the page of a show/channel from its identifier (registered per provider)
-typedef SFPageLoader (^SFShowPageFactory)(NSString *ref, NSString *title);
-void SFRegisterShowPage(NSString *prefix, SFShowPageFactory f);
 SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil if no page is registered for the type
 // determine an episode's show/channel after the fact (items without showRef, e.g. older saved ones)
 typedef void (^SFShowRefLookup)(SFItem *item, void (^done)(NSString *ref));
-void SFRegisterShowRefLookup(NSString *source, SFShowRefLookup f);
-SFShowRefLookup SFShowRefLookupFor(NSString *source);
+SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForItem:, nil if it has none
 
 @interface SFFollows : NSObject
 + (instancetype)shared;

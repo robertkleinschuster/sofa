@@ -11,11 +11,11 @@
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFProviderCCC.h"
-#import "SFProviderARD.h"
-#import "SFProviderZDF.h"
-#import "SFProviderORF.h"
-#import "SFYouTube.h"
+#import "SFCCCApp.h"
+#import "SFARDApp.h"
+#import "SFZDFApp.h"
+#import "SFORFApp.h"
+#import "SFYouTubeApp.h"
 #import "SFYTResolver.h"
 #import "SFYTBreaker.h"
 #import "SFStats.h"
@@ -97,17 +97,17 @@
         [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF brand page (crash test)
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
-        f.pageLoader = [SFProviderZDF categoryLoader:[arg substringFromIndex:8] title:@"Test"];
+        f.pageLoader = [SFZDFApp categoryLoader:[arg substringFromIndex:8] title:@"Test"];
         SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: any YouTube channel page
         SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
         // ytchannel:<ID> or ytchannel:<ID>|<title>
         NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
-        f.pageLoader = [SFYouTube channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
+        f.pageLoader = [SFYouTubeApp channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(self.nav, f, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: play a YouTube video from the start (startup tests)
-        SFItem *it = [SFYouTube itemForVideoID:[arg substringFromIndex:3]];
-        [SFYouTube fillDetails:it done:^{
+        SFItem *it = [SFYouTubeApp itemForVideoID:[arg substringFromIndex:3]];
+        [SFYouTubeApp fillDetails:it done:^{
             SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
             ps.startFromBeginning = YES;
             [self presentPlayer:ps];

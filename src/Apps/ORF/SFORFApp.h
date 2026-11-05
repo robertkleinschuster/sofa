@@ -2,10 +2,7 @@
 // home use 2026-11-03): home page (lanes), categories, A-Z, live.
 // See docs/mediathek-apis.md §3. DRM content (ORF 1/2 live) can't be played on 10.9
 // and is marked.
-#import "SFModel.h"
+#import "SFApp.h"
 
-@interface SFProviderORF : NSObject
-+ (void)registerResolver;
-+ (SFPageLoader)homeLoader;
-+ (SFPageLoader)searchLoader:(NSString *)q;
+@interface SFORFApp : NSObject <SFApp>
 @end

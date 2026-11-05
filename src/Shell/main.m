@@ -16,13 +16,8 @@
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFProviderCCC.h"
-#import "SFProviderARD.h"
-#import "SFProviderZDF.h"
-#import "SFProviderORF.h"
-#import "SFYouTube.h"
-#import "SFYTResolver.h"
 #import "SFLounge.h"
+#import "SFApps.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
 #import "SFPlayerScreen.h"
@@ -54,6 +49,7 @@ static uint16_t gPort = 8765;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
+    SFRegisterApps();   // first: themes and apps are looked up from here on
     NSRect frame;
     if (SFDevMode) {
         NSSize s = self.devSize.width > 0 ? self.devSize : NSMakeSize(1920, 1080);
@@ -73,18 +69,14 @@ static uint16_t gPort = 8765;
     self.nav = [[SFNavigator alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
     self.window.contentView = self.nav;
 
-    [SFProviderCCC registerResolver];
-    [SFProviderARD registerResolver];
-    [SFProviderZDF registerResolver];
-    [SFProviderORF registerResolver];
-    [SFYouTube setup];
+    [SFAppRegistry startAll];   // app services (YouTube sidecar warm-up, yt-dlp housekeeping)
     [self.nav push:[SFHome homeScreen]];
     __weak SFNavigator *wnav = self.nav;
     self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
-    [[SFFollows shared] start];   // after SFYouTube setup (pages/feeds registered)
+    [[SFFollows shared] start];   // after the apps (feeds)
     [SFHome watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
     // phone pairing: real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)

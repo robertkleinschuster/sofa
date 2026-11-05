@@ -1,11 +1,11 @@
-#import "SFProviderCCC.h"
+#import "SFCCCApp.h"
 #import "SFJSON.h"
 #import "SFNet.h"
 #import "SFStore.h"
 
 static NSString *const kAPI = @"https://api.media.ccc.de/public";
 
-@implementation SFProviderCCC
+@implementation SFCCCApp
 
 static NSDate *parseDate(NSString *s) {
     if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
@@ -72,26 +72,51 @@ static NSDate *parseDate(NSString *s) {
     return i;
 }
 
-+ (void)registerResolver {
-    SFRegisterResolver(@"ccc", ^(NSString *guid, SFURLDone done) {
-        [SFNet getJSON:[NSString stringWithFormat:@"%@/events/%@", kAPI, guid] headers:nil cacheAge:600 done:^(id j, NSError *e) {
-            if (!dict(j)) { done(nil, e ?: SFError(@"Vortrag nicht gefunden.")); return; }
-            NSString *orig = nn(j[@"original_language"]);
-            NSDictionary *best = nil; int bestScore = -1;
-            for (NSDictionary *r in arr(dict(j)[@"recordings"])) {
-                if (!dict(r)) continue;
-                if (![nn(r[@"mime_type"]) isEqualToString:@"video/mp4"]) continue;
-                int sc = 0;
-                if ([nn(r[@"high_quality"]) boolValue]) sc += 4;
-                NSString *lang = nn(r[@"language"]);
-                if (orig && [lang isEqualToString:orig]) sc += 2;      // original audio, one language
-                else if (orig && [lang hasPrefix:orig]) sc += 1;
-                if (sc > bestScore) { bestScore = sc; best = r; }
-            }
-            NSString *u = nn(best[@"recording_url"]);
-            done(u ? [NSURL URLWithString:u] : nil, u ? nil : SFError(@"Keine abspielbare Aufzeichnung."));
-        }];
-    });
+#pragma mark SFApp
+
++ (NSString *)appIdentifier { return @"ccc"; }
++ (NSString *)appName { return @"media.ccc.de"; }
++ (NSString *)appSummary { return @"Vorträge vom Chaos Computer Club"; }
++ (NSArray *)refPrefixes { return @[@"ccc", @"cccconf"]; }
++ (NSColor *)homeTileColor { return SFHex(0x0b0d0b); }
++ (NSInteger)homeTileLogoVariant { return 1; }
++ (NSString *)searchPlaceholder { return @"Vorträge suchen"; }
++ (void)configureTheme:(SFTheme *)t {
+    // Terminal aesthetic: black, mono headings, green.
+    t.wordmark = @"media.ccc.de"; t.logo = @"ccc"; t.logoVariant = 1;
+    t.background = SFHex(0x0a0b0a);
+    t.backgroundTop = SFHex(0x141a14);
+    t.surface = SFHex(0x1b211b);
+    t.text = SFHex(0xe8f0e8);
+    t.textDim = SFHexA(0xb8d8b8, 0.65);
+    t.accent = SFHex(0x36d66b);
+    t.accentText = SFHex(0x041004);
+    t.focus = SFHex(0x36d66b);
+    t.fontWordmark = @"Menlo-Bold";
+    t.fontBold = @"Menlo-Bold";
+    t.corner = 2;
+    t.uppercaseHeaders = NO;
+}
+
++ (void)resolve:(NSString *)ref done:(SFURLDone)done {
+    NSString *guid = SFRefID(ref);
+    [SFNet getJSON:[NSString stringWithFormat:@"%@/events/%@", kAPI, guid] headers:nil cacheAge:600 done:^(id j, NSError *e) {
+        if (!dict(j)) { done(nil, e ?: SFError(@"Vortrag nicht gefunden.")); return; }
+        NSString *orig = nn(j[@"original_language"]);
+        NSDictionary *best = nil; int bestScore = -1;
+        for (NSDictionary *r in arr(dict(j)[@"recordings"])) {
+            if (!dict(r)) continue;
+            if (![nn(r[@"mime_type"]) isEqualToString:@"video/mp4"]) continue;
+            int sc = 0;
+            if ([nn(r[@"high_quality"]) boolValue]) sc += 4;
+            NSString *lang = nn(r[@"language"]);
+            if (orig && [lang isEqualToString:orig]) sc += 2;      // original audio, one language
+            else if (orig && [lang hasPrefix:orig]) sc += 1;
+            if (sc > bestScore) { bestScore = sc; best = r; }
+        }
+        NSString *u = nn(best[@"recording_url"]);
+        done(u ? [NSURL URLWithString:u] : nil, u ? nil : SFError(@"Keine abspielbare Aufzeichnung."));
+    }];
 }
 
 // /events/search?q= (relevance, 25 per page): two pages

@@ -1,7 +1,7 @@
 #import "SFMigration.h"
 #import "SFDownloads.h"
 #import "SFStore.h"
-#import "SFYouTube.h"
+#import "SFYouTubeApp.h"
 
 static NSString *norm(NSString *s) {
     s = [s stringByReplacingOccurrencesOfString:@"：" withString:@":"];   // ytdl-sub replaces ":" in folder names
@@ -107,7 +107,7 @@ static void subscriptionID(NSString *source, NSString *url, void (^done)(NSStrin
     if (c.location != NSNotFound) { done([@"ytchannel:" stringByAppendingString:lastPathPart(url)]); return; }
     NSString *u = [url stringByReplacingOccurrencesOfString:@"://m.youtube.com" withString:@"://www.youtube.com"];
     if ([u hasSuffix:@"/videos"]) u = [u substringToIndex:u.length - 7];
-    [SFYouTube resolveChannelURL:u done:^(NSString *cid) { done(cid ? [@"ytchannel:" stringByAppendingString:cid] : nil); }];
+    [SFYouTubeApp resolveChannelURL:u done:^(NSString *cid) { done(cid ? [@"ytchannel:" stringByAppendingString:cid] : nil); }];
 }
 
 void SFMigrateLibraryIfNeeded(void) {

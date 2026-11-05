@@ -1,7 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFIconArt.h"
-#import "SFProviderORF.h"
+#import "SFORFApp.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
@@ -23,7 +23,7 @@ static NSDate *isoDate(NSString *s) {
     @synchronized (df) { return [df dateFromString:s]; }
 }
 
-@implementation SFProviderORF
+@implementation SFORFApp
 
 // Sofa's own entry points (no source image): icon tile instead of an empty area
 + (SFItem *)navFolder:(NSString *)title ident:(NSString *)ident icon:(NSString *)icon loader:(SFPageLoader)loader {
@@ -297,50 +297,97 @@ static NSArray *listItems(id j) {
     return any;
 }
 
-+ (void)registerResolver {
-    // subscription feed ("Neue Folgen automatisch laden")
-    SFRegisterFeedFromLoader(@"orfprofile", ^SFPageLoader(NSString *ref) { return [self profileLoader:ref title:nil]; });
-    SFRegisterShowPage(@"orfprofile", ^SFPageLoader(NSString *ref, NSString *title) { return [self profileLoader:ref title:title]; });
-    // Lists (highlights, genres) send a short episode object without profile_title, so those items
-    // have no showRef - the full episode names its show (profile_title + _links.profile; seen
-    // 2026-11-05 with "Vienna Killing (1/3)")
-    SFRegisterShowRefLookup(@"orf", ^(SFItem *item, void (^done)(NSString *)) {
-        NSString *eid = [item.identifier hasPrefix:@"orf:"] ? [item.identifier substringFromIndex:4] : nil;
-        if (!eid.length) { done(nil); return; }
-        [self get:[@"/episode/" stringByAppendingString:eid] cache:3600 done:^(id j, NSError *e) {
-            NSDictionary *ep = dict(j);
-            NSString *ph = str(dict(dict(ep[@"_links"])[@"profile"])[@"href"]);
-            NSString *ref = ph.length && str(ep[@"profile_title"]) ? [@"orfprofile:" stringByAppendingString:ph.lastPathComponent] : nil;
-            SFMain(^{ done(ref); });
-        }];
-    });
-    SFRegisterResolver(@"orf", ^(NSString *eid, SFURLDone done) {
-        [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
-            NSDictionary *ep = dict(j);
-            if (!ep) { done(nil, e); return; }
-            BOOL drm = NO;
-            NSDictionary *src = ep;
-            NSString *u = [self hlsFrom:ep drm:&drm];
-            if (!u) {   // segmented show: play the first part
-                NSDictionary *seg = dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject);
-                if (seg) { u = [self hlsFrom:seg drm:&drm]; src = seg; }
-            }
-            if (!u) { done(nil, SFError(drm ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
-            // subtitles: _embedded.subtitle.vtt_url (of the object actually played);
-            // ai_subtitles = machine-generated -> mark as "automatic"
-            NSString *vtt = str(dict(dict(src[@"_embedded"])[@"subtitle"])[@"vtt_url"]);
-            NSArray *subs = vtt ? @[@{@"lang": @"de", @"url": vtt, @"kind": [nn(src[@"ai_subtitles"]) boolValue] ? @"auto" : @"manual"}] : @[];
-            SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});
-            done([NSURL URLWithString:u], nil);
-        }];
-    });
-    SFRegisterResolver(@"orflive", ^(NSString *lid, SFURLDone done) {
-        [self get:[@"/livestream/" stringByAppendingString:lid] cache:0 done:^(id j, NSError *e) {
-            BOOL drm = NO;
-            NSString *u = dict(j) ? [self hlsFrom:j drm:&drm] : nil;
-            if (!u) { done(nil, e ?: SFError(drm ? @"Dieser Sender ist kopiergeschützt (DRM) und auf diesem Mac nicht abspielbar." : @"Livestream nicht verfügbar.")); return; }
-            done([NSURL URLWithString:u], nil);
-        }];
-    });
+#pragma mark SFApp
+
++ (NSString *)appIdentifier { return @"orf"; }
++ (NSString *)appName { return @"ORF"; }
++ (NSString *)appSummary { return @"ORF ON, Sendungen und Live"; }
++ (NSArray *)refPrefixes { return @[@"orf", @"orflive", @"orfprofile", @"orfaz", @"orfgenre"]; }
++ (NSArray *)showRefPrefixes { return @[@"orfprofile"]; }
++ (NSColor *)homeTileColor { return SFHex(0xffffff); }
++ (NSInteger)homeTileLogoVariant { return 0; }
++ (NSString *)searchPlaceholder { return @"Sendungen und Videos suchen"; }
++ (void)configureTheme:(SFTheme *)t {
+    // Light: white/light grey, red as accent.
+    t.wordmark = @"ORF"; t.logo = @"orf"; t.logoVariant = 0;
+    t.light = YES;
+    t.background = SFHex(0xeeeff1);
+    t.backgroundTop = SFHex(0xffffff);
+    t.surface = SFHex(0xdadce0);
+    t.text = SFHex(0x141414);
+    t.textDim = SFHexA(0x141414, 0.74);   // readable on light grey at TV distance (0.6 was too weak)
+    t.accent = SFHex(0xd8001b);
+    t.accentText = SFHex(0xffffff);
+    t.focus = SFHex(0xd8001b);
+    t.fontWordmark = @"HelveticaNeue-CondensedBlack";
+    t.corner = 6;
 }
+
+// page of a show ref (orfprofile:…)
++ (SFPageLoader)showPageLoader:(NSString *)fullRef title:(NSString *)title {
+    if (![SFRefPrefix(fullRef) isEqualToString:@"orfprofile"]) return nil;
+    NSString *ref = SFRefID(fullRef);
+    return [self profileLoader:ref title:title];
+}
+
+// newest episodes of a show ("Neue Folgen", automatic downloads)
++ (void)feed:(NSString *)fullRef done:(void (^)(NSArray *, NSError *))done {
+    NSString *ref = SFRefID(fullRef), *title = nil;
+    SFFeedFromPage([SFRefPrefix(fullRef) isEqualToString:@"orfprofile"] ? [self profileLoader:ref title:nil] : nil, done);
+}
+
+// Lists (highlights, genres) send a short episode object without profile_title, so those items
+// have no showRef - the full episode names its show (profile_title + _links.profile; seen
+// 2026-11-05 with "Vienna Killing (1/3)")
++ (void)showRefForItem:(SFItem *)item done:(void (^)(NSString *))done {
+
+    NSString *eid = [item.identifier hasPrefix:@"orf:"] ? [item.identifier substringFromIndex:4] : nil;
+    if (!eid.length) { done(nil); return; }
+    [self get:[@"/episode/" stringByAppendingString:eid] cache:3600 done:^(id j, NSError *e) {
+        NSDictionary *ep = dict(j);
+        NSString *ph = str(dict(dict(ep[@"_links"])[@"profile"])[@"href"]);
+        NSString *ref = ph.length && str(ep[@"profile_title"]) ? [@"orfprofile:" stringByAppendingString:ph.lastPathComponent] : nil;
+        SFMain(^{ done(ref); });
+    }];
+}
+
++ (void)resolve:(NSString *)ref done:(SFURLDone)done {
+    NSString *p = SFRefPrefix(ref), *rid = SFRefID(ref);
+    if ([p isEqualToString:@"orf"]) [self resolve_orf:rid done:done];
+    else if ([p isEqualToString:@"orflive"]) [self resolve_orflive:rid done:done];
+    else done(nil, SFError(@"Quelle nicht verfügbar"));
+}
+
++ (void)resolve_orf:(NSString *)eid done:(SFURLDone)done {
+
+    [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
+        NSDictionary *ep = dict(j);
+        if (!ep) { done(nil, e); return; }
+        BOOL drm = NO;
+        NSDictionary *src = ep;
+        NSString *u = [self hlsFrom:ep drm:&drm];
+        if (!u) {   // segmented show: play the first part
+            NSDictionary *seg = dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject);
+            if (seg) { u = [self hlsFrom:seg drm:&drm]; src = seg; }
+        }
+        if (!u) { done(nil, SFError(drm ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
+        // subtitles: _embedded.subtitle.vtt_url (of the object actually played);
+        // ai_subtitles = machine-generated -> mark as "automatic"
+        NSString *vtt = str(dict(dict(src[@"_embedded"])[@"subtitle"])[@"vtt_url"]);
+        NSArray *subs = vtt ? @[@{@"lang": @"de", @"url": vtt, @"kind": [nn(src[@"ai_subtitles"]) boolValue] ? @"auto" : @"manual"}] : @[];
+        SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});
+        done([NSURL URLWithString:u], nil);
+    }];
+}
+
++ (void)resolve_orflive:(NSString *)lid done:(SFURLDone)done {
+
+    [self get:[@"/livestream/" stringByAppendingString:lid] cache:0 done:^(id j, NSError *e) {
+        BOOL drm = NO;
+        NSString *u = dict(j) ? [self hlsFrom:j drm:&drm] : nil;
+        if (!u) { done(nil, e ?: SFError(drm ? @"Dieser Sender ist kopiergeschützt (DRM) und auf diesem Mac nicht abspielbar." : @"Livestream nicht verfügbar.")); return; }
+        done([NSURL URLWithString:u], nil);
+    }];
+}
+
 @end

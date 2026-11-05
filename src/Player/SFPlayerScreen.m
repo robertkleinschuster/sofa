@@ -7,7 +7,7 @@
 #import "SFMPVEngine.h"
 #import "SFYTResolver.h"
 #import "SFYTSabr.h"
-#import "SFYouTube.h"
+#import "SFYouTubeApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"
@@ -551,7 +551,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
         _upNextAsked = YES;
         SFItem *forItem = _item;
-        [SFYouTube upNextFor:_item.externalID done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
+        [SFYouTubeApp upNextFor:_item.externalID done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
     }
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];

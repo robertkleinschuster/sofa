@@ -7,10 +7,6 @@ NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotific
 NSString *const SFDownloadsStorageDidChangeNotification = @"SFDownloadsStorageDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
-static NSMutableDictionary *gDLURL;   // prefix -> SFDownloadURLFetcher
-void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f) { if (!gDLURL) gDLURL = [NSMutableDictionary new]; gDLURL[prefix] = [f copy]; }
-static NSMutableDictionary *gDLPause;   // prefix -> SFDownloadPause
-void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f) { if (!gDLPause) gDLPause = [NSMutableDictionary new]; gDLPause[prefix] = [f copy]; }
 
 static NSString *safeName(NSString *s, NSUInteger max) {
     NSMutableString *o = [NSMutableString new];
@@ -437,7 +433,8 @@ static NSString *gb(unsigned long long b) {
     [self save:r];
     [self changed:_runningID];
     NSString *ident = _runningID;
-    SFDownloadURLFetcher custom = gDLURL[prefixOf(item.resolverRef ?: item.identifier)];
+    Class<SFApp> app = [SFAppRegistry appForItem:item];
+    BOOL custom = [app respondsToSelector:@selector(downloadSourceForItem:done:)];
     SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSError *e) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
@@ -445,7 +442,7 @@ static NSString *gb(unsigned long long b) {
             [self runFFmpeg:ff url:url audio:audio rec:r item:item];
         });
     };
-    if (custom) custom(item, got); else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, e); }];
+    if (custom) [app downloadSourceForItem:item done:got]; else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, e); }];
 }
 
 - (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(NSMutableDictionary *)r item:(SFItem *)item {
@@ -576,8 +573,8 @@ static const NSTimeInterval kSourceGap = 30;
 
 // Epoch until which the record's source has paused itself (0 = go).
 - (NSTimeInterval)pausedUntil:(NSDictionary *)r {
-    SFDownloadPause p = gDLPause[[self sourceOf:r]];
-    return p ? p() : 0;
+    Class<SFApp> app = [SFAppRegistry appForRef:[[self sourceOf:r] stringByAppendingString:@":"]];
+    return [app respondsToSelector:@selector(downloadsPausedUntil)] ? [app downloadsPausedUntil] : 0;
 }
 
 // pausedUntil plus the per-source spacing of starts

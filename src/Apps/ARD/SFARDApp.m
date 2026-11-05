@@ -1,7 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFIconArt.h"
-#import "SFProviderARD.h"
+#import "SFARDApp.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
@@ -29,7 +29,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     return [src stringByReplacingOccurrencesOfString:@"{width}" withString:[NSString stringWithFormat:@"%d", width]];
 }
 
-@implementation SFProviderARD
+@implementation SFARDApp
 
 + (SFPageLoader)loaderForURL:(NSString *)url title:(NSString *)title {
     return ^(SFPageDone done) {
@@ -212,63 +212,107 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     };
 }
 
-+ (void)registerResolver {
-    // subscription feed ("Neue Folgen automatisch laden")
-    SFRegisterFeedFromLoader(@"ardshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil]; });
-    SFRegisterShowPage(@"ardshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title]; });
-    SFRegisterResolver(@"ard", ^(NSString *itemId, SFURLDone done) {
-        NSString *u = [NSString stringWithFormat:@"%@/pages/ard/item/%@?embedded=true&mcV6=true", kGW, itemId];
-        [SFNet getJSON:u headers:nil cacheAge:300 done:^(id j, NSError *e) {
-            if (![j isKindOfClass:[NSDictionary class]]) { done(nil, e); return; }
-            NSDictionary *mc = nil;
-            for (NSDictionary *w in arr(dict(j)[@"widgets"])) {
-                if (!dict(w)) continue;
-                NSString *t = str(w[@"type"]);
-                if ([t hasPrefix:@"player_"]) { mc = dict(dict(w[@"mediaCollection"])[@"embedded"]); if (mc) break; }
-            }
-            if (!mc) { done(nil, SFError(@"Dieser Beitrag ist (noch) nicht abspielbar.")); return; }
-            NSDictionary *best = nil; int bestScore = -1; NSString *hls = nil;
-            for (NSDictionary *s in arr(mc[@"streams"])) {
-                if (!dict(s)) continue;
-                if (![str(s[@"kind"]) isEqualToString:@"main"]) continue;
-                for (NSDictionary *m in arr(s[@"media"])) {
-                    if (!dict(m)) continue;
-                    NSArray *auds = arr(m[@"audios"]);
-                    NSString *ak = auds.count ? str(dict(auds[0])[@"kind"]) : @"standard";
-                    if (![ak isEqualToString:@"standard"]) continue;
-                    NSString *mime = str(m[@"mimeType"]);
-                    if ([mime isEqualToString:@"application/vnd.apple.mpegurl"]) { if (!hls) hls = str(m[@"url"]); continue; }
-                    if (![mime isEqualToString:@"video/mp4"]) continue;
-                    if (![str(m[@"videoCodec"]) isEqualToString:@"H.264"]) continue;   // 10.9 can't do H.265
-                    int v = [nn(m[@"maxVResolutionPx"]) intValue];
-                    int sc = v == 720 ? 1000 : (v < 720 ? v : 700 - (v - 720) / 10);
-                    if (sc > bestScore) { bestScore = sc; best = m; }
-                }
-            }
-            NSString *url = best ? str(best[@"url"]) : hls;
-            if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
-            if (!url) { done(nil, SFError(@"Kein abspielbares Format (nur H.265/DRM).")); return; }
-            // subtitles: mediaCollection.subtitles[].sources[] (kind webvtt), mostly closed captions
-            NSMutableArray *subs = [NSMutableArray new];
-            for (NSDictionary *st in arr(mc[@"subtitles"])) {
-                for (NSDictionary *so in arr(dict(st)[@"sources"])) {
-                    NSString *su = str(dict(so)[@"url"]);
-                    if (![str(so[@"kind"]) isEqualToString:@"webvtt"] || !su) continue;
-                    if ([su hasPrefix:@"//"]) su = [@"https:" stringByAppendingString:su];
-                    [subs addObject:@{@"lang": str(st[@"languageCode"]) ?: @"deu", @"url": su, @"kind": @"manual"}];
-                }
-            }
-            SFSetMPVSource([NSURL URLWithString:url], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the standard audio track (German)
-            // geo: blocked content otherwise delivers a 30 s placeholder clip
-            NSDictionary *geo = dict(mc[@"geoBlocking"]);
-            NSString *check = str(geo[@"regionCheckUrl"]);
-            if (!check) { done([NSURL URLWithString:url], nil); return; }
-            NSString *region = str(geo[@"regionName"]) ?: @"bestimmten Ländern";
-            [SFNet checkRegion:check expect:str(geo[@"expectedResponse"]) ?: @"1" done:^(BOOL allowed) {
-                if (allowed) done([NSURL URLWithString:url], nil);
-                else done(nil, SFError([NSString stringWithFormat:@"Nur in %@ verfügbar.", region]));
-            }];
-        }];
-    });
+#pragma mark SFApp
+
++ (NSString *)appIdentifier { return @"ard"; }
++ (NSString *)appName { return @"ARD"; }
++ (NSString *)appSummary { return @"Das Erste, Dritte, Mediathek"; }
++ (NSArray *)refPrefixes { return @[@"ard", @"ardshow", @"ardlive", @"ardnav", @"ardpage"]; }
++ (NSArray *)showRefPrefixes { return @[@"ardshow"]; }
++ (NSColor *)homeTileColor { return SFHex(0x003480); }
++ (NSInteger)homeTileLogoVariant { return 2; }
++ (NSString *)searchPlaceholder { return @"Sendungen und Videos suchen"; }
++ (void)configureTheme:(SFTheme *)t {
+    // Midnight blue, cool white, editorial typography.
+    t.wordmark = @"ARD"; t.logo = @"ard"; t.logoVariant = 2;
+    t.background = SFHex(0x001a33);
+    t.backgroundTop = SFHex(0x00305e);
+    t.surface = SFHex(0x0c2c4f);
+    t.text = SFHex(0xffffff);
+    t.textDim = SFHexA(0xdce8f5, 0.7);
+    t.accent = SFHex(0x4f9cff);
+    t.accentText = SFHex(0xffffff);
+    t.focus = SFHex(0xffffff);
+    t.fontRegular = @"GillSans";
+    t.fontMedium = @"GillSans-SemiBold";
+    t.fontBold = @"GillSans-Bold";
+    t.fontWordmark = @"GillSans-Bold";
+    t.corner = 8;
 }
+
+// page of a show ref (ardshow:…)
++ (SFPageLoader)showPageLoader:(NSString *)fullRef title:(NSString *)title {
+    if (![SFRefPrefix(fullRef) isEqualToString:@"ardshow"]) return nil;
+    NSString *ref = SFRefID(fullRef);
+    return [self showLoader:ref title:title];
+}
+
+// newest episodes of a show ("Neue Folgen", automatic downloads)
++ (void)feed:(NSString *)fullRef done:(void (^)(NSArray *, NSError *))done {
+    NSString *ref = SFRefID(fullRef), *title = nil;
+    SFFeedFromPage([SFRefPrefix(fullRef) isEqualToString:@"ardshow"] ? [self showLoader:ref title:nil] : nil, done);
+}
+
++ (void)resolve:(NSString *)ref done:(SFURLDone)done {
+    NSString *p = SFRefPrefix(ref), *rid = SFRefID(ref);
+    if ([p isEqualToString:@"ard"]) [self resolve_ard:rid done:done];
+    else done(nil, SFError(@"Quelle nicht verfügbar"));
+}
+
++ (void)resolve_ard:(NSString *)itemId done:(SFURLDone)done {
+
+    NSString *u = [NSString stringWithFormat:@"%@/pages/ard/item/%@?embedded=true&mcV6=true", kGW, itemId];
+    [SFNet getJSON:u headers:nil cacheAge:300 done:^(id j, NSError *e) {
+        if (![j isKindOfClass:[NSDictionary class]]) { done(nil, e); return; }
+        NSDictionary *mc = nil;
+        for (NSDictionary *w in arr(dict(j)[@"widgets"])) {
+            if (!dict(w)) continue;
+            NSString *t = str(w[@"type"]);
+            if ([t hasPrefix:@"player_"]) { mc = dict(dict(w[@"mediaCollection"])[@"embedded"]); if (mc) break; }
+        }
+        if (!mc) { done(nil, SFError(@"Dieser Beitrag ist (noch) nicht abspielbar.")); return; }
+        NSDictionary *best = nil; int bestScore = -1; NSString *hls = nil;
+        for (NSDictionary *s in arr(mc[@"streams"])) {
+            if (!dict(s)) continue;
+            if (![str(s[@"kind"]) isEqualToString:@"main"]) continue;
+            for (NSDictionary *m in arr(s[@"media"])) {
+                if (!dict(m)) continue;
+                NSArray *auds = arr(m[@"audios"]);
+                NSString *ak = auds.count ? str(dict(auds[0])[@"kind"]) : @"standard";
+                if (![ak isEqualToString:@"standard"]) continue;
+                NSString *mime = str(m[@"mimeType"]);
+                if ([mime isEqualToString:@"application/vnd.apple.mpegurl"]) { if (!hls) hls = str(m[@"url"]); continue; }
+                if (![mime isEqualToString:@"video/mp4"]) continue;
+                if (![str(m[@"videoCodec"]) isEqualToString:@"H.264"]) continue;   // 10.9 can't do H.265
+                int v = [nn(m[@"maxVResolutionPx"]) intValue];
+                int sc = v == 720 ? 1000 : (v < 720 ? v : 700 - (v - 720) / 10);
+                if (sc > bestScore) { bestScore = sc; best = m; }
+            }
+        }
+        NSString *url = best ? str(best[@"url"]) : hls;
+        if ([url hasPrefix:@"//"]) url = [@"https:" stringByAppendingString:url];
+        if (!url) { done(nil, SFError(@"Kein abspielbares Format (nur H.265/DRM).")); return; }
+        // subtitles: mediaCollection.subtitles[].sources[] (kind webvtt), mostly closed captions
+        NSMutableArray *subs = [NSMutableArray new];
+        for (NSDictionary *st in arr(mc[@"subtitles"])) {
+            for (NSDictionary *so in arr(dict(st)[@"sources"])) {
+                NSString *su = str(dict(so)[@"url"]);
+                if (![str(so[@"kind"]) isEqualToString:@"webvtt"] || !su) continue;
+                if ([su hasPrefix:@"//"]) su = [@"https:" stringByAppendingString:su];
+                [subs addObject:@{@"lang": str(st[@"languageCode"]) ?: @"deu", @"url": su, @"kind": @"manual"}];
+            }
+        }
+        SFSetMPVSource([NSURL URLWithString:url], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the standard audio track (German)
+        // geo: blocked content otherwise delivers a 30 s placeholder clip
+        NSDictionary *geo = dict(mc[@"geoBlocking"]);
+        NSString *check = str(geo[@"regionCheckUrl"]);
+        if (!check) { done([NSURL URLWithString:url], nil); return; }
+        NSString *region = str(geo[@"regionName"]) ?: @"bestimmten Ländern";
+        [SFNet checkRegion:check expect:str(geo[@"expectedResponse"]) ?: @"1" done:^(BOOL allowed) {
+            if (allowed) done([NSURL URLWithString:url], nil);
+            else done(nil, SFError([NSString stringWithFormat:@"Nur in %@ verfügbar.", region]));
+        }];
+    }];
+}
+
 @end

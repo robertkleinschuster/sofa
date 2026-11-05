@@ -2,16 +2,11 @@
 // SFYTResolver (yt-dlp, HLS 1080p). Following channels = Sofa's own list (SFFollows).
 // Reference: docs/youtube.md. Local downloads (~/TV Shows, genre YouTube) are played
 // in preference when the same video is already there.
-#import "SFModel.h"
+#import "SFApp.h"
 
-@interface SFYouTube : NSObject
-+ (void)setup;                       // register the resolver, pre-warm yt-dlp
-+ (SFPageLoader)homeLoader;
+@interface SFYouTubeApp : NSObject <SFApp>
 + (SFPageLoader)channelLoader:(NSString *)channelID title:(NSString *)title;
 + (SFPageLoader)playlistLoader:(NSString *)playlistID title:(NSString *)title;
-+ (SFPageLoader)searchLoader:(NSString *)query;
-// Autocomplete (suggestqueries-clients6.youtube.com, plain GET); done on main, never nil
-+ (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;
 + (SFItem *)itemForVideoID:(NSString *)vid;                     // placeholder (local copy, if present)
 // Video known by title/thumbnail only (end screen tile); the local copy, if present, is preferred
 + (SFItem *)itemForVideoID:(NSString *)vid title:(NSString *)title thumb:(NSString *)thumb;

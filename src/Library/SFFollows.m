@@ -5,19 +5,17 @@
 
 NSString *const SFFollowsDidChangeNotification = @"SFFollowsDidChange";
 
-static NSMutableDictionary *gPages;
-void SFRegisterShowPage(NSString *prefix, SFShowPageFactory f) { if (!gPages) gPages = [NSMutableDictionary new]; gPages[prefix] = [f copy]; }
-static NSMutableDictionary *gLookups;
-void SFRegisterShowRefLookup(NSString *source, SFShowRefLookup f) { if (!gLookups) gLookups = [NSMutableDictionary new]; gLookups[source] = [f copy]; }
-SFShowRefLookup SFShowRefLookupFor(NSString *source) { return source ? gLookups[source] : nil; }
-SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
-    NSRange r = [ref rangeOfString:@":"];
-    if (r.location == NSNotFound || NSMaxRange(r) >= ref.length) return nil;
-    SFShowPageFactory f = gPages[[ref substringToIndex:r.location]];
-    return f ? f([ref substringFromIndex:NSMaxRange(r)], title) : nil;
+SFShowRefLookup SFShowRefLookupFor(NSString *source) {
+    Class<SFApp> a = [SFAppRegistry appNamed:source];
+    if (![a respondsToSelector:@selector(showRefForItem:done:)]) return nil;
+    return ^(SFItem *item, void (^done)(NSString *)) { [a showRefForItem:item done:done]; };
 }
-static NSString *prefixOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? nil : [s substringToIndex:r.location]; }
-static NSString *restOf(NSString *s) { NSRange r = [s rangeOfString:@":"]; return r.location == NSNotFound ? s : [s substringFromIndex:NSMaxRange(r)]; }
+// page of a show/channel ref ("zdfshow:…", "ytchannel:UC…") from its app
+SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
+    if (![SFAppRegistry isShowRef:ref] || !SFRefID(ref).length) return nil;
+    Class<SFApp> a = [SFAppRegistry appForRef:ref];
+    return [a respondsToSelector:@selector(showPageLoader:title:)] ? [a showPageLoader:ref title:title] : nil;
+}
 
 
 static const NSInteger kPerShow = 12;              // keep this many newest episodes per show
@@ -104,8 +102,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
 #pragma mark Follows
 
 - (BOOL)canFollow:(SFItem *)folder {
-    NSString *p = prefixOf(folder.identifier);
-    return folder.kind == SFItemFolder && p && gPages[p] && SFFeedFor(folder.identifier);
+    return folder.kind == SFItemFolder && SFShowPageLoader(folder.identifier, nil) && SFHasFeed(folder.identifier);
 }
 - (BOOL)isFollowing:(NSString *)identifier { return identifier && _follows[identifier] != nil; }
 
@@ -140,8 +137,8 @@ static const NSTimeInterval kRefresh = 30 * 60;
     NSMutableArray *out = [NSMutableArray new];
     for (NSDictionary *f in _follows.allValues) {
         if (source && ![f[@"source"] isEqualToString:source]) continue;
-        SFShowPageFactory page = gPages[prefixOf(f[@"id"])];
-        if (!page) continue;
+        SFPageLoader page = SFShowPageLoader(f[@"id"], f[@"title"]);
+        if (!page) continue;   // app gone/unknown namespace
         SFItem *i = [SFItem new];
         i.kind = SFItemFolder;
         i.identifier = f[@"id"];
@@ -154,7 +151,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
         i.date = newest.date;
         i.subtitle = newest ? [NSString stringWithFormat:@"Neueste Folge: %@", SFFormatDateShort(newest.date)] : nil;
         i.plot = newest.title ? [@"Neueste Folge: " stringByAppendingString:newest.title] : nil;
-        i.pageLoader = page(restOf(f[@"id"]), f[@"title"]);
+        i.pageLoader = page;
         [out addObject:i];
     }
     [out sortUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) { return [a.title localizedCaseInsensitiveCompare:b.title]; }];
@@ -187,11 +184,10 @@ static const NSTimeInterval kRefresh = 30 * 60;
 #pragma mark Refresh (background, one after another)
 
 - (void)refreshOne:(NSDictionary *)f done:(dispatch_block_t)done {
-    SFFeedFetcher feed = SFFeedFor(f[@"id"]);
-    if (!feed) { if (done) done(); return; }
+    if (!SFHasFeed(f[@"id"])) { if (done) done(); return; }
     __block BOOL finished = NO;
     dispatch_block_t finish = ^{ if (finished) return; finished = YES; if (done) done(); };
-    feed(restOf(f[@"id"]), ^(NSArray *items, NSError *e) {
+    SFFetchFeed(f[@"id"], ^(NSArray *items, NSError *e) {
         SFMain(^{
             if (items && self->_follows[f[@"id"]]) {
                 NSMutableArray *keep = [NSMutableArray new];

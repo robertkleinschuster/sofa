@@ -1,5 +1,6 @@
-// Styling per area (Home, YouTube, ZDF, ARD, ORF, media.ccc.de, ...).
-// Every "app" in Sofa has its own theme; all screens draw only through the theme.
+// Design tokens. Every area (the Sofa home, each app) has its own theme = base tokens + the
+// area's overrides, registered by name (apps: SFAppRegistry from SFApp configureTheme:).
+// All components draw only through the theme; the Framework knows no apps.
 #import "SFCore.h"
 
 typedef NS_ENUM(NSInteger, SFTileStyle) {
@@ -32,7 +33,8 @@ typedef NS_ENUM(NSInteger, SFTileStyle) {
 @property (nonatomic, copy) NSString *logo;            // header logo instead of the wordmark
 @property (nonatomic) NSInteger logoVariant;
 
-+ (instancetype)themeNamed:(NSString *)name;  // home, youtube, zdf, ard, orf, ccc, library
++ (instancetype)themeNamed:(NSString *)name;   // registered name; unknown -> base theme
++ (void)registerTheme:(NSString *)name builder:(void (^)(SFTheme *t))builder;   // tokens on top of the base
 
 - (NSFont *)regular:(CGFloat)size;   // size in design units
 - (NSFont *)medium:(CGFloat)size;

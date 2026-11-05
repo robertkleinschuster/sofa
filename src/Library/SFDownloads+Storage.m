@@ -8,11 +8,6 @@
 //    replaceable (still online) from what is not. YouTube asks oEmbed (no player request).
 #import "SFDownloads+Private.h"
 
-static NSMutableDictionary *gAvailability;   // prefix -> SFAvailabilityCheck
-void SFRegisterAvailabilityCheck(NSString *prefix, SFAvailabilityCheck f) {
-    if (!gAvailability) gAvailability = [NSMutableDictionary new];
-    gAvailability[prefix] = [f copy];
-}
 
 static const unsigned long long kGB = 1000ULL * 1000ULL * 1000ULL;
 // How long a checked state is trusted: "online" for showing it (30 days), but bulk deletion
@@ -151,7 +146,6 @@ static unsigned long long gReserve = 10 * kGB;
     _onlineCurrent = ident;
     SFItem *item = [self itemFromRec:_recs[ident]];
     NSString *ref = item.resolverRef ?: item.identifier;
-    NSString *prefix = prefixOf(ref);
     __block BOOL answered = NO;
     SFAvailabilityDone got = ^(NSInteger online) {
         SFMain(^{
@@ -172,9 +166,9 @@ static unsigned long long gReserve = 10 * kGB;
     };
     // a check that never answers must not stop the run
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ got(-1); });
-    SFAvailabilityCheck checker = prefix ? gAvailability[prefix] : nil;
     if (!item) { got(-1); return; }
-    if (checker) { checker(item, got); return; }
+    Class<SFApp> app = [SFAppRegistry appForItem:item];
+    if ([app respondsToSelector:@selector(availabilityOfItem:done:)]) { [app availabilityOfItem:item done:got]; return; }
     // default: the source's online resolver (a stream that resolves = still online). Mediathek
     // resolvers answer "not available" for expired items.
     SFResolveRefOnline(ref, ^(NSURL *url, NSError *e) {

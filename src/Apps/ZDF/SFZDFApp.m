@@ -1,6 +1,6 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
-#import "SFProviderZDF.h"
+#import "SFZDFApp.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
@@ -26,7 +26,7 @@ static NSDate *isoDate(NSString *s) {
     @synchronized (df) { return [df dateFromString:[s substringToIndex:19]]; }
 }
 
-@implementation SFProviderZDF
+@implementation SFZDFApp
 
 #pragma mark Token + GraphQL
 
@@ -313,60 +313,102 @@ static NSDate *isoDate(NSString *s) {
 
 #pragma mark Stream
 
-+ (void)registerResolver {
-    // subscription feed ("Neue Folgen automatisch laden")
-    SFRegisterFeedFromLoader(@"zdfshow", ^SFPageLoader(NSString *ref) { return [self showLoader:ref title:nil season:0]; });
-    SFRegisterShowPage(@"zdfshow", ^SFPageLoader(NSString *ref, NSString *title) { return [self showLoader:ref title:title season:0]; });
-    SFRegisterResolver(@"zdf", ^(NSString *canonical, SFURLDone done) {
-        NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
-        [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {
-            NSDictionary *v = dict(dict(d)[@"videoByCanonical"]);
-            NSArray *media = arr(dict(v[@"currentMedia"])[@"nodes"]);
-            NSDictionary *m = nil;
-            for (NSDictionary *x in media) if (!str(x[@"vodMediaType"]) || [str(x[@"vodMediaType"]) isEqualToString:@"DEFAULT"]) { m = x; break; }
-            NSString *tpl = str(m[@"ptmdTemplate"]);
-            if (!tpl) { done(nil, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
-            NSString *url = [@"https://api.zdf.de" stringByAppendingString:[tpl stringByReplacingOccurrencesOfString:@"{playerId}" withString:kPlayer]];
-            [self token:^(NSString *tok) {
-                [SFNet getJSON:url headers:@{@"Api-Auth": [@"Bearer " stringByAppendingString:tok ?: @""]} cacheAge:0 done:^(id p, NSError *pe) {
-                    NSString *best = nil, *hls = nil; int bestScore = -1;
-                    for (NSDictionary *pl in arr(dict(p)[@"priorityList"])) {
-                        for (NSDictionary *f in arr(pl[@"formitaeten"])) {
-                            NSString *mime = str(f[@"mimeType"]);
-                            for (NSDictionary *qq in arr(f[@"qualities"])) {
-                                NSString *u = nil;
-                                for (NSDictionary *t in arr(dict(qq[@"audio"])[@"tracks"]))
-                                    if ([str(t[@"class"]) isEqualToString:@"main"] || !t[@"class"]) { u = str(t[@"uri"]); break; }
-                                if (!u) continue;
-                                if ([mime isEqualToString:@"application/x-mpegURL"]) { if (!hls) hls = u; continue; }
-                                if (![mime isEqualToString:@"video/mp4"]) continue;
-                                int h = [nn(qq[@"highestVerticalResolution"]) intValue];
-                                int sc = h == 720 ? 1000 : (h < 720 ? h : 700 - (h - 720) / 10);
-                                if (sc > bestScore) { bestScore = sc; best = u; }
-                            }
+#pragma mark SFApp
+
++ (NSString *)appIdentifier { return @"zdf"; }
++ (NSString *)appName { return @"ZDF"; }
++ (NSString *)appSummary { return @"Mediathek, Sendungen und Live-TV"; }
++ (NSArray *)refPrefixes { return @[@"zdf", @"zdfshow", @"zdfmeta", @"zdfpage"]; }
++ (NSArray *)showRefPrefixes { return @[@"zdfshow"]; }
++ (NSColor *)homeTileColor { return SFHex(0x24272d); }
++ (NSInteger)homeTileLogoVariant { return 0; }
++ (NSString *)searchPlaceholder { return @"Sendungen und Videos suchen"; }
++ (void)configureTheme:(SFTheme *)t {
+    // Anthracite, orange as signal colour.
+    t.wordmark = @"ZDF"; t.logo = @"zdf"; t.logoVariant = 0;
+    t.background = SFHex(0x121417);
+    t.backgroundTop = SFHex(0x22262c);
+    t.surface = SFHex(0x2a2e35);
+    t.accent = SFHex(0xfa7d19);
+    t.accentText = SFHex(0x111111);
+    t.focus = SFHex(0xfa7d19);
+    t.fontRegular = @"AvenirNext-Regular";
+    t.fontMedium = @"AvenirNext-Medium";
+    t.fontBold = @"AvenirNext-Bold";
+    t.fontWordmark = @"AvenirNext-Heavy";
+    t.corner = 4;
+}
+
+// page of a show ref (zdfshow:…)
++ (SFPageLoader)showPageLoader:(NSString *)fullRef title:(NSString *)title {
+    if (![SFRefPrefix(fullRef) isEqualToString:@"zdfshow"]) return nil;
+    NSString *ref = SFRefID(fullRef);
+    return [self showLoader:ref title:title season:0];
+}
+
+// newest episodes of a show ("Neue Folgen", automatic downloads)
++ (void)feed:(NSString *)fullRef done:(void (^)(NSArray *, NSError *))done {
+    NSString *ref = SFRefID(fullRef), *title = nil;
+    SFFeedFromPage([SFRefPrefix(fullRef) isEqualToString:@"zdfshow"] ? [self showLoader:ref title:nil season:0] : nil, done);
+}
+
++ (void)resolve:(NSString *)ref done:(SFURLDone)done {
+    NSString *p = SFRefPrefix(ref), *rid = SFRefID(ref);
+    if ([p isEqualToString:@"zdf"]) [self resolve_zdf:rid done:done];
+    else done(nil, SFError(@"Quelle nicht verfügbar"));
+}
+
++ (void)resolve_zdf:(NSString *)canonical done:(SFURLDone)done {
+
+    NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
+    [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {
+        NSDictionary *v = dict(dict(d)[@"videoByCanonical"]);
+        NSArray *media = arr(dict(v[@"currentMedia"])[@"nodes"]);
+        NSDictionary *m = nil;
+        for (NSDictionary *x in media) if (!str(x[@"vodMediaType"]) || [str(x[@"vodMediaType"]) isEqualToString:@"DEFAULT"]) { m = x; break; }
+        NSString *tpl = str(m[@"ptmdTemplate"]);
+        if (!tpl) { done(nil, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
+        NSString *url = [@"https://api.zdf.de" stringByAppendingString:[tpl stringByReplacingOccurrencesOfString:@"{playerId}" withString:kPlayer]];
+        [self token:^(NSString *tok) {
+            [SFNet getJSON:url headers:@{@"Api-Auth": [@"Bearer " stringByAppendingString:tok ?: @""]} cacheAge:0 done:^(id p, NSError *pe) {
+                NSString *best = nil, *hls = nil; int bestScore = -1;
+                for (NSDictionary *pl in arr(dict(p)[@"priorityList"])) {
+                    for (NSDictionary *f in arr(pl[@"formitaeten"])) {
+                        NSString *mime = str(f[@"mimeType"]);
+                        for (NSDictionary *qq in arr(f[@"qualities"])) {
+                            NSString *u = nil;
+                            for (NSDictionary *t in arr(dict(qq[@"audio"])[@"tracks"]))
+                                if ([str(t[@"class"]) isEqualToString:@"main"] || !t[@"class"]) { u = str(t[@"uri"]); break; }
+                            if (!u) continue;
+                            if ([mime isEqualToString:@"application/x-mpegURL"]) { if (!hls) hls = u; continue; }
+                            if (![mime isEqualToString:@"video/mp4"]) continue;
+                            int h = [nn(qq[@"highestVerticalResolution"]) intValue];
+                            int sc = h == 720 ? 1000 : (h < 720 ? h : 700 - (h - 720) / 10);
+                            if (sc > bestScore) { bestScore = sc; best = u; }
                         }
                     }
-                    NSString *u = best ?: hls;
-                    if (!u) { done(nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
-                    // subtitles: PTMD captions[] (class hoh = hearing impaired), WebVTT for mpv
-                    NSMutableArray *subs = [NSMutableArray new];
-                    for (NSDictionary *c in arr(dict(p)[@"captions"])) {
-                        if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
-                        [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
-                    }
-                    SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
-                    // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
-                    if ([u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"]) {
-                        [SFNet checkRegion:u expect:nil done:^(BOOL ok) {
-                            if (ok) done([NSURL URLWithString:u], nil);
-                            else done(nil, SFError(@"Nur in Deutschland verfügbar."));
-                        }];
-                        return;
-                    }
-                    done([NSURL URLWithString:u], nil);
-                }];
+                }
+                NSString *u = best ?: hls;
+                if (!u) { done(nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
+                // subtitles: PTMD captions[] (class hoh = hearing impaired), WebVTT for mpv
+                NSMutableArray *subs = [NSMutableArray new];
+                for (NSDictionary *c in arr(dict(p)[@"captions"])) {
+                    if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
+                    [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
+                }
+                SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
+                // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
+                if ([u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"]) {
+                    [SFNet checkRegion:u expect:nil done:^(BOOL ok) {
+                        if (ok) done([NSURL URLWithString:u], nil);
+                        else done(nil, SFError(@"Nur in Deutschland verfügbar."));
+                    }];
+                    return;
+                }
+                done([NSURL URLWithString:u], nil);
             }];
         }];
-    });
+    }];
 }
+
 @end

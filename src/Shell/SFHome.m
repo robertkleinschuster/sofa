@@ -2,11 +2,7 @@
 // source apps. Settings/phone: SFHome+Settings.m; downloads page: SFHome+Downloads.m.
 #import "SFHome+Private.h"
 #import "SFStore.h"
-#import "SFProviderCCC.h"
-#import "SFProviderARD.h"
-#import "SFProviderZDF.h"
-#import "SFProviderORF.h"
-#import "SFYouTube.h"
+#import "SFApp.h"
 #import "SFSearch.h"
 #import "SFWatchLater.h"
 #import "SFDownloads.h"
@@ -14,28 +10,16 @@
 
 @implementation SFHome
 
-// title, description, tile colour, logo variant (0 original, 1 light text, 2 white)
-static NSDictionary *appInfo(void) {
-    return @{
-        @"youtube": @[@"YouTube", @"Deine Kanäle, neue Videos, Suche", @0xffffff, @0],
-        @"zdf":     @[@"ZDF", @"Mediathek, Sendungen und Live-TV", @0x24272d, @0],
-        @"ard":     @[@"ARD", @"Das Erste, Dritte, Mediathek", @0x003480, @2],
-        @"orf":     @[@"ORF", @"ORF ON, Sendungen und Live", @0xffffff, @0],
-        @"ccc":     @[@"media.ccc.de", @"Vorträge vom Chaos Computer Club", @0x0b0d0b, @1],
-    };
-}
-
-+ (SFItem *)appTile:(NSString *)src {
-    NSArray *a = appInfo()[src];
++ (SFItem *)appTile:(Class<SFApp>)app {
     SFItem *i = [SFItem new];
     i.kind = SFItemAction;
-    i.identifier = [@"app:" stringByAppendingString:src];
-    i.title = a[0];
-    i.plot = a[1];
-    i.themeName = src;
-    i.tint = SFHex([a[2] unsignedIntValue]);
-    i.logo = src;
-    i.logoVariant = [a[3] integerValue];
+    i.identifier = [@"app:" stringByAppendingString:[app appIdentifier]];
+    i.title = [app appName];
+    i.plot = [app appSummary];
+    i.themeName = [app appIdentifier];
+    i.tint = [app homeTileColor];
+    i.logo = [app appIdentifier];
+    i.logoVariant = [app homeTileLogoVariant];
     i.style = SFTileStyleApp;
     return i;
 }
@@ -44,7 +28,7 @@ static NSDictionary *appInfo(void) {
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
         [[SFLibrary shared] whenReady:^{
             NSMutableArray *apps = [NSMutableArray new];
-            for (NSString *src in @[@"youtube", @"zdf", @"ard", @"orf", @"ccc"]) [apps addObject:[self appTile:src]];
+            for (Class app in [SFAppRegistry apps]) [apps addObject:[self appTile:app]];
             [apps addObject:[self downloadsTile:nil]];
             [apps addObject:[self historyTile]];
             [apps addObject:[self settingsTile]];
@@ -208,50 +192,22 @@ static NSDictionary *appInfo(void) {
     };
 }
 
+// An app's start page: the app's own shelves (SFApp homeLoader) framed by the shell – followed
+// shows/new episodes (unless the app shows them itself), "Später ansehen", the "Suche" tile and
+// the header search button.
 + (SFScreen *)appScreen:(NSString *)source {
+    Class<SFApp> app = [SFAppRegistry appNamed:source];
     SFTheme *t = [SFTheme themeNamed:source];
-    SFPageLoader online = nil;
-    if ([source isEqualToString:@"ccc"]) online = [SFProviderCCC homeLoader];
-    else if ([source isEqualToString:@"youtube"]) online = [SFYouTube homeLoader];   // integrates downloads itself
-    else if ([source isEqualToString:@"ard"]) online = [self withLocalShows:[SFProviderARD homeLoader] source:source];
-    else if ([source isEqualToString:@"zdf"]) online = [self withLocalShows:[SFProviderZDF homeLoader] source:source];
-    else if ([source isEqualToString:@"orf"]) online = [self withLocalShows:[SFProviderORF homeLoader] source:source];
-    if (online) {
-        online = SFWithWatchLater(online, source);   // shelf "Später ansehen" (own watch list)
-        online = SFWithSearchTile(online, source);   // tile "Suche"
-        SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
-        c.showsHero = YES;
-        if (SFHasSearch(source)) c.searchSource = source;   // button "Suche" in the header
-        c.restoreKey = [@"app:" stringByAppendingString:source];
-        [self reloadOnLibraryChange:c];   // keep the downloads shelf current
-        return c;
-    }
-    SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
-        [[SFLibrary shared] whenReady:^{
-            NSMutableArray *shelves = [NSMutableArray new];
-            NSArray *cont = [[SFStore shared] continueWatching:20 source:source];
-            if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
-            NSArray *latest = [[SFLibrary shared] latestEpisodes:40 source:source];
-            latest = [[NSArray alloc] initWithArray:latest copyItems:YES];
-            for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
-            BOOL yt = [source isEqualToString:@"youtube"];
-            if (latest.count) [shelves addObject:[SFShelf shelf:yt ? @"Neu in deinen Abos" : @"Neue Folgen" style:SFTileStyleLandscape items:latest]];
-            NSMutableArray *shows = [NSMutableArray new];
-            for (SFShow *sh in [[SFLibrary shared] showsForSource:source]) {
-                SFItem *i = [self showTile:sh];
-                if (!yt) { i.style = SFTileStyleWide; }
-                [shows addObject:i];
-            }
-            if (shows.count)
-                [shelves addObject:[SFShelf grid:yt ? @"Kanäle" : @"Meine Sendungen" style:yt ? SFTileStyleCircle : SFTileStyleWide items:shows]];
-            SFPage *p = [SFPage page:nil theme:source shelves:shelves];
-            if (!shelves.count) p.emptyText = @"Noch keine Inhalte. Die Mediathek-Anbindung folgt.";
-            done(p, nil);
-        }];
-    } theme:t];
-    s.showsHero = YES;
-    s.restoreKey = [@"app:" stringByAppendingString:source];
-    [self reloadOnLibraryChange:s];
-    return s;
+    SFPageLoader online = [app homeLoader];
+    if (!([app respondsToSelector:@selector(homeIncludesFollows)] && [app homeIncludesFollows]))
+        online = [self withLocalShows:online source:source];
+    online = SFWithWatchLater(online, source);   // shelf "Später ansehen" (own watch list)
+    online = SFWithSearchTile(online, source);   // tile "Suche"
+    SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
+    c.showsHero = YES;
+    if (SFHasSearch(source)) c.searchSource = source;   // button "Suche" in the header
+    c.restoreKey = [@"app:" stringByAppendingString:source];
+    [self reloadOnLibraryChange:c];   // keep the downloads shelf current
+    return c;
 }
 @end

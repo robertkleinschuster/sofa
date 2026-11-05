@@ -1,4 +1,5 @@
 #import "SFModel.h"
+#import "SFApp.h"
 
 NSString *SFYouTubeBackdrop(NSString *videoID) {
     return videoID.length ? [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/maxresdefault.jpg", videoID] : nil;
@@ -8,27 +9,17 @@ NSError *SFError(NSString *msg) {
     return [NSError errorWithDomain:@"Sofa" code:1 userInfo:@{NSLocalizedDescriptionKey: msg ?: @"Fehler"}];
 }
 
-static NSMutableDictionary *resolvers(void) {
-    static NSMutableDictionary *d; static dispatch_once_t o;
-    dispatch_once(&o, ^{ d = [NSMutableDictionary new]; });
-    return d;
+// Playback refs "prefix:id" are resolved by the app that owns the namespace (SFApp resolve:)
+void SFResolveRef(NSString *ref, SFURLDone done) {
+    Class<SFApp> a = [SFAppRegistry appForRef:ref];
+    if (![a respondsToSelector:@selector(resolve:done:)]) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
+    [a resolve:ref done:done];
 }
-void SFRegisterResolver(NSString *prefix, SFRefResolver r) { resolvers()[prefix] = [r copy]; }
-static void resolveWith(NSDictionary *table, NSString *ref, SFURLDone done) {
-    NSRange c = [ref rangeOfString:@":"];
-    NSString *prefix = c.location == NSNotFound ? nil : [ref substringToIndex:c.location];
-    SFRefResolver r = prefix ? (table[prefix] ?: resolvers()[prefix]) : nil;
-    if (!r) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
-    r([ref substringFromIndex:c.location + 1], done);
+void SFResolveRefOnline(NSString *ref, SFURLDone done) {
+    Class<SFApp> a = [SFAppRegistry appForRef:ref];
+    if ([a respondsToSelector:@selector(resolveOnline:done:)]) [a resolveOnline:ref done:done];
+    else SFResolveRef(ref, done);
 }
-static NSMutableDictionary *onlineResolvers(void) {
-    static NSMutableDictionary *d; static dispatch_once_t o;
-    dispatch_once(&o, ^{ d = [NSMutableDictionary new]; });
-    return d;
-}
-void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r) { onlineResolvers()[prefix] = [r copy]; }
-void SFResolveRef(NSString *ref, SFURLDone done) { resolveWith(resolvers(), ref, done); }
-void SFResolveRefOnline(NSString *ref, SFURLDone done) { resolveWith(onlineResolvers(), ref, done); }
 
 NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar";
 

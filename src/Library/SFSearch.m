@@ -3,27 +3,18 @@
 #import "SFKeyboardScreen.h"
 #import "SFBrowseScreen.h"
 #import "SFStore.h"
-#import "SFYouTube.h"
-#import "SFProviderZDF.h"
-#import "SFProviderARD.h"
-#import "SFProviderORF.h"
-#import "SFProviderCCC.h"
+#import "SFApp.h"
 
 static const NSUInteger kMaxRecent = 12;
 
 static SFPageLoader searchLoader(NSString *source, NSString *q) {
-    if ([source isEqualToString:@"youtube"]) return [SFYouTube searchLoader:q];
-    if ([source isEqualToString:@"zdf"]) return [SFProviderZDF searchLoader:q];
-    if ([source isEqualToString:@"ard"]) return [SFProviderARD searchLoader:q];
-    if ([source isEqualToString:@"orf"]) return [SFProviderORF searchLoader:q];
-    if ([source isEqualToString:@"ccc"]) return [SFProviderCCC searchLoader:q];
-    return nil;
+    Class<SFApp> a = [SFAppRegistry appNamed:source];
+    return [a respondsToSelector:@selector(searchLoader:)] ? [a searchLoader:q] : nil;
 }
 
 static NSString *placeholder(NSString *source) {
-    if ([source isEqualToString:@"youtube"]) return @"Videos und Kanäle suchen";
-    if ([source isEqualToString:@"ccc"]) return @"Vorträge suchen";
-    return @"Sendungen und Videos suchen";
+    Class<SFApp> a = [SFAppRegistry appNamed:source];
+    return [a respondsToSelector:@selector(searchPlaceholder)] ? [a searchPlaceholder] : @"Sendungen und Videos suchen";
 }
 
 #pragma mark Recent searches
@@ -51,7 +42,8 @@ void SFAddRecentSearch(NSString *source, NSString *query) {
 
 #pragma mark Suggestions
 
-// Empty: recent searches. With text: matching earlier searches, for YouTube + autocomplete.
+// Empty: recent searches. With text: matching earlier searches + the app's autocomplete
+// (SFApp suggestions:done:), or for apps without one: titles of the first hits.
 static SFSuggestProvider suggestions(NSString *source) {
     return ^(NSString *text, SFSuggestDone done) {
         NSArray *recent = SFRecentSearches(source);
@@ -60,7 +52,8 @@ static SFSuggestProvider suggestions(NSString *source) {
         NSMutableArray *mine = [NSMutableArray new];
         for (NSString *r in recent)
             if ([r rangeOfString:q options:NSCaseInsensitiveSearch | NSAnchoredSearch].location != NSNotFound && ![r isEqualToString:q]) [mine addObject:r];
-        if (![source isEqualToString:@"youtube"]) {
+        Class<SFApp> app = [SFAppRegistry appNamed:source];
+        if (![app respondsToSelector:@selector(suggestions:done:)]) {
             // Mediatheken: titles of the first hits as suggestions (shows first) – while typing you can
             // see when it is enough. From 2 characters; the search requests are cached.
             if (q.length < 2) { done(@"Zuletzt gesucht", mine); return; }
@@ -85,7 +78,7 @@ static SFSuggestProvider suggestions(NSString *source) {
             });
             return;
         }
-        [SFYouTube suggestions:q done:^(NSArray *list) {
+        [app suggestions:q done:^(NSArray *list) {
             NSMutableArray *all = [[mine subarrayWithRange:NSMakeRange(0, MIN(mine.count, (NSUInteger)2))] mutableCopy];
             for (NSString *s in list) {
                 BOOL dup = NO;

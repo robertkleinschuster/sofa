@@ -7,7 +7,7 @@
 #import "SFAVEngine.h"
 #import "SFMPVEngine.h"
 #import "SFYTResolver.h"
-#import "SFYouTube.h"
+#import "SFYouTubeApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"

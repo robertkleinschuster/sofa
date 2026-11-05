@@ -77,7 +77,7 @@ void SFToggleFollow(SFNavigator *n, SFItem *folder, SFTheme *theme) {
     // call autoplay uses) - only for an online-capable video, never a spinner: absent until it arrives
     if (![it.source isEqualToString:@"youtube"] || it.externalID.length != 11 || ![SFNet isOnline]) return;
     __weak SFPlayerInfoScreen *ws = self;
-    [SFYouTube watchPageFor:it.externalID done:^(NSArray *related, NSDictionary *details) {
+    [SFYouTubeApp watchPageFor:it.externalID done:^(NSArray *related, NSDictionary *details) {
         SFPlayerInfoScreen *s = ws;
         if (!s || s->_item != it) return;   // panel closed or the player moved on
         s->_details = details;

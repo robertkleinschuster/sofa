@@ -87,13 +87,9 @@ extern NSString *const SFDRMNotice;   // uniform notice text for DRM content
 + (instancetype)page:(NSString *)title theme:(NSString *)theme shelves:(NSArray *)shelves;
 @end
 
-// Providers register with a prefix; resolves "prefix:ref" to playback URLs.
-typedef void (^SFRefResolver)(NSString *ref, SFURLDone done);
-void SFRegisterResolver(NSString *prefix, SFRefResolver r);
+// Resolve "prefix:id" to playback URLs through the owning app (SFApp resolve:). Online = skip
+// local copies (items with streamOnly, "Online abspielen").
 void SFResolveRef(NSString *ref, SFURLDone done);
-// Resolvers that prefer local downloads themselves (YouTube) additionally register a pure
-// online variant; items with streamOnly ("Online abspielen") resolve through it.
-void SFRegisterOnlineResolver(NSString *prefix, SFRefResolver r);
 void SFResolveRefOnline(NSString *ref, SFURLDone done);
 
 NSError *SFError(NSString *msg);

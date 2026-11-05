@@ -557,7 +557,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     SFNavigator *nav = self.navigator;
     SFLog(@"endscreen: open %@ %@", st, SFStr(e[@"videoId"]) ?: SFStr(e[@"playlistId"]) ?: SFStr(e[@"browseId"]));
     if ([st isEqualToString:kVideo]) {   // like autoplay / the info panel's recommendations: play here
-        SFItem *it = [SFYouTube itemForVideoID:e[@"videoId"] title:title thumb:image];
+        SFItem *it = [SFYouTubeApp itemForVideoID:e[@"videoId"] title:title thumb:image];
         if (!it) return;
         _esEndDeferred = NO;
         [self playItem:it];
@@ -595,7 +595,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 - (void)esOpenPlaylist:(NSDictionary *)e {
     NSString *pid = SFStr(e[@"playlistId"]), *vid = SFStr(e[@"videoId"]), *title = SFStr(e[@"title"]) ?: @"Playlist";
     // until the list is there the video's own title is unknown: the playlist's title stands in
-    SFItem *first = vid.length == 11 ? [SFYouTube itemForVideoID:vid title:title thumb:nil] : nil;
+    SFItem *first = vid.length == 11 ? [SFYouTubeApp itemForVideoID:vid title:title thumb:nil] : nil;
     if (first) {
         first = [first copy];
         first.playlistID = pid;
@@ -610,7 +610,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     BOOL endWaiting = !first && _ended;
     SFItem *was = _item;
     __weak SFPlayerScreen *ws = self;
-    SFPageLoader load = [SFYouTube playlistLoader:pid title:title];
+    SFPageLoader load = [SFYouTubeApp playlistLoader:pid title:title];
     load(^(SFPage *page, NSError *err) {
         SFMain(^{
             SFPlayerScreen *s = ws;

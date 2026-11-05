@@ -4,6 +4,7 @@
 // hence shared progress online/offline.
 // Subscriptions ("download new episodes automatically") replace ytdl-sub.
 #import "SFModel.h"
+#import "SFApp.h"
 
 extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (or nil = many)
 // storage became full or free again, an online check finished ("Platz schaffen" page reloads)
@@ -19,28 +20,16 @@ typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLDismissed = 4,     // deleted by the user -> the subscription does not download it again
 };
 
-// Delivers the newest episodes of a subscription (channel/show), newest first.
-typedef void (^SFFeedFetcher)(NSString *ref, void (^done)(NSArray *items, NSError *e));
-void SFRegisterFeed(NSString *prefix, SFFeedFetcher f);
-SFFeedFetcher SFFeedFor(NSString *identifier);   // registered feed for "prefix:ref" (or nil)
-// feed from a page loader (show page): all videos of the page, newest first
-void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref));
-// Optional: custom download URL (e.g. YouTube 720p instead of the 1080p stream)
-// audio: optional separate audio track (e.g. YouTube original audio instead of the default track in the muxed stream)
-typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSError *e);
-typedef void (^SFDownloadURLFetcher)(SFItem *item, SFDownloadURLDone done);
-void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
-// Optional: until when a source must not be asked for downloads (epoch, 0 = now is fine), e.g.
-// YouTube during a bot-check pause. Its queued downloads wait without using up attempts.
-typedef NSTimeInterval (^SFDownloadPause)(void);
-void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f);
-// Optional: is this downloaded video still online at its source? (for "Platz schaffen": what is not
-// online any more is irreplaceable). online: 1 yes, 0 no (deleted/private/expired), -1 unknown
-// (network error - ask again later). Without a registered check the source's online resolver
-// answers (a resolvable stream = online).
-typedef void (^SFAvailabilityDone)(NSInteger online);
-typedef void (^SFAvailabilityCheck)(SFItem *item, SFAvailabilityDone done);
-void SFRegisterAvailabilityCheck(NSString *prefix, SFAvailabilityCheck f);
+// Feeds (newest episodes of a show/channel, newest first) come from the owning app (SFApp feed:).
+typedef void (^SFFeedDone)(NSArray *items, NSError *e);
+BOOL SFHasFeed(NSString *ref);                  // "prefix:id" is a show ref whose app has a feed
+void SFFetchFeed(NSString *ref, SFFeedDone done);
+// feed from a page loader (show page): all videos of the page, newest first - for apps whose
+// show page already lists the episodes
+void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
+// Download source, download pause and online check: SFApp downloadSourceForItem:,
+// downloadsPausedUntil, availabilityOfItem: (without a check the app's online resolver answers:
+// a resolvable stream = online).
 
 @interface SFDownloads : NSObject
 + (instancetype)shared;

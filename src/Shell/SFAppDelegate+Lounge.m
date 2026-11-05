@@ -10,11 +10,11 @@
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFProviderCCC.h"
-#import "SFProviderARD.h"
-#import "SFProviderZDF.h"
-#import "SFProviderORF.h"
-#import "SFYouTube.h"
+#import "SFCCCApp.h"
+#import "SFARDApp.h"
+#import "SFZDFApp.h"
+#import "SFORFApp.h"
+#import "SFYouTubeApp.h"
 #import "SFYTResolver.h"
 #import "SFLounge.h"
 #import "SFPower.h"
@@ -74,7 +74,7 @@
         NSTimeInterval t = [args[@"currentTime"] doubleValue];
         NSString *list = args[@"listId"] ?: @"";
         NSMutableArray *items = [NSMutableArray new];
-        for (NSString *v in vids) [items addObject:[SFYouTube itemForVideoID:v]];
+        for (NSString *v in vids) [items addObject:[SFYouTubeApp itemForVideoID:v]];
         // If exactly this video is already playing (phone reconnected, e.g. after a Sofa update):
         // never reload. Adopt list/queue; only seek if the phone knows a real, different
         // position (after a restart it often reports 0 -> Sofa's position wins).
@@ -86,7 +86,7 @@
             if (![p.remoteListID isEqualToString:list] || ![curIDs isEqualToArray:vids]) {
                 p.remoteListID = list;
                 [p adoptQueue:items index:idx];
-                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
+                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTubeApp fillDetails:items[k] done:nil];
             }
             if (t > 1 && fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
             [p remotePlay];
@@ -95,7 +95,7 @@
         }
         [self wakeAndFront];
         NSUInteger gen = ++self.loungeGen;   // later setPlaylist wins
-        [SFYouTube fillDetails:items[idx] done:^{
+        [SFYouTubeApp fillDetails:items[idx] done:^{
             if (gen != self.loungeGen) return;
             SFPlayerScreen *cur = [self topPlayer];
             if (cur.remoteListID) { cur.remoteListID = list; [cur replaceQueue:items index:idx at:t]; }
@@ -105,7 +105,7 @@
                 if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
                 [self presentPlayer:ps];
             }
-            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTube fillDetails:items[k] done:nil];
+            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTubeApp fillDetails:items[k] done:nil];
         }];
     } else if (!p) {
         return;

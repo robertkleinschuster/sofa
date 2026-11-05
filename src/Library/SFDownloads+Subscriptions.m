@@ -2,12 +2,15 @@
 // subscription management, periodic checks (keepDays = download window: older episodes are not fetched).
 #import "SFDownloads+Private.h"
 
-static NSMutableDictionary *gFeeds;   // prefix -> SFFeedFetcher
-void SFRegisterFeed(NSString *prefix, SFFeedFetcher f) { if (!gFeeds) gFeeds = [NSMutableDictionary new]; gFeeds[prefix] = [f copy]; }
-SFFeedFetcher SFFeedFor(NSString *identifier) { NSRange r = [identifier rangeOfString:@":"]; return r.location == NSNotFound ? nil : gFeeds[[identifier substringToIndex:r.location]]; }
-void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSString *ref)) {
-    SFRegisterFeed(prefix, ^(NSString *ref, void (^done)(NSArray *, NSError *)) {
-        SFPageLoader l = loaderFor(ref);
+BOOL SFHasFeed(NSString *ref) {
+    return [SFAppRegistry isShowRef:ref] && [[SFAppRegistry appForRef:ref] respondsToSelector:@selector(feed:done:)];
+}
+void SFFetchFeed(NSString *ref, SFFeedDone done) {
+    if (!SFHasFeed(ref)) { done(nil, SFError(@"Unbekannte Sendung")); return; }
+    [[SFAppRegistry appForRef:ref] feed:ref done:done];
+}
+void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
+    {
         if (!l) { done(nil, SFError(@"Unbekannte Sendung")); return; }
         l(^(SFPage *page, NSError *e) {
             if (!page) { done(nil, e); return; }
@@ -20,7 +23,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
             }];
             done(items, nil);
         });
-    });
+    }
 }
 
 @implementation SFDownloads (Subscriptions)
@@ -40,7 +43,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     return nil;
 }
 
-- (BOOL)canSubscribe:(SFItem *)folder { return folder.identifier && gFeeds[prefixOf(folder.identifier)] != nil; }
+- (BOOL)canSubscribe:(SFItem *)folder { return folder.identifier && SFHasFeed(folder.identifier); }
 - (BOOL)isSubscribed:(NSString *)fid { return fid && _subs[fid] != nil; }
 - (NSArray *)subscriptions {
     return [_subs.allValues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
@@ -82,9 +85,8 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
 }
 
 - (void)checkSub:(NSMutableDictionary *)s initial:(BOOL)initial done:(dispatch_block_t)done {
-    SFFeedFetcher f = gFeeds[prefixOf(s[@"id"])];
-    if (!f) { if (done) done(); return; }
-    f(restOf(s[@"id"]), ^(NSArray *items, NSError *e) {
+    if (!SFHasFeed(s[@"id"])) { if (done) done(); return; }
+    SFFetchFeed(s[@"id"], ^(NSArray *items, NSError *e) {
         SFMain(^{
             if (self->_subs[s[@"id"]] != s) { if (done) done(); return; }   // unsubscribed/replaced meanwhile
             if (!items) { SFLog(@"downloads: subscription %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
