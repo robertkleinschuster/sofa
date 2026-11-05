@@ -18,6 +18,10 @@ Einstellungen → „Update installieren“.
   Datei bleibt, bis die neue fehlerfrei ist).
 - **Bild kommt immer:** Direkt nach einem Update lief ein fortgesetztes Video manchmal nur mit
   Ton. Sofa wartet jetzt auf die Bildausgabe und repariert sie selbst, falls sie ausfällt.
+- **Weniger YouTube-Sperren:** Sperrt YouTube kurzzeitig („kein Bot“), pausiert Sofa alle
+  Hintergrund-Anfragen (Vorladen, Downloads) und versucht es später wieder, statt die Sperre
+  zu verlängern. Downloads warten in der Zeit, statt fehlzuschlagen. Beim Start fragt Sofa
+  YouTube nur noch, wenn es wirklich nötig ist.
 - **Kopiergeschützte Folgen** werden beim automatischen Weiterspielen übersprungen.
 - **Handy:** Untertitel lassen sich vom Handy aus umschalten.
 
