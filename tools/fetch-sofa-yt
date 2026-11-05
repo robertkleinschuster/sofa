@@ -1,0 +1,24 @@
+#!/bin/bash
+# fetch-sofa-yt -- install the npm dependencies of the YouTube SABR sidecar (res/sofa-yt) exactly as
+# pinned in res/sofa-yt/package-lock.json into build/vendor/sofa-yt/node_modules.
+# `npm ci` verifies every tarball against the lockfile's integrity hash; install scripts are disabled
+# (no dependency needs one - pure JS). Called by the Makefile when the lockfile is newer.
+#   build/vendor/sofa-yt/node_modules/...
+#   build/vendor/sofa-yt/STAMP            sha256 of the lockfile that was installed
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$SRC/build/vendor/sofa-yt"
+NODE_BIN="${NODE_BIN:-/opt/local/bin}"
+T="$OUT.tmp"; rm -rf "$T"; mkdir -p "$T"
+cp "$SRC/res/sofa-yt/package.json" "$SRC/res/sofa-yt/package-lock.json" "$T/"
+# npm is a node script: PATH must find the MacPorts node (no /usr/bin/env node elsewhere on 10.9)
+(cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --omit=dev --ignore-scripts --no-audit --no-fund \
+   --no-update-notifier --loglevel=error)
+for p in googlevideo youtubei.js bgutils-js jsdom; do
+  [ -f "$T/node_modules/$p/package.json" ] || { echo "fetch-sofa-yt: $p missing after npm ci"; exit 1; }
+done
+shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1 > "$T/STAMP"
+rm -f "$T/package.json" "$T/package-lock.json"
+rm -rf "$OUT"; mv "$T" "$OUT"
+echo "sofa-yt dependencies -> $OUT/node_modules ($(ls "$OUT/node_modules" | wc -l | tr -d ' ') packages)"
