@@ -22,6 +22,7 @@
 @end
 
 @interface SFNavigator : NSView
++ (SFNavigator *)main;   // the window's navigator (the first one created) - for actions without a screen at hand
 @property (nonatomic, readonly) NSArray *stack;
 @property (nonatomic, readonly) SFScreen *top;
 - (void)push:(SFScreen *)s;

@@ -4,6 +4,7 @@
 #import "SFARDApp.h"
 #import "SFORFApp.h"
 #import "SFCCCApp.h"
+#import "SFLibrary.h"
 
 void SFRegisterApps(void) {
     static dispatch_once_t once;
@@ -20,6 +21,8 @@ void SFRegisterApps(void) {
             t.fontBold = @"AvenirNext-DemiBold";
             t.corner = 18;
         }];
+        // downloads from before Sofa (Kodi era, no source tag) are YouTube videos
+        [SFLibrary shared].untaggedSource = [SFYouTubeApp appIdentifier];
         // home tile order
         for (Class app in @[[SFYouTubeApp class], [SFZDFApp class], [SFARDApp class], [SFORFApp class], [SFCCCApp class]])
             [SFAppRegistry registerApp:app];

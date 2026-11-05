@@ -1,6 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFZDFApp.h"
+#import "SFBrowseScreen.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
@@ -412,4 +413,11 @@ static NSDate *isoDate(NSString *s) {
     }];
 }
 
++ (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host {
+    if (!([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"])) return NO;   // brand page (crash test)
+    SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
+    f.pageLoader = [self categoryLoader:[arg substringFromIndex:8] title:@"Test"];
+    SFOpenItem([host nav], f, nil, 0);
+    return YES;
+}
 @end

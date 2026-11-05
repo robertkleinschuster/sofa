@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# check-arch -- enforce the layer rules of docs/architecture.md (static, no build needed).
+#
+# Layers (low -> high):
+#   Framework  src/Framework            UI kit + design system; may use only the Core foundation
+#                                       headers listed in FOUNDATION (page model, store, net)
+#   Core       src/Core, src/Library,   app-agnostic media core (model, library, player, generic
+#              src/Player, src/Browse   media screens); talks to apps only through SFAppRegistry
+#   Apps       src/Apps/<App>           one source each; never imports Shell or another app
+#   Shell      src/Shell                the product; app classes only in REGISTRATION files
+#
+# Also: no app identifiers / ref namespaces as string literals outside src/Apps.
+# Exit 1 on any violation; prints file:line and the rule.
+import os, re, sys
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+SRC = os.path.join(ROOT, 'src')
+FOUNDATION = {'SFCore', 'SFModel', 'SFStore', 'SFNet', 'SFCurl', 'SFRuntime', 'SFVolume', 'SFJSON'}
+CORE_DIRS = {'Core', 'Library', 'Player', 'Browse'}
+REGISTRATION = {'src/Shell/SFApps.m'}            # the one place that names app classes
+LEGACY = {'src/Shell/SFMigration.m'}             # documented exception: one-time Kodi import (YouTube library)
+LITERAL = re.compile(r'@"(youtube|zdf|ard|orf|ccc)"|@"(yt|zdf|ard|orf|ccc)[a-z]*:')
+
+def layer(rel):
+    p = rel.split('/')
+    if p[1] == 'Framework': return 'Framework', None
+    if p[1] in CORE_DIRS: return 'Core', None
+    if p[1] == 'Apps': return 'Apps', p[2]
+    if p[1] == 'Shell': return 'Shell', None
+    return 'Other', None
+
+# module name (header stem) -> (layer, app)
+owner = {}
+for d, _, files in os.walk(SRC):
+    for f in files:
+        if f.endswith('.h'):
+            rel = os.path.relpath(os.path.join(d, f), ROOT)
+            owner[f[:-2]] = layer(rel)
+
+bad = []
+def flag(rel, n, msg): bad.append('%s:%d: %s' % (rel, n, msg))
+
+for d, _, files in os.walk(SRC):
+    for f in sorted(files):
+        if not f.endswith(('.h', '.m')): continue
+        rel = os.path.relpath(os.path.join(d, f), ROOT)
+        me, myapp = layer(rel)
+        for n, line in enumerate(open(os.path.join(d, f), encoding='utf-8'), 1):
+            code = line.split('//', 1)[0]
+            m = re.match(r'\s*#import "([^"]+)\.h"', line)
+            if m:
+                dep = m.group(1)
+                dl, dapp = owner.get(dep, ('Other', None))
+                if me == 'Framework' and dl != 'Framework' and dep not in FOUNDATION:
+                    flag(rel, n, 'Framework imports %s (%s)' % (dep, dl))
+                elif me == 'Core' and dl in ('Apps', 'Shell'):
+                    flag(rel, n, 'Core imports %s (%s)' % (dep, dl))
+                elif me == 'Apps' and (dl == 'Shell' or (dl == 'Apps' and dapp != myapp)):
+                    flag(rel, n, 'app %s imports %s (%s%s)' % (myapp, dep, dl, ' ' + dapp if dapp else ''))
+                elif me == 'Shell' and dl == 'Apps' and rel not in REGISTRATION | LEGACY:
+                    flag(rel, n, 'Shell imports app header %s (only %s registers apps)' % (dep, ', '.join(REGISTRATION)))
+                continue
+            if me != 'Apps' and rel not in REGISTRATION | LEGACY and LITERAL.search(code):
+                flag(rel, n, 'app literal outside src/Apps: ' + LITERAL.search(code).group(0))
+
+for b in bad: print(b)
+print('==> check-arch: %s' % ('%d violation(s)' % len(bad) if bad else 'ok'))
+sys.exit(1 if bad else 0)

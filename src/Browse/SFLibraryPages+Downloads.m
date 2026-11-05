@@ -1,5 +1,5 @@
-// SFHome – downloads page (offline inventory), the tile that opens it, and "Platz schaffen".
-#import "SFHome+Private.h"
+// SFLibraryPages – downloads page (offline inventory), the tile that opens it, and "Platz schaffen".
+#import "SFLibraryPages.h"
 #import "SFDownloads.h"
 #import "SFIconArt.h"
 #import "SFStore.h"
@@ -11,12 +11,8 @@ static NSString *SFGB(unsigned long long b) {
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
 }
 static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Video" : @"Videos"]; }
-static SFNavigator *SFAppNavigator(void) {
-    id d = [NSApp delegate];
-    return [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-}
 
-@implementation SFHome (Downloads)
+@implementation SFLibraryPages (Downloads)
 
 #pragma mark Downloads (offline inventory, like "Downloads" in YouTube Premium)
 
@@ -174,7 +170,7 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
     i.image = SFIconArt(symbol, nil);
     i.style = SFTileStyleLandscape;   // title with count and size below the image
     i.themeName = @"home";
-    i.action = ^{ SFNavigator *nav = SFAppNavigator(); if (nav) [self offerDeleting:ids what:what on:nav]; };
+    i.action = ^{ SFNavigator *nav = [SFNavigator main]; if (nav) [self offerDeleting:ids what:what on:nav]; };
     return i;
 }
 
@@ -258,16 +254,16 @@ static BOOL gRoomAsked;
     static id obs;
     if (obs) return;
     obs = [[NSNotificationCenter defaultCenter] addObserverForName:SFDownloadsStorageDidChangeNotification object:nil
-                                                             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [SFHome askForRoom]; }];
+                                                             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [SFLibraryPages askForRoom]; }];
 }
 
 + (void)askForRoom {
     SFDownloads *dl = [SFDownloads shared];
     if (!dl.storageFull) { gRoomAsked = NO; return; }   // the next time it fills up, ask again
     if (gRoomAsked) return;
-    SFNavigator *nav = SFAppNavigator();
+    SFNavigator *nav = [SFNavigator main];
     if (!nav || [nav.top isKindOfClass:[SFPlayerScreen class]]) {   // never over a running video
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [SFHome askForRoom]; });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [SFLibraryPages askForRoom]; });
         return;
     }
     gRoomAsked = YES;
@@ -276,7 +272,7 @@ static BOOL gRoomAsked;
     SFLog(@"downloads: asking the user to make room");
     SFMenuOption *later = [SFMenuOption option:@"Später" action:^{}];
     SFMenuOption *room = [SFMenuOption option:@"Platz schaffen" action:^{
-        dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFHome roomTile], nil, 0); });
+        dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFLibraryPages roomTile], nil, 0); });
     }];
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Speicher fast voll"
                                                  subtitle:[NSString stringWithFormat:@"Neue Downloads warten, bis wieder mehr als %@ frei sind. Sofa löscht nie selbst etwas – du entscheidest, was weg kann.", SFGB(dl.storageReserve)]

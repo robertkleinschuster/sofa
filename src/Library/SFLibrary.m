@@ -55,7 +55,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSMutableDictionary *eps = [NSMutableDictionary new];      // key -> NSMutableArray
     NSMutableArray *recent = [NSMutableArray new];
     for (SFItem *e in [dl items:nil]) {   // newest first
-        NSString *src = e.source.length ? e.source : @"youtube";
+        NSString *src = e.source.length ? e.source : (self.untaggedSource ?: @"");
         NSString *ch = e.channel.length ? e.channel : SFUnsortedChannel;
         NSString *k = [NSString stringWithFormat:@"%@\t%@", src, ch];
         SFShow *s = groups[k];
@@ -108,7 +108,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSMutableArray *r = [NSMutableArray new];
     for (SFItem *e in _recent) {
         if ((NSInteger)r.count >= n) break;
-        if (!source.length || [(e.source.length ? e.source : @"youtube") isEqualToString:source]) [r addObject:e];
+        if (!source.length || [(e.source.length ? e.source : (self.untaggedSource ?: @"")) isEqualToString:source]) [r addObject:e];
     }
     return r;
 }
@@ -131,7 +131,4 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     return nil;
 }
 
-- (SFItem *)episodeForYouTubeID:(NSString *)vid {
-    return vid.length ? [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]] : nil;
-}
 @end

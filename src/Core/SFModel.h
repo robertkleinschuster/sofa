@@ -5,7 +5,6 @@
 
 // YouTube background picture in TV resolution (1280x720). Not every video has it (404 for
 // low-resolution uploads) - SFImageLayer then falls back to the tile image (fallbackSource).
-NSString *SFYouTubeBackdrop(NSString *videoID);
 
 typedef NS_ENUM(NSInteger, SFItemKind) {
     SFItemVideo,     // playable

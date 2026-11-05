@@ -110,11 +110,6 @@ void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText) {
     [nav push:kb];
 }
 
-static SFNavigator *appNavigator(void) {
-    id d = [NSApp delegate];
-    return [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-}
-
 BOOL SFHasSearch(NSString *source) { return searchLoader(source, @"") != nil; }
 
 SFItem *SFSearchTile(NSString *source) {
@@ -129,7 +124,7 @@ SFItem *SFSearchTile(NSString *source) {
     i.image = SFIconArt(@"search", source);
     i.style = SFTileStyleWide;
     i.source = source; i.themeName = source;
-    i.action = ^{ SFOpenSearch(appNavigator(), source, nil); };
+    i.action = ^{ SFOpenSearch([SFNavigator main], source, nil); };
     return i;
 }
 

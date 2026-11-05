@@ -5,21 +5,10 @@
 @interface SFHome : NSObject
 + (SFScreen *)homeScreen;
 + (SFScreen *)appScreen:(NSString *)source;                  // youtube, zdf, ard, orf, ccc
-+ (SFPageLoader)showLoader:(NSString *)showName source:(NSString *)source;   // local show
-+ (SFItem *)historyTile;                                       // opens the history
 @end
 
-// Downloads page – SFHome+Downloads.m
-@interface SFHome (Downloads)
-+ (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = all sources
-+ (SFItem *)downloadsTile:(NSString *)source;                  // opens the downloads page
-+ (SFItem *)roomTile;                                          // opens "Platz schaffen" (bulk deleting, by hand)
-+ (void)watchStorage;                                          // ask to make room when the disk becomes full
-@end
-
-// Settings and phone – SFHome+Settings.m
+// Settings – SFHome+Settings.m
 @interface SFHome (Settings)
 + (SFItem *)settingsTile;                                      // Home tile "Einstellungen"
-+ (SFItem *)phoneTile;                                         // phone status + settings (YouTube → Mehr)
 + (void)showSettingsOn:(SFNavigator *)nav;                     // "Start & Fernbedienung"
 @end

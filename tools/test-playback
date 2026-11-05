@@ -160,7 +160,7 @@ awk "BEGIN{exit !($at >= 6.0 && $at < 8)}" 2>/dev/null && ok "tiles appear at th
 since $m | grep -q 'endscreen: video rect {{0, 0}, {1920, 1080}}' && ok "tiles placed over the video rect" || bad "video rect: $(since $m | grep 'video rect' | tail -1)"
 sleep 1.5; cmd "shot $T/endscreen.png"; sleep 1.5; [ -s "$T/endscreen.png" ] && { ok "end screen rendered"; keep "$T/endscreen.png"; } || bad "no end screen screenshot"
 m=$(mark); cmd "key down"; sleep 0.4; cmd "key right"; sleep 0.4; cmd "key left"; sleep 0.4; cmd "key down"; sleep 0.6
-since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q '0 (VIDEO) 1 (VIDEO) 0 (VIDEO) 2 (SUBSCRIBE)' \
+since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q '0 (video) 1 (video) 0 (video) 2 (follow)' \
   && ok "DOWN enters, arrows move spatially" || bad "focus path: $(since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ')"
 cmd "shot $T/endscreen-focus.png"; sleep 1.5; keep "$T/endscreen-focus.png"
 m=$(mark); cmd "key select"; sleep 0.6; cmd "key select"; sleep 0.6

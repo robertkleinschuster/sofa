@@ -9,9 +9,11 @@
 #import "SFNet.h"
 #import "SFStore.h"
 #import "SFLibrary.h"
-#import "SFHome.h"
 #import "SFIconArt.h"
 #import "SFPairScreen.h"
+#import "SFLounge.h"
+#import "SFLibraryPages.h"
+#import "SFPlayerScreen.h"
 #import "SFDownloads.h"
 #import "SFCurl.h"
 #import "SFFollows.h"
@@ -23,6 +25,12 @@
 
 static NSString *const kClientVersion = @"2.20261030.02.00";
 static NSString *const kOrigin = @"https://www.youtube.com";
+
+// TV-sized picture of a video (backdrop); falls back to the tile picture where missing (SFImageLayer)
+static NSString *SFYouTubeBackdrop(NSString *videoID) {
+    return videoID.length ? [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/maxresdefault.jpg", videoID] : nil;
+}
+static SFItem *downloadedVideo(NSString *vid) { return vid.length ? [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]] : nil; }
 
 static id path(id root, NSString *p) {
     id cur = root;
@@ -114,7 +122,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
 + (SFItem *)videoItem:(NSString *)vid title:(NSString *)title channel:(NSString *)channel channelID:(NSString *)cid
                   meta:(NSString *)meta thumb:(NSString *)thumb duration:(NSTimeInterval)dur live:(BOOL)live {
     if (vid.length != 11) return nil;
-    SFItem *local = [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]] ?: [[SFLibrary shared] episodeForYouTubeID:vid];
+    SFItem *local = downloadedVideo(vid);
     if (local) {   // already downloaded: local file (quality, offline, shared progress)
         SFItem *i = [local copy];
         i.subtitle = meta.length ? [NSString stringWithFormat:@"%@ · auf diesem Mac", meta] : @"Auf diesem Mac";
@@ -367,7 +375,7 @@ static NSSet *skipKeys(void) {
             SFItem *folder = [SFItem new];
             folder.kind = SFItemFolder; folder.identifier = fid; folder.title = title; folder.source = @"youtube"; folder.image = avatar;
             BOOL following = [fo isFollowing:fid], autoDL = [dl isSubscribed:fid];
-            SFNavigator *(^navi)(void) = ^SFNavigator *{ id d = [NSApp delegate]; return [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil; };
+            SFNavigator *(^navi)(void) = ^SFNavigator *{ return [SFNavigator main]; };
             NSMutableArray *buttons = [NSMutableArray new];
             SFItem *fb = [SFItem new];
             fb.kind = SFItemAction; fb.style = SFTileStyleButton; fb.source = @"youtube"; fb.themeName = @"youtube";
@@ -571,10 +579,10 @@ static NSSet *skipKeys(void) {
                 [chs addObject:i];
             }
             // phone (YouTube "Link with TV code"): status + settings; "Neues Handy verbinden" lives in the menu
-            SFItem *pair = [SFHome phoneTile];
+            SFItem *pair = [self phoneTile];
             pair.style = SFTileStyleWide; pair.source = @"youtube"; pair.themeName = @"youtube";
             pair.image = SFIconArt(@"phone", @"youtube");
-            [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFHome downloadsTile:@"youtube"], pair]]];
+            [shelves addObject:[SFShelf shelf:@"Mehr" style:SFTileStyleWide items:@[[SFLibraryPages downloadsTile:@"youtube"], pair]]];
             // channels alphabetically (online + local mixed), the way you look for them in your head
             [chs sortUsingComparator:^NSComparisonResult(SFItem *x, SFItem *y) { return [x.title localizedCaseInsensitiveCompare:y.title]; }];
             if (chs.count) [shelves addObject:[SFShelf grid:@"Kanäle" style:SFTileStyleCircle items:chs]];
@@ -849,7 +857,7 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
     NSString *p = SFRefPrefix(ref), *vid = SFRefID(ref);
     if ([p isEqualToString:@"ytlive"]) { [self resolveLive:vid done:done]; return; }
     if (![p isEqualToString:@"yt"]) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
-    SFItem *local = [[SFLibrary shared] episodeForYouTubeID:vid];
+    SFItem *local = downloadedVideo(vid);
     if (local.localPath && [[NSFileManager defaultManager] fileExistsAtPath:local.localPath]) { done([NSURL fileURLWithPath:local.localPath], nil); return; }
     playOnline(vid, done);
 }
@@ -1035,5 +1043,98 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
     }];
 }
+
+#pragma mark - Phone remote ("Mit TV verbinden")
+
+// YouTube → Mehr: phone status + settings
++ (SFItem *)phoneTile {
+    // One tile that adapts to the situation (YouTube → Mehr):
+    //  no phone connected    -> "Mit Handy verbinden" opens the code directly (OK there = settings)
+    //  connected / paused    -> "Handy: Name" / "Handy pausiert" opens the settings
+    SFLounge *l = [SFLounge shared];
+    NSArray *n = l.remoteNames;
+    BOOL active = l.paused || n.count;
+    SFItem *i = [SFItem new];
+    i.kind = SFItemAction;
+    i.identifier = @"phone:";
+    i.title = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"Mit Handy verbinden";
+    i.subtitle = active ? @"Verbindung verwalten" : @"Videos vom Handy auf den Fernseher schicken";
+    i.plot = active ? @"Verbindung pausieren oder fortsetzen, festlegen was das Handy sieht, ein weiteres Handy verbinden oder alle trennen."
+                    : @"YouTube-App am Handy öffnen und mit dem TV-Code verbinden. Danach findet das Handy Sofa von selbst.";
+    i.themeName = @"youtube";
+    i.action = ^{
+        SFNavigator *nav = [SFNavigator main];
+        if (!nav) return;
+        SFLounge *ll = [SFLounge shared];
+        if (ll.paused || ll.remoteNames.count) [SFPairScreen showConnectionMenuOn:nav];
+        else [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
+    };
+    return i;
+}
+
+
+#pragma mark - Dev commands (sofa-dev FIFO)
+
++ (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host {
+    SFNavigator *nav = [host nav];
+    if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // pairing code screen
+        [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // any channel page: ytchannel:<ID>[|<title>]
+        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
+        NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
+        f.pageLoader = [self channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
+        SFOpenItem(nav, f, nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // play a video from the start (startup tests)
+        SFItem *it = [self itemForVideoID:[arg substringFromIndex:3]];
+        [self fillDetails:it done:^{
+            SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
+            ps.startFromBeginning = YES;
+            [host presentPlayer:ps];
+        }];
+    } else if ([cmd isEqualToString:@"play"] && [arg hasPrefix:@"ytlive:"]) {   // like a "Jetzt live" tile (no resume, live end handling)
+        SFItem *it = [SFItem new];
+        it.kind = SFItemLive; it.identifier = arg; it.title = arg; it.resolverRef = arg;
+        SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
+        ps.startFromBeginning = YES;
+        [host presentPlayer:ps];
+    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // simulate a phone command: lounge <cmd> <json>
+        NSRange sp = [arg rangeOfString:@" "];
+        NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
+        id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        SFYTRemoteCommand(host, lc, [j isKindOfClass:[NSDictionary class]] ? j : @{});
+    } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // simulate a bot-check pause for <secs> (this instance only)
+        [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
+    } else return NO;
+    return YES;
+}
+
+#pragma mark - Remote control service (SFApp)
+
++ (void)startRemoteWithHost:(id<SFPlayerHost>)host {
+    __weak id<SFPlayerHost> wh = host;
+    [SFLounge shared].commandHandler = ^(NSString *cmd, NSDictionary *args) { SFYTRemoteCommand(wh, cmd, args); };
+    [SFLounge shared].playerProvider = ^id { return [wh topPlayer]; };
+    [[SFLounge shared] start];
+}
++ (void)updateStoredItem:(SFItem *)i {
+    NSString *vid = [SFRefPrefix(i.identifier) isEqualToString:@"yt"] ? SFRefID(i.identifier) : nil;
+    if (!vid.length) return;
+    if (!i.image) i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", vid];
+    // stored entries carry the small tile picture as backdrop -> TV resolution; a local picture (download) stays
+    if (!i.backdrop || [i.backdrop hasPrefix:@"https://i.ytimg.com/vi/"]) i.backdrop = SFYouTubeBackdrop(vid);
+}
++ (void)preloadOnFocus:(SFItem *)item {
+    NSString *ref = item.resolverRef ?: item.identifier;
+    if ([ref hasPrefix:@"yt:"]) [[SFYTSabr shared] preloadOnFocus:[ref substringFromIndex:3]];
+}
++ (void)prepareForRelaunch { [[SFYTResolver shared] saveCache]; }
++ (void)stopRemote { [[SFLounge shared] stop]; }
++ (NSString *)remoteStatus:(BOOL *)paused {
+    SFLounge *l = [SFLounge shared];
+    if (paused) *paused = l.paused;
+    NSArray *n = l.remoteNames;
+    return l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : nil;
+}
++ (NSString *)remoteStatusNotification { return SFLoungeRemotesDidChangeNotification; }
 
 @end

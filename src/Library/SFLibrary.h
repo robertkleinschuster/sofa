@@ -23,5 +23,6 @@ extern NSString *const SFLibraryDidChangeNotification;
 - (NSArray *)recentDownloads:(NSInteger)n source:(NSString *)source;   // newest download first
 - (SFShow *)showNamed:(NSString *)name;
 - (SFShow *)showNamed:(NSString *)name source:(NSString *)source;   // source nil = any
-- (SFItem *)episodeForYouTubeID:(NSString *)vid;  // downloaded copy of a YouTube video
+// source of downloads without a source tag (pre-Sofa library); set by the shell
+@property (nonatomic, copy) NSString *untaggedSource;
 @end

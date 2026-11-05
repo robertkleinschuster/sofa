@@ -1,7 +1,8 @@
 // SFAppDelegate – private header for main.m and its categories
-// (SFAppDelegate+Lounge.m: phone commands, +Update.m: state across app updates, +Dev.m: dev FIFO).
+// (SFAppDelegate+Player.m: player host for phone remotes/dev commands, +Update.m: state across app updates, +Dev.m: dev FIFO).
 #import "SFCore.h"
 #import "SFScreen.h"
+#import "SFPlayerHost.h"
 @class SFPlayerScreen, SFRemote, SFDevServer;
 
 extern NSString *gInstance;   // dev instance name (--instance)
@@ -16,16 +17,14 @@ void SFClearRunningMarker(void);   // autostart crash detection, see main()
 // internal (used by the categories)
 @property (nonatomic, strong) dispatch_source_t fifoSrc;
 @property (nonatomic, strong) NSMutableString *fifoBuf;
-@property (nonatomic) NSUInteger loungeGen;
 - (void)hideCursor:(BOOL)hide;
 - (void)welcomeIfFirstRun;
 @end
 
-@interface SFAppDelegate (Lounge)
+@interface SFAppDelegate (Player) <SFPlayerHost>
 - (SFPlayerScreen *)topPlayer;
 - (void)presentPlayer:(SFPlayerScreen *)ps;   // replaces the visible player (and overlays above it) or pushes
 - (void)wakeAndFront;
-- (void)loungeCommand:(NSString *)cmd args:(NSDictionary *)args;
 @end
 
 @interface SFAppDelegate (Update)

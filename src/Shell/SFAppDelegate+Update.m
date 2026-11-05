@@ -6,17 +6,9 @@
 #import "SFStore.h"
 #import "SFDevServer.h"
 #import "SFMigration.h"
-#import "SFPairScreen.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFCCCApp.h"
-#import "SFARDApp.h"
-#import "SFZDFApp.h"
-#import "SFORFApp.h"
-#import "SFYouTubeApp.h"
-#import "SFYTResolver.h"
-#import "SFLounge.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
 #import "SFPlayerScreen.h"
@@ -29,6 +21,7 @@
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 #import "SFAppDelegate.h"
+#import "SFApp.h"
 
 @implementation SFAppDelegate (Update)
 
@@ -77,7 +70,7 @@
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // save positions
     [[SFDownloads shared] stopForExit];   // _exit below skips cleanup: ffmpeg would survive as an orphan
     [[SFStore shared] flush];
-    [[SFYTResolver shared] saveCache];   // a resumed YouTube video starts without a new resolve
+    [SFAppRegistry prepareAllForRelaunch];   // apps persist caches (a resumed video starts without a new resolve)
     SFLog(@"update: saved, quitting");
     // _exit instead of exit: everything is saved; exit() used to hang in framework cleanup handlers.
     // On a background queue: a main-queue block didn't run while the main run loop was stuck

@@ -5,17 +5,15 @@
 #import "SFMenuScreen.h"
 #import "SFDownloads.h"
 #import "SFNet.h"
-#import "SFLounge.h"
 #import "SFFollows.h"
-#import "SFYTSabr.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
-#import "SFHome.h"
 #import "SFLogo.h"
 #import "SFSearch.h"
 #import "SFWatchLater.h"
 
 #import "SFBrowseScreen+Private.h"
+#import "SFApp.h"
 
 @implementation SFRow @end
 
@@ -41,7 +39,8 @@
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:SFLoungeRemotesDidChangeNotification object:nil];
+    for (NSString *n in [SFAppRegistry remoteStatusNotifications])
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:n object:nil];
 }
 - (SFPage *)page { return _page; }
 - (BOOL)isOpaque { return !self.overlay; }
@@ -282,22 +281,19 @@ static CGFloat textWidth(SFLabel *l) {
 - (void)prefetchFocused {
     _prefetchTimer = nil;
     SFItem *it = [self focusedItem];
-    NSString *ref = it.resolverRef ?: it.identifier;
-    if (it.kind != SFItemVideo || ![ref hasPrefix:@"yt:"] || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
-    [[SFYTSabr shared] preloadOnFocus:[ref substringFromIndex:3]];
+    if (it.kind != SFItemVideo || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
+    Class<SFApp> app = [SFAppRegistry appForItem:it];
+    if ([app respondsToSelector:@selector(preloadOnFocus:)]) [app preloadOnFocus:it];
 }
 
 - (void)updatePhoneStatus {
-    SFLounge *l = [SFLounge shared];
-    NSArray *n = l.remoteNames;
-    NSString *s = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : nil;
-    // the phone only controls YouTube: show the status only on Home and in the YouTube app
-    NSString *tid = self.theme.identifier;
-    if (![tid isEqualToString:@"home"] && ![tid isEqualToString:@"youtube"]) s = nil;
+    // remote control status (phone): on Home every remote, inside an app only the app's own
+    BOOL paused = NO;
+    NSString *s = [SFAppRegistry remoteStatusForTheme:self.theme.identifier paused:&paused];
     SFNoAnimate(^{
         self->_phonePill.hidden = !s;
         self->_phone.text = s ?: @"";
-        self->_phoneDot.backgroundColor = (l.paused ? [NSColor colorWithCalibratedRed:0.95 green:0.65 blue:0.15 alpha:1] : [NSColor colorWithCalibratedRed:0.25 green:0.8 blue:0.4 alpha:1]).CGColor;
+        self->_phoneDot.backgroundColor = (paused ? [NSColor colorWithCalibratedRed:0.95 green:0.65 blue:0.15 alpha:1] : [NSColor colorWithCalibratedRed:0.25 green:0.8 blue:0.4 alpha:1]).CGColor;
     });
     [self layoutStatusRow];
 }
@@ -928,9 +924,10 @@ SFBrowseScreen *SFBrowseScreenForFolder(SFItem *item, SFTheme *fallback) {
     SFBrowseScreen *b = [[SFBrowseScreen alloc] initWithLoader:item.pageLoader theme:t];
     b.folderIdentifier = item.identifier;
     // offline pages (show, downloads) follow the inventory live
-    if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
+    BOOL channel = [SFAppRegistry isShowRef:item.identifier] && SFShowRefIsChannel(item.identifier);   // shows its downloaded videos too
+    if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || channel) b.reloadNotification = SFLibraryDidChangeNotification;
     if ([item.identifier hasPrefix:@"room:"]) b.reloadNotification = SFDownloadsStorageDidChangeNotification;   // deletions, online checks
-    if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // channel header (banner, subscribers, description)
+    if (channel) b.showsHero = YES;   // channel header (banner, subscribers, description)
     return b;
 }
 

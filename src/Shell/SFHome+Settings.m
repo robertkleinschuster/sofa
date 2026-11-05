@@ -1,12 +1,10 @@
 // SFHome – settings (start & remote, subtitles, updates with release notes) and
 // the phone tile (YouTube → Mehr) that opens the connection settings.
-#import "SFHome+Private.h"
+#import "SFHome.h"
 #import "SFMenuScreen.h"
 #import "SFSettings.h"
 #import "SFUpdater.h"
 #import "SFRuntime.h"
-#import "SFLounge.h"
-#import "SFPairScreen.h"
 
 @implementation SFHome (Settings)
 
@@ -22,8 +20,7 @@
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
     i.action = ^{
-        id d = [NSApp delegate];
-        SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
+        SFNavigator *nav = [SFNavigator main];
         if (nav) [SFHome showSettingsOn:nav];
     };
     return i;
@@ -181,34 +178,6 @@ static NSString *SFBundledNotes(NSString *version) {
         options:@[go, [SFMenuOption option:@"Später" action:^{}]] theme:[SFTheme themeNamed:@"home"]];
     m.subtitleLines = 14;
     return m;
-}
-
-#pragma mark Phone (YouTube "Mit TV verbinden") – settings reachable directly from Home
-
-+ (SFItem *)phoneTile {
-    // One tile that adapts to the situation (YouTube → Mehr):
-    //  no phone connected    -> "Mit Handy verbinden" opens the code directly (OK there = settings)
-    //  connected / paused    -> "Handy: Name" / "Handy pausiert" opens the settings
-    SFLounge *l = [SFLounge shared];
-    NSArray *n = l.remoteNames;
-    BOOL active = l.paused || n.count;
-    SFItem *i = [SFItem new];
-    i.kind = SFItemAction;
-    i.identifier = @"phone:";
-    i.title = l.paused ? @"Handy pausiert" : n.count ? [@"Handy: " stringByAppendingString:[n componentsJoinedByString:@", "]] : @"Mit Handy verbinden";
-    i.subtitle = active ? @"Verbindung verwalten" : @"Videos vom Handy auf den Fernseher schicken";
-    i.plot = active ? @"Verbindung pausieren oder fortsetzen, festlegen was das Handy sieht, ein weiteres Handy verbinden oder alle trennen."
-                    : @"YouTube-App am Handy öffnen und mit dem TV-Code verbinden. Danach findet das Handy Sofa von selbst.";
-    i.themeName = @"youtube";
-    i.action = ^{
-        id d = [NSApp delegate];
-        SFNavigator *nav = [d respondsToSelector:@selector(nav)] ? [d performSelector:@selector(nav)] : nil;
-        if (!nav) return;
-        SFLounge *ll = [SFLounge shared];
-        if (ll.paused || ll.remoteNames.count) [SFPairScreen showConnectionMenuOn:nav];
-        else [nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
-    };
-    return i;
 }
 
 @end

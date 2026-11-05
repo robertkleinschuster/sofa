@@ -8,6 +8,7 @@
 // hidden for this app (no stubs).
 #import "SFModel.h"
 #import "SFTheme.h"
+#import "SFPlayerHost.h"
 
 @class SFNavigator;
 
@@ -69,11 +70,18 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)availabilityOfItem:(SFItem *)item done:(SFAvailabilityDone)done;
 // --- items ---
 + (SFItem *)itemForRef:(NSString *)ref title:(NSString *)title image:(NSString *)image;   // playable item for a video ref (phone, end cards); local copy preferred
++ (void)updateStoredItem:(SFItem *)item;   // read back from storage (history, continue watching): refresh derived fields, e.g. picture URLs; a local picture stays
 + (SFPageLoader)listLoader:(NSString *)ref title:(NSString *)title;   // a playable list (playlist): first shelf = the videos in order
-+ (NSString *)focusPreloadRefForItem:(SFItem *)item;    // start resolving early when a tile gets focus
-+ (void)preloadOnFocus:(SFItem *)item;
-// --- dev (sofa-dev FIFO): app-specific commands, YES = handled ---
-+ (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg;
++ (void)preloadOnFocus:(SFItem *)item;   // focus rests on a (not downloaded) video while online: start resolving early
++ (void)prepareForRelaunch;              // Sofa restarts for an update in a moment: persist caches
+// --- remote control: a phone app as remote (YouTube "Mit TV verbinden"). The app owns pairing,
+//     protocol and its settings; the shell starts it with a host and shows its status. ---
++ (void)startRemoteWithHost:(id<SFPlayerHost>)host;
++ (void)stopRemote;                      // quit: tell the phones (best effort, short)
++ (NSString *)remoteStatus:(BOOL *)paused;   // header pill ("Handy: Pixel"), nil = nothing connected
++ (NSString *)remoteStatusNotification;      // posted when remoteStatus changes
+// --- dev (sofa-dev FIFO): app-specific commands, YES = handled. Apps see every command first. ---
++ (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host;
 @end
 
 @interface SFAppRegistry : NSObject
@@ -85,11 +93,20 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (Class)appForItem:(SFItem *)item;        // by item.source, else by its ref/identifier namespace
 + (void)startAll;
 + (void)stopAll;
++ (void)prepareAllForRelaunch;
+// remote control services of all apps
++ (void)startRemotesWithHost:(id<SFPlayerHost>)host;
++ (void)stopRemotes;
++ (NSArray *)remoteStatusNotifications;
+// status pill for a page in theme `themeID`: on pages of no app (home) every remote, in an app only its own
++ (NSString *)remoteStatusForTheme:(NSString *)themeID paused:(BOOL *)paused;
++ (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host;
 @end
 
 // Wording for a show ref / item: YES = channel ("Kanal", "Videos")
 BOOL SFShowRefIsChannel(NSString *ref);
 BOOL SFItemShowsAreChannels(SFItem *item);
+BOOL SFSourceShowsAreChannels(NSString *source);   // by app identifier
 
 // "prefix:id" helpers
 NSString *SFRefPrefix(NSString *ref);   // nil without ':'

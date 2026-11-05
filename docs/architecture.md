@@ -8,71 +8,67 @@ composed). This document is the contract.
 ## Layers
 
 ```
-src/Framework   TV UI framework + design system. Knows nothing about apps or media sources.
-                Screens, navigator, focus/key grammar, components, tokens, page model.
-src/Core        App-agnostic services: model (SFItem/SFPage), store (progress/history),
-                library (downloads, storage, keep), follows, watch later, search merge,
-                player + engines, net/cache, settings, stats, updater, dev tooling.
+src/Framework   TV UI framework + design system: theme tokens, screens + navigator, focus/key
+                grammar, components (tiles, menus, keyboard, image layers, icon art, logo).
+                Knows nothing about apps, downloads or the player.
+src/Core        App-agnostic media core: model (SFItem/SFPage), app contract + registry
+src/Library       (SFApp), store (progress/history), library (downloads, storage, follows,
+src/Player        watch later, search merge), player + engines, generic media screens
+src/Browse        (SFBrowseScreen, library pages: shows, history, downloads, Platz schaffen).
 src/Apps/<App>  Everything specific to one source: API client, JSON → SFItem mapping,
-                resolving, feeds, search, theme, logo, app-only services (YouTube: SABR
-                sidecar, yt-dlp fallback, bot breaker, phone pairing).
-src/Shell       The Sofa product: AppDelegate, launch order, home composition engine,
-                settings screen, migration. Wires Core + Apps together via the registry.
+                resolving, feeds, search, theme tokens, app-only services (YouTube: SABR
+                sidecar, yt-dlp fallback, bot breaker, phone pairing + remote commands).
+src/Shell       The Sofa product: AppDelegate (player host, dev FIFO, update relaunch), launch
+                order, app registration (SFApps.m), home composition, settings, migration.
 ```
 
-Dependency rule (checked by `tools/check-arch`): Framework imports nothing from Core/Apps/Shell;
-Core imports Framework only; Apps import Framework + Core; only Shell may import Apps (and
-only `SFAppRegistry` registration, no app classes elsewhere). No `@"youtube"`/`@"zdf"` string
-literals and no `hasPrefix:@"yt:"` outside `src/Apps`.
+Dependency rules, enforced by `tools/check-arch` (part of `tools/test-all`):
+- Framework imports only Framework + the Core foundation headers (SFCore, SFModel, SFStore,
+  SFNet, SFCurl, SFRuntime, SFVolume, SFJSON). Data it shows comes in through small
+  protocols set by the core (e.g. `SFTileStatusSource`: download chip + progress on tiles).
+- Core (Core/Library/Player/Browse) never imports Apps or Shell; it reaches apps only through
+  `SFAppRegistry` and the `SFApp` protocol.
+- An app imports Framework + Core, never Shell or another app.
+- Shell names app classes only in `SFApps.m` (registration). `SFMigration.m` (one-time Kodi
+  import) is the documented legacy exception.
+- No app identifiers or ref namespaces as string literals (`@"youtube"`, `@"yt:…"`) outside
+  `src/Apps`.
 
 ## The app contract: `SFApp`
 
-One class per app conforming to `SFApp` (Objective-C protocol, required + optional methods).
-The core never asks "which app is this?"; it asks the registry for the app that owns an id,
-ref prefix or item, and calls the protocol.
+One class per app conforming to `SFApp` (`src/Core/SFApp.h`, class methods: apps are
+stateless for the core; app services keep their own singletons). The core never asks
+"which app is this?"; `SFAppRegistry` finds the app that owns an identifier (`appNamed:`), a
+ref namespace (`appForRef:`, the part before `:`) or an item (`appForItem:`), and the core
+calls the protocol. Registering an app also registers its theme (base theme + the app's
+`configureTheme:` tokens).
 
-Required – identity and entry page:
-- `identifier` (`"zdf"`), `name`, `summary` (home tile text), `theme` (tokens, see below),
-  `logo` (+ variant), `refPrefixes` (`zdf`, `zdfshow`, …): the namespaces it owns.
-- `homeLoader` → `SFPageLoader` for the app's start page (app shelves only; the shell adds
-  the shared shelves – continue watching, watch later, downloads, search – via composition).
+Required: identity (`appIdentifier`, `appName`, `appSummary`), `refPrefixes`,
+`configureTheme:`, home tile (`homeTileColor`, `homeTileLogoVariant`), `homeLoader`.
+Optional capabilities (absent = feature hidden, never a stub) – see docs/new-app.md for the
+full table: search, resolve, shows/feeds, downloads/availability, player hooks, focus
+preload, stored-item refresh, remote control, home sections, dev commands, lifecycle
+(`start`, `stop`, `prepareForRelaunch`).
 
-Optional capabilities (absent = feature hidden, never a stub):
-- Search: `searchLoader:`, `suggestions:done:`.
-- Playback: `resolve:ref done:` (→ `SFPlaybackSource`: URL(s), engine hints, live flag),
-  `resolveOnline:` (skip local copy), `playbackDelegate` (see Player hooks).
-- Shows/channels: `showPageLoader:title:`, `showRefForItem:done:` (lookup), `followFeed:done:`
-  (new episodes for follows/auto downloads).
-- Library: `downloadSource:done:`, `downloadPauseUntil`, `availability:done:` (online check
-  for "Platz schaffen").
-- Home contributions: `homeSections` (see Home composition) – e.g. YouTube "Meine Kanäle".
-- Item actions: `actionsForItem:` → extra context-menu entries (core adds the shared ones).
-- Settings: `settingsPage` → registered under Einstellungen, not hard-coded.
-- Lifecycle: `start` / `stop` (services such as the YouTube sidecar), `didBecomeIdle`.
-- Remote control service: `remoteService` (YouTube phone pairing) exposed through a core
-  protocol `SFRemoteService` (status pill, pairing screen, commands → player).
+## Player hooks
 
-## Player hooks: `SFPlaybackSource` + `SFPlaybackDelegate`
+The player keeps the generic fallback chain (engine switch, DASH→HLS, alternates,
+re-resolve) and counts it in SFStats. App knowledge comes through the protocol, keyed by the
+stream description the app's resolver attached to the URL (`SFMPVSourceFor`):
+`playbackIsSession:` / `playbackSessionFailed:item:retried:reason:` /
+`playbackSessionLostNotification` (streams served by a local app service, e.g. YouTube SABR),
+`playbackLiveEnded:done:`, `playbackPrepareReResolve:`, `upNextForItem:done:`,
+`watchDetailsForItem:done:` (info panel). End cards come generically in the stream
+description under `endCards` (`kind`: video/playlist/channel/follow, `ref`, geometry, time);
+opening them goes through `itemForRef:title:image:` / `listLoader:title:` / show pages.
 
-The player plays an `SFPlaybackSource` (stream URLs, audio URL, engine preference, live/DVR,
-session token). App-specific recovery lives in the app's delegate, the player only calls:
-- `playback:didFail:attempt:` → retry plan (re-resolve, alternate source, give up message)
-- `playbackStatus:done:` (e.g. SABR session health), `playbackDidEnd:`
-- `upNextForItem:done:`, `endscreenForItem:done:` (cards: video/playlist/channel)
-- `noteWatched:` / `preloadOnFocus:` (focus preload budget)
-The player's generic fallback chain (engine switch, HLS/DASH alternates, re-resolve) stays in
-Core and is counted in SFStats; app delegates only add app knowledge.
+## Remote control and the player host
 
-## Home composition
-
-The home page is assembled by `SFHomeComposer` (Shell) from contributions:
-`SFHomeSection { id, title, priority, style, itemsLoader, refreshNotification, emptyPolicy }`.
-Core contributes: app tiles (from the registry), Weiterschauen, Später ansehen, Neue Folgen,
-Meine Sendungen, downloads/history/settings tiles. Apps contribute via `homeSections`
-(e.g. YouTube "Meine Kanäle" as circles). Ordering = priority bands (apps row 0, continue 100,
-watch later 200, new 300, follows 400, app sections 500+), stable inside a band. The same
-mechanism builds each app's start page frame: shared shelves (Weiterschauen for this app,
-Später ansehen, Downloads, Suche tile) + the app's `homeLoader` shelves.
+A phone remote (YouTube "Mit TV verbinden") is an app capability: `startRemoteWithHost:`,
+`stopRemote`, `remoteStatus:` (header pill text; Home shows every remote, an app page only
+its own) and `remoteStatusNotification`. The shell implements `SFPlayerHost`
+(`src/Core/SFPlayerHost.h`: navigator, visible player, present a player, wake the display)
+and hands it to remotes and to app dev commands (`handleDevCommand:arg:host:`).
 
 ## Design system (Framework)
 

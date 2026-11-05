@@ -5,18 +5,18 @@
 // ~/Library/Caches/Sofa/dev.fifo (lines: "key <up|down|left|right|select|menu|play|
 // selecthold|menuhold|next|prev>", "shot <path.png>", "home", "quit").
 #import "SFCore.h"
+#import "SFLibraryPages.h"
 #import "SFScreen.h"
 #import "SFHome.h"
+#import "SFTileStatus.h"
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
 #import "SFDevServer.h"
 #import "SFMigration.h"
-#import "SFPairScreen.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFLounge.h"
 #import "SFApps.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
@@ -77,14 +77,12 @@ static uint16_t gPort = 8765;
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
     [[SFFollows shared] start];   // after the apps (feeds)
-    [SFHome watchStorage];          // before the queue starts: a full disk asks the user to make room
+    [SFLibraryPages watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
-    // phone pairing: real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
+    [SFTileLayer setStatusSource:[SFTileStatus new]];   // download chips + progress on tiles
+    // remote control services (phone pairing): real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
-        __weak SFAppDelegate *wl = self;
-        [SFLounge shared].commandHandler = ^(NSString *cmd, NSDictionary *args) { [wl loungeCommand:cmd args:args]; };
-        [SFLounge shared].playerProvider = ^id { return [wl topPlayer]; };
-        [[SFLounge shared] start];
+        [SFAppRegistry startRemotesWithHost:self];
     }
     if (!SFDevMode) [self restoreAfterUpdate];
     [self welcomeIfFirstRun];
@@ -167,7 +165,7 @@ static uint16_t gPort = 8765;
 - (void)applicationWillTerminate:(NSNotification *)n {
     SFClearRunningMarker();
     [[SFDownloads shared] stopForExit];
-    [[SFLounge shared] stop];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
+    [SFAppRegistry stopRemotes];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
 }

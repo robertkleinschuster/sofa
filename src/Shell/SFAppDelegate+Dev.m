@@ -1,4 +1,5 @@
 #import "SFDownloads+Private.h"
+#import "SFLibraryPages.h"
 #import "SFCore.h"
 #import "SFScreen.h"
 #import "SFHome.h"
@@ -7,19 +8,10 @@
 #import "SFStore.h"
 #import "SFDevServer.h"
 #import "SFMigration.h"
-#import "SFPairScreen.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
-#import "SFCCCApp.h"
-#import "SFARDApp.h"
-#import "SFZDFApp.h"
-#import "SFORFApp.h"
-#import "SFYouTubeApp.h"
-#import "SFYTResolver.h"
-#import "SFYTBreaker.h"
 #import "SFStats.h"
-#import "SFLounge.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
 #import "SFPlayerScreen.h"
@@ -32,6 +24,7 @@
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 #import "SFAppDelegate.h"
+#import "SFApp.h"
 #import <ImageIO/ImageIO.h>
 
 @implementation SFAppDelegate (Dev)
@@ -68,6 +61,7 @@
     NSString *cmd = parts[0];
     NSString *arg = parts.count > 1 ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "] : nil;
     SFLog(@"dev: %@", line);
+    if ([SFAppRegistry handleDevCommand:cmd arg:arg host:self]) return;   // app-specific commands (docs: each app's handleDevCommand)
     if ([cmd isEqualToString:@"key"]) {
         NSDictionary *m = @{@"up": @(SFKeyUp), @"down": @(SFKeyDown), @"left": @(SFKeyLeft), @"right": @(SFKeyRight),
                             @"select": @(SFKeySelect), @"menu": @(SFKeyMenu), @"play": @(SFKeyPlayPause),
@@ -93,25 +87,6 @@
         SFMPVDevFrameShot(arg);
     } else if ([cmd isEqualToString:@"home"]) {
         [self.nav popToRoot];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // Dev: open pages directly (more stable than key sequences)
-        [self.nav push:[[SFPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"youtube"]]];
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"]) {   // Dev: ZDF brand page (crash test)
-        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
-        f.pageLoader = [SFZDFApp categoryLoader:[arg substringFromIndex:8] title:@"Test"];
-        SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"ytchannel:"]) {   // Dev: any YouTube channel page
-        SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"youtube"; f.source = @"youtube";
-        // ytchannel:<ID> or ytchannel:<ID>|<title>
-        NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
-        f.pageLoader = [SFYouTubeApp channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
-        SFOpenItem(self.nav, f, nil, 0);
-    } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // Dev: play a YouTube video from the start (startup tests)
-        SFItem *it = [SFYouTubeApp itemForVideoID:[arg substringFromIndex:3]];
-        [SFYouTubeApp fillDetails:it done:^{
-            SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
-            ps.startFromBeginning = YES;
-            [self presentPlayer:ps];
-        }];
     } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek video by resolver ref (orf:…, ard:…, zdf:…)
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.title = arg;
@@ -122,7 +97,6 @@
             if (pt.count > 1) { it.resolverRef = pt[1]; it.identifier = pt[1]; }
         } else {
             it.resolverRef = arg;
-            if ([arg hasPrefix:@"ytlive:"]) it.kind = SFItemLive;   // like a "Jetzt live" tile (no resume, live end handling)
             SFItem *dl = [[SFDownloads shared] itemFor:arg];   // downloaded: with its metadata, as from the Downloads page
             if (dl) it = dl;
         }
@@ -145,26 +119,21 @@
         ps.startFromBeginning = YES;
         [self presentPlayer:ps];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"room"]) {      // Dev: "Platz schaffen"
-        SFOpenItem(self.nav, [SFHome roomTile], nil, 0);
+        SFOpenItem(self.nav, [SFLibraryPages roomTile], nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
-        SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
+        SFOpenItem(self.nav, [SFLibraryPages downloadsTile:nil], nil, 0);
     } else if ([cmd isEqualToString:@"dlreserve"] && arg) {   // Dev: disk reserve in GB (provoke a full disk)
         [[SFDownloads shared] setStorageReserveForTesting:(unsigned long long)(arg.doubleValue * 1e9)];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
-        SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
+        SFItem *h = [SFLibraryPages historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/screenshots: app page
         [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
-        SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
+        SFOpenItem(self.nav, [SFLibraryPages downloadsTile:nil], nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
         [SFHome showSettingsOn:self.nav];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
-    } else if ([cmd isEqualToString:@"lounge"] && arg) {   // Dev: simulate a phone command: lounge <cmd> <json>
-        NSRange sp = [arg rangeOfString:@" "];
-        NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
-        id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-        [self loungeCommand:lc args:[j isKindOfClass:[NSDictionary class]] ? j : @{}];
     } else if ([cmd isEqualToString:@"dlverify"] && arg) {   // Dev: run the download verifier on a file
         NSString *path = arg;
         SFBackground(^{
@@ -181,8 +150,6 @@
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
         [[SFDownloads shared] download:it];
-    } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // Dev: simulate a bot-check pause for <secs> (this instance only)
-        [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
     } else if ([cmd isEqualToString:@"stats"]) {            // Dev: usage counters of the last <days> days (default 30)
         NSInteger days = arg.integerValue > 0 ? arg.integerValue : 30;
         [SFStatsTotals(days) enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSNumber *n, BOOL *stop) { SFLog(@"stats: %@ = %@", k, n); }];

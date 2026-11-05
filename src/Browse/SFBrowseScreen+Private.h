@@ -7,15 +7,14 @@
 #import "SFMenuScreen.h"
 #import "SFDownloads.h"
 #import "SFNet.h"
-#import "SFLounge.h"
 #import "SFFollows.h"
-#import "SFYTResolver.h"
 #import "SFLibrary.h"
 #import "SFPlayerScreen.h"
-#import "SFHome.h"
 #import "SFLogo.h"
 #import "SFSearch.h"
 #import "SFWatchLater.h"
+#import "SFApp.h"
+#import "SFLibraryPages.h"
 
 // A visible "row" section: rail = one row; grid = several rows.
 @interface SFRow : NSObject
@@ -44,7 +43,7 @@
     CAGradientLayer *_backdropFade, *_backdropFadeBottom;
     CALayer *_header;
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
-    NSTimer *_prefetchTimer;      // preload YouTube while focus rests
+    NSTimer *_prefetchTimer;      // app preload (preloadOnFocus:) while focus rests
     CALayer *_hintKey, *_phonePill, *_phoneDot;   // status line top right
     CALayer *_searchPill; CAShapeLayer *_searchIcon; SFLabel *_searchLabel;   // header: "Suche"
     BOOL _headerFocus;           // focus is on "Suche" instead of a tile

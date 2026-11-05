@@ -11,7 +11,15 @@ SFTileMetrics SFMetricsForStyle(SFTileStyle st);
 // up to a limit
 CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth);
 
+// Live state on tiles (download chip, watched progress) comes from the media core, so the component
+// stays data-agnostic. Set once at launch (Library: SFTileStatus); without a source tiles show neither.
+@protocol SFTileStatusSource <NSObject>
+- (NSString *)chipTextForItem:(SFItem *)item;   // e.g. "↓ 42 %", nil = no chip
+- (double)progressForItem:(SFItem *)item;       // watched fraction 0…1 (>= 1 = watched)
+@end
+
 @interface SFTileLayer : CALayer
++ (void)setStatusSource:(id<SFTileStatusSource>)source;
 @property (nonatomic, strong, readonly) SFItem *item;
 @property (nonatomic) BOOL focused;
 - (instancetype)initWithItem:(SFItem *)item style:(SFTileStyle)st theme:(SFTheme *)theme;

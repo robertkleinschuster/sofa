@@ -1,4 +1,8 @@
 #import "SFBrowseScreen+Private.h"
+#import "SFLibraryPages.h"
+
+// the page of a channel (show ref of a channel app): its videos need no "Zum Kanal"
+static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isShowRef:here] && SFShowRefIsChannel(here); }
 
 @implementation SFBrowseScreen (Context)
 
@@ -92,7 +96,7 @@
         SFDownloads *dl = [SFDownloads shared];
         if ([it.identifier hasPrefix:@"downloads:"]) {   // the offline layer: making room by hand
             SFMenuOption *o = [SFMenuOption option:@"Platz schaffen" action:^{
-                dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFHome roomTile], nil, 0); });
+                dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFLibraryPages roomTile], nil, 0); });
             }];
             o.detail = [dl storageSummary:nil];
             [opts addObject:o];
@@ -181,17 +185,17 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     // Online page of the show/channel (as at the source) - not when one is already there
     SFPageLoader page = it.showRef && ![it.showRef isEqualToString:here] ? SFShowPageLoader(it.showRef, it.channel) : nil;
     if (page) {
-        BOOL yt = [it.showRef hasPrefix:@"ytchannel:"];
+        BOOL yt = SFShowRefIsChannel(it.showRef);
         l->_folder = SFShowFolder(it, it.showRef, page);
         l->_title = name ? [NSString stringWithFormat:@"%@ „%@“", yt ? @"Zum Kanal" : @"Zur Sendung", name] : (yt ? @"Zum Kanal" : @"Zur Sendung");
         return l;
     }
     // No stored reference: look it up at the source when chosen (not on the channel page itself)
-    SFShowRefLookup lookup = !it.showRef && ![here hasPrefix:@"ytchannel:"] && it.kind == SFItemVideo ? SFShowRefLookupFor(it.source) : nil;
+    SFShowRefLookup lookup = !it.showRef && !SFIsChannelPage(here) && it.kind == SFItemVideo ? SFShowRefLookupFor(it.source) : nil;
     if (lookup) {
         l->_lookup = lookup;
-        // YouTube: the channel name is known; elsewhere `channel` may only be the genre (ORF lists)
-        BOOL yt = [it.source isEqualToString:@"youtube"];
+        // channels (YouTube): the channel name is known; elsewhere `channel` may only be the genre (ORF lists)
+        BOOL yt = SFItemShowsAreChannels(it);
         l->_title = yt ? (name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal") : @"Zur Sendung";
         return l;
     }
@@ -210,7 +214,7 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     if (_local) {
         SFItem *f = [SFItem new];
         f.kind = SFItemFolder; f.themeName = _local.source;
-        f.pageLoader = [SFHome showLoader:_local.name source:_local.source];
+        f.pageLoader = [SFLibraryPages showLoader:_local.name source:_local.source];
         show(SFBrowseScreenForFolder(f, nav.top.theme));
         return;
     }
@@ -218,9 +222,10 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     SFItem *it = _episode;
     _lookup(it, ^(NSString *ref) {
         if (stillValid && !stillValid()) return;   // the user has moved on (e.g. started playback)
-        // outside YouTube `channel` may only be the genre (ORF lists): the show page names itself
-        SFPageLoader pl = ref ? SFShowPageLoader(ref, [it.source isEqualToString:@"youtube"] ? it.channel : nil) : nil;
-        if (!pl) { [nav toast:[it.source isEqualToString:@"youtube"] ? @"Kanal nicht gefunden" : @"Keine Sendungsseite gefunden"]; return; }
+        // outside channel apps `channel` may only be the genre (ORF lists): the show page names itself
+        BOOL ch = SFItemShowsAreChannels(it);
+        SFPageLoader pl = ref ? SFShowPageLoader(ref, ch ? it.channel : nil) : nil;
+        if (!pl) { [nav toast:ch ? @"Kanal nicht gefunden" : @"Keine Sendungsseite gefunden"]; return; }
         show(SFBrowseScreenForFolder(SFShowFolder(it, ref, pl), nav.top.theme));
     });
 }

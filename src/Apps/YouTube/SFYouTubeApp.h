@@ -20,3 +20,6 @@
 + (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *channelID))done;   // @handle-URL -> UC…
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done; // title/channel/duration via InnerTube "player"
 @end
+
+// phone remote: one SFLounge command -> player host (SFYTRemote.m)
+void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args);

@@ -52,8 +52,12 @@ NSCursor *SFBlankCursor(void) {
 // No mouse cursor in the TV UI (see main.m hideCursor)
 - (void)resetCursorRects { if (!SFDevMode) [self addCursorRect:self.bounds cursor:SFBlankCursor()]; }
 
+static __weak SFNavigator *gMainNav;
++ (SFNavigator *)main { return gMainNav; }
+
 - (instancetype)initWithFrame:(NSRect)f {
     if ((self = [super initWithFrame:f])) {
+        if (!gMainNav) gMainNav = self;
         _stack = [NSMutableArray new];
         _root = [CALayer layer];
         _root.geometryFlipped = YES;
