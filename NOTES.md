@@ -250,6 +250,24 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 - [ ] **Distant future (user idea 2026-11-04):** multi-user + YouTube account sync natively in Sofa –
       only if anonymous resolving becomes unreliable. Then sign-in IN Sofa itself (no browser),
       maybe conveniently via the phone (code/QR like "Mit TV verbinden").
+- [ ] **Design system + TV UI framework** (user 2026-11-05: "in ein konsistentes wiederverwendbares
+      design system und framework umwandeln … auch das framework für die steuerung"; not urgent, but
+      keep it in mind with EVERY UI change). Goal: easy extension (new apps/pages/dialogs without
+      copying layout code). Scope:
+  - Tokens: SFTheme as the single source for colors, type scale, spacing (U()), radii, motion
+    durations/curves, opacities (backdrop 0.75/0.4, dim text) – no literals in screens.
+  - Components: tile (SFTile styles), shelf/grid, hero, header bar (logo, Suche, status pills,
+    OK-hint), side menu (SFMenuScreen: rows, toggles, details, scrolling, edge fade), confirm
+    dialog, toast, keyboard, image layer (fallbackSource, fades), icons (SFIconArt), subtitle
+    builder (SFDotJoin), empty/offline states.
+  - Interaction framework: SFNavigator + SFScreen key handling, focus model (rows/grids, focus
+    memory per row, Up to header), long-press semantics (OK halten = options, MENU halten = home),
+    standard menus (context menu builder), transitions; one place documenting the remote grammar.
+  - Page model: SFPage/SFShelf loaders, reloadSoon coalescing, live reload notifications.
+  - Dev tooling as part of it: FIFO commands, screenshots/stream, a component gallery page
+    (`open gallery`) rendering every component in every theme for visual regression shots.
+  - Way: incremental – extract when touching code (no big-bang rewrite); docs/ui-framework.md as
+    the contract; each extraction verified by screenshots in all themes + test-all.
 - [ ] Periodic background review agents (user request) — after every larger building block.
   - 2026-11-05 12:10 review (tile subtitles, recent downloads, AV dev frames): no real bugs; hardened SFDotJoin (variadic, ARC-safe temporaries) and the dev output attach (active player only).
 - [x] Video frames in dev screenshots/stream (2026-11-05): mpv via GL readback; AVFoundation via AVPlayerItemVideoOutput on the shared `SFAVPlayerLayer` (dev only, files/progressive). HLS never delivers pixel buffers to a video output on 10.9 (tested before/after ready, without the layer, IOSurface buffers) → HLS items get no output and stay black in dev shots; mpv is the default engine anyway.
