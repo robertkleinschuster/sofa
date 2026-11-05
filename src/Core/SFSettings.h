@@ -16,7 +16,6 @@ BOOL SFStartupQuestionsAsked(void);       // first-run setup has asked both
 void SFSetStartupQuestionsAsked(void);
 // mpv is the default player; YES = old choice (H.264 via AVFoundation). Only via defaults, emergency switch.
 BOOL SFPreferAVFoundation(void);
-// Delete watched subscription episodes one day after watching (default: on)
 // Preferred subtitle language (e.g. "de"); nil = subtitles off (default). Remembered on every
 // choice in the player and applied to the next video when the language is available.
 NSString *SFSubtitleLanguage(void);
