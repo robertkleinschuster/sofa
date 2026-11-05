@@ -337,6 +337,7 @@ static NSDate *isoDate(NSString *s) {
     t.fontBold = @"AvenirNext-Bold";
     t.fontWordmark = @"AvenirNext-Heavy";
     t.corner = 4;
+    t.headerMark = SFHeaderMarkBar;
 }
 
 // page of a show ref (zdfshow:…)

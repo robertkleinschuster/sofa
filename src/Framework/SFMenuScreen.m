@@ -114,7 +114,7 @@
     _sel = MAX(0, MIN(i, (NSInteger)_rows.count - 1));
     CALayer *row = _rows[_sel];
     SFTheme *t = self.theme;
-    NSColor *onFocus = t.light ? [NSColor whiteColor] : ([t.focus isEqual:[NSColor whiteColor]] || [t.identifier isEqualToString:@"home"] || [t.identifier isEqualToString:@"youtube"] || [t.identifier isEqualToString:@"ard"] ? SFHex(0x111111) : t.accentText);
+    NSColor *onFocus = t.focusText;
     // keep the selected row (and a peek of its neighbour) inside the visible list
     CGRect b = _list.bounds;
     CGFloat pad = U(8) + row.frame.size.height / 2, top = b.origin.y;

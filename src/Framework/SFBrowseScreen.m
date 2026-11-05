@@ -112,8 +112,7 @@
     _header = [CALayer layer];
     _header.frame = CGRectMake(0, 0, size.width, U(130));
     _header.zPosition = 50;
-    _wordmark = [SFLabel labelWithFont:[t wordmarkFont:46] color:t.light ? t.accent : t.text];
-    if ([t.identifier isEqualToString:@"youtube"]) _wordmark.color = t.text;
+    _wordmark = [SFLabel labelWithFont:[t wordmarkFont:46] color:t.wordmarkColor];
     _wordmark.text = t.wordmark;
     NSSize ws = [t.wordmark sizeWithAttributes:@{NSFontAttributeName: _wordmark.font}];
     [_wordmark sizeToFitWidth:ceil(ws.width) + 4];
@@ -131,10 +130,10 @@
         lg.frame = CGRectMake(x, U(48) + (U(50) - lh) / 2, lw, lh);
         [_header addSublayer:lg];
         x += lw + U(28);
-    } else if ([t.identifier isEqualToString:@"youtube"]) {
-        // play symbol in front of the wordmark (own interpretation)
+    } else if (t.headerMark == SFHeaderMarkPlayPill) {
+        // play symbol in front of the wordmark
         CALayer *pill = [CALayer layer];
-        pill.backgroundColor = t.accent.CGColor;
+        pill.backgroundColor = t.headerMarkColor.CGColor;
         pill.cornerRadius = U(10);
         pill.frame = CGRectMake(x, U(50), U(52), U(38));
         CAShapeLayer *tri = [CAShapeLayer layer];
@@ -148,11 +147,11 @@
         [pill addSublayer:tri];
         [_header addSublayer:pill];
         x += U(64);
-    } else if ([t.identifier isEqualToString:@"zdf"] || [t.identifier isEqualToString:@"orf"] || [t.identifier isEqualToString:@"ard"]) {
+    } else if (t.headerMark == SFHeaderMarkBar || t.headerMark == SFHeaderMarkDot) {
         CALayer *bar = [CALayer layer];
-        bar.backgroundColor = t.accent.CGColor;
+        bar.backgroundColor = t.headerMarkColor.CGColor;
         bar.frame = CGRectMake(x, U(50), U(8), U(42));
-        if ([t.identifier isEqualToString:@"ard"]) { bar.frame = CGRectMake(x, U(48), U(44), U(44)); bar.cornerRadius = U(22); bar.backgroundColor = SFHex(0x1d6fd8).CGColor; }
+        if (t.headerMark == SFHeaderMarkDot) { bar.frame = CGRectMake(x, U(48), U(44), U(44)); bar.cornerRadius = U(22); }
         [_header addSublayer:bar];
         x += bar.frame.size.width + U(16);
     }

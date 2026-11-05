@@ -10,6 +10,7 @@ void SFRegisterApps(void) {
     dispatch_once(&once, ^{
         // Sofa's own look (home, settings, history, downloads)
         [SFTheme registerTheme:@"home" builder:^(SFTheme *t) {
+            t.seekBarColor = [NSColor whiteColor];
             t.wordmark = @"Sofa";
             t.background = SFHex(0x0d0f14);
             t.backgroundTop = SFHex(0x232a3a);

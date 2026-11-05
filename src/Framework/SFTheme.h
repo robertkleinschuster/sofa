@@ -12,6 +12,9 @@ typedef NS_ENUM(NSInteger, SFTileStyle) {
     SFTileStyleButton,      // compact pill with text (actions: Folgen, Automatisch herunterladen)
 };
 
+// decoration in front of the wordmark when a theme has no logo image
+typedef NS_ENUM(NSInteger, SFHeaderMark) { SFHeaderMarkNone, SFHeaderMarkPlayPill, SFHeaderMarkBar, SFHeaderMarkDot };
+
 @interface SFTheme : NSObject
 @property (nonatomic, copy) NSString *identifier;
 @property (nonatomic, copy) NSString *wordmark;        // wordmark in the header
@@ -32,6 +35,13 @@ typedef NS_ENUM(NSInteger, SFTileStyle) {
 @property (nonatomic) BOOL uppercaseHeaders;
 @property (nonatomic, copy) NSString *logo;            // header logo instead of the wordmark
 @property (nonatomic) NSInteger logoVariant;
+// derived tokens (nil = default from the base tokens)
+@property (nonatomic, strong) NSColor *wordmarkColor;  // default: light ? accent : text
+@property (nonatomic, strong) NSColor *focusText;      // text on the focus highlight (menus); default: light ? white : (white focus ? near-black : accentText)
+@property (nonatomic, strong) NSColor *progressColor;  // watched-progress bar on tiles; default: light ? accent : focus
+@property (nonatomic, strong) NSColor *seekBarColor;   // player timeline fill; default: accent
+@property (nonatomic) SFHeaderMark headerMark;
+@property (nonatomic, strong) NSColor *headerMarkColor; // default: accent
 
 + (instancetype)themeNamed:(NSString *)name;   // registered name; unknown -> base theme
 + (void)registerTheme:(NSString *)name builder:(void (^)(SFTheme *t))builder;   // tokens on top of the base

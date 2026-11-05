@@ -321,6 +321,7 @@ static NSArray *listItems(id j) {
     t.focus = SFHex(0xd8001b);
     t.fontWordmark = @"HelveticaNeue-CondensedBlack";
     t.corner = 6;
+    t.headerMark = SFHeaderMarkBar;
 }
 
 // page of a show ref (orfprofile:…)

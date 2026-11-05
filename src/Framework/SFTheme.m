@@ -11,6 +11,15 @@ static NSFont *fontOr(NSString *name, CGFloat size, NSString *fallback) {
 - (NSFont *)medium:(CGFloat)s  { return fontOr(self.fontMedium, s, @"HelveticaNeue-Medium"); }
 - (NSFont *)bold:(CGFloat)s    { return fontOr(self.fontBold, s, @"HelveticaNeue-Bold"); }
 - (NSFont *)wordmarkFont:(CGFloat)s { return fontOr(self.fontWordmark ?: self.fontBold, s, @"HelveticaNeue-Bold"); }
+- (NSColor *)wordmarkColor { return _wordmarkColor ?: (self.light ? self.accent : self.text); }
+- (NSColor *)focusText {
+    if (_focusText) return _focusText;
+    if (self.light) return [NSColor whiteColor];
+    return [self.focus isEqual:[NSColor whiteColor]] ? SFHex(0x111111) : self.accentText;   // dark text on a white focus
+}
+- (NSColor *)progressColor { return _progressColor ?: (self.light ? self.accent : self.focus); }
+- (NSColor *)seekBarColor { return _seekBarColor ?: self.accent; }
+- (NSColor *)headerMarkColor { return _headerMarkColor ?: self.accent; }
 
 + (instancetype)base {
     SFTheme *t = [SFTheme new];

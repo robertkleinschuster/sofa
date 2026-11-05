@@ -179,7 +179,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth) {
             _progressBg.backgroundColor = [NSColor colorWithDeviceWhite:1 alpha:0.35].CGColor;
             _progressBg.frame = CGRectMake(0, ih - U(6), w, U(6));
             _progress = [CALayer layer];
-            _progress.backgroundColor = (theme.light ? theme.accent : ([theme.identifier isEqualToString:@"youtube"] ? theme.accent : theme.focus)).CGColor;
+            _progress.backgroundColor = theme.progressColor.CGColor;
             _progress.anchorPoint = CGPointZero;
             _progress.frame = CGRectMake(0, 0, 0, U(6));
             [_progressBg addSublayer:_progress];

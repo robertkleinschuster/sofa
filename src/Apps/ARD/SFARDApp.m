@@ -238,6 +238,9 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     t.fontBold = @"GillSans-Bold";
     t.fontWordmark = @"GillSans-Bold";
     t.corner = 8;
+    t.focusText = SFHex(0x111111);   // white focus
+    t.seekBarColor = [NSColor whiteColor];
+    t.headerMark = SFHeaderMarkDot; t.headerMarkColor = SFHex(0x1d6fd8);
 }
 
 // page of a show ref (ardshow:…)
