@@ -13,7 +13,6 @@ extern NSString *const SFPowerWillTurnOffNotification;
 + (void)displayOff;
 + (void)systemSleep;
 + (void)setSleepTimerMinutes:(NSInteger)minutes;   // 0 = off
-+ (NSDate *)sleepTimerFireDate;
 + (void)showPowerMenuOn:(SFNavigator *)nav;       // MENU on the home screen
 + (void)setNavigator:(SFNavigator *)nav;          // for notices (sleep timer)
 @end

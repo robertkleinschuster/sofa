@@ -27,14 +27,6 @@
     }
     return self;
 }
-- (instancetype)initWithPage:(SFPage *)page {
-    if ((self = [super initWithTheme:[SFTheme themeNamed:page.themeName ?: @"home"]])) {
-        _rows = [NSMutableArray new];
-        _page = page;
-        [self observeDownloads];
-    }
-    return self;
-}
 // keep the download status on the tiles live
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];

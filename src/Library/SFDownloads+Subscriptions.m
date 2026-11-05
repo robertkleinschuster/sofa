@@ -31,9 +31,9 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 #pragma mark Subscriptions
 
 - (void)saveSub:(NSDictionary *)s {
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO subscriptions (id,source,title,image,keepDays,since,added,lastCheck) VALUES (?,?,?,?,?,?,?,?)"
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO subscriptions (id,source,title,image,keepDays,since,added) VALUES (?,?,?,?,?,?,?)"
                      args:@[s[@"id"], s[@"source"] ?: [NSNull null], s[@"title"] ?: [NSNull null], s[@"image"] ?: [NSNull null],
-                            s[@"keepDays"] ?: @90, s[@"since"] ?: @0.0, s[@"added"] ?: @0.0, s[@"lastCheck"] ?: @0.0]];
+                            s[@"keepDays"] ?: @90, s[@"since"] ?: @0.0, s[@"added"] ?: @0.0]];
 }
 
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source {
@@ -92,7 +92,7 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
             if (!items) { SFLog(@"downloads: subscription %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
             NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
             double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
-            double since = [s[@"since"] doubleValue];
+            double since = [s[@"since"] doubleValue];   // set once, on the first check
             NSInteger added = 0, n = 0;
             for (SFItem *it in items) {
                 if (it.kind != SFItemVideo) continue;
@@ -109,8 +109,7 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
                 if (added >= 5) break;                               // at most 5 per check
                 if ([self enqueue:it sub:s[@"id"]]) added++;
             }
-            s[@"lastCheck"] = @(now);
-            [self saveSub:s];
+            if ([s[@"since"] doubleValue] != since) [self saveSub:s];   // the only thing a check changes
             if (added) SFLog(@"downloads: subscription %@: %ld new", s[@"title"], (long)added);
             if (done) done();
         });

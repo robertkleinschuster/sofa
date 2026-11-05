@@ -32,7 +32,7 @@
 #pragma mark Dev FIFO
 
 - (void)startFifo {
-    NSString *p = [SFCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
+    NSString *p = [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
     unlink(p.fileSystemRepresentation);
     mkfifo(p.fileSystemRepresentation, 0600);
     int fd = open(p.fileSystemRepresentation, O_RDWR | O_NONBLOCK);

@@ -78,6 +78,24 @@
         // 4: settings the dev mode once wrote into the real database (dev.*, lounge.dev.*); dev
         // instances have their own database now
         ^{ [self exec:@"DELETE FROM settings WHERE k LIKE 'dev.%' OR k LIKE 'lounge.dev.%'"]; },
+        // 5: data that was kept where it does not belong -
+        // - feed_cache: an app's last parsed feed per followed show/channel + its change signature
+        //   (was in the response cache, whose trimming dropped quiet channels first);
+        // - follow_items: explicit list position instead of insertion order, no unused date;
+        // - subscriptions: lastCheck was written on every check and never read
+        ^{
+            [self exec:@"CREATE TABLE feed_cache (id TEXT PRIMARY KEY, sig TEXT, items TEXT, updated REAL)"];
+            [self exec:@"INSERT INTO feed_cache (id, sig, items, updated) SELECT 'ytchannel:' || substr(k, 9), "
+                        "json_extract(CAST(v AS TEXT), '$.sig'), json_extract(CAST(v AS TEXT), '$.items'), t "
+                        "FROM jcache WHERE k LIKE 'yt.feed.%' AND json_type(CAST(v AS TEXT), '$.items') = 'array'"];
+            [self exec:@"DELETE FROM jcache WHERE k LIKE 'yt.feed.%'"];
+            [self exec:@"CREATE TABLE follow_items_new (follow TEXT, id TEXT, pos INTEGER, item TEXT, PRIMARY KEY(follow, id))"];
+            [self exec:@"INSERT INTO follow_items_new (follow, id, pos, item) SELECT follow, id, "
+                        "row_number() OVER (PARTITION BY follow ORDER BY rowid) - 1, item FROM follow_items"];
+            [self exec:@"DROP TABLE follow_items"];
+            [self exec:@"ALTER TABLE follow_items_new RENAME TO follow_items"];
+            [self exec:@"ALTER TABLE subscriptions DROP COLUMN lastCheck"];
+        },
     ];
 }
 
@@ -124,6 +142,8 @@ static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
 - (void)trimCacheNow {
     double now = [NSDate date].timeIntervalSince1970;
     [self runNow:@"DELETE FROM jcache WHERE t < ?" args:@[@(now - kCacheKeep)]];
+    // feeds of shows no longer followed (or quiet for months: then fetched once more)
+    [self runNow:@"DELETE FROM feed_cache WHERE updated < ?" args:@[@(now - 90 * 86400)]];
     // size cap in one pass: newest first, everything from the entry that crosses the cap on goes
     long long bytes = 0;
     for (NSDictionary *r in [self rowsNow:@"SELECT t, LENGTH(v) AS n FROM jcache ORDER BY t DESC" args:nil]) {
@@ -262,9 +282,6 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     }
     return items;
 }
-- (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source {
-    return [self query:@"1=1" limit:limit source:source];
-}
 // History: recently played content with timestamp (@{item, updated, watched, pos})
 - (NSArray *)history:(NSInteger)limit {
     NSMutableArray *out = [NSMutableArray new];
@@ -312,6 +329,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     return v;
 }
 - (void)setSetting:(NSString *)value forKey:(NSString *)key {
+    if (!value) { [self run:@"DELETE FROM settings WHERE k=?" args:@[key]]; return; }   // nil = unset, no empty row
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO settings (k,v) VALUES (?,?)", -1, &st, NULL) != SQLITE_OK) return;

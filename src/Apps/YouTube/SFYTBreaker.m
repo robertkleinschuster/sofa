@@ -12,7 +12,7 @@
 }
 
 + (NSString *)filePath {
-    return [[SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"];
+    return [[SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"];   // one IP: every instance
 }
 
 - (NSTimeInterval)blockedUntil {

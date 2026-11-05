@@ -85,20 +85,6 @@
     return out;
 }
 
-- (void)importItems:(NSArray *)items once:(NSString *)key {
-    if (!items.count || [[SFStore shared] setting:key].length) return;
-    // keep the source's order (top = newest), dated before everything already saved
-    NSTimeInterval base = _entries.count ? [[_entries.lastObject objectForKey:@"added"] doubleValue] - 1 : [NSDate date].timeIntervalSince1970;
-    NSUInteger n = 0;
-    for (NSUInteger i = 0; i < items.count; i++) {
-        SFItem *it = items[i];
-        if (it.kind != SFItemVideo) continue;
-        if ([self insert:it at:base - i]) n++;
-    }
-    [[SFStore shared] setSetting:@"1" forKey:key];
-    SFLog(@"watch later: adopted %lu from %@", (unsigned long)n, key);
-    if (n) [self changed];
-}
 @end
 
 SFPageLoader SFWithWatchLater(SFPageLoader loader, NSString *source) {

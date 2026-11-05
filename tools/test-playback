@@ -51,7 +51,11 @@ start() {
   echo "dev instance did not start"; exit 1
 }
 # FIFO opened read-write: never blocks (a crashed app used to hang the test forever on open)
-stop() { echo quit 1<>"$FIFO" 2>/dev/null; sleep 2; kill $APP 2>/dev/null; APP=; }
+stop() {   # quit, then wait for the process (up to 5 s) instead of a fixed pause
+  echo quit 1<>"$FIFO" 2>/dev/null
+  for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
+  kill $APP 2>/dev/null; APP=
+}
 cmd() {
   if ! kill -0 "$APP" 2>/dev/null; then [ -z "${dead:-}" ] && bad "app not running (crashed?)"; dead=1; return; fi
   echo "$*" 1<>"$FIFO"
@@ -67,6 +71,7 @@ mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
+  defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings (section 6)
   rm -rf "$T"
 }
 trap cleanup EXIT
@@ -110,14 +115,24 @@ m=$(mark); cmd "play $ORF"; waitlog $m 'player: play local.mp4'
 grep -q 'player: play local.mp4' "$LOG" && ok "download preferred when present" || bad "download not used"
 m=$(mark); cmd "key selecthold"; waitlog $m 'info: panel for'; shot "$T/info-download.png"; keep "$T/info-download.png"
 cmd "key select"   # first action of a downloaded video with one audio track: "Online abspielen"
-waitlog $m 'player: play apasfiis\|player: play .*via mpv' 60; sleep 3   # + a moment for the subtitle preference
+waitlog $m 'player: play apasfiis\|player: play .*via mpv' 60
 since $m | grep -q 'Download -> online' && ok "switched to online" || bad "no switch"
 since $m | grep -q 'player: play apasfiis\|player: play .*via mpv' && ! since $m | grep -q 'player: play local.mp4' \
   && ok "online stream playing (not the file again)" || bad "the local file was played again"
 
+stop
+
 echo "==> 6. remembered subtitle preference"
-since $m | grep -q 'subtitles .*remembered language' && ok "subtitles applied automatically" \
-  || echo "  skip  no remembered subtitle preference in the dev domain (defaults write de.sofa.dev subtitlesSameLanguage -bool YES)"
+# local file: German audio + German subtitles; preference "subtitles in the audio language" set
+printf '1\n00:00:00,000 --> 00:01:30,000\nUntertitel\n' > "$T/de.srt"
+"$FF" -hide_banner -loglevel error -y -i "$T/local.mp4" -i "$T/de.srt" -map 0 -map 1 -c copy -c:s mov_text \
+      -metadata:s:a:0 language=deu -metadata:s:s:0 language=deu "$T/subs.mp4"
+defaults write de.sofa.dev.$INST subtitlesSameLanguage -bool YES
+start
+m=$(mark); cmd "playlist $T/subs.mp4"
+waitlog $m 'subtitles .*remembered language' && ok "subtitles applied automatically" \
+  || bad "remembered subtitle preference not applied: $(since $m | grep -i 'subtitle\|player:' | tail -2)"
+defaults delete de.sofa.dev.$INST >/dev/null 2>&1
 stop
 
 echo "==> 7. stream stops delivering -> stall watchdog"
@@ -141,7 +156,7 @@ for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' &&
 since $m | grep -q 'mpv: no progress for 6 s' && ok "stall detected" || bad "stall not detected: $(since $m | grep 'player:\|mpv:' | tail -3)"
 for i in $(seq 1 40); do since $m | grep -q 'player: failed' && break; sleep 0.5; done
 since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable failure" || bad "no final failure after the stall"
-kill $SRV 2>/dev/null
+kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
 stop
 
 echo "==> 8. YouTube end screen (fake data, offline)"

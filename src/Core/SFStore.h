@@ -12,11 +12,10 @@
 - (void)setWatched:(BOOL)w forItem:(SFItem *)item;
 - (void)flush;   // complete pending writes (quit)
 - (NSArray *)continueWatching:(NSInteger)limit source:(NSString *)source;  // SFItem
-- (NSArray *)recentlyPlayed:(NSInteger)limit source:(NSString *)source;
 - (NSArray *)history:(NSInteger)limit;   // history: @{item, updated, watched, pos}, newest first
 - (void)removeFromContinue:(NSString *)identifier;
 - (NSString *)setting:(NSString *)key;
-- (void)setSetting:(NSString *)value forKey:(NSString *)key;
+- (void)setSetting:(NSString *)value forKey:(NSString *)key;   // nil removes the key
 // Simple JSON cache for providers (e.g. Mediathek responses), with age.
 - (id)cachedJSON:(NSString *)key maxAge:(NSTimeInterval)age;
 - (void)cacheJSON:(id)obj forKey:(NSString *)key;

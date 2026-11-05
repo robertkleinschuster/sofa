@@ -43,7 +43,6 @@ static __weak SFNavigator *gNav;
     });
 }
 
-+ (NSDate *)sleepTimerFireDate { return gFireDate; }
 
 + (void)setSleepTimerMinutes:(NSInteger)minutes {
     [gSleepTimer invalidate]; gSleepTimer = nil;

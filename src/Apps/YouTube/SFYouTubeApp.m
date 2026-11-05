@@ -1022,17 +1022,11 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     });
 }
 
-// The stored feed of a channel (response cache table, trimmed with it): {"sig": RSS signature,
-// "items": [item dictionaries]}. Signature "<ids>" = the list holds every RSS video;
-// "<ids>@<epoch>" = it did not (InnerTube lagging behind RSS, a premiere not aired yet) - then
-// reused for 2 h only, so the new upload shows up soon without asking on every refresh.
-static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingString:cid]; }
-
-+ (void)storeFeed:(NSArray *)items sig:(NSString *)sig channel:(NSString *)cid {
-    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithObject:[items valueForKey:@"dictionaryRepresentation"] forKey:@"items"];
-    if (sig) d[@"sig"] = sig;
-    [[SFStore shared] cacheJSON:d forKey:feedKey(cid)];
-}
+// The stored feed of a channel (table feed_cache, docs/architecture.md "Data"): the last parsed
+// list + its RSS signature. Signature "<ids>" = the list holds every RSS video; "<ids>@<epoch>" =
+// it did not (InnerTube lagging behind RSS, a premiere not aired yet) - then reused for 2 h only,
+// so the new upload shows up soon without asking on every refresh.
+static NSString *feedID(NSString *cid) { return [@"ytchannel:" stringByAppendingString:cid]; }
 
 static NSArray *itemsFrom(NSArray *dicts) {
     NSMutableArray *a = [NSMutableArray new];
@@ -1041,18 +1035,26 @@ static NSArray *itemsFrom(NSArray *dicts) {
     return a;
 }
 
-// kept as long as the response cache keeps it (SFStore trimCache: 14 days without a change, 64 MB)
-+ (NSArray *)storedFeed:(NSString *)cid sig:(NSString **)sig {
-    id e = [[SFStore shared] cachedJSON:feedKey(cid) maxAge:DBL_MAX];
-    NSDictionary *d = [e isKindOfClass:[NSDictionary class]] ? e : nil;
-    if (sig) *sig = [d[@"sig"] isKindOfClass:[NSString class]] ? d[@"sig"] : nil;
-    return itemsFrom([d[@"items"] isKindOfClass:[NSArray class]] ? d[@"items"] : @[]);
++ (void)storeFeed:(NSArray *)items sig:(NSString *)sig channel:(NSString *)cid {
+    NSData *j = [NSJSONSerialization dataWithJSONObject:[items valueForKey:@"dictionaryRepresentation"] options:0 error:nil];
+    if (!j) return;
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO feed_cache (id, sig, items, updated) VALUES (?,?,?,?)"
+                     args:@[feedID(cid), sig ?: [NSNull null], [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding],
+                            @([NSDate date].timeIntervalSince1970)]];
 }
 
-// One-time move to the stored feeds (2026-11-05). Until 0.3.9 the raw browse answers (~1 MB each)
-// sat in the response cache and the signatures in the settings (yt.feedsig.<cid>): the parsed lists
-// with their signatures become the stored feeds, the rest goes - otherwise every channel would ask
-// InnerTube at once on the first refresh (a burst right after a bot pause).
++ (NSArray *)storedFeed:(NSString *)cid sig:(NSString **)sig {
+    NSDictionary *r = [[SFStore shared] rows:@"SELECT sig, items FROM feed_cache WHERE id=?" args:@[feedID(cid)]].firstObject;
+    if (sig) *sig = [r[@"sig"] isKindOfClass:[NSString class]] ? r[@"sig"] : nil;
+    id list = [r[@"items"] isKindOfClass:[NSString class]]
+        ? [NSJSONSerialization JSONObjectWithData:[r[@"items"] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    return itemsFrom([list isKindOfClass:[NSArray class]] ? list : @[]);
+}
+
+// One-time move to the stored feeds (0.3.8 -> 0.3.9). Until then the raw browse answers (~1 MB
+// each) sat in the response cache and the signatures in the settings (yt.feedsig.<cid>): the parsed
+// lists with their signatures become the stored feeds, the rest goes - otherwise every channel
+// would ask InnerTube at once on the first refresh (a burst right after a bot pause).
 + (void)migrateFeedStorage {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -1069,11 +1071,6 @@ static NSArray *itemsFrom(NSArray *dicts) {
                 if (items.count) lists[[@"UC" stringByAppendingString:[rest substringToIndex:22]]] = items;
             }
             [drop addObject:@[@"DELETE FROM jcache WHERE k=?", @[r[@"k"]]]];
-        }
-        for (NSDictionary *r in [st rows:@"SELECT k FROM jcache WHERE k LIKE 'yt.feed.%'" args:nil]) {   // 0.3.9 builds: bare lists
-            id j = [st cachedJSON:r[@"k"] maxAge:DBL_MAX];
-            NSArray *items = [j isKindOfClass:[NSArray class]] ? itemsFrom(j) : nil;
-            if (items.count) lists[[r[@"k"] substringFromIndex:8]] = items;
         }
         [lists enumerateKeysAndObjectsUsingBlock:^(NSString *cid, NSArray *items, BOOL *stop) {
             [self storeFeed:items sig:[st setting:[@"yt.feedsig." stringByAppendingString:cid]] channel:cid];

@@ -1,7 +1,12 @@
 #import "SFSettings.h"
 #import "SFCore.h"
 
-static CFStringRef SFDomain(void) { return SFDevMode ? CFSTR("de.sofa.dev") : CFSTR("de.sofa.app"); }
+// dev instances: one domain each (de.sofa.dev.<instance>) - parallel tests never share settings
+static CFStringRef SFDomain(void) {
+    static CFStringRef d; static dispatch_once_t once;
+    dispatch_once(&once, ^{ d = SFDevMode ? CFBridgingRetain([@"de.sofa.dev." stringByAppendingString:SFDevInstanceName() ?: @"view"]) : CFSTR("de.sofa.app"); });
+    return d;
+}
 
 static BOOL SFGetBool(CFStringRef key, BOOL dflt) {
     CFPropertyListRef v = CFPreferencesCopyAppValue(key, SFDomain());
@@ -21,8 +26,6 @@ BOOL SFRemoteLaunchEnabled(void) { return SFGetBool(CFSTR("remoteLaunch"), YES);
 void SFSetRemoteLaunchEnabled(BOOL on) { SFSetBool(CFSTR("remoteLaunch"), on); }
 BOOL SFAutoUpdateEnabled(void) { return SFGetBool(CFSTR("autoUpdate"), YES); }
 void SFSetAutoUpdateEnabled(BOOL on) { SFSetBool(CFSTR("autoUpdate"), on); }
-BOOL SFStartupQuestionsAsked(void) { return SFGetBool(CFSTR("startupAsked"), NO); }
-void SFSetStartupQuestionsAsked(void) { SFSetBool(CFSTR("startupAsked"), YES); }
 // Hidden emergency switch (no UI): defaults write de.sofa.app preferAVFoundation -bool YES
 BOOL SFPreferAVFoundation(void) { return SFGetBool(CFSTR("preferAVFoundation"), NO); }
 

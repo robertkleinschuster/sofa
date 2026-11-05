@@ -18,7 +18,7 @@ mkdir -p "$OUT"
 
 make -C "$SRC" >/dev/null || exit 1
 : > "$LOG"
-defaults delete de.sofa.dev >/dev/null 2>&1   # fresh dev settings (show welcome/questions)
+defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # fresh settings of this instance (show welcome/questions)
 "$APP/Contents/MacOS/Sofa" --dev --instance "$INST" --port 47990 >/dev/null 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT

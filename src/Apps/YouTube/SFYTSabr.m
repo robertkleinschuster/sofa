@@ -119,7 +119,7 @@ static const NSTimeInterval kHealthyRun = 300;
     t.launchPath = SFTool(@"node");
     // the breaker file is ytresolver.py's: one bot-check state for both paths (same IP)
     t.arguments = @[SabrMain(), @"--port", @"0", @"--state", state,
-                    @"--block-file", [cache stringByAppendingPathComponent:@"youtube-block.json"]];
+                    @"--block-file", [SFYTBreaker filePath]];
     t.currentDirectoryPath = [SabrMain() stringByDeletingLastPathComponent];
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];

@@ -253,7 +253,6 @@ static uint16_t gPort = 8765;
     __weak SFAppDelegate *ws = self;
     void (^done)(BOOL) = ^(BOOL on) {
         SFSetRemoteLaunchEnabled(on);
-        SFSetStartupQuestionsAsked();
         SFLog(@"start: first-run setup autostart=%d remoteLaunch=%d", SFAutostartEnabled(), on);
         dispatch_async(dispatch_get_main_queue(), ^{
             [ws.nav toast:@"Fertig – viel Spaß mit Sofa!"];

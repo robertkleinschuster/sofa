@@ -107,7 +107,6 @@ cmd_do() {
     set -- $step
     case "$1" in
       key) shift; cmd_key "$@" ;;
-  open) send "open $2" ;;
       open) send "open $2"; sleep 1 ;;
       shot) cmd_shot "$2" ;;
       wshot) cmd_wshot "$2" ;;

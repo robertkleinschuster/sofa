@@ -40,8 +40,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
-        // in the order they were written: the feed's order (refreshOne compares against it)
-        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY rowid" args:nil]) {
+        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY follow, pos" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
             if (![d isKindOfClass:[NSDictionary class]]) continue;
             NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
@@ -88,16 +87,6 @@ static const NSTimeInterval kRefresh = 30 * 60;
     _timer = [NSTimer scheduledTimerWithTimeInterval:kRefresh target:self selector:@selector(refreshNow) userInfo:nil repeats:YES];
 }
 
-- (void)importFollows:(NSArray *)folders key:(NSString *)onceKey {
-    SFStore *st = [SFStore shared];
-    if (!folders.count || [st setting:onceKey]) return;
-    NSUInteger n = 0;
-    for (SFItem *f in folders) if ([self canFollow:f] && !_follows[f.identifier]) { [self addFollow:f]; n++; }
-    [st setSetting:[@(n) stringValue] forKey:onceKey];
-    SFLog(@"follows: adopted %lu from %@", (unsigned long)n, onceKey);
-    if (n) { [self changed]; [self refreshNow]; }
-}
-
 #pragma mark Follows
 
 - (BOOL)canFollow:(SFItem *)folder {
@@ -125,8 +114,9 @@ static const NSTimeInterval kRefresh = 30 * 60;
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
-    [[SFStore shared] run:@"DELETE FROM follows WHERE id=?" args:@[identifier]];
-    [[SFStore shared] run:@"DELETE FROM follow_items WHERE follow=?" args:@[identifier]];
+    [[SFStore shared] runAll:@[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
+                               @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]],
+                               @[@"DELETE FROM feed_cache WHERE id=?", @[identifier]]]];
     if ([[SFDownloads shared] isSubscribed:identifier]) [[SFDownloads shared] unsubscribe:identifier];   // following is a prerequisite
     SFLog(@"follows: - %@", identifier);
     [self changed];
@@ -215,8 +205,8 @@ static NSArray *stable(NSArray *dicts) {
                 NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
                 [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
                     NSData *j = [NSJSONSerialization dataWithJSONObject:dicts[n] options:0 error:nil];
-                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,item,date) VALUES (?,?,?,?)",
-                                        @[f[@"id"], c.identifier, j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}", @(c.date.timeIntervalSince1970)]]];
+                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos,item) VALUES (?,?,?,?)",
+                                        @[f[@"id"], c.identifier, @(n), j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}"]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
             }

@@ -10,7 +10,6 @@
 - (void)add:(SFItem *)item;
 - (void)remove:(NSString *)identifier;
 - (NSArray *)items:(NSString *)source;                          // newest first, nil = all apps
-- (void)importItems:(NSArray *)items once:(NSString *)key;      // one-time import (YouTube account)
 @end
 
 // add the shelf "Später ansehen" to an app's start page loader (after "Weiterschauen")

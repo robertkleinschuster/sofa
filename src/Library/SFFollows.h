@@ -24,5 +24,4 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
 - (void)refreshNow;
-- (void)importFollows:(NSArray *)folders key:(NSString *)onceKey;   // one-time import (e.g. YouTube account)
 @end

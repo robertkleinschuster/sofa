@@ -40,7 +40,7 @@ EOF
 /opt/local/bin/python3.14 -m http.server --bind 127.0.0.1 --directory "$T/www" $PORT >/dev/null 2>&1 &
 SRV=$!
 rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"
-defaults delete de.sofa.dev >/dev/null 2>&1
+defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings only
 : > "$LOG"
 SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
 APP=$!

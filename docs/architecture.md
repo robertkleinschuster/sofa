@@ -48,7 +48,7 @@ Required: identity (`appIdentifier`, `appName`, `appSummary`), `refPrefixes`,
 Optional capabilities (absent = feature hidden, never a stub) – see docs/new-app.md for the
 full table: search, resolve, shows/feeds, downloads/availability, player hooks, focus
 preload, stored-item refresh, remote control, home sections, dev commands, lifecycle
-(`start`, `stop`, `prepareForRelaunch`).
+(`start`, `prepareForRelaunch`).
 
 ## Player hooks
 
@@ -111,14 +111,15 @@ ansehen + the Suche tile and header button.
   transaction with its version bump (a failing step rolls back and is retried next launch).
   Never change a shipped step, add one. Modules only read and write their tables.
 - Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
-  `downloads`, `subscriptions`, `follows`/`follow_items`, `watch_later`, `stats`. Items are
+  `downloads`, `subscriptions`, `follows`/`follow_items` (ordered by `pos`), `feed_cache` (an
+  app's last parsed feed per followed show + change signature), `watch_later`, `stats`. Items are
   stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
 - WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.
   The response cache is trimmed after launch and daily: 14 days, 64 MB at most, oldest first.
-- `settings` holds preferences and small state only. Derived data an app keeps between runs
-  goes into `jcache` under its own key (e.g. YouTube `yt.feed.<channel>` = parsed feed + RSS
-  signature), so it expires with the cache and never grows the settings.
+- `settings` holds preferences and small state only (`setSetting:nil` removes a key). Raw
+  answers go to `jcache` (trimmed); data an app derives and must keep goes to its own table
+  (`feed_cache`, dropped 90 days after its last change).
 - Several writes that belong together go through `runAll:` (one transaction); write only what
   changed (follows compare the new list with the loaded one).
 
@@ -128,8 +129,11 @@ ansehen + the Suche tile and header button.
 directory is decided once at launch (`SFSetDevInstance`) - `~/Library/Application
 Support/Sofa-dev/NAME` (database, sidecar state, downloads under `Downloads/`), or
 `$SOFA_DATA_DIR`. Every test suite runs with a fresh temporary `SOFA_DATA_DIR`, so tests start
-from an empty database, leave nothing behind and can run side by side. Caches stay shared
-(`~/Library/Caches/Sofa`: the YouTube bot-check pause must hold for every instance on this IP).
+from an empty database, leave nothing behind and can run side by side. Caches
+(`SFCacheDir`: images, the updater's work dir, yt-dlp's cache) live in `<data dir>/Caches`, and
+settings in the defaults domain `de.sofa.dev.<instance>`. Shared on purpose
+(`SFSharedCacheDir`, `~/Library/Caches/Sofa`): only the YouTube bot-check pause (one IP for every
+instance) and the dev control pipes `dev-<instance>.fifo`.
 `SOFA_ONLY_APPS=a,b` registers only those apps (tests without network).
 
 Test knobs are environment variables read through `SFDevEnv` / `SFDevSeconds` (SFCore), which

@@ -18,7 +18,6 @@
 @property (nonatomic) BOOL overlay;
 @property (nonatomic) NSInteger heroPlotLines;             // max. description lines in the hero (default 3)
 - (instancetype)initWithLoader:(SFPageLoader)loader theme:(SFTheme *)theme;
-- (instancetype)initWithPage:(SFPage *)page;
 - (void)reload;
 - (void)setPage:(SFPage *)page keepFocus:(BOOL)keep;
 - (SFItem *)focusedItem;

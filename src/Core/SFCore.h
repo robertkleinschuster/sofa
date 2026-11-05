@@ -50,8 +50,14 @@ NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id element));
 // not by per-file checks: Application Support/Sofa-dev/<instance>, or $SOFA_DATA_DIR (tests: a
 // fresh temporary directory per run). Set once at launch, before anything is stored.
 void SFSetDevInstance(NSString *instance);
+NSString *SFDevInstanceName(void);   // "view" by default; nil in the real app
 NSString *SFAppSupportDir(void);
-NSString *SFCacheDir(void);                        // ~/Library/Caches/Sofa
+// Caches: the real app ~/Library/Caches/Sofa, a dev instance <data dir>/Caches (images, the
+// updater's work dir, yt-dlp's cache - nothing a test does reaches the real app's).
+NSString *SFCacheDir(void);
+// Shared by every instance on this machine, on purpose: what must hold for all of them (the
+// YouTube bot-check pause: one IP) and the dev control pipes. ~/Library/Caches/Sofa.
+NSString *SFSharedCacheDir(void);
 
 // Animation helper: animate all changes in the block with a uniform curve.
 void SFAnimate(CFTimeInterval dur, dispatch_block_t changes);

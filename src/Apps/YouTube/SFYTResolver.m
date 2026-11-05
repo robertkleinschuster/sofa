@@ -106,7 +106,6 @@ static const NSTimeInterval kIdleExit = 600;
 static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.py
 + (NSString *)savedCachePath { return [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]; }
 - (void)loadSavedCache {
-    if (SFDevMode) return;   // dev instances share the folder with the real app -> don't touch
     NSString *path = [SFYTResolver savedCachePath];
     NSData *d = [NSData dataWithContentsOfFile:path];
     [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
@@ -121,7 +120,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     if (_cache.count) SFLog(@"yt: %lu resolutions carried over from the last run", (unsigned long)_cache.count);
 }
 - (void)saveCache {
-    if (!_cache.count || SFDevMode) return;
+    if (!_cache.count) return;
     NSData *d = [NSJSONSerialization dataWithJSONObject:_cache options:0 error:nil];
     NSString *path = [SFYTResolver savedCachePath];
     if (d && [d writeToFile:path atomically:YES])
@@ -166,6 +165,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
     [env removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
     env[@"PYTHONUNBUFFERED"] = @"1";
+    env[@"SOFA_YT_BLOCK_FILE"] = [SFYTBreaker filePath];   // shared by every instance (one IP)
     // yt-dlp from the zipapp (bundle or update), Sofa's PO token plugin always from the bundle
     env[@"PYTHONPATH"] = [NSString stringWithFormat:@"%@:%@", [ytdir stringByAppendingPathComponent:@"yt-dlp"],
                           [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"yt-dlp-plugins"]];
@@ -200,7 +200,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 // Without TLS verification - only the signature counts (res/ytdlp_verify.py).
 - (void)updateYTDLP {
     BOOL test = YTTestDir().length > 0;
-    if (_updating || (SFDevMode && !test)) return;   // dev instances share the folder with the real app
+    if (_updating || (SFDevMode && !test)) return;   // dev instances: no release downloads (tests point at a fixture)
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
     if (!test && now - [[[SFStore shared] setting:kUpdatedKey] doubleValue] < kUpdateEvery) return;
     NSString *py = kBasePython;

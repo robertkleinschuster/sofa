@@ -93,7 +93,7 @@ BG_MAX_WAIT = 60
 # (downloads) sends nothing until the pause is over: 5 min, doubling up to
 # 1 h, reset by the first success. Playback the user starts still tries (the flag is often
 # intermittent). Persisted: shared with the sidecar, and this process comes and goes.
-BLOCK_FILE = os.path.join(CACHE, "youtube-block.json")
+BLOCK_FILE = os.environ.get("SOFA_YT_BLOCK_FILE") or os.path.join(CACHE, "youtube-block.json")
 BLOCK_MIN, BLOCK_MAX = 300, 3600
 block_lock = threading.Lock()
 block = {"until": 0, "backoff": 0}
