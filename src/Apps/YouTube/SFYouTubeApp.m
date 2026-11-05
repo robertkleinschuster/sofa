@@ -997,12 +997,21 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     return r.count ? r : nil;
 }
 
-// subscription feed: a channel's long videos, newest first (always as online items).
-// The RSS feed is the change detector + date source: while its video list is unchanged, the last
-// InnerTube answer is reused (up to a week) - most refreshes then cost no InnerTube request at all.
+// Subscription feed: a channel's long videos, newest first (always as online items). Background
+// work (SFFollows, every 30 min for every followed channel) - so it has to be cheap and polite:
+// - the RSS feed (one small request) is the change detector, the date and the views source;
+// - while its video list is unchanged, the channel's last parsed list (stored, a few KB) is the
+//   answer - no InnerTube request at all;
+// - during a bot-check pause (SFYTBreaker) nothing is requested: every request while flagged
+//   prolongs the flag (2026-11-05: feeds kept browsing through a pause).
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done {
     NSString *cid = SFRefID(ref);
     if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
+    if ([SFYTBreaker shared].blockedUntil) {   // follows keep what they have
+        NSArray *last = [self storedFeed:cid];
+        done(last.count ? last : nil, last.count ? nil : SFError(@"YouTube pausiert gerade (Bot-Prüfung)."));
+        return;
+    }
     SFBackground(^{
         NSDictionary *views = nil, *published = rssPublished(cid, &views);
         [self feed:cid published:published done:^(NSArray *items, NSError *e) {
@@ -1012,42 +1021,66 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     });
 }
 
+static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingString:cid]; }
+
++ (NSArray *)storedFeed:(NSString *)cid {
+    NSMutableArray *a = [NSMutableArray new];
+    id list = [[SFStore shared] cachedJSON:feedKey(cid) maxAge:30 * 86400];
+    for (NSDictionary *d in ([list isKindOfClass:[NSArray class]] ? list : @[]))
+        if ([d isKindOfClass:[NSDictionary class]]) { SFItem *i = [SFItem itemWithDictionary:d]; if (i.identifier) [a addObject:i]; }
+    return a;
+}
+
 + (void)feed:(NSString *)cid published:(NSDictionary *)published done:(void (^)(NSArray *, NSError *))done {
     NSString *sigKey = [@"yt.feedsig." stringByAppendingString:cid];
     NSString *sig = published ? [[published.allKeys sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","] : nil;
-    BOOL unchanged = sig && [[[SFStore shared] setting:sigKey] isEqualToString:sig];
-    [self feedItems:cid cache:unchanged ? 7 * 86400 : 900 done:^(NSArray *online, NSError *e) {
-        // The signature may only be stored next to an answer that holds every RSS video: a cached
-        // or fallback answer (SFNet serves stale data on errors) or InnerTube lagging behind RSS
-        // would otherwise freeze the list without the new upload for a week (review 2026-11-05).
-        // Incomplete: one fresh fetch; still incomplete (lag, a premiere not aired yet): try again next time.
-        BOOL (^complete)(NSArray *) = ^BOOL(NSArray *items) {
+    void (^finish)(NSArray *, NSError *) = ^(NSArray *items, NSError *err) {
+        NSDate *oldest = nil;
+        for (SFItem *i in items) {
+            NSDate *exact = published[restOfID(i.identifier)];
+            if (exact) { i.date = exact; oldest = oldest ? [oldest earlierDate:exact] : exact; }
+        }
+        // beyond the 15 RSS entries only the approximation exists (relative to a possibly week-old
+        // answer): never newer than the oldest exact entry, so the order stays right
+        for (SFItem *i in items)
+            if (oldest && !published[restOfID(i.identifier)] && (!i.date || [i.date compare:oldest] != NSOrderedAscending))
+                i.date = [oldest dateByAddingTimeInterval:-60];
+        done(items, err);
+    };
+    // Stored signature: "<sig>" = the stored list holds every RSS video; "<sig>@<epoch>" = it did not
+    // (InnerTube lagging behind RSS, a premiere not aired yet) - then reused for 2 h only, so the
+    // new upload shows up soon without asking InnerTube on every refresh.
+    NSString *stored = [[SFStore shared] setting:sigKey];
+    NSArray *parts = [stored componentsSeparatedByString:@"@"];
+    BOOL unchanged = sig && [parts.firstObject isEqualToString:sig] &&
+                     (parts.count == 1 || [NSDate date].timeIntervalSince1970 - [parts.lastObject doubleValue] < 2 * 3600);
+    if (unchanged) {
+        NSArray *last = [self storedFeed:cid];
+        if (last.count) { finish(last, nil); return; }
+    }
+    [self feedItems:cid done:^(NSArray *online, NSError *e) {
+        if (!online) {   // failed: the last known list
+            NSArray *last = [self storedFeed:cid];
+            finish(last.count ? last : nil, last.count ? nil : e);
+            return;
+        }
+        NSMutableArray *dicts = [NSMutableArray new];
+        for (SFItem *i in online) [dicts addObject:[i dictionaryRepresentation]];
+        [[SFStore shared] cacheJSON:dicts forKey:feedKey(cid)];
+        if (sig) {
             NSMutableSet *ids = [NSMutableSet new];
-            for (SFItem *i in items) [ids addObject:restOfID(i.identifier)];
-            return published.count && [[NSSet setWithArray:published.allKeys] isSubsetOfSet:ids];
-        };
-        void (^finish)(NSArray *, NSError *) = ^(NSArray *items, NSError *err) {
-            if (items && sig && !unchanged && complete(items)) [[SFStore shared] setSetting:sig forKey:sigKey];
-            NSDate *oldest = nil;
-            for (SFItem *i in items) {
-                NSDate *exact = published[restOfID(i.identifier)];
-                if (exact) { i.date = exact; oldest = oldest ? [oldest earlierDate:exact] : exact; }
-            }
-            // beyond the 15 RSS entries only the approximation exists (relative to a possibly week-old
-            // answer): never newer than the oldest exact entry, so the order stays right
-            for (SFItem *i in items)
-                if (oldest && !published[restOfID(i.identifier)] && (!i.date || [i.date compare:oldest] != NSOrderedAscending))
-                    i.date = [oldest dateByAddingTimeInterval:-60];
-            done(items, err);
-        };
-        if (online && published && !complete(online)) [self feedItems:cid cache:1 done:finish];   // fresh, and refreshes the cache
-        else finish(online, e);
+            for (SFItem *i in online) [ids addObject:restOfID(i.identifier)];
+            BOOL complete = [[NSSet setWithArray:published.allKeys] isSubsetOfSet:ids];
+            [[SFStore shared] setSetting:complete ? sig : [NSString stringWithFormat:@"%@@%.0f", sig, [NSDate date].timeIntervalSince1970] forKey:sigKey];
+        }
+        finish(online, nil);
     }];
 }
 
-// the channel's long videos as online items (InnerTube browse of the UULF playlist)
-+ (void)feedItems:(NSString *)cid cache:(NSTimeInterval)age done:(void (^)(NSArray *, NSError *))done {
-    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:age done:^(id j, NSError *e) {
+// the channel's long videos as online items (InnerTube browse of the UULF playlist). Not kept in
+// the response cache: the answer is ~1 MB, the parsed list (storedFeed) is what is reused.
++ (void)feedItems:(NSString *)cid done:(void (^)(NSArray *, NSError *))done {
+    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:0 done:^(id j, NSError *e) {
         NSMutableArray *online = [NSMutableArray new];
         for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
             if (i.kind != SFItemVideo) continue;
