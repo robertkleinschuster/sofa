@@ -99,8 +99,14 @@ static NSArray *listItems(id j) {
     return f;
 }
 
-+ (SFPageLoader)profileLoader:(NSString *)pid title:(NSString *)title {
++ (SFPageLoader)profileLoader:(NSString *)pid title:(NSString *)knownTitle {
     return ^(SFPageDone done) {
+        // no title given (show found via a lookup, where `channel` was only the genre): the profile names itself
+        void (^withTitle)(void (^)(NSString *)) = ^(void (^next)(NSString *)) {
+            if (knownTitle.length) { next(knownTitle); return; }
+            [self get:[@"/profile/" stringByAppendingString:pid] cache:86400 done:^(id j, NSError *e) { next(str(dict(j)[@"title"])); }];
+        };
+        withTitle(^(NSString *title) {
         [self get:[NSString stringWithFormat:@"/profile/%@/episodes?limit=100", pid] cache:900 done:^(id j, NSError *e) {
             NSArray *eps = [self episodeItems:j];
             if (!j) { done(nil, e); return; }
@@ -108,6 +114,7 @@ static NSArray *listItems(id j) {
             if (!eps.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
             done(p, nil);
         }];
+        });
     };
 }
 
@@ -294,6 +301,19 @@ static NSArray *listItems(id j) {
     // subscription feed ("Neue Folgen automatisch laden")
     SFRegisterFeedFromLoader(@"orfprofile", ^SFPageLoader(NSString *ref) { return [self profileLoader:ref title:nil]; });
     SFRegisterShowPage(@"orfprofile", ^SFPageLoader(NSString *ref, NSString *title) { return [self profileLoader:ref title:title]; });
+    // Lists (highlights, genres) send a short episode object without profile_title, so those items
+    // have no showRef - the full episode names its show (profile_title + _links.profile; seen
+    // 2026-11-05 with "Vienna Killing (1/3)")
+    SFRegisterShowRefLookup(@"orf", ^(SFItem *item, void (^done)(NSString *)) {
+        NSString *eid = [item.identifier hasPrefix:@"orf:"] ? [item.identifier substringFromIndex:4] : nil;
+        if (!eid.length) { done(nil); return; }
+        [self get:[@"/episode/" stringByAppendingString:eid] cache:3600 done:^(id j, NSError *e) {
+            NSDictionary *ep = dict(j);
+            NSString *ph = str(dict(dict(ep[@"_links"])[@"profile"])[@"href"]);
+            NSString *ref = ph.length && str(ep[@"profile_title"]) ? [@"orfprofile:" stringByAppendingString:ph.lastPathComponent] : nil;
+            SFMain(^{ done(ref); });
+        }];
+    });
     SFRegisterResolver(@"orf", ^(NSString *eid, SFURLDone done) {
         [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
             NSDictionary *ep = dict(j);

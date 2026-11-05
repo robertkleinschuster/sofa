@@ -173,7 +173,9 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     SFShowRefLookup lookup = !it.showRef && ![here hasPrefix:@"ytchannel:"] && it.kind == SFItemVideo ? SFShowRefLookupFor(it.source) : nil;
     if (lookup) {
         l->_lookup = lookup;
-        l->_title = name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal";
+        // YouTube: the channel name is known; elsewhere `channel` may only be the genre (ORF lists)
+        BOOL yt = [it.source isEqualToString:@"youtube"];
+        l->_title = yt ? (name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal") : @"Zur Sendung";
         return l;
     }
     SFShow *show = name ? [[SFLibrary shared] showNamed:name source:it.source] : nil;
@@ -199,8 +201,9 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     SFItem *it = _episode;
     _lookup(it, ^(NSString *ref) {
         if (stillValid && !stillValid()) return;   // the user has moved on (e.g. started playback)
-        SFPageLoader pl = ref ? SFShowPageLoader(ref, it.channel) : nil;
-        if (!pl) { [nav toast:@"Kanal nicht gefunden"]; return; }
+        // outside YouTube `channel` may only be the genre (ORF lists): the show page names itself
+        SFPageLoader pl = ref ? SFShowPageLoader(ref, [it.source isEqualToString:@"youtube"] ? it.channel : nil) : nil;
+        if (!pl) { [nav toast:[it.source isEqualToString:@"youtube"] ? @"Kanal nicht gefunden" : @"Keine Sendungsseite gefunden"]; return; }
         show(SFBrowseScreenForFolder(SFShowFolder(it, ref, pl), nav.top.theme));
     });
 }

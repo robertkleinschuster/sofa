@@ -118,7 +118,8 @@ for i in $(seq 1 60); do grep -q "repair of $BADREF failed" "$LOG" && break; sle
 grep -q "repair of $BADREF failed.*retry in 15 min" "$LOG" && ok "failed repair scheduled for a retry" || bad "no retry scheduled: $(grep "$BADREF" "$LOG" | tail -2)"
 [ -s "$ROOT/dev/Dev/repair.mp4" ] && ok "existing file kept" || bad "existing file lost"
 cmd dlretry
-for i in $(seq 1 60); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
+# the retry starts only after the per-source spacing of starts (30 s since the first attempt)
+for i in $(seq 1 100); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
 grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in 30 min" "$LOG" && ok "retried with a longer backoff" || bad "not retried: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")

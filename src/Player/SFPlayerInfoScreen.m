@@ -14,6 +14,8 @@ static NSString *const kRunningBadge = @"Läuft";
     SFItem *_item;                 // the player's item this panel shows (identity: changes -> rebuild)
     NSDictionary *_details;        // YouTube watch page: description, channel, channelID, avatar, date
     NSArray *_related;             // YouTube recommendations (nil = not (yet) known)
+    NSArray *_showEpisodes;        // online show (ZDF/ARD/ORF ...): episodes from its show page
+    NSString *_showTitle;
     NSMapTable *_handlers;         // shown tile -> block (OK on a video tile of a shelf)
     BOOL _refreshQueued;
 }
@@ -44,8 +46,9 @@ static NSString *const kRunningBadge = @"Läuft";
 // New item (panel opened, autoplay/queue moved on while open): reset and fetch what is missing.
 - (void)loadForItem:(SFItem *)it {
     _item = it;
-    _details = nil; _related = nil;
+    _details = nil; _related = nil; _showEpisodes = nil; _showTitle = nil;
     [self setPage:[self buildPage] keepFocus:NO];
+    [self loadShowEpisodesFor:it];
     // YouTube: description, channel and recommendations in ONE cached request (the same "next"
     // call autoplay uses) - only for an online-capable video, never a spinner: absent until it arrives
     if (![it.source isEqualToString:@"youtube"] || it.externalID.length != 11 || ![SFNet isOnline]) return;
@@ -58,6 +61,47 @@ static NSString *const kRunningBadge = @"Läuft";
         SFLog(@"info: %lu recommendations, description %@", (unsigned long)related.count, details[@"description"] ? @"yes" : @"no");
         [s refresh];
     }];
+}
+
+// Mediathek video streamed online: its show's other episodes, from the same show page "Zur Sendung"
+// opens (registered loader for item.showRef). Downloaded shows use the library instead (episodesShelf).
+- (void)loadShowEpisodesFor:(SFItem *)it {
+    if ([it.source isEqualToString:@"youtube"] || it.kind != SFItemVideo || ![SFNet isOnline]) return;
+    if ([[SFLibrary shared] showNamed:it.channel source:it.source].episodes.count >= 2) return;
+    __weak SFPlayerInfoScreen *ws = self;
+    if (!it.showRef.length) {
+        // list items without a show reference (ORF highlights): ask the source once, then load
+        SFShowRefLookup lookup = SFShowRefLookupFor(it.source);
+        if (!lookup) return;
+        lookup(it, ^(NSString *ref) {
+            SFPlayerInfoScreen *s = ws;
+            if (!s || s->_item != it || !ref.length) return;
+            it.showRef = ref;          // remembered on the item: "Zur Sendung" opens it directly now
+            [s loadShowEpisodesFor:it];
+            [s refresh];
+        });
+        return;
+    }
+    // no title: the Mediathek show pages name themselves (`channel` can be just the genre, e.g. ORF lists)
+    SFPageLoader loader = SFShowPageLoader(it.showRef, nil);
+    if (!loader) return;
+    loader(^(SFPage *page, NSError *e) {
+        SFMain(^{
+            SFPlayerInfoScreen *s = ws;
+            if (!s || s->_item != it || !page) return;
+            NSMutableArray *eps = [NSMutableArray new];
+            NSMutableSet *seen = [NSMutableSet new];
+            for (SFShelf *sh in page.shelves) for (SFItem *x in sh.items) {
+                if (x.kind != SFItemVideo || !x.identifier || [seen containsObject:x.identifier] || eps.count >= 40) continue;
+                [seen addObject:x.identifier]; [eps addObject:x];
+            }
+            if (eps.count < 2) return;
+            s->_showEpisodes = eps;
+            s->_showTitle = page.title.length ? page.title : it.channel;
+            SFLog(@"info: %lu episodes of %@", (unsigned long)eps.count, s->_showTitle);
+            [s refresh];
+        });
+    });
 }
 
 // Closed (MENU, chosen entry) but not yet deallocated: no more work, no requests for later items
@@ -342,17 +386,18 @@ static NSString *SFSig(SFItem *i) {
     return sh;
 }
 
-// Downloaded show: its other episodes (what autoplay follows for downloads)
+// Other episodes: library show (downloads) or the online show page (loadShowEpisodesFor:)
 - (SFShelf *)episodesShelf {
     SFItem *cur = _item;
-    if (!cur.channel.length || !(cur.localPath || [_player canSwitchToStream])) return nil;
-    SFShow *show = [[SFLibrary shared] showNamed:cur.channel source:cur.source];
-    if (show.episodes.count < 2) return nil;
+    SFShow *show = cur.channel.length && (cur.localPath || [_player canSwitchToStream]) ? [[SFLibrary shared] showNamed:cur.channel source:cur.source] : nil;
+    NSArray *episodes = show.episodes.count >= 2 ? show.episodes : _showEpisodes;
+    NSString *name = show.episodes.count >= 2 ? show.name : _showTitle;
+    if (episodes.count < 2) return nil;
     __weak SFPlayerInfoScreen *ws = self;
     __weak SFPlayerScreen *wp = _player;
     NSMutableArray *items = [NSMutableArray new];
     NSUInteger focus = 0;
-    for (SFItem *e in show.episodes) {
+    for (SFItem *e in episodes) {
         BOOL running = (cur.localPath && [e.localPath isEqualToString:cur.localPath]) || (e.identifier && [e.identifier isEqualToString:cur.identifier]);
         if (running) focus = items.count;
         [items addObject:[self tile:e badge:running ? kRunningBadge : nil action:^{
@@ -361,7 +406,7 @@ static NSString *SFSig(SFItem *i) {
             if (!running && pl) [pl playItem:e];
         }]];
     }
-    SFShelf *sh = [SFShelf shelf:[NSString stringWithFormat:@"Weitere Folgen von „%@“", show.name] style:SFTileStyleLandscape items:items];
+    SFShelf *sh = [SFShelf shelf:[NSString stringWithFormat:@"Weitere Folgen von „%@“", name] style:SFTileStyleLandscape items:items];
     sh.focusIndex = focus;
     return sh;
 }

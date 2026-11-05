@@ -59,6 +59,9 @@ NSString *SFFormatDateShort(NSDate *d) {
     if (diff == 0) return @"Heute";
     if (diff == 1) return @"Gestern";
     if (diff > 1 && diff < 7) return [NSString stringWithFormat:@"vor %ld Tagen", (long)diff];
+    // A date in the future is the TV broadcast of an episode the Mediathek already offers ahead
+    // (ORF "Vorpremiere"): a bare "10. Nov." looked like a wrong date (2026-11-05)
+    if (diff == -1) return @"TV morgen";
     static NSDateFormatter *df, *dfy;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -69,7 +72,8 @@ NSString *SFFormatDateShort(NSDate *d) {
     @synchronized (df) {
     NSInteger y1 = [cal component:NSCalendarUnitYear fromDate:d];
     NSInteger y2 = [cal component:NSCalendarUnitYear fromDate:today];
-    return (y1 == y2) ? [df stringFromDate:d] : [dfy stringFromDate:d];
+    NSString *s = (y1 == y2) ? [df stringFromDate:d] : [dfy stringFromDate:d];
+    return diff < 0 ? [@"TV am " stringByAppendingString:s] : s;
     }
 }
 
