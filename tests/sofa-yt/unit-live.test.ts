@@ -121,7 +121,9 @@ function hlsOf(i: VideoInfo): HlsInfo {
 
 type YtErr = Error & YouTubeErrorFlags;
 
-test('a live player response becomes an HLS info (n solved with the request player, token in the path), cached', async () => {
+test('a live player response becomes an HLS info (n solved with the request player, token in the path), cached', async (t) => {
+  // the recorded URL expires at a fixed time (1793887394): run "an hour before" it, not at the wall clock
+  t.mock.method(Date, 'now', () => (1793887394 - 3600) * 1000);
   const yt = makeYouTube([rawLive()]);
   const { info: i, cached } = await yt.info(LIVE);
   const info = hlsOf(i);
