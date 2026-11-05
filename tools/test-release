@@ -2,7 +2,7 @@
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
 #   bundle dependencies, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (zipapp, signature verifier),
-#   PO token server (own port), YouTube resolving with node for the JS challenge.
+#   PO token server (own port), YouTube resolving with node for the JS challenge, SABR sidecar.
 # Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -63,6 +63,19 @@ F=$(np "$PY" -s "$YT/yt-dlp" --no-warnings --no-check-certificates --js-runtimes
       --extractor-args "youtube:player_client=web_embedded;youtubepot-bgutilhttp:base_url=http://127.0.0.1:$POT_PORT" \
       -f 'best[vcodec^=avc1][acodec!=none]/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>&1 | tail -1)
 [[ "$F" =~ ^[0-9]+$ ]] && ok "YouTube resolving (format $F)" || bad "YouTube resolving: $F"
+
+# SABR sidecar with the bundled node only: dependencies load, it gets ready, and its warm-up
+# (youtube.com session + BotGuard PO token, no player request) works with the bundle's TLS setup
+SY="$APP/Contents/Resources/sofa-yt"
+np "$RT/bin/node" "$SY/main.mjs" --check >/dev/null 2>&1 && ok "sofa-yt loads (bundled node)" || bad "sofa-yt --check"
+mkdir -p "$T/sy"
+( sleep 120 | np "$RT/bin/node" "$SY/main.mjs" --port 0 --state "$T/sy" --block-file "$T/sy/block.json" >"$T/sy.out" 2>"$T/sy.log" ) &
+SYJOB=$!
+for i in $(seq 1 30); do SYPORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$T/sy.out" | head -1); [ -n "$SYPORT" ] && break; sleep 0.5; done
+H=; for i in $(seq 1 40); do [ -n "${SYPORT:-}" ] || break; H=$(curl -s "127.0.0.1:$SYPORT/health"); echo "$H" | /usr/bin/grep -q '"poToken":"\(ready\|error\)"' && break; sleep 1; done
+echo "$H" | /usr/bin/grep -q '"session":"ready".*"poToken":"ready"\|"poToken":"ready".*"session":"ready"' && ok "sofa-yt session + PO token ready" \
+  || bad "sofa-yt not ready: ${H:-no port} $(tail -2 "$T/sy.log")"
+pkill -f "sleep 120" 2>/dev/null; wait $SYJOB 2>/dev/null
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
