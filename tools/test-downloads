@@ -119,6 +119,7 @@ st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(erro
 [ "$st" = "2 2 repair:" ] && ok "marker persisted (state done, 2 tries)" || bad "unexpected record: $st"
 
 echo "==> 5. YouTube download during a bot-check pause"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"   # leftovers of manual tests
 start
 cmd "ytblock 900"; sleep 0.5
 m=$(wc -l < "$LOG"); cmd "dlget $YTREF"
