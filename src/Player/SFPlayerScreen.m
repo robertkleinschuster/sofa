@@ -5,6 +5,7 @@
 #import "SFAVEngine.h"
 #import "SFMPVEngine.h"
 #import "SFYTResolver.h"
+#import "SFYTSabr.h"
 #import "SFYouTube.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
@@ -223,7 +224,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
-    if (_item != _lastStartedItem) { _reresolved = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) { _reresolved = NO; _sabrRetried = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -296,6 +297,13 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
           _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, audio %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
     __weak SFPlayerScreen *wself = self;
+    // the SABR sidecar died: its local URLs are gone - reopen right away instead of waiting for
+    // mpv's reconnects and the stall watchdog
+    if (!_sabrObs) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFYTSabrDidExitNotification object:nil
+        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
+            SFPlayerScreen *s = wself;
+            if (s && s->_engine && !s->_closing && !s->_failed && [SFMPVSourceFor(s->_openURL)[@"sabr"] boolValue]) [s sabrFailed:@"sidecar exited"];
+        }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
 
@@ -353,6 +361,18 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     });
 }
 
+- (void)sabrFailed:(NSString *)why {
+    NSDictionary *src = SFMPVSourceFor(_openURL);
+    SFLog(@"player: SABR stream failed (%@) -> %@", why, _sabrRetried ? @"yt-dlp" : @"reopening via SABR");
+    if (_sabrRetried) [[SFYTSabr shared] markFailed:src[@"vid"]];
+    _sabrRetried = YES;
+    self.startPaused = self.startPaused || _holdPaused;
+    NSTimeInterval pos = [self failurePosition];
+    if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
+    [self teardownPlayer];
+    [self startItem];
+}
+
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
         BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
@@ -361,6 +381,10 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
             SFLog(@"player: error %@ %ld %@ | underlying %@ %ld | %@", e.domain, (long)e.code, e.localizedFailureReason ?: @"",
                   u.domain, (long)u.code, e.userInfo[NSLocalizedRecoverySuggestionErrorKey] ?: @"");
         }
+        // SABR (sofa-yt sidecar) failed: first reopen via SABR (a crashed sidecar restarts and has the
+        // player response cached on disk - no new YouTube request), then yt-dlp takes over (the
+        // resolver skips SABR for this video from now on)
+        if ([SFMPVSourceFor(_openURL)[@"sabr"] boolValue]) { [self sabrFailed:_engine.error.localizedDescription]; return; }
         // googlevideo HLS sporadically fails immediately on 10.9 (-12643/-12939), the same
         // URL works on the next attempt (docs/youtube.md §6) -> reopen up to 3x.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
@@ -436,6 +460,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (void)teardown {
     if (_powerObs) { [[NSNotificationCenter defaultCenter] removeObserver:_powerObs]; _powerObs = nil; }
+    if (_sabrObs) { [[NSNotificationCenter defaultCenter] removeObserver:_sabrObs]; _sabrObs = nil; }
     _closing = YES;
     [_osdTimer invalidate]; [_seekTimer invalidate]; [_nextTimer invalidate];
     [self teardownPlayer];

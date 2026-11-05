@@ -170,7 +170,7 @@ static double SFParseDuration(NSString *s) {
 
 - (void)auditNext:(NSMutableArray *)todo ff:(NSString *)ff broken:(NSUInteger)broken {
     if (!todo.count) {
-        SFLog(@"downloads: verification finished, %lu broken file(s) re-queued", (unsigned long)broken);
+        SFLog(@"downloads: verification finished (%lu broken file(s) re-queued since this app start; earlier ones are in the log)", (unsigned long)broken);
         [[SFStore shared] setSetting:kAuditVersion forKey:kAuditKey];
         return;
     }

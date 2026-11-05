@@ -1,4 +1,7 @@
 #import "SFYTResolver.h"
+#import "SFYTSabr.h"
+#import "SFEngine.h"
+#import "SFSettings.h"
 #import "SFCurl.h"
 #import "SFModel.h"
 #import "SFStore.h"
@@ -429,6 +432,12 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
     if (_preloads.count >= kPreloadBudget) return NO;
     [_preloads addObject:@(now)];
+    SFYTSabr *sabr = [SFYTSabr shared];
+    if (sabr.available && SFMPVAvailable() && !SFPreferAVFoundation() && ![sabr failedFor:vid]) {
+        // playback goes through SABR: preload its player response (cached in the sidecar), not yt-dlp's
+        [sabr open:vid background:YES done:^(NSDictionary *r, NSError *e) {}];
+        return YES;
+    }
     [self prefetch:vid done:nil];
     return YES;
 }

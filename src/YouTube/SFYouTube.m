@@ -2,6 +2,8 @@
 #import "SFJSON.h"
 #import "SFMenuScreen.h"
 #import "SFYTResolver.h"
+#import "SFYTSabr.h"
+#import "SFSettings.h"
 #import "SFNet.h"
 #import "SFStore.h"
 #import "SFLibrary.h"
@@ -673,7 +675,8 @@ static NSSet *skipKeys(void) {
 }
 
 + (void)setup {
-    SFRefResolver online = ^(NSString *vid, SFURLDone done) {
+    // yt-dlp: HLS (+ DASH for mpv) via the resolver process - fallback for SABR, and for lives
+    SFRefResolver ytdlp = ^(NSString *vid, SFURLDone done) {
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
@@ -685,6 +688,20 @@ static NSSet *skipKeys(void) {
                 SFSetMPVSource(u, d);
             }
             done(u, e);
+        }];
+    };
+    // First choice: SABR via the sofa-yt sidecar (looks like the web player: one request per video,
+    // passes where yt-dlp gets bot checks). Needs mpv (local WebM/MP4 tracks). Any failure -> yt-dlp.
+    SFRefResolver online = ^(NSString *vid, SFURLDone done) {
+        SFYTSabr *sabr = [SFYTSabr shared];
+        if (!sabr.available || !SFMPVAvailable() || SFPreferAVFoundation() || [sabr failedFor:vid]) { ytdlp(vid, done); return; }
+        [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+            if (!r) { SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription); ytdlp(vid, done); return; }
+            NSURL *u = [NSURL URLWithString:r[@"video"]];
+            NSMutableDictionary *d = [r mutableCopy];
+            d[@"sabr"] = @YES; d[@"vid"] = vid;
+            SFSetMPVSource(u, d);
+            done(u, nil);
         }];
     };
     SFRegisterOnlineResolver(@"yt", online);   // "Online abspielen": skip downloads
@@ -741,6 +758,7 @@ static NSSet *skipKeys(void) {
         }];
     });
     [[SFYTResolver shared] start];
+    if (!SFDevMode) [[SFYTSabr shared] start];   // warm session + BotGuard before the first click
 }
 
 @end

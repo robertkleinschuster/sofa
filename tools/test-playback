@@ -12,6 +12,9 @@
 #   5. a downloaded item switches to the online stream at the same position, chosen in the info
 #      panel ("Online abspielen" used to restart the local file because the download lookup found it again)
 #   6. a remembered subtitle preference is applied automatically
+#   7. a stream that stops delivering mid-playback is detected (stall watchdog) and handled
+#      (2026-11-05: a dead SABR sidecar left mpv hanging in a seek forever, no error event)
+#   8. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
 #
 #   tools/test-playback            all checks
 #   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
@@ -36,7 +39,7 @@ make -C "$SRC" >/dev/null || exit 1
 APP=
 start() {
   : > "$LOG"
-  "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!; dead=
+  SOFA_STALL_LIMIT=6 "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!; dead=
   for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.1; done
   echo "dev instance did not start"; exit 1
 }
@@ -100,6 +103,44 @@ echo "==> 6. remembered subtitle preference"
 since $m | grep -q 'subtitles .*remembered language' && ok "subtitles applied automatically" \
   || echo "  skip  no remembered subtitle preference in the dev domain (defaults write de.sofa.dev subtitlesSameLanguage -bool YES)"
 stop
+
+echo "==> 7. stream stops delivering -> stall watchdog"
+# HTTP server: serves the first 600 KB of the file, then keeps the connection open without data
+cat > "$T/stall.py" <<'PY'
+import http.server, sys, time, os
+F = sys.argv[1]
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        size = os.path.getsize(F)
+        self.send_response(200); self.send_header("Content-Length", str(size)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
+        with open(F, "rb") as f: self.wfile.write(f.read(600000))
+        self.wfile.flush(); time.sleep(600)
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
+PY
+/opt/local/bin/python3.14 -I "$T/stall.py" "$T/local.mp4" 47981 & SRV=$!
+start
+m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"
+for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' && break; sleep 0.5; done
+since $m | grep -q 'mpv: no progress for 6 s' && ok "stall detected" || bad "stall not detected: $(since $m | grep 'player:\|mpv:' | tail -3)"
+for i in $(seq 1 40); do since $m | grep -q 'player: failed' && break; sleep 0.5; done
+since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable failure" || bad "no final failure after the stall"
+kill $SRV 2>/dev/null
+stop
+
+if [ -n "${SOFA_YT_LIVE:-}" ]; then
+  echo "==> 8. SABR playback + sidecar crash (YouTube media)"
+  start
+  m=$(mark); cmd "play yt:OzCYsIrrRyw"; sleep 10
+  since $m | grep -q 'sabr: opened OzCYsIrrRyw' && ok "opened via SABR" || bad "not via SABR: $(since $m | grep 'sabr\|yt:' | tail -2)"
+  cmd "mpvprop vo-configured"; sleep 1
+  since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"
+  pkill -f "sofa-yt/main.mjs.*sofa-yt-dev"; sleep 8
+  since $m | grep -q 'SABR stream failed (sidecar exited) -> reopening via SABR' && ok "sidecar crash noticed" || bad "crash not noticed"
+  m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 3; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
+  awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"
+  stop
+fi
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

@@ -249,6 +249,17 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
     NSTimer *_tick;
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
     NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
+    double _stallTime;                // stall watchdog: position at _stallSince
+    NSDate *_stallSince;
+    BOOL _stallFired;
+}
+
+// Playback that should run but makes no progress for this long counts as failed, so the player's
+// fallback chain takes over. 2026-11-05: the SABR sidecar died during playback; mpv's HTTP
+// reconnects hit "connection refused" and a seek then hung forever with no error event.
+static NSTimeInterval SFStallLimit(void) {
+    double t = [[NSProcessInfo processInfo].environment[@"SOFA_STALL_LIMIT"] doubleValue];   // tests
+    return t > 0 ? t : 45;
 }
 @synthesize delegate = _delegate, muted = _muted;
 
@@ -305,6 +316,7 @@ static void onWakeup(void *ctx) {
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     _status = SFEngineLoading; _error = nil; _loaded = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
+    _stallSince = nil; _stallFired = NO;
     if (!_mpv) { _status = SFEngineFailed; _error = SFError(@"mpv nicht verfügbar"); [self.delegate engineStatusChanged]; return; }
     // Options for the next file (start, pause, separate audio track). URLs contain ':' and ',' ->
     // no path-list syntax, but change-list ... append (one element).
@@ -381,9 +393,22 @@ static void onWakeup(void *ctx) {
 }
 
 - (void)onTick {
-    if (!_loaded) return;
+    [self watchStall];
+    if (!_loaded || _stallFired) return;
     [self healVideoOutput];
     [self.delegate engineTick];
+}
+
+- (void)watchStall {
+    if (_stallFired || _status == SFEngineFailed) return;
+    BOOL shouldRun = !_paused && !_eof;   // loading counts too: an open that never finishes is a stall
+    if (!shouldRun || _time != _stallTime || !_stallSince) { _stallTime = _time; _stallSince = [NSDate date]; return; }
+    if (-[_stallSince timeIntervalSinceNow] < SFStallLimit()) return;
+    _stallFired = YES;
+    SFLog(@"mpv: no progress for %.0f s at %.1f s (%@) - treating as failed", SFStallLimit(), _time, _loaded ? @"playing" : @"loading");
+    _status = SFEngineFailed; _loaded = NO;
+    _error = SFError(@"Die Wiedergabe hängt.");
+    [self.delegate engineStatusChanged];
 }
 
 // Self-healing: the file has a video track but no video output is configured (vo init failed,
