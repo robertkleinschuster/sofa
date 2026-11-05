@@ -29,6 +29,9 @@ Einstellungen → „Update installieren“.
   („Brisant · bis 18:00“), ein Balken zeigt, wie weit sie ist. Die große Vorschau nennt die
   Uhrzeit, was danach kommt, und beschreibt die Sendung (ARD-Sender und ORF).
 - **Livestreams:** Die große Vorschau zeigt bei Sendern kein sinnloses Datum mehr.
+- **Weniger Anfragen an YouTube:** Sofa fragt deine YouTube-Kanäle nur noch ab, wenn dort
+  wirklich etwas Neues erschienen ist, und während YouTube eine Bot-Prüfung verlangt, gar nicht.
+  So hebt YouTube eine solche Sperre schneller wieder auf.
 - **Schneller und schlanker:** Sofa räumt seinen Zwischenspeicher jetzt selbst auf – die
   Datenbank ist von 234 auf etwa 68 MB geschrumpft.
 - **Unter der Haube:** Sofa ist neu gegliedert – jede App (YouTube, ZDF, ARD, ORF,
