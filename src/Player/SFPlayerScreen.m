@@ -786,10 +786,12 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         CGFloat y = pad;
         y += [self->_nextLabel sizeToFitWidth:w] + U(6); self->_nextLabel.position = CGPointMake(x, pad);
         CGFloat h1 = [title sizeToFitWidth:w]; title.position = CGPointMake(x, y); y += h1 + U(6);
-        CGFloat h2 = sub.text.length ? [sub sizeToFitWidth:w] : 0; sub.position = CGPointMake(x, y);
-        CGFloat hh = [hint sizeToFitWidth:w]; hint.position = CGPointMake(x, ch - pad - hh);
-        (void)h2;
-        self->_nextCard.frame = CGRectMake(self.size.width - U(110) - cw, self.size.height - U(190) - ch, cw, ch);
+        CGFloat h2 = sub.text.length ? [sub sizeToFitWidth:w] : 0; sub.position = CGPointMake(x, y); y += h2;
+        // the hint sits at the bottom; the card grows when the text above would reach it (a two-line
+        // title plus channel used to overlap the hint)
+        CGFloat hh = [hint sizeToFitWidth:w], cardH = MAX(ch, y + U(14) + hh + pad);
+        hint.position = CGPointMake(x, cardH - pad - hh);
+        self->_nextCard.frame = CGRectMake(self.size.width - U(110) - cw, self.size.height - U(190) - cardH, cw, cardH);
     };
     SFNoAnimate(^{ upd(); [self.layer addSublayer:self->_nextCard]; });
     _nextCard.hidden = NO;
