@@ -74,9 +74,10 @@
     SFLog(@"update: saved, quitting");
     // _exit instead of exit: everything is saved; exit() used to hang in framework cleanup handlers.
     // On its own thread: a main-queue block didn't run while the main run loop was stuck in
-    // another mode, and a global-queue block didn't run either when the GCD pool was saturated
-    // (blocked network/download work) -> the helper force-quit after 15 s (log "forcing",
-    // 2026-11-05 12:37 and 15:06). A plain thread does not depend on either.
+    // another mode. The later "forcing" on every update (2026-11-05) was App Nap stretching the
+    // delay (see main.m, _noNap); the latency-critical activity keeps this last sleep exact.
+    static id handover;   // retained: the activity ends when the token is released
+    handover = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityLatencyCritical | NSActivityUserInitiated reason:@"Sofa: update handover"];
     [NSThread detachNewThreadSelector:@selector(exitAfterUpdateSave) toTarget:[SFAppDelegate class] withObject:nil];
 }
 

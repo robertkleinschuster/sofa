@@ -46,10 +46,16 @@ static uint16_t gPort = 8765;
 @implementation SFAppDelegate {
     SFRemote *_remote;
     SFDevServer *_dev;
+    id _noNap;   // App Nap opt-out for the app's lifetime
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
     SFRegisterApps();   // first: themes and apps are looked up from here on
+    // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
+    // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
+    // > 15 s (the helper had to force-quit on every update, 2026-11-05). Idle system sleep stays allowed.
+    _noNap = [[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep
+                                                            reason:@"Sofa: downloads, phone remote, updates"];
     NSRect frame;
     if (SFDevMode) {
         NSSize s = self.devSize.width > 0 ? self.devSize : NSMakeSize(1920, 1080);
