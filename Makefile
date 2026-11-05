@@ -49,7 +49,14 @@ SYVEND  := $(BUILD)/vendor/sofa-yt
 SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources/%,$(SYSRC)) \
              $(b)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp)
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES)
+# user-facing changelog: Einstellungen -> "Neu in Version …"
+NOTES_RES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/CHANGELOG.md)
+
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES) $(NOTES_RES)
+
+$(APP)/Contents/Resources/CHANGELOG.md $(DEVAPP)/Contents/Resources/CHANGELOG.md: CHANGELOG.md
+	@mkdir -p $(dir $@)
+	cp $< $@
 
 $(APP)/Contents/Resources/logos/%.png: res/logos/%.png
 	@mkdir -p $(dir $@)

@@ -4,6 +4,18 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.9
+
+- **Schärfere Hintergrundbilder:** Bei YouTube-Videos lädt Sofa das große Vorschaubild
+  (1280×720) für den Hintergrund statt des kleinen Kachelbilds.
+- **Neu in dieser Version:** Unter Einstellungen → „Neu in Version …“ steht jederzeit, was sich
+  geändert hat – eine Zeile pro Neuerung, OK zeigt die Einzelheiten.
+- **Lange Auswahllisten** (z. B. Untertitel-Sprachen) lassen sich jetzt bis zum Ende durchblättern.
+- **„Zuletzt geladen“** unter Downloads zeigt die zuletzt heruntergeladenen Videos zuerst,
+  auch ältere Folgen, die du von Hand geladen hast.
+- **Aufgeräumte Untertitel der Kacheln:** kein einzelnes „·“ oder „noch“ mehr, wenn Kanal,
+  Datum oder Länge fehlen.
+
 ## 0.3.8
 
 - **YouTube spielt wie im Browser:** Sofa holt YouTube-Videos jetzt so wie YouTubes eigener

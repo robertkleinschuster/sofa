@@ -97,6 +97,9 @@ static __weak SFMenuScreen *gSettingsMenu;
     } else if (SFRuntimeDir()) {
         subtitle = [subtitle stringByAppendingString:@" · Updates erst, wenn Sofa in „Programme“ liegt"];
     }
+    NSString *installed = up.installedVersion;
+    if (SFBundledNotes(installed)) [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Neu in Version %@", installed]
+                                                                 action:^{ [nav push:[SFHome installedNotesMenu:installed nav:nav]]; }]];
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Einstellungen" subtitle:subtitle
                                                   options:opts theme:[SFTheme themeNamed:@"home"]];
     m.initialSelection = sel;
@@ -105,19 +108,70 @@ static __weak SFMenuScreen *gSettingsMenu;
 }
 
 // Manual update: first show what is new (release notes from GitHub), then decide
-+ (SFMenuScreen *)releaseNotesMenu:(SFNavigator *)nav {
-    SFUpdater *up = [SFUpdater shared];
+// Changelog Markdown -> plain lines for a menu text: bullets "•", continuation lines joined to their
+// bullet (the Markdown wraps at ~100 columns, the menu wraps itself), no emphasis/code marks.
+static NSArray *SFNotesLinesBold(NSString *md, BOOL keepBold) {
     NSMutableArray *lines = [NSMutableArray new];
-    for (NSString *raw in [up.releaseNotes ?: @"" componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+    for (NSString *raw in [md ?: @"" componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
         NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if ([l rangeOfString:@"sofa-notes-end"].location != NSNotFound) break;   // after this: only for the release page
         if (!l.length || [l hasPrefix:@"#"] || [l hasPrefix:@"<!--"]) continue;
-        l = [l stringByReplacingOccurrencesOfString:@"**" withString:@""];
+        if (!keepBold) l = [l stringByReplacingOccurrencesOfString:@"**" withString:@""];
         l = [l stringByReplacingOccurrencesOfString:@"`" withString:@""];
-        if ([l hasPrefix:@"- "] || [l hasPrefix:@"* "]) l = [@"•  " stringByAppendingString:[l substringFromIndex:2]];
-        [lines addObject:l];
+        BOOL bullet = [l hasPrefix:@"- "] || [l hasPrefix:@"* "];
+        if (bullet) l = [@"•  " stringByAppendingString:[l substringFromIndex:2]];
+        if (!bullet && lines.count && [raw hasPrefix:@" "]) lines[lines.count - 1] = [lines.lastObject stringByAppendingFormat:@" %@", l];
+        else [lines addObject:l];
     }
     if (!lines.count) [lines addObject:@"Für diese Version gibt es keine Beschreibung."];
+    return lines;
+}
+static NSArray *SFNotesLines(NSString *md) { return SFNotesLinesBold(md, NO); }
+
+// The section "## <version>" of the bundled CHANGELOG.md (nil if missing)
+static NSString *SFBundledNotes(NSString *version) {
+    NSString *md = [NSString stringWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"CHANGELOG" ofType:@"md"] encoding:NSUTF8StringEncoding error:nil];
+    NSRange h = version.length ? [md rangeOfString:[NSString stringWithFormat:@"\n## %@\n", version]] : (NSRange){NSNotFound, 0};
+    if (!md || h.location == NSNotFound) return nil;
+    NSUInteger start = NSMaxRange(h);
+    NSRange next = [md rangeOfString:@"\n## " options:0 range:NSMakeRange(start, md.length - start)];
+    return [md substringWithRange:NSMakeRange(start, (next.location == NSNotFound ? md.length : next.location) - start)];
+}
+
+// "Neu in Version …" for the installed version (from the bundle - works offline): one row per
+// change (its bold lead), OK shows the whole text - the side panel is too narrow for all of it at once
++ (SFMenuScreen *)installedNotesMenu:(NSString *)version nav:(SFNavigator *)nav {
+    NSMutableArray *opts = [NSMutableArray new];
+    for (NSString *line in SFNotesLinesBold(SFBundledNotes(version), YES)) {
+        // "**Lead:** text" -> row "Lead", details "text"; "**Lead** text" -> row "Lead", details all
+        NSString *md = [line hasPrefix:@"•  "] ? [line substringFromIndex:3] : line;
+        NSString *text = [md stringByReplacingOccurrencesOfString:@"**" withString:@""], *head = text, *body = nil;
+        NSRange end = [md hasPrefix:@"**"] ? [md rangeOfString:@"**" options:0 range:NSMakeRange(2, md.length - 2)] : (NSRange){NSNotFound, 0};
+        if (end.location != NSNotFound) {
+            head = [md substringWithRange:NSMakeRange(2, end.location - 2)];
+            if ([head hasSuffix:@":"]) {
+                head = [head substringToIndex:head.length - 1];
+                body = [[md substringFromIndex:NSMaxRange(end)] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+                body = [body stringByReplacingOccurrencesOfString:@"**" withString:@""];
+            } else body = text;
+        }
+        if (head.length > 60) head = [[head substringToIndex:57] stringByAppendingString:@" …"];
+        SFMenuOption *o = [SFMenuOption option:head action:^{
+            SFMenuScreen *d = [[SFMenuScreen alloc] initWithTitle:head subtitle:body ?: text
+                options:@[[SFMenuOption option:@"Zurück" action:^{}]] theme:[SFTheme themeNamed:@"home"]];
+            d.subtitleLines = 16;
+            [nav push:d];
+        }];
+        o.keepOpen = YES;
+        [opts addObject:o];
+    }
+    return [[SFMenuScreen alloc] initWithTitle:[@"Neu in Sofa " stringByAppendingString:version]
+        subtitle:@"OK zeigt die Einzelheiten." options:opts theme:[SFTheme themeNamed:@"home"]];
+}
+
++ (SFMenuScreen *)releaseNotesMenu:(SFNavigator *)nav {
+    SFUpdater *up = [SFUpdater shared];
+    NSArray *lines = SFNotesLines(up.releaseNotes);
     SFMenuOption *go = [SFMenuOption option:@"Jetzt installieren" action:^{
         [[SFUpdater shared] install:^(NSString *msg) { [nav toast:msg]; }];
     }];
