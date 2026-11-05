@@ -4,6 +4,16 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.8
+
+- **YouTube spielt wie im Browser:** Sofa holt YouTube-Videos jetzt so wie YouTubes eigener
+  Web-Player (eine Anfrage pro Video, Streams direkt im Original-Format bis 1080p). Das
+  funktioniert auch dann, wenn YouTube den bisherigen Weg mit „kein Bot“ blockiert; der alte
+  Weg bleibt als Ausweichlösung.
+- **Downloads** von YouTube laufen ebenfalls über den neuen Weg (720p, Originalton).
+- **Kein Hängenbleiben mehr:** Liefert ein Stream mitten im Video nichts mehr, merkt Sofa das
+  und schaltet auf einen anderen Weg um, statt endlos zu laden.
+
 ## 0.3.7
 
 - **Neu: Info im Player.** OK gedrückt halten öffnet über dem laufenden Video die Info:
