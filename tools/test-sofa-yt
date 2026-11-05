@@ -1,0 +1,25 @@
+#!/bin/bash
+# test-sofa-yt -- tests of the YouTube SABR sidecar (res/sofa-yt).
+#   tools/test-sofa-yt              offline unit tests (fixtures in tests/sofa-yt, no network)
+#   SOFA_YT_LIVE=1 tools/test-sofa-yt
+#                                   + live smoke test: one /open (at most one player request, none
+#                                     when the state dir still holds a valid response), 10 s of
+#                                     playback in mpv from 60 s, one seek. Uses YouTube - opt-in only.
+# The sidecar runs from build/sofa-yt-run (res/sofa-yt + the node_modules of tools/fetch-sofa-yt).
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+NODE="${SOFA_NODE:-/opt/local/bin/node}"
+VENDOR="$SRC/build/vendor/sofa-yt"
+RUN="$SRC/build/sofa-yt-run"
+if [ ! -f "$VENDOR/STAMP" ] || [ "$(cat "$VENDOR/STAMP")" != "$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)" ]; then
+  "$SRC/tools/fetch-sofa-yt"
+fi
+rm -rf "$RUN"; mkdir -p "$RUN"
+cp -R "$SRC/res/sofa-yt/" "$RUN/"
+ln -s "$VENDOR/node_modules" "$RUN/node_modules"
+export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE"
+cd "$SRC/tests/sofa-yt"
+FILES=(unit-*.test.mjs)
+[ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-smoke.test.mjs)
+exec "$NODE" --test --test-reporter=spec "${FILES[@]}"
