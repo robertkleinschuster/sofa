@@ -126,7 +126,7 @@ static NSString *SFBaseLanguage(NSString *code) {
 - (void)switchToStream {
     SFItem *it = [_item copy];
     it.localPath = nil; it.playURL = nil; it.streamOnly = YES;   // otherwise the download lookup finds the file again
-    if (!it.resolverRef && it.externalID) it.resolverRef = [@"yt:" stringByAppendingString:it.externalID];
+    if (!it.resolverRef) it.resolverRef = it.identifier;   // e.g. "yt:<id>": the identifier is the app's ref
     NSMutableArray *q = [_queue mutableCopy];
     if (_index < q.count) q[_index] = it;
     SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:q index:_index];

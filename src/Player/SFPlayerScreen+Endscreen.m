@@ -1,9 +1,10 @@
-// SFPlayerScreen - YouTube end screen: the tiles a creator places over the last seconds of a video
-// (other videos, a playlist, channels, a follow button), at the creator's positions over the picture.
+// SFPlayerScreen - end cards: the tiles a creator places over the last seconds of a video (other
+// videos, a playlist, channels, a follow button), at the creator's positions over the picture.
 //
-// Data: the SABR sidecar's /open answer carries `endscreen` (res/sofa-yt/lib/youtube.ts
-// endscreenElements) and lands in the mpv source dict of the open URL; no request of its own here,
-// only the thumbnails are loaded (and only once a tile is about to show).
+// Data: generic end cards (format: SFApp.h "endCards") in the stream description of the open URL -
+// the app converts its own data (YouTube: the SABR sidecar's /open answer). No request of its own
+// here, only the thumbnails are loaded (and only once a tile is about to show). Opening goes
+// through the app that owns the card's ref.
 //
 // Remote (7 buttons), never stealing normal playback keys unexpectedly:
 //  - tiles appear (subtle) with a hint "[▼] Empfehlungen des Kanals" above them; all keys keep
@@ -20,13 +21,13 @@
 #import "SFBrowseScreen.h"
 #import "SFFollows.h"
 
-static NSString *const kVideo = @"VIDEO", *const kPlaylist = @"PLAYLIST", *const kChannel = @"CHANNEL", *const kSubscribe = @"SUBSCRIBE";
+static NSString *const kVideo = @"video", *const kPlaylist = @"playlist", *const kChannel = @"channel", *const kSubscribe = @"follow";
 
 #pragma mark - Tile
 
 @interface SFEndTile : CALayer
 @property (nonatomic, strong) NSDictionary *element;
-@property (nonatomic, copy) NSString *kind;   // VIDEO, PLAYLIST, CHANNEL, SUBSCRIBE
+@property (nonatomic, copy) NSString *kind;   // video, playlist, channel, follow
 @property (nonatomic) double startS, endS;   // visibility window (s); endS 0 = until the end
 @property (nonatomic) BOOL shownNow;
 @property (nonatomic) BOOL focused;
@@ -220,7 +221,7 @@ static NSString *const kVideo = @"VIDEO", *const kPlaylist = @"PLAYLIST", *const
 static double SFNum(id v) { return [v isKindOfClass:[NSNumber class]] || [v isKindOfClass:[NSString class]] ? [v doubleValue] : 0; }
 static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v length] ? v : nil; }
 
-- (SFTheme *)esTheme { return [SFTheme themeNamed:@"youtube"]; }
+- (SFTheme *)esTheme { return [SFTheme themeNamed:_item.source ?: @"home"]; }
 - (BOOL)esEngaged { return _esFocus >= 0 && _esFocus < (NSInteger)_esTiles.count; }
 
 - (void)esReset {
@@ -246,10 +247,10 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     NSMutableArray *tiles = [NSMutableArray new];
     for (NSDictionary *e in data) {
         if (![e isKindOfClass:[NSDictionary class]]) continue;
-        NSString *st = SFStr(e[@"style"]);
-        BOOL ok = ([st isEqualToString:kVideo] && SFStr(e[@"videoId"]).length == 11)
-               || ([st isEqualToString:kPlaylist] && SFStr(e[@"playlistId"]))
-               || (([st isEqualToString:kChannel] || [st isEqualToString:kSubscribe]) && [SFStr(e[@"browseId"]) hasPrefix:@"UC"]);
+        NSString *st = SFStr(e[@"kind"]), *ref = SFStr(e[@"ref"]);
+        BOOL ok = ref && [SFAppRegistry appForRef:ref]
+               && ([st isEqualToString:kVideo] || [st isEqualToString:kPlaylist]
+                   || (([st isEqualToString:kChannel] || [st isEqualToString:kSubscribe]) && [SFAppRegistry isShowRef:ref]));
         double w = SFNum(e[@"width"]), ar = SFNum(e[@"aspectRatio"]);
         if (!ok || !(w > 0.01) || !(ar > 0.05)) continue;
         SFEndTile *t = [SFEndTile layer];
@@ -317,7 +318,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 // What the end screen shows at the current time; called on every tick (also while paused), after
 // seeks, at the end and on relayout. Robust against any order: the data is looked up afresh.
 - (void)esUpdate {
-    NSArray *data = SFMPVSourceFor(_openURL)[@"endscreen"];
+    NSArray *data = SFMPVSourceFor(_openURL)[@"endCards"];
     if (![data isKindOfClass:[NSArray class]] || _failed || !_engine) data = nil;
     if (data != _esData) [self esBuild:data];
     if (!_esTiles.count) return;
@@ -340,7 +341,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
         BOOL show = engaged ? (x.shownNow || inWindow) : (!_ended && inWindow);
         if (show != x.shownNow) { x.shownNow = show; changed = YES; if (show) [x loadImage]; }
         if ([x.kind isEqualToString:kSubscribe]) {
-            BOOL f = [fo isFollowing:[@"ytchannel:" stringByAppendingString:SFStr(x.element[@"browseId"])]];
+            BOOL f = [fo isFollowing:SFStr(x.element[@"ref"])];
             if (f != x.following) { x.following = f; changed = YES; }
         }
         any = any || show;
@@ -451,7 +452,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 - (void)devSetEndscreen:(NSArray *)elements {
     if (!_openURL) return;
     NSMutableDictionary *d = [SFMPVSourceFor(_openURL) mutableCopy] ?: [NSMutableDictionary new];
-    if (elements) d[@"endscreen"] = elements; else [d removeObjectForKey:@"endscreen"];
+    if (elements) d[@"endCards"] = elements; else [d removeObjectForKey:@"endCards"];
     SFSetMPVSource(_openURL, d);
     [self esUpdate];
 }
@@ -553,11 +554,12 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 
 - (void)esOpen:(SFEndTile *)tile {
     NSDictionary *e = tile.element;
-    NSString *st = tile.kind, *title = SFStr(e[@"title"]), *image = SFStr(e[@"image"]);
+    NSString *st = tile.kind, *title = SFStr(e[@"title"]), *image = SFStr(e[@"image"]), *ref = SFStr(e[@"ref"]);
     SFNavigator *nav = self.navigator;
-    SFLog(@"endscreen: open %@ %@", st, SFStr(e[@"videoId"]) ?: SFStr(e[@"playlistId"]) ?: SFStr(e[@"browseId"]));
+    Class<SFApp> app = [SFAppRegistry appForRef:ref];
+    SFLog(@"endscreen: open %@ %@", st, ref);
     if ([st isEqualToString:kVideo]) {   // like autoplay / the info panel's recommendations: play here
-        SFItem *it = [SFYouTubeApp itemForVideoID:e[@"videoId"] title:title thumb:image];
+        SFItem *it = [app respondsToSelector:@selector(itemForRef:title:image:)] ? [app itemForRef:ref title:title image:image] : nil;
         if (!it) return;
         _esEndDeferred = NO;
         [self playItem:it];
@@ -566,9 +568,9 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     if ([st isEqualToString:kPlaylist]) { [self esOpenPlaylist:e]; return; }
     // channel page / follow: through the same link rules as the info panel ("Zum Kanal")
     SFItem *ep = [SFItem new];
-    ep.kind = SFItemVideo; ep.source = @"youtube"; ep.themeName = @"youtube";
+    ep.kind = SFItemVideo; ep.source = [app appIdentifier]; ep.themeName = ep.source;
     ep.channel = title ?: ([st isEqualToString:kSubscribe] ? _item.channel : nil);
-    ep.showRef = [@"ytchannel:" stringByAppendingString:e[@"browseId"]];
+    ep.showRef = ref;
     SFShowLink *link = [SFShowLink linkFor:ep here:nil pageTitle:nil];
     if ([st isEqualToString:kSubscribe]) {
         SFItem *folder = [link.folder copy];
@@ -593,9 +595,12 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 // adopted as the queue as soon as it has loaded (autoplay then follows the playlist, the info panel
 // shows it). Without a linked video the first one plays once the list is there.
 - (void)esOpenPlaylist:(NSDictionary *)e {
-    NSString *pid = SFStr(e[@"playlistId"]), *vid = SFStr(e[@"videoId"]), *title = SFStr(e[@"title"]) ?: @"Playlist";
+    NSString *pid = SFStr(e[@"ref"]), *vid = SFStr(e[@"firstRef"]), *title = SFStr(e[@"title"]) ?: @"Playlist";
+    Class<SFApp> app = [SFAppRegistry appForRef:pid];
+    if (![app respondsToSelector:@selector(listLoader:title:)]) return;
     // until the list is there the video's own title is unknown: the playlist's title stands in
-    SFItem *first = vid.length == 11 ? [SFYouTubeApp itemForVideoID:vid title:title thumb:nil] : nil;
+    Class<SFApp> vapp = [SFAppRegistry appForRef:vid];
+    SFItem *first = [vapp respondsToSelector:@selector(itemForRef:title:image:)] ? [vapp itemForRef:vid title:title image:nil] : nil;
     if (first) {
         first = [first copy];
         first.playlistID = pid;
@@ -610,7 +615,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     BOOL endWaiting = !first && _ended;
     SFItem *was = _item;
     __weak SFPlayerScreen *ws = self;
-    SFPageLoader load = [SFYouTubeApp playlistLoader:pid title:title];
+    SFPageLoader load = [app listLoader:pid title:title];
     load(^(SFPage *page, NSError *err) {
         SFMain(^{
             SFPlayerScreen *s = ws;

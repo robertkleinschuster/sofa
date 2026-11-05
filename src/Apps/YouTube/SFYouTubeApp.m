@@ -719,8 +719,31 @@ static void ytdlp(NSString *vid, SFURLDone done) {
 }
 // Result of the sofa-yt sidecar -> what the player opens. VOD: the DASH pair of local tracks;
 // lives and post-live DVR recordings: the sidecar's local HLS playlist (muxed, opened as is).
+// The sidecar's end screen elements (res/sofa-yt/lib/youtube.ts endscreenElements) as generic end
+// cards (SFApp.h "endCards")
+static NSArray *endCards(NSArray *elements) {
+    NSMutableArray *out = [NSMutableArray new];
+    for (NSDictionary *e in [elements isKindOfClass:[NSArray class]] ? elements : @[]) {
+        if (![e isKindOfClass:[NSDictionary class]]) continue;
+        NSString *st = str(e[@"style"]), *vid = str(e[@"videoId"]), *pid = str(e[@"playlistId"]), *cid = str(e[@"browseId"]);
+        NSMutableDictionary *c = [NSMutableDictionary new];
+        if ([st isEqualToString:@"VIDEO"] && vid.length == 11) { c[@"kind"] = @"video"; c[@"ref"] = [@"yt:" stringByAppendingString:vid]; }
+        else if ([st isEqualToString:@"PLAYLIST"] && pid) {
+            c[@"kind"] = @"playlist"; c[@"ref"] = [@"ytplaylist:" stringByAppendingString:pid];
+            if (vid.length == 11) c[@"firstRef"] = [@"yt:" stringByAppendingString:vid];
+        } else if (([st isEqualToString:@"CHANNEL"] || [st isEqualToString:@"SUBSCRIBE"]) && [cid hasPrefix:@"UC"]) {
+            c[@"kind"] = [st isEqualToString:@"SUBSCRIBE"] ? @"follow" : @"channel"; c[@"ref"] = [@"ytchannel:" stringByAppendingString:cid];
+        } else continue;
+        for (NSString *k in @[@"title", @"image", @"left", @"top", @"width", @"aspectRatio", @"startMs", @"endMs"]) if (e[k]) c[k] = e[k];
+        [out addObject:c];
+    }
+    return out;
+}
+
 static void sabrPlay(NSString *vid, NSDictionary *r, SFURLDone done) {
     NSMutableDictionary *d = [r mutableCopy];
+    d[@"endCards"] = endCards(r[@"endscreen"]);
+    [d removeObjectForKey:@"endscreen"];
     d[@"sabr"] = @YES; d[@"vid"] = vid;
     NSURL *u;
     if ([r[@"hls"] isKindOfClass:[NSString class]]) {
@@ -786,9 +809,6 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
     }];
 }
 
-@end
-
-@implementation SFYouTubeApp (App)
 
 #pragma mark SFApp
 
@@ -800,7 +820,8 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
 + (NSColor *)homeTileColor { return SFHex(0xffffff); }
 + (NSInteger)homeTileLogoVariant { return 0; }
 + (NSString *)searchPlaceholder { return @"Videos und Kanäle suchen"; }
-+ (BOOL)homeIncludesFollows { return YES; }   // channels, new videos and downloads are part of homeLoader
++ (BOOL)homeIncludesFollows { return YES; }
++ (BOOL)showsAreChannels { return YES; }   // channels, new videos and downloads are part of homeLoader
 + (void)configureTheme:(SFTheme *)t {
     // Dark, red accents, rounded 16:9 tiles.
     t.wordmark = @"YouTube"; t.logo = @"youtube"; t.logoVariant = 1;
@@ -813,6 +834,9 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
     t.accentText = SFHex(0xffffff);
     t.focus = SFHex(0xffffff);
     t.corner = 14;
+    t.wordmarkColor = t.text; t.progressColor = t.accent;
+    t.focusText = SFHex(0x111111);   // white focus
+    t.headerMark = SFHeaderMarkPlayPill;
 }
 
 + (void)start {
@@ -855,6 +879,67 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         SFCount(@"yt.live.sabr");
         sabrPlay(vid, r, done);
     }];
+}
+
+#pragma mark Player hooks (SABR sessions of the sofa-yt sidecar)
+
++ (BOOL)playbackIsSession:(NSDictionary *)source { return [source[@"sabr"] boolValue]; }
+
+// SABR (sofa-yt sidecar) failed: first reopen via SABR (a crashed sidecar restarts and has the
+// player response cached on disk - no new YouTube request), then yt-dlp takes over (the
+// resolver skips SABR for this video from now on)
++ (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item retried:(BOOL)retried reason:(NSString *)why {
+    SFLog(@"player: SABR stream failed (%@) -> %@", why, retried ? @"yt-dlp" : @"reopening via SABR");
+    SFCount(retried ? @"player.sabr-to-ytdlp" : @"player.sabr-reopen");
+    if (retried) [[SFYTSabr shared] markFailed:source[@"vid"]];
+    else [[SFYTSabr shared] closeSession:source[@"sid"]];   // the retry gets a fresh session, not the broken one
+}
+
+// the SABR sidecar died: its local URLs are gone - the player reopens right away instead of waiting
+// for mpv's reconnects and the stall watchdog
++ (NSString *)playbackSessionLostNotification { return SFYTSabrDidExitNotification; }
+
+// live via the sidecar: the end of the playlist is either the end of the broadcast (upstream
+// EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the sidecar knows
++ (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL))done {
+    if (!([source[@"sabr"] boolValue] && [source[@"hls"] boolValue] && [source[@"live"] boolValue])) return NO;
+    [[SFYTSabr shared] sessionStatus:source[@"sid"] done:^(NSDictionary *st) { done([st[@"ended"] boolValue]); }];
+    return YES;
+}
+
+// YouTube URLs are sporadically rejected entirely (403/-1102): resolve afresh once
++ (BOOL)playbackPrepareReResolve:(SFItem *)item {
+    NSString *ref = item.resolverRef ?: item.identifier;
+    if (![SFRefPrefix(ref) isEqualToString:@"yt"]) return NO;
+    [[SFYTResolver shared] forget:SFRefID(ref)];
+    return YES;
+}
+
+// description, channel and recommendations in ONE cached request (the same "next" call autoplay
+// uses) - only for an online-capable video
++ (void)watchDetailsForItem:(SFItem *)item done:(void (^)(NSArray *, NSDictionary *))done {
+    if (item.externalID.length != 11 || ![SFNet isOnline]) return;
+    [self watchPageFor:item.externalID done:^(NSArray *related, NSDictionary *details) {
+        NSMutableDictionary *d = [details mutableCopy];
+        NSString *cid = details[@"channelID"];
+        if ([cid hasPrefix:@"UC"]) d[@"showRef"] = [@"ytchannel:" stringByAppendingString:cid];
+        done(related, d);
+    }];
+}
+
++ (SFItem *)itemForRef:(NSString *)ref title:(NSString *)title image:(NSString *)image {
+    NSString *vid = SFRefID(ref);
+    if (![SFRefPrefix(ref) isEqualToString:@"yt"] || vid.length != 11) return nil;
+    return [self itemForVideoID:vid title:title thumb:image];
+}
+
++ (SFPageLoader)listLoader:(NSString *)ref title:(NSString *)title {
+    return [SFRefPrefix(ref) isEqualToString:@"ytplaylist"] ? [self playlistLoader:SFRefID(ref) title:title] : nil;
+}
+
++ (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *))done {
+    if (item.externalID.length != 11) { done(nil); return; }
+    [self upNextFor:item.externalID done:done];
 }
 
 // channel page (ytchannel:UC…)

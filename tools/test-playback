@@ -146,9 +146,9 @@ echo "==> 8. YouTube end screen (fake data, offline)"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "cellauto=size=300x300:rule=110" -frames:v 1 "$T/esav.png"
 cp "$T/local.mp4" "$T/endvid.mp4"
 sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}','$T/endvid.mp4',2,1,strftime('%s','now'));"
-ES='[{"style":"VIDEO","videoId":"esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es1.png"},'\
-'{"style":"VIDEO","videoId":"esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es2.png"},'\
-'{"style":"SUBSCRIBE","browseId":"'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":7000,"endMs":0,"image":"'$T'/esav.png"}]'
+ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es1.png"},'\
+'{"kind":"video","ref":"yt:esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es2.png"},'\
+'{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":7000,"endMs":0,"image":"'$T'/esav.png"}]'
 waitlog() { for i in $(seq 1 ${3:-40}); do since $1 | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
 export SOFA_OFFLINE=1
 start

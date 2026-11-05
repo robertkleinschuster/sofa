@@ -6,8 +6,7 @@
 #import "SFStore.h"
 #import "SFAVEngine.h"
 #import "SFMPVEngine.h"
-#import "SFYTResolver.h"
-#import "SFYouTubeApp.h"
+#import "SFApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"
@@ -54,7 +53,7 @@
     NSInteger _nextCountdown;
     NSURL *_mpvFailedURL;        // mpv failed on this URL -> try AVFoundation
     BOOL _sabrRetried;
-    id _sabrObs;                 // SFYTSabrDidExitNotification observer           // SABR stream failed once -> reopen via SABR (sidecar restart is cheap), then yt-dlp
+    id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)           // SABR stream failed once -> reopen via SABR (sidecar restart is cheap), then yt-dlp
     BOOL _reresolved;            // YouTube: streams rejected -> resolve afresh once
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;

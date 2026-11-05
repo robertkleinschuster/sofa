@@ -14,8 +14,7 @@ void SFToggleFollow(SFNavigator *n, SFItem *folder, SFTheme *theme) {
     if (!n || !fid) return;
     if (![fo isFollowing:fid]) {
         [fo follow:folder];
-        BOOL yt = [folder.identifier hasPrefix:@"ytchannel:"];
-        [n toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue %@ erscheinen unter „Neue Folgen“", ftitle, yt ? @"Videos" : @"Folgen"]];
+        [n toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue %@ erscheinen unter „Neue Folgen“", ftitle, SFShowRefIsChannel(folder.identifier) ? @"Videos" : @"Folgen"]];
         return;
     }
     SFDownloads *dl = [SFDownloads shared];
@@ -73,11 +72,11 @@ void SFToggleFollow(SFNavigator *n, SFItem *folder, SFTheme *theme) {
     _details = nil; _related = nil; _showEpisodes = nil; _showTitle = nil;
     [self setPage:[self buildPage] keepFocus:NO];
     [self loadShowEpisodesFor:it];
-    // YouTube: description, channel and recommendations in ONE cached request (the same "next"
-    // call autoplay uses) - only for an online-capable video, never a spinner: absent until it arrives
-    if (![it.source isEqualToString:@"youtube"] || it.externalID.length != 11 || ![SFNet isOnline]) return;
+    // the app's details + recommendations (YouTube: watch page) - never a spinner: absent until it arrives
+    Class<SFApp> app = [SFAppRegistry appForItem:it];
+    if (![app respondsToSelector:@selector(watchDetailsForItem:done:)]) return;
     __weak SFPlayerInfoScreen *ws = self;
-    [SFYouTubeApp watchPageFor:it.externalID done:^(NSArray *related, NSDictionary *details) {
+    [app watchDetailsForItem:it done:^(NSArray *related, NSDictionary *details) {
         SFPlayerInfoScreen *s = ws;
         if (!s || s->_item != it) return;   // panel closed or the player moved on
         s->_details = details;
@@ -90,7 +89,8 @@ void SFToggleFollow(SFNavigator *n, SFItem *folder, SFTheme *theme) {
 // Mediathek video streamed online: its show's other episodes, from the same show page "Zur Sendung"
 // opens (registered loader for item.showRef). Downloaded shows use the library instead (episodesShelf).
 - (void)loadShowEpisodesFor:(SFItem *)it {
-    if ([it.source isEqualToString:@"youtube"] || it.kind != SFItemVideo || ![SFNet isOnline]) return;
+    // apps with their own recommendations (watchDetailsForItem:) show those instead
+    if ([[SFAppRegistry appForItem:it] respondsToSelector:@selector(watchDetailsForItem:done:)] || it.kind != SFItemVideo || ![SFNet isOnline]) return;
     if ([[SFLibrary shared] showNamed:it.channel source:it.source].episodes.count >= 2) return;
     __weak SFPlayerInfoScreen *ws = self;
     if (!it.showRef.length) {
@@ -205,13 +205,13 @@ static NSString *SFSig(SFItem *i) {
     return h;
 }
 
-// The running video with what the watch page added (channel ID for "Zum Kanal"/"Folgen")
+// The running video with what the app's details added (show ref for "Zum Kanal"/"Folgen")
 - (SFItem *)enrichedItem {
     SFItem *it = _item;
-    NSString *cid = _details[@"channelID"];
-    if (it.showRef || !cid) return it;
+    NSString *ref = _details[@"showRef"];
+    if (it.showRef || !ref) return it;
     SFItem *c = [it copy];
-    c.showRef = [@"ytchannel:" stringByAppendingString:cid];
+    c.showRef = ref;
     if (!c.channel.length) c.channel = _details[@"channel"];
     return c;
 }

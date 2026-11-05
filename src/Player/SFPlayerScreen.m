@@ -5,9 +5,7 @@
 #import "SFStore.h"
 #import "SFAVEngine.h"
 #import "SFMPVEngine.h"
-#import "SFYTResolver.h"
-#import "SFYTSabr.h"
-#import "SFYouTubeApp.h"
+#import "SFApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFLibrary.h"
 #import "SFCurl.h"
@@ -106,7 +104,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         [self->_barBg addSublayer:self->_barBuffer];
         self->_barFill = [CALayer layer];
         self->_barFill.anchorPoint = CGPointZero;
-        NSColor *acc = [t.identifier isEqualToString:@"home"] || [t.identifier isEqualToString:@"ard"] ? [NSColor whiteColor] : t.accent;
+        NSColor *acc = t.seekBarColor;
         self->_barFill.backgroundColor = acc.CGColor;
         [self->_barBg addSublayer:self->_barFill];
         [self->_osd addSublayer:self->_barBg];
@@ -301,13 +299,16 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
           _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, audio %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
     __weak SFPlayerScreen *wself = self;
-    // the SABR sidecar died: its local URLs are gone - reopen right away instead of waiting for
-    // mpv's reconnects and the stall watchdog
-    if (!_sabrObs) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFYTSabrDidExitNotification object:nil
+    // the service behind the app's session streams died: its local URLs are gone - reopen right
+    // away instead of waiting for mpv's reconnects and the stall watchdog
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    NSString *lost = [app respondsToSelector:@selector(playbackSessionLostNotification)] ? [app playbackSessionLostNotification] : nil;
+    if (_sabrObs) { [[NSNotificationCenter defaultCenter] removeObserver:_sabrObs]; _sabrObs = nil; }
+    if (lost) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:lost object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
             SFPlayerScreen *s = wself;
             // not after the end (up-next card, end screen): the finished video must not restart
-            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [SFMPVSourceFor(s->_openURL)[@"sabr"] boolValue]) [s sabrFailed:@"sidecar exited"];
+            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [s sessionSource]) [s sessionFailed:@"service exited"];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
@@ -366,12 +367,18 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     });
 }
 
-- (void)sabrFailed:(NSString *)why {
-    NSDictionary *src = SFMPVSourceFor(_openURL);
-    SFLog(@"player: SABR stream failed (%@) -> %@", why, _sabrRetried ? @"yt-dlp" : @"reopening via SABR");
-    SFCount(_sabrRetried ? @"player.sabr-to-ytdlp" : @"player.sabr-reopen");
-    if (_sabrRetried) [[SFYTSabr shared] markFailed:src[@"vid"]];
-    else [[SFYTSabr shared] closeSession:src[@"sid"]];   // the retry gets a fresh session, not the broken one
+// The opened stream comes from an app session (e.g. YouTube SABR via the sidecar)?
+- (BOOL)sessionSource {
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    return [app respondsToSelector:@selector(playbackIsSession:)] && [app playbackIsSession:SFMPVSourceFor(_openURL)];
+}
+
+// A session stream broke: the app recovers its side (fresh session, or its fallback path on the
+// second failure), the player restarts the item at the same position.
+- (void)sessionFailed:(NSString *)why {
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    if ([app respondsToSelector:@selector(playbackSessionFailed:item:retried:reason:)])
+        [app playbackSessionFailed:SFMPVSourceFor(_openURL) item:_item retried:_sabrRetried reason:why];
     _sabrRetried = YES;
     self.startPaused = self.startPaused || _holdPaused;
     NSTimeInterval pos = [self failurePosition];
@@ -388,10 +395,8 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
             SFLog(@"player: error %@ %ld %@ | underlying %@ %ld | %@", e.domain, (long)e.code, e.localizedFailureReason ?: @"",
                   u.domain, (long)u.code, e.userInfo[NSLocalizedRecoverySuggestionErrorKey] ?: @"");
         }
-        // SABR (sofa-yt sidecar) failed: first reopen via SABR (a crashed sidecar restarts and has the
-        // player response cached on disk - no new YouTube request), then yt-dlp takes over (the
-        // resolver skips SABR for this video from now on)
-        if ([SFMPVSourceFor(_openURL)[@"sabr"] boolValue]) { [self sabrFailed:_engine.error.localizedDescription]; return; }
+        // a session stream (app service) failed: the app's recovery first (see sessionFailed:)
+        if ([self sessionSource]) { [self sessionFailed:_engine.error.localizedDescription]; return; }
         // googlevideo HLS sporadically fails immediately on 10.9 (-12643/-12939), the same
         // URL works on the next attempt (docs/youtube.md §6) -> reopen up to 3x.
         if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
@@ -426,13 +431,12 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
             [self reopen:next forceMPV:tryMPV after:0.2 resetTries:YES];
             return;
         }
-        // YouTube URLs are sporadically rejected entirely (403/-1102): resolve afresh once
-        NSString *ref = _item.resolverRef ?: _item.identifier;
-        if (!_reresolved && [ref hasPrefix:@"yt:"]) {
+        // all streams rejected (e.g. YouTube 403/-1102): resolve afresh once if the app says it helps
+        Class<SFApp> app = [SFAppRegistry appForItem:_item];
+        if (!_reresolved && [app respondsToSelector:@selector(playbackPrepareReResolve:)] && [app playbackPrepareReResolve:_item]) {
             _reresolved = YES;
             SFLog(@"player: all streams rejected -> resolving afresh");
             SFCount(@"player.re-resolve");
-            [[SFYTResolver shared] forget:[ref substringFromIndex:3]];
             _mpvFailedURL = nil;
             self.startPaused = self.startPaused || _holdPaused;   // "start paused" survives the re-resolve
             NSTimeInterval pos = [self failurePosition];
@@ -461,30 +465,28 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self showSpinner:!_engine.likelyToKeepUp && _engine.playing && !_failed];
     [self postState];
 }
-// A SABR stream that ends or breaks well before the end of the video lost its local source (sidecar
-// session failed, evicted or gone): fallback instead of "finished" or a dead "connection interrupted"
-- (BOOL)sabrCutShort {
-    if (![SFMPVSourceFor(_openURL)[@"sabr"] boolValue]) return NO;
+// A session stream that ends or breaks well before the end of the video lost its local source
+// (session failed, evicted or gone): fallback instead of "finished" or a dead "connection interrupted"
+- (BOOL)sessionCutShort {
+    if (![self sessionSource]) return NO;
     double d = [self duration], c = _engine.currentTime;
     return !(d > 0) || c < d - 30;
 }
 - (void)engineDidEnd {
-    // live via the sidecar: the end of the playlist is either the end of the broadcast (upstream
-    // EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the sidecar knows
+    // live from an app session: the end of the playlist is either the end of the broadcast or a
+    // lost playlist - only the app's service knows
     NSDictionary *src = SFMPVSourceFor(_openURL);
-    if ([src[@"sabr"] boolValue] && [src[@"hls"] boolValue] && [src[@"live"] boolValue]) {
-        NSURL *opened = _openURL; SFItem *it = _item;
-        [[SFYTSabr shared] sessionStatus:src[@"sid"] done:^(NSDictionary *st) {
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    NSURL *opened = _openURL; SFItem *it = _item;
+    if ([app respondsToSelector:@selector(playbackLiveEnded:done:)] && [app playbackLiveEnded:src done:^(BOOL ended) {
             if (self->_closing || it != self->_item || ![opened isEqual:self->_openURL]) return;
-            if ([st[@"ended"] boolValue]) { SFLog(@"player: live broadcast ended"); [self didEnd:nil]; }
-            else [self sabrFailed:@"live playlist ended"];
-        }];
-        return;
-    }
-    if ([self sabrCutShort]) { [self sabrFailed:@"stream ended early"]; return; }
+            if (ended) { SFLog(@"player: live broadcast ended"); [self didEnd:nil]; }
+            else [self sessionFailed:@"live playlist ended"];
+        }]) return;
+    if ([self sessionCutShort]) { [self sessionFailed:@"stream ended early"]; return; }
     [self didEnd:nil];
 }
-- (void)engineInterrupted { if ([self sabrCutShort]) { [self sabrFailed:@"stream interrupted"]; return; } [self failedToEnd:nil]; }
+- (void)engineInterrupted { if ([self sessionCutShort]) { [self sessionFailed:@"stream interrupted"]; return; } [self failedToEnd:nil]; }
 - (void)engineTick { [self tick]; }
 
 - (void)teardownPlayer {
@@ -545,13 +547,14 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 
 - (void)tick {
     NSTimeInterval c = [self current];
-    // YouTube autoplay: from the halfway point fetch the "up next" recommendation (once per video)
+    // autoplay: from the halfway point fetch the app's "up next" recommendation (once per video)
     NSTimeInterval dur = [self duration];
     BOOL playlistGoesOn = _item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID];
-    if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [_item.source isEqualToString:@"youtube"] && _item.externalID.length == 11 && dur > 0 && c > dur * 0.5) {
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [app respondsToSelector:@selector(upNextForItem:done:)] && dur > 0 && c > dur * 0.5) {
         _upNextAsked = YES;
         SFItem *forItem = _item;
-        [SFYouTubeApp upNextFor:_item.externalID done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
+        [app upNextForItem:_item done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
     }
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];

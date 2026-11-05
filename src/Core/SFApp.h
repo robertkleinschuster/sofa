@@ -33,6 +33,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (NSString *)searchPlaceholder;   // keyboard hint ("Vorträge suchen"); default "Sendungen und Videos suchen"
 + (NSArray *)showRefPrefixes;      // namespaces that are shows/channels: followable, have a page + feed
 + (BOOL)homeIncludesFollows;       // YES: homeLoader shows followed shows/new episodes itself (else the shell adds them)
++ (BOOL)showsAreChannels;          // YES: shows are "Kanäle" with "Videos" (YouTube), else "Sendungen" with "Folgen"
 // --- lifecycle ---
 + (void)start;                   // launch (services, warm-up); called once, in registry order
 + (void)stop;                    // quit (best effort, short)
@@ -42,6 +43,22 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 // --- playback: ref = full "prefix:id" of one of refPrefixes ---
 + (void)resolve:(NSString *)ref done:(SFURLDone)done;
 + (void)resolveOnline:(NSString *)ref done:(SFURLDone)done;   // skip local copies ("Online abspielen")
+// --- player hooks: app knowledge about a running playback. `source` = the stream description the
+//     app's resolver attached to the opened URL (SFMPVSourceFor). The generic fallback chain
+//     (engine switch, DASH->HLS, alternates) stays in the player. ---
++ (BOOL)playbackIsSession:(NSDictionary *)source;   // stream served by an app session (local service) whose loss needs recovery
++ (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item retried:(BOOL)retried reason:(NSString *)why;   // before the player restarts the item
++ (NSString *)playbackSessionLostNotification;      // posted when the service behind session streams died
++ (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)
++ (BOOL)playbackPrepareReResolve:(SFItem *)item;    // all streams rejected: drop caches, YES = resolving afresh can help
++ (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *next))done;   // autoplay recommendation (from half time)
+// info panel: description/channel and related videos (done on main; related empty + details nil =
+// failed). details keys: description, channel, showRef, avatar, date (NSDate) - only when found.
++ (void)watchDetailsForItem:(SFItem *)item done:(void (^)(NSArray *related, NSDictionary *details))done;
+// End cards (creator tiles over the last seconds, SFPlayerScreen+Endscreen.m) come in the stream
+// description under "endCards": [{kind: video|playlist|channel|follow, ref ("yt:…", "ytplaylist:…",
+// "ytchannel:…"), firstRef (playlist: the linked video), title, image, left, top, width,
+// aspectRatio (fractions of the picture), startMs, endMs}] - the app converts its own data.
 // --- shows / channels ---
 + (SFPageLoader)showPageLoader:(NSString *)ref title:(NSString *)title;   // page of a show/channel ref
 + (void)showRefForItem:(SFItem *)item done:(void (^)(NSString *ref))done; // item -> its show/channel ref
@@ -51,7 +68,8 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (NSTimeInterval)downloadsPausedUntil;   // e.g. bot check: no downloads until then (epoch s, 0 = no pause)
 + (void)availabilityOfItem:(SFItem *)item done:(SFAvailabilityDone)done;
 // --- items ---
-+ (SFItem *)itemForIdentifier:(NSString *)identifier;   // placeholder item for an id of this app (phone, end screens)
++ (SFItem *)itemForRef:(NSString *)ref title:(NSString *)title image:(NSString *)image;   // playable item for a video ref (phone, end cards); local copy preferred
++ (SFPageLoader)listLoader:(NSString *)ref title:(NSString *)title;   // a playable list (playlist): first shelf = the videos in order
 + (NSString *)focusPreloadRefForItem:(SFItem *)item;    // start resolving early when a tile gets focus
 + (void)preloadOnFocus:(SFItem *)item;
 // --- dev (sofa-dev FIFO): app-specific commands, YES = handled ---
@@ -68,6 +86,10 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)startAll;
 + (void)stopAll;
 @end
+
+// Wording for a show ref / item: YES = channel ("Kanal", "Videos")
+BOOL SFShowRefIsChannel(NSString *ref);
+BOOL SFItemShowsAreChannels(SFItem *item);
 
 // "prefix:id" helpers
 NSString *SFRefPrefix(NSString *ref);   // nil without ':'

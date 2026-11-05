@@ -9,6 +9,10 @@ NSString *SFRefID(NSString *ref) {
     return c.location == NSNotFound ? ref : [ref substringFromIndex:c.location + 1];
 }
 
+static BOOL channels(Class<SFApp> a) { return [a respondsToSelector:@selector(showsAreChannels)] && [a showsAreChannels]; }
+BOOL SFShowRefIsChannel(NSString *ref) { return channels([SFAppRegistry appForRef:ref]); }
+BOOL SFItemShowsAreChannels(SFItem *item) { return channels([SFAppRegistry appForItem:item]); }
+
 @implementation SFAppRegistry
 
 static NSMutableArray *gApps;
