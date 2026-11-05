@@ -1,7 +1,7 @@
 // SFPlayerScreen - YouTube end screen: the tiles a creator places over the last seconds of a video
 // (other videos, a playlist, channels, a follow button), at the creator's positions over the picture.
 //
-// Data: the SABR sidecar's /open answer carries `endscreen` (res/sofa-yt/lib/youtube.mjs
+// Data: the SABR sidecar's /open answer carries `endscreen` (res/sofa-yt/lib/youtube.ts
 // endscreenElements) and lands in the mpv source dict of the open URL; no request of its own here,
 // only the thumbnails are loaded (and only once a tile is about to show).
 //

@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { DIR, get, until, sleep } from './helpers.mjs';
+import { DIR, get, json, nth, until, sleep } from './helpers.ts';
+import type { OpenFailure } from '../../res/sofa-yt/lib/app.ts';
 
 test('ready line, health, bg breaker, exit on stdin EOF', async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-proc-'));
@@ -15,7 +16,7 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
   const env = { ...process.env };
   delete env.DYLD_INSERT_LIBRARIES;
   const child = spawn(process.env.SOFA_NODE || process.execPath,
-    [path.join(DIR, 'main.mjs'), '--port', '0', '--state', state, '--block-file', block, '--no-warm'],
+    [path.join(DIR, 'main.ts'), '--port', '0', '--state', state, '--block-file', block, '--no-warm'],
     { env, stdio: ['pipe', 'pipe', 'pipe'] });
   let out = ''; let err = '';
   child.stdout.on('data', (d) => { out += d; });
@@ -23,11 +24,11 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
   const exited = new Promise((r) => child.on('exit', (code) => r(code)));
   try {
     assert.ok(await until(() => out.includes('\n'), 10000), `ready line (stderr: ${err})`);
-    const ready = JSON.parse(out.split('\n')[0]);
+    const ready = json<{ ready: boolean; port: number }>(nth(out.split('\n'), 0));
     assert.equal(ready.ready, true);
     assert.ok(ready.port > 0);
     const base = `http://127.0.0.1:${ready.port}`;
-    const h = JSON.parse((await get(`${base}/health`)).body);
+    const h = json<{ ok: boolean; poToken: string; session: string; blocked_until: number }>((await get(`${base}/health`)).body);
     assert.equal(h.ok, true);
     assert.equal(h.poToken, 'pending');
     assert.equal(h.session, 'pending');
@@ -41,7 +42,7 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
       assert.ok(Date.now() - t < 1500, `request ${i} took ${Date.now() - t} ms`);
       await sleep(300);
     }
-    const o = JSON.parse((await get(`${base}/open?v=jNQXAC9IVRw&bg=1`)).body);
+    const o = json<OpenFailure>((await get(`${base}/open?v=jNQXAC9IVRw&bg=1`)).body);
     assert.equal(o.bot, true);
     assert.match(o.error, /no request sent/);
     assert.ok(fs.existsSync(path.join(state, 'players')));
@@ -60,7 +61,7 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
 test('--check loads every dependency', async () => {
   const env = { ...process.env };
   delete env.DYLD_INSERT_LIBRARIES;
-  const child = spawn(process.env.SOFA_NODE || process.execPath, [path.join(DIR, 'main.mjs'), '--check'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.env.SOFA_NODE || process.execPath, [path.join(DIR, 'main.ts'), '--check'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let err = '';
   child.stderr.on('data', (d) => { err += d; });
   const code = await new Promise((r) => child.on('exit', r));

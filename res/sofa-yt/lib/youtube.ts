@@ -9,9 +9,95 @@
 // request and used for deciphering right after it; only the deciphered URL is cached.
 import fs from 'node:fs';
 import path from 'node:path';
-import { isBotCheck } from './breaker.mjs';
-import { prepareManifestUrl, pathExpire } from './hls.mjs';
-import { log } from './log.mjs';
+import type { ReloadPlaybackContext } from 'googlevideo/protos';
+import type { ReloadResponse } from 'googlevideo/sabr-stream';
+import type { Innertube, Player } from 'youtubei.js';
+import { isBotCheck } from './breaker.ts';
+import type { Breaker } from './breaker.ts';
+import { errorMessage } from './errors.ts';
+import { prepareManifestUrl, pathExpire } from './hls.ts';
+import { isRecord, parseJson, record, records } from './json.ts';
+import type { JsonObject } from './json.ts';
+import { log } from './log.ts';
+import { asPlayerResponse, rawText } from './ytraw.ts';
+import type { RawCaptions, RawFormat, RawPlayerResponse } from './ytraw.ts';
+import type { PoTokenProvider } from './webpo.ts';
+
+/** The Innertube context client (user agent, visitor data, client version). */
+type InnertubeClient = Innertube['session']['context']['client'];
+
+/** One end screen tile Sofa can open. */
+export interface EndscreenElement {
+  style: string;
+  videoId?: string;
+  playlistId?: string | undefined;
+  browseId?: string;
+  title: string;
+  left: number;
+  top: number;
+  width: number;
+  aspectRatio: number;
+  startMs: number;
+  endMs: number;
+  image?: string | null;   // undefined: the largest thumbnail has no URL
+}
+
+interface InfoBase {
+  id: string;
+  title: string;
+  author: string;
+  durationMs: number;
+  expires: number;               // epoch seconds: the URLs are valid until then
+  clientName: number;            // 1 = WEB
+  clientVersion: string;
+  playerId: string;
+  captions: RawCaptions | null;
+  endscreen: EndscreenElement[];
+  fetchedAt: number;             // epoch seconds of the player request
+}
+
+/** A VOD: SABR streaming URL (deciphered with the request's player) + the adaptive formats. */
+export interface VodInfo extends InfoBase {
+  kind?: undefined;
+  sabrUrl: string;
+  ustreamer: string;
+  formats: RawFormat[];
+}
+
+/** A live / post-live DVR recording: the prepared HLS manifest URL. */
+export interface HlsInfo extends InfoBase {
+  kind: 'hls';
+  live: boolean;
+  postLiveDvr: boolean;
+  hlsUrl: string;
+}
+
+/** What the per-video cache holds (also the JSON of `players/<id>.json`). */
+export type VideoInfo = VodInfo | HlsInfo;
+
+export type PlayerClass =
+  | { kind: 'upcoming'; startTime: number | null }
+  | { kind: 'offline' | 'live' | 'postlive' | 'vod' | 'error' };
+
+/** The /player request body youtubei.js sends as is (parse: false = raw JSON back). */
+interface PlayerRequest {
+  videoId: string;
+  racyCheckOk: boolean;
+  contentCheckOk: boolean;
+  playbackContext: {
+    contentPlaybackContext: { vis: number; splay: boolean; lactMilliseconds: string; signatureTimestamp: number };
+    reloadPlaybackContext?: ReloadPlaybackContext;
+  };
+  serviceIntegrityDimensions: { poToken: string };
+  client: 'WEB';
+  parse: false;
+}
+
+/** A cache file is used only when it is a complete info of the expected video. */
+function isVideoInfo(x: unknown, videoId: string): x is VideoInfo {
+  if (!isRecord(x) || x.id !== videoId || typeof x.expires !== 'number') return false;
+  return x.kind === 'hls' ? typeof x.hlsUrl === 'string' : typeof x.sabrUrl === 'string' && Array.isArray(x.formats);
+}
 
 const SESSION_TIMEOUT_MS = 30000;
 const PLAYER_TIMEOUT_MS = 20000;
@@ -30,30 +116,44 @@ const RELOAD_WINDOW_S = 600;
  * response - no extra request. Positions are fractions of the video frame. Only targets Sofa can
  * open: videos, playlists, channels (no websites/merch).
  */
-export function endscreenElements(raw) {
+export function endscreenElements(raw: RawPlayerResponse | null | undefined): EndscreenElement[] {
   const els = raw?.endscreen?.endscreenRenderer?.elements || [];
-  const out = [];
+  const out: EndscreenElement[] = [];
   for (const e of els) {
     const r = e.endscreenElementRenderer;
     if (!r) continue;
     const ep = r.endpoint || {};
     const target = ep.watchEndpoint?.videoId ? { videoId: ep.watchEndpoint.videoId, playlistId: ep.watchEndpoint.playlistId }
       : ep.browseEndpoint?.browseId ? { browseId: ep.browseEndpoint.browseId } : null;
-    if (!target || !['VIDEO', 'PLAYLIST', 'CHANNEL', 'SUBSCRIBE'].includes(r.style)) continue;
+    if (!target || !r.style || !['VIDEO', 'PLAYLIST', 'CHANNEL', 'SUBSCRIBE'].includes(r.style)) continue;
     const thumbs = r.image?.thumbnails || [];
     out.push({
       style: r.style, ...target,
-      title: r.title?.simpleText || (r.title?.runs || []).map((x) => x.text).join('') || '',
+      title: rawText(r.title) || '',
       left: Number(r.left) || 0, top: Number(r.top) || 0, width: Number(r.width) || 0, aspectRatio: Number(r.aspectRatio) || 0,
       startMs: Number(r.startMs) || 0, endMs: Number(r.endMs) || 0,
-      image: thumbs.length ? thumbs[thumbs.length - 1].url : null,
+      image: thumbs.length ? thumbs[thumbs.length - 1]!.url : null,
     });
   }
   return out;
 }
 
+export interface YouTubeErrorFlags {
+  bot?: boolean;
+  live?: boolean;
+  status?: string | null;
+  upcoming?: boolean;
+  startTime?: number | null;
+}
+
 export class YouTubeError extends Error {
-  constructor(message, { bot = false, live = false, status = null, upcoming = false, startTime = null } = {}) {
+  bot: boolean;
+  live: boolean;
+  status: string | null;
+  upcoming: boolean;
+  startTime: number | null;
+
+  constructor(message: string, { bot = false, live = false, status = null, upcoming = false, startTime = null }: YouTubeErrorFlags = {}) {
     super(message);
     this.bot = bot;
     this.live = live;
@@ -74,7 +174,7 @@ export class YouTubeError extends Error {
  *   {kind:'vod'}                  everything else (status OK)
  *   {kind:'error'}                any other non-OK status (the caller reports the reason)
  */
-export function classifyPlayer(raw) {
+export function classifyPlayer(raw: RawPlayerResponse | null | undefined): PlayerClass {
   const ps = raw?.playabilityStatus || {};
   const vd = raw?.videoDetails || {};
   const slate = ps.liveStreamability?.liveStreamabilityRenderer?.offlineSlate?.liveStreamOfflineSlateRenderer;
@@ -94,9 +194,9 @@ export function classifyPlayer(raw) {
   return { kind: 'vod' };
 }
 
-function withTimeout(p, ms, what) {
-  let t;
-  return Promise.race([p, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(`${what} timed out`)), ms); })])
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: NodeJS.Timeout | undefined;
+  return Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${what} timed out`)), ms); })])
     .finally(() => clearTimeout(t));
 }
 
@@ -104,17 +204,30 @@ function withTimeout(p, ms, what) {
  * Optional hard cap on player requests (safety net against loops): at most `max` requests within
  * `windowS` seconds (windowS = 0: lifetime of the counter file). Persisted, survives restarts.
  */
+interface BudgetEntry {
+  at: string;      // ISO time of the request
+  why: string;
+}
+
 export class PlayerBudget {
-  constructor({ file = null, max = Infinity, windowS = 3600 } = {}) {
+  file: string | null;
+  max: number;
+  windowS: number;
+  mem: BudgetEntry[];
+
+  constructor({ file = null, max = Infinity, windowS = 3600 }: { file?: string | null; max?: number; windowS?: number } = {}) {
     this.file = file; this.max = max; this.windowS = windowS; this.mem = [];
   }
 
-  load() {
+  load(): BudgetEntry[] {
     if (!this.file) return this.mem;
-    try { return JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { return []; }
+    try {
+      return records(parseJson(fs.readFileSync(this.file, 'utf8')))
+        .filter((e): e is JsonObject & BudgetEntry => typeof e.at === 'string' && typeof e.why === 'string');
+    } catch { return []; }
   }
 
-  take(why) {
+  take(why: string): number {
     const now = Date.now();
     let b = this.load();
     if (this.windowS > 0) b = b.filter((e) => now - Date.parse(e.at) < this.windowS * 1000);
@@ -124,21 +237,41 @@ export class PlayerBudget {
     b.push({ at: new Date(now).toISOString(), why });
     this.mem = b;
     if (this.file) {
-      try { fs.writeFileSync(this.file, JSON.stringify(b, null, 1)); } catch (e) { log('budget: cannot write', e.message); }
+      try { fs.writeFileSync(this.file, JSON.stringify(b, null, 1)); } catch (e) { log('budget: cannot write', errorMessage(e)); }
     }
     return b.length;
   }
 }
 
+export interface YouTubeOptions {
+  stateDir: string;
+  breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
+  po: Pick<PoTokenProvider, 'mintString'>;
+  budget?: PlayerBudget;
+}
+
+export type SessionState = 'pending' | 'ready' | 'error';
+
 export class YouTube {
-  /**
-   * @param {object} o
-   * @param {string} o.stateDir
-   * @param {import('./breaker.mjs').Breaker} o.breaker
-   * @param {import('./webpo.mjs').PoTokenProvider} o.po
-   * @param {PlayerBudget} [o.budget]
-   */
-  constructor({ stateDir, breaker, po, budget = new PlayerBudget() }) {
+  stateDir: string;
+  breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
+  po: Pick<PoTokenProvider, 'mintString'>;
+  budget: PlayerBudget;
+  playerDir: string;
+  yt: Innertube | null;
+  ytCreated: number;
+  ytInflight: Promise<Innertube> | null;
+  ytState: SessionState;
+  ytRetryMs: number;
+  ytNextTry: number;
+  ytError: string | null;
+  cache: Map<string, VideoInfo>;
+  inflight: Map<string, Promise<VideoInfo>>;
+  reloading: Map<string, Promise<VideoInfo>>;
+  reloads: Map<string, number[]>;
+  notYet: Map<string, { at: number; err: YouTubeError }>;
+
+  constructor({ stateDir, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
     this.stateDir = stateDir;
     this.breaker = breaker;
     this.po = po;
@@ -162,9 +295,8 @@ export class YouTube {
 
   // ---- Innertube session ------------------------------------------------------------------
 
-  async session() {
-    const fresh = this.yt && Date.now() - this.ytCreated < SESSION_MAX_AGE_MS;
-    if (fresh) return this.yt;
+  async session(): Promise<Innertube> {
+    if (this.yt && Date.now() - this.ytCreated < SESSION_MAX_AGE_MS) return this.yt;   // fresh
     if (!this.ytInflight) {
       if (!this.yt && Date.now() < this.ytNextTry) {
         throw new YouTubeError(`YouTube session unavailable (${this.ytError}); retry in ${Math.ceil((this.ytNextTry - Date.now()) / 1000)} s`);
@@ -176,7 +308,7 @@ export class YouTube {
           const { USER_AGENT } = await import('bgutils-js/utils');
           Log.setLevel(Log.Level.ERROR);
           // youtubei.js 18 ships no JS evaluator for node; the n/sig transforms need one.
-          Platform.shim.eval = async (data) => new Function(data.output)(); // eslint-disable-line no-new-func
+          Platform.shim.eval = async (data) => new Function(data.output)() as Record<string, unknown> | undefined; // eslint-disable-line no-new-func
           const yt = await withTimeout(Innertube.create({
             cache: new UniversalCache(true, path.join(this.stateDir, 'ytjs-cache')), // visitorData + player.js
             retrieve_player: true,
@@ -193,13 +325,13 @@ export class YouTube {
             + `visitorData=${(yt.session.context.client.visitorData || '').slice(0, 12)}...`);
           return yt;
         } catch (e) {
-          this.ytError = e.message;
+          this.ytError = errorMessage(e);
           this.ytNextTry = Date.now() + this.ytRetryMs;
           this.ytRetryMs = Math.min(SESSION_RETRY_MAX_MS, this.ytRetryMs * 2);
           if (!this.yt) this.ytState = 'error';
-          log('session setup failed:', e.message);
+          log('session setup failed:', errorMessage(e));
           if (this.yt) return this.yt; // keep using the old session
-          throw new YouTubeError(`YouTube session unavailable: ${e.message}`);
+          throw new YouTubeError(`YouTube session unavailable: ${errorMessage(e)}`);
         } finally {
           this.ytInflight = null;
         }
@@ -208,9 +340,9 @@ export class YouTube {
     return this.ytInflight;
   }
 
-  warm() { this.session().catch(() => {}); }
+  warm(): void { this.session().catch(() => {}); }
 
-  get sessionState() { return this.ytState; }
+  get sessionState(): SessionState { return this.ytState; }
 
   // ---- player requests --------------------------------------------------------------------
 
@@ -219,12 +351,13 @@ export class YouTube {
    * `bg`: background request -> refused while the bot-check breaker is open.
    * Concurrent calls for the same video share one request.
    */
-  async info(videoId, { bg = false } = {}) {
+  async info(videoId: string, { bg = false }: { bg?: boolean } = {}): Promise<{ info: VideoInfo; cached: boolean }> {
     const c = this.cached(videoId);
     if (c) return { info: c, cached: true };
     const ny = this.notYet.get(videoId);
     if (ny && Date.now() - ny.at < UPCOMING_CACHE_MS) throw ny.err;
-    if (this.inflight.has(videoId)) return { info: await this.inflight.get(videoId), cached: false };
+    const pending = this.inflight.get(videoId);
+    if (pending) return { info: await pending, cached: false };
     if (bg) {
       const until = this.breaker.blockedUntil();
       if (until) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no request sent)", { bot: true });
@@ -234,12 +367,13 @@ export class YouTube {
     return { info: await p, cached: false };
   }
 
-  cached(videoId) {
-    let c = this.cache.get(videoId);
+  cached(videoId: string): VideoInfo | null {
+    let c = this.cache.get(videoId) ?? null;
     if (!c) {
       try {
-        c = JSON.parse(fs.readFileSync(this.cacheFile(videoId), 'utf8'));
-        if (c && c.id === videoId) this.cache.set(videoId, c); else c = null;
+        const j = parseJson(fs.readFileSync(this.cacheFile(videoId), 'utf8'));
+        if (isVideoInfo(j, videoId)) { c = j; this.cache.set(videoId, c); }
+        else if (isRecord(j) && j.id === videoId) this.forget(videoId);   // unusable (as if expired)
       } catch { c = null; }
     }
     if (c && c.expires - Date.now() / 1000 > REUSE_MARGIN_S) return c;
@@ -247,21 +381,21 @@ export class YouTube {
     return null;
   }
 
-  forget(videoId) {
+  forget(videoId: string): void {
     this.cache.delete(videoId);
     try { fs.unlinkSync(this.cacheFile(videoId)); } catch { /* not cached */ }
   }
 
-  cacheFile(videoId) { return path.join(this.playerDir, `${videoId}.json`); }
+  cacheFile(videoId: string): string { return path.join(this.playerDir, `${videoId}.json`); }
 
-  pruneDisk() {
+  pruneDisk(): void {
     const now = Date.now() / 1000;
     try {
       for (const f of fs.readdirSync(this.playerDir)) {
         const p = path.join(this.playerDir, f);
         try {
-          const c = JSON.parse(fs.readFileSync(p, 'utf8'));
-          if (!(c.expires > now)) fs.unlinkSync(p);
+          const c = parseJson(fs.readFileSync(p, 'utf8'));
+          if (!(Number(record(c).expires) > now)) fs.unlinkSync(p);
         } catch { try { fs.unlinkSync(p); } catch { /* gone */ } }
       }
     } catch { /* no dir */ }
@@ -271,17 +405,18 @@ export class YouTube {
    * One player request (+ decipher with the same player). `reloadContext`: SABR asked for a reload
    * (RELOAD_PLAYER_RESPONSE / expired URL).
    */
-  async request(videoId, reloadContext) {
+  async request(videoId: string, reloadContext: ReloadPlaybackContext | null): Promise<VideoInfo> {
     const yt = await this.session();
     const player = yt.session.player; // pinned: sts in the request and decipher must match
-    let poToken;
+    if (!player) throw new YouTubeError('no player script');   // session() refuses sessions without one
+    let poToken: string;
     try {
       poToken = await this.po.mintString(videoId);
     } catch (e) {
-      throw new YouTubeError(`PO token unavailable: ${e.message}`);
+      throw new YouTubeError(`PO token unavailable: ${errorMessage(e)}`);
     }
     const n = this.budget.take(reloadContext ? `reload ${videoId}` : `player ${videoId}`);
-    const payload = {
+    const payload: PlayerRequest = {
       videoId, racyCheckOk: true, contentCheckOk: true,
       playbackContext: { contentPlaybackContext: { vis: 0, splay: false, lactMilliseconds: '-1',
         signatureTimestamp: player.signature_timestamp } },
@@ -291,16 +426,16 @@ export class YouTube {
     };
     if (reloadContext) payload.playbackContext.reloadPlaybackContext = reloadContext;
     const t0 = performance.now();
-    let raw;
+    let raw: RawPlayerResponse;
     try {
-      raw = (await withTimeout(yt.actions.execute('/player', payload), PLAYER_TIMEOUT_MS, 'player request')).data;
+      raw = asPlayerResponse((await withTimeout(yt.actions.execute('/player', payload), PLAYER_TIMEOUT_MS, 'player request')).data);
     } catch (e) {
-      const bot = isBotCheck(e.message);
+      const bot = isBotCheck(errorMessage(e));
       if (bot) this.breaker.note(true);
-      throw new YouTubeError(`player request failed: ${e.message}`, { bot });
+      throw new YouTubeError(`player request failed: ${errorMessage(e)}`, { bot });
     }
     const ms = performance.now() - t0;
-    const ps = raw?.playabilityStatus || {};
+    const ps = raw.playabilityStatus || {};
     const reason = [ps.reason, ps.errorScreen?.playerErrorMessageRenderer?.subreason?.simpleText,
       (ps.errorScreen?.playerErrorMessageRenderer?.subreason?.runs || []).map((r) => r.text).join('')]
       .filter(Boolean).join(' - ');
@@ -329,14 +464,14 @@ export class YouTube {
     if (!sd.serverAbrStreamingUrl) throw new YouTubeError('no SABR streaming URL in player response');
     const ustreamer = raw.playerConfig?.mediaCommonConfig?.mediaUstreamerRequestConfig?.videoPlaybackUstreamerConfig;
     if (!ustreamer) throw new YouTubeError('no ustreamer config in player response');
-    let sabrUrl;
+    let sabrUrl: string;
     try {
       sabrUrl = await withTimeout(player.decipher(sd.serverAbrStreamingUrl), 15000, 'decipher');
     } catch (e) {
-      throw new YouTubeError(`decipher failed: ${e.message}`);
+      throw new YouTubeError(`decipher failed: ${errorMessage(e)}`);
     }
     const expireParam = Number(new URL(sabrUrl).searchParams.get('expire'));
-    const info = {
+    const info: VodInfo = {
       id: videoId,
       title: vd.title || '',
       author: vd.author || '',
@@ -355,9 +490,9 @@ export class YouTube {
     return this.store(info);
   }
 
-  store(info) {
+  store(info: VideoInfo): VideoInfo {
     this.cache.set(info.id, info);
-    try { fs.writeFileSync(this.cacheFile(info.id), JSON.stringify(info)); } catch (e) { log('cannot cache player response:', e.message); }
+    try { fs.writeFileSync(this.cacheFile(info.id), JSON.stringify(info)); } catch (e) { log('cannot cache player response:', errorMessage(e)); }
     return info;
   }
 
@@ -368,18 +503,19 @@ export class YouTube {
    * 2026-11-05 (DW News, LuKwFajn37U): without the n transform every segment answers 403; with
    * it (with or without pot) segments play.
    */
-  async liveInfo(videoId, raw, { player, poToken, client, live }) {
+  async liveInfo(videoId: string, raw: RawPlayerResponse,
+    { player, poToken, client, live }: { player: Player; poToken: string; client: InnertubeClient; live: boolean }): Promise<HlsInfo> {
     const vd = raw.videoDetails || {};
     const sd = raw.streamingData || {};
     if (!sd.hlsManifestUrl) throw new YouTubeError(`${live ? 'live' : 'post-live'} without HLS manifest`, { live: true });
-    let hlsUrl;
+    let hlsUrl: string;
     try {
       hlsUrl = await withTimeout(prepareManifestUrl(sd.hlsManifestUrl, {
         poToken,
-        solve: async (n) => new URL(await player.decipher(`https://rr1---sn-x.googlevideo.com/videoplayback?n=${encodeURIComponent(n)}`)).searchParams.get('n'),
+        solve: async (n: string) => new URL(await player.decipher(`https://rr1---sn-x.googlevideo.com/videoplayback?n=${encodeURIComponent(n)}`)).searchParams.get('n'),
       }), 15000, 'decipher');
     } catch (e) {
-      throw new YouTubeError(`decipher failed: ${e.message}`, { live: true });
+      throw new YouTubeError(`decipher failed: ${errorMessage(e)}`, { live: true });
     }
     return {
       id: videoId,
@@ -407,16 +543,18 @@ export class YouTube {
    * in the last RELOAD_FRESH_S is reused, at most RELOAD_MAX per video per RELOAD_WINDOW_S, and
    * background sessions send nothing while the breaker is open.
    */
-  async reload(videoId, reloadContext, { bg = false } = {}) {
+  async reload(videoId: string, reloadContext?: ReloadPlaybackContext | null, { bg = false }: { bg?: boolean } = {}): Promise<ReloadResponse> {
     const info = await this.refresh(videoId, reloadContext, { bg });
+    if (info.kind === 'hls') throw new YouTubeError(`${videoId} turned into a live stream`, { live: true });   // SABR is VOD only
     return { serverAbrStreamingUrl: info.sabrUrl, videoPlaybackUstreamerConfig: info.ustreamer };
   }
 
   /** Fresh info with the guards of reload() (also used by live sessions to renew the manifest URL). */
-  async refresh(videoId, reloadContext = null, { bg = false } = {}) {
+  async refresh(videoId: string, reloadContext: ReloadPlaybackContext | null = null, { bg = false }: { bg?: boolean } = {}): Promise<VideoInfo> {
     const recent = this.cache.get(videoId);
     if (recent && Date.now() / 1000 - (recent.fetchedAt || 0) < RELOAD_FRESH_S) return recent;
-    if (this.reloading.has(videoId)) return this.reloading.get(videoId);
+    const pending = this.reloading.get(videoId);
+    if (pending) return pending;
     if (bg && this.breaker.blockedUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no reload sent)", { bot: true });
     const now = Date.now();
     const times = (this.reloads.get(videoId) || []).filter((t) => now - t < RELOAD_WINDOW_S * 1000);
@@ -429,16 +567,16 @@ export class YouTube {
   }
 
   /** Memory bound for a process that runs for weeks: drop expired and least recently stored responses. */
-  prune(max = 64) {
+  prune(max = 64): void {
     const now = Date.now() / 1000;
     for (const [id, c] of this.cache) if (c.expires <= now) this.cache.delete(id);
-    while (this.cache.size > max) this.cache.delete(this.cache.keys().next().value);
+    while (this.cache.size > max) this.cache.delete(this.cache.keys().next().value!);
     for (const [id, ny] of this.notYet) if (Date.now() - ny.at >= UPCOMING_CACHE_MS) this.notYet.delete(id);
     for (const [id, times] of this.reloads) if (!times.some((t) => Date.now() - t < RELOAD_WINDOW_S * 1000)) this.reloads.delete(id);
   }
 
   /** Headers that make a plain fetch (captions) look like this session's web player. */
-  async webHeaders() {
+  async webHeaders(): Promise<Record<string, string>> {
     const yt = await this.session();
     const c = yt.session.context.client;
     return {

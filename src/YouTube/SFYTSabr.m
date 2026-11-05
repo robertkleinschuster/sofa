@@ -54,7 +54,7 @@ static const NSTimeInterval kPreloadWindow = 600;
     return self;
 }
 
-static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"sofa-yt/main.mjs"]; }
+static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"sofa-yt/main.ts"]; }
 
 - (BOOL)available {
     NSFileManager *fm = [NSFileManager defaultManager];

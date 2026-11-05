@@ -56,9 +56,9 @@ else bad "signature verifier rejects the real yt-dlp"; fi
 # SABR sidecar with the bundled node only: dependencies load, it gets ready, and its warm-up
 # (youtube.com session + BotGuard PO token, no player request) works with the bundle's TLS setup
 SY="$APP/Contents/Resources/sofa-yt"
-np "$RT/bin/node" "$SY/main.mjs" --check >/dev/null 2>&1 && ok "sofa-yt loads (bundled node)" || bad "sofa-yt --check"
+np "$RT/bin/node" "$SY/main.ts" --check >/dev/null 2>&1 && ok "sofa-yt loads (bundled node)" || bad "sofa-yt --check"
 mkdir -p "$T/sy"
-( sleep 120 | np "$RT/bin/node" "$SY/main.mjs" --port 0 --state "$T/sy" --block-file "$T/sy/block.json" >"$T/sy.out" 2>"$T/sy.log" ) &
+( sleep 120 | np "$RT/bin/node" "$SY/main.ts" --port 0 --state "$T/sy" --block-file "$T/sy/block.json" >"$T/sy.out" 2>"$T/sy.log" ) &
 SYJOB=$!
 for i in $(seq 1 30); do SYPORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$T/sy.out" | head -1); [ -n "$SYPORT" ] && break; sleep 0.5; done
 H=; for i in $(seq 1 40); do [ -n "${SYPORT:-}" ] || break; H=$(curl -s "127.0.0.1:$SYPORT/health"); echo "$H" | /usr/bin/grep -q '"poToken":"\(ready\|error\)"' && break; sleep 1; done

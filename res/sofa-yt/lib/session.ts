@@ -14,10 +14,104 @@
 // tracks (language switch) get audio-only pumps. Memory: media more than KEEP_BEHIND_MS behind every
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
 import crypto from 'node:crypto';
-import { VirtualFile } from './vfile.mjs';
-import { log, debug } from './log.mjs';
+import { VirtualFile } from './vfile.ts';
+import type { Segment } from './vfile.ts';
+import { errorMessage, toError } from './errors.ts';
+import { log, debug } from './log.ts';
+import type { AudioTrackChoice, DescribedFormat, SubtitleTrack } from './formats.ts';
+import type { VodInfo } from './youtube.ts';
 
-export const DEFAULTS = {
+export type TrackKind = 'video' | 'audio';
+
+/** Media pulled from YouTube per track kind (video seconds as ms, bytes). */
+export type MediaCounters = Record<TrackKind, { ms: number; bytes: number }>;
+
+export interface SessionConfig {
+  LOW_MS: number;
+  HIGH_MS: number;
+  HIGH_BYTES: Record<TrackKind, number>;
+  MAX_BYTES: Record<TrackKind, number>;
+  KEEP_BEHIND_MS: number;
+  COVER_SLACK_MS: number;
+  GRACE_MS: number;
+  STALL_MS: number;
+  LINGER_MS: number;
+  HINT_TTL_MS: number;
+  WAIT_MS: number;
+  MAX_PUMPS: number;
+  START_BURST: number;
+  START_WINDOW_MS: number;
+  MAX_FAILURES: number;
+  TICK_MS: number;
+  CHUNK: number;
+}
+
+export type PumpEnd = 'finished' | 'aborted' | 'error';
+
+/** What a session asks of its pump factory (sabrpump.startSabrPump or a test fake). */
+export interface PumpRequest {
+  video: DescribedFormat | null;     // null: audio only
+  audio: DescribedFormat;
+  startMs: number;
+  onSegment: (kind: TrackKind, seg: Required<Segment>) => void;
+  onEnd: (err: Error | null, how: PumpEnd) => void;
+}
+
+export interface PumpHandle {
+  abort(): void;
+}
+
+export type StartPump = (o: PumpRequest) => PumpHandle;
+
+/** An open HTTP response on a track (its current byte position). */
+export interface Reader {
+  pos: number;
+  since?: number;
+}
+
+/** A reason to have media: a byte position (reader) or only a time (hint, off null). */
+export interface Demand {
+  off: number | null;
+  ms: number;
+  linger?: boolean;
+}
+
+/** How much is buffered from a demand on (Infinity: init region / end of file). */
+export interface Satisfied {
+  aheadMs: number;
+  aheadBytes: number;
+  endMs: number;
+  toEof: boolean;
+}
+
+/** The part of a node http.ServerResponse serve() uses (tests pass a fake). */
+export interface ServeTarget {
+  write(chunk: Buffer): boolean;
+  on(event: 'close' | 'drain', listener: () => void): unknown;
+  off(event: 'close' | 'drain', listener: () => void): unknown;
+}
+
+export interface TrackStatus {
+  itag: number;
+  bytes: number;
+  segments: number;
+  readers: number;
+  demands: { off: number | null; ms: number; ahead: number }[];
+  indexed: boolean;
+}
+
+export interface SessionStatus {
+  sid: string;
+  id: string;
+  failed: string | null;
+  pumps: { startMs: number; video: string | null; audio: string; delivered: number; frontier: Record<string, number> }[];
+  tracks: Record<string, TrackStatus>;
+  fetched: MediaCounters;
+  sabrRuns: number | undefined;
+  idleMs: number;
+}
+
+export const DEFAULTS: SessionConfig = {
   LOW_MS: 30000,             // resume pulling below this much buffered ahead
   HIGH_MS: 90000,            // pause pulling above this much buffered ahead
   HIGH_BYTES: { video: 96 << 20, audio: 12 << 20 },  // ...or above this many bytes ahead
@@ -38,7 +132,17 @@ export const DEFAULTS = {
 };
 
 class Track {
-  constructor(session, kind, fmt) {
+  session: PlaybackSession;
+  kind: TrackKind;
+  fmt: DescribedFormat;
+  key: string;
+  file: VirtualFile;
+  readers: Set<Reader>;
+  lastPos: number | null;
+  lastReadAt: number;
+  hint: { ms: number; until: number } | null;
+
+  constructor(session: PlaybackSession, kind: TrackKind, fmt: DescribedFormat) {
     this.session = session;
     this.kind = kind;
     this.fmt = fmt;
@@ -51,8 +155,8 @@ class Track {
   }
 
   /** Current demands: [{off|null, ms}] */
-  demands(now) {
-    const out = [];
+  demands(now: number): Demand[] {
+    const out: Demand[] = [];
     for (const r of this.readers) out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
     if (!this.readers.size && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
       // between two requests (seek, reconnect): only protects the buffer from eviction
@@ -61,7 +165,8 @@ class Track {
     if (this.hint) {
       // consumed once a reader reads media at (or just after) the hinted position; a reader at 0
       // (mpv probing the first cluster before it seeks to the resume position) does not consume it
-      const consumed = out.some((d) => d.off >= this.initEnd && d.ms >= this.hint.ms - 2000 && d.ms <= this.hint.ms + 15000);
+      const hint = this.hint;
+      const consumed = out.some((d) => d.off !== null && d.off >= this.initEnd && d.ms >= hint.ms - 2000 && d.ms <= hint.ms + 15000);
       if (consumed || now > this.hint.until) this.hint = null;
       else out.push({ off: null, ms: this.hint.ms });
     }
@@ -69,7 +174,7 @@ class Track {
   }
 
   /** End of the init region (header + index) - known from the format before any data arrived. */
-  get initEnd() {
+  get initEnd(): number {
     if (this.file.initEnd) return this.file.initEnd;
     const ir = this.fmt.raw?.indexRange;
     return ir ? Number(ir.end) + 1 : 0;
@@ -79,7 +184,7 @@ class Track {
    * Is the demand's position buffered? -> {aheadMs, aheadBytes, endMs, toEof} (Infinity ahead for
    * the init region and the end of the file), or null.
    */
-  satisfied(d) {
+  satisfied(d: Demand): Satisfied | null {
     const f = this.file;
     if (d.off !== null) {
       if (d.off >= f.total) return { aheadMs: Infinity, aheadBytes: Infinity, endMs: f.durationMs, toEof: true };
@@ -87,18 +192,32 @@ class Track {
       if (!e) return null;
       if (e.init) return { aheadMs: Infinity, aheadBytes: Infinity, endMs: 0, toEof: false };
       const c = f.contiguousFrom(d.off);
+      if (!c) return null;   // not reached: d.off is inside entry e
       return { aheadMs: c.toEof ? Infinity : c.endMs - d.ms, aheadBytes: c.toEof ? Infinity : c.end - d.off, endMs: c.endMs, toEof: c.toEof };
     }
     if (!f.init) return null;
     const e = f.entryAtTime(d.ms);
     if (!e) return null;
     const c = f.contiguousFrom(e.start);
+    if (!c) return null;   // not reached: e is stored
     return { aheadMs: c.toEof ? Infinity : c.endMs - d.ms, aheadBytes: c.toEof ? Infinity : c.end - e.start, endMs: c.endMs, toEof: c.toEof };
   }
 }
 
 class Pump {
-  constructor({ video, audio, startMs, now }) {
+  video: Track | null;
+  audio: Track;
+  startMs: number;
+  startedAt: number;
+  lastUseful: number;
+  lastDataAt: number;
+  alive: boolean;
+  delivered: number;
+  first: Map<Track, number>;
+  frontier: Map<Track, number>;
+  handle: PumpHandle | null;
+
+  constructor({ video, audio, startMs, now }: { video: Track | null; audio: Track; startMs: number; now: number }) {
     this.video = video;   // Track or null
     this.audio = audio;   // Track
     this.startMs = startMs;
@@ -112,11 +231,11 @@ class Pump {
     this.handle = null;
   }
 
-  get driver() { return this.video || this.audio; }
+  get driver(): Track { return this.video || this.audio; }
 
-  feeds(t) { return this.video === t || this.audio === t; }
+  feeds(t: Track): boolean { return this.video === t || this.audio === t; }
 
-  covers(t, ms, slack) {
+  covers(t: Track, ms: number, slack: number): boolean {
     if (!this.alive || !this.feeds(t)) return false;
     const from = Math.min(this.startMs, this.first.get(t) ?? Infinity) - 1000;
     const to = Math.max(this.startMs, this.frontier.get(t) ?? 0) + slack;
@@ -124,19 +243,56 @@ class Pump {
   }
 }
 
+export interface PlaybackSessionOptions {
+  info: VodInfo;                       // cached player info
+  formats: DescribedFormat[];          // described formats
+  video: DescribedFormat;              // chosen video format
+  audio: DescribedFormat;              // chosen (main) audio format
+  audioChoices?: DescribedFormat[];    // formats that may be requested as audio tracks
+  subs?: SubtitleTrack[];              // subtitle tracks (formats.subtitleTracks)
+  startPump: StartPump;                // pump factory (sabrpump.startSabrPump or a test fake)
+  cfg?: Partial<SessionConfig>;
+}
+
 export class PlaybackSession {
-  /**
-   * @param {object} o
-   * @param {object} o.info          cached player info
-   * @param {object[]} o.formats     described formats
-   * @param {object} o.video         chosen video format
-   * @param {object} o.audio         chosen (main) audio format
-   * @param {object[]} o.audioChoices formats that may be requested as audio tracks
-   * @param {object[]} o.subs        subtitle tracks (formats.subtitleTracks)
-   * @param {(opts) => {abort}} o.startPump   pump factory (sabrpump.startSabrPump or a test fake)
-   * @param {object} [o.cfg]
-   */
-  constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }) {
+  readonly kind: 'sabr';
+  sid: string;
+  info: VodInfo;
+  formats: DescribedFormat[];
+  cfg: SessionConfig;
+  startPumpFn: StartPump;
+  video: Track;
+  tracks: Map<string, Track>;
+  audioFormats: Map<string, DescribedFormat>;
+  mainAudioKey: string;
+  subs: SubtitleTrack[];
+  subCache: Map<string, string>;
+  pumps: Set<Pump>;
+  fetched: MediaCounters;
+  starts: number[];
+  failures: number;
+  failed: Error | null;
+  closed: boolean;
+  created: number;
+  lastActivity: number;
+  scheduled: boolean;
+  backoffUntil: number;
+  throttleLogged: number;
+  timer: NodeJS.Timeout;
+  // set on first use (absent from status() until then)
+  runs?: number;
+  reqs?: number;
+  everRead?: boolean;
+  lastReadAt?: number;
+  // the choice this session was opened with (app.ts: reuse for the same /open)
+  audioList?: AudioTrackChoice[];
+  maxHeight?: number;
+  lang?: string;
+  vcodec?: string | null;
+  acodec?: string | null;
+
+  constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }: PlaybackSessionOptions) {
+    this.kind = 'sabr';
     this.sid = crypto.randomBytes(8).toString('hex');
     this.info = info;
     this.formats = formats;
@@ -165,8 +321,9 @@ export class PlaybackSession {
   }
 
   /** Track for a URL key ('video' or an audio format key); audio tracks are created on demand. */
-  track(key) {
-    if (this.tracks.has(key)) return this.tracks.get(key);
+  track(key: string): Track | null {
+    const have = this.tracks.get(key);
+    if (have) return have;
     const f = this.audioFormats.get(key);
     if (!f) return null;
     const t = new Track(this, 'audio', f);
@@ -174,11 +331,15 @@ export class PlaybackSession {
     return t;
   }
 
-  get mainAudio() { return this.track(this.mainAudioKey); }
+  get mainAudio(): Track {
+    const t = this.track(this.mainAudioKey);
+    if (!t) throw new Error(`main audio track ${this.mainAudioKey} missing`); // the constructor registered it
+    return t;
+  }
 
   /** The audio track most recently read (video pumps carry it), default the main one. */
-  activeAudio() {
-    let best = null;
+  activeAudio(): Track {
+    let best: Track | null = null;
     for (const t of this.tracks.values()) {
       if (t.kind === 'audio' && (t.readers.size || t.lastReadAt) && (!best || t.lastReadAt > best.lastReadAt)) best = t;
     }
@@ -186,7 +347,7 @@ export class PlaybackSession {
   }
 
   /** Prefetch from `ms` (resume position) before mpv connects. */
-  hint(ms) {
+  hint(ms: number): void {
     const until = Date.now() + this.cfg.HINT_TTL_MS;
     this.video.hint = { ms, until };
     this.mainAudio.hint = { ms, until };
@@ -196,18 +357,18 @@ export class PlaybackSession {
   // ---- scheduling ---------------------------------------------------------------------------
 
   /** Coalesce bursts of triggers into one pass. */
-  poke() {
+  poke(): void {
     if (this.scheduled || this.closed) return;
     this.scheduled = true;
     setImmediate(() => { this.scheduled = false; this.schedule(); });
   }
 
-  schedule() {
+  schedule(): void {
     if (this.closed) return;
     const now = Date.now();
     const cfg = this.cfg;
-    const useful = new Set();
-    const paced = new Set();
+    const useful = new Set<Pump>();
+    const paced = new Set<Pump>();
     for (const t of this.tracks.values()) {
       for (const d of t.demands(now)) {
         if (d.linger) continue;
@@ -250,7 +411,7 @@ export class PlaybackSession {
     this.evict(now);
   }
 
-  startPump(t, ms, now) {
+  startPump(t: Track, ms: number, now: number): Pump | null {
     const cfg = this.cfg;
     if (now < this.backoffUntil) return null;
     this.starts = this.starts.filter((s) => now - s < cfg.START_WINDOW_MS);
@@ -262,7 +423,7 @@ export class PlaybackSession {
     const audio = t.kind === 'video' ? this.activeAudio() : t;
     // one feeder per track: a new run for the same driver replaces older ones once they are useless
     while (this.pumps.size >= cfg.MAX_PUMPS) {
-      const oldest = [...this.pumps].sort((a, b) => a.lastUseful - b.lastUseful)[0];
+      const oldest = [...this.pumps].sort((a, b) => a.lastUseful - b.lastUseful)[0]!;
       this.stopPump(oldest, 'pump limit');
     }
     this.starts.push(now);
@@ -279,13 +440,13 @@ export class PlaybackSession {
         onEnd: (err, how) => this.onPumpEnd(p, err, how),
       });
     } catch (e) {
-      this.onPumpEnd(p, e, 'error');
+      this.onPumpEnd(p, toError(e), 'error');
       return null;
     }
     return p;
   }
 
-  stopPump(p, why) {
+  stopPump(p: Pump, why: string): void {
     if (!p.alive) return;
     debug(`${this.tag}: stop pump @${(p.startMs / 1000).toFixed(1)}s (${why})`);
     p.alive = false;
@@ -293,7 +454,7 @@ export class PlaybackSession {
     try { p.handle?.abort(); } catch { /* already gone */ }
   }
 
-  onSegment(p, t, seg) {
+  onSegment(p: Pump, t: Track | null, seg: Required<Segment>): void {
     if (this.closed || !t) return;
     p.lastDataAt = Date.now();
     const r = t.file.add(seg);
@@ -309,7 +470,7 @@ export class PlaybackSession {
     this.poke();
   }
 
-  onPumpEnd(p, err, how) {
+  onPumpEnd(p: Pump, err: Error | null, how: PumpEnd): void {
     const wasAlive = p.alive;
     p.alive = false;
     this.pumps.delete(p);
@@ -324,13 +485,13 @@ export class PlaybackSession {
   }
 
   /** A run ended without delivering media: back off, give up after MAX_FAILURES in a row. */
-  noteFailure(err) {
+  noteFailure(err: Error): void {
     this.failures++;
     this.backoffUntil = Date.now() + Math.min(8000, 500 * 2 ** this.failures);
     if (this.failures >= this.cfg.MAX_FAILURES) this.fail(err);
   }
 
-  fail(err) {
+  fail(err: Error): void {
     if (this.failed) return;
     this.failed = err;
     log(`${this.tag}: giving up after ${this.failures} failed SABR runs: ${err.message}`);
@@ -338,21 +499,21 @@ export class PlaybackSession {
     for (const t of this.tracks.values()) t.file.setFailed(err);
   }
 
-  evict(now) {
+  evict(now: number): void {
     for (const t of this.tracks.values()) {
       const ds = t.demands(now);
       const keepFromMs = ds.length ? Math.min(...ds.map((d) => d.ms)) - this.cfg.KEEP_BEHIND_MS : Infinity;
-      const readOff = ds.length && ds[0].off !== null ? ds[0].off : 0;
+      const readOff = ds[0]?.off ?? 0;
       const freed = t.file.evict({ keepFromMs, readOff, maxBytes: this.cfg.MAX_BYTES[t.kind] });
       if (freed) debug(`${this.tag}: ${t.key}: evicted ${(freed / 1048576).toFixed(1)} MB, holding ${(t.file.bytes / 1048576).toFixed(1)} MB`);
     }
   }
 
-  get tag() { return `session ${this.sid.slice(0, 6)} ${this.info.id}`; }
+  get tag(): string { return `session ${this.sid.slice(0, 6)} ${this.info.id}`; }
 
-  get bytes() { let n = 0; for (const t of this.tracks.values()) n += t.file.bytes; return n; }
+  get bytes(): number { let n = 0; for (const t of this.tracks.values()) n += t.file.bytes; return n; }
 
-  get activeReaders() { let n = 0; for (const t of this.tracks.values()) n += t.readers.size; return n; }
+  get activeReaders(): number { let n = 0; for (const t of this.tracks.values()) n += t.readers.size; return n; }
 
   // ---- serving ----------------------------------------------------------------------------
 
@@ -360,8 +521,8 @@ export class PlaybackSession {
    * Stream [start, end) of track `t` into `res` (node http.ServerResponse or compatible), waiting for
    * missing bytes up to WAIT_MS each time. Returns the number of bytes written.
    */
-  async serve(t, start, end, res) {
-    const reader = { pos: start, since: Date.now() };
+  async serve(t: Track, start: number, end: number, res: ServeTarget): Promise<number> {
+    const reader: Reader = { pos: start, since: Date.now() };
     t.readers.add(reader);
     t.lastPos = start;
     t.lastReadAt = Date.now();
@@ -384,8 +545,8 @@ export class PlaybackSession {
           try {
             await t.file.waitFor(reader.pos, this.cfg.WAIT_MS, ac.signal);
           } catch (e) {
-            why = e.message;
-            if (e.message === 'timeout') log(`${this.tag}: ${t.key}: no data at ${reader.pos} within ${this.cfg.WAIT_MS / 1000} s - ending response`);
+            why = errorMessage(e);
+            if (why === 'timeout') log(`${this.tag}: ${t.key}: no data at ${reader.pos} within ${this.cfg.WAIT_MS / 1000} s - ending response`);
             break;
           }
           continue;
@@ -398,7 +559,7 @@ export class PlaybackSession {
         this.lastActivity = t.lastReadAt;
         if (!res.write(piece)) {
           this.poke();
-          await new Promise((resolve) => {
+          await new Promise<void>((resolve) => {
             const fin = () => { res.off('drain', fin); ac.signal.removeEventListener('abort', fin); resolve(); };
             res.on('drain', fin);
             ac.signal.addEventListener('abort', fin);
@@ -417,7 +578,7 @@ export class PlaybackSession {
     return written;
   }
 
-  close(why = 'closed') {
+  close(why = 'closed'): void {
     if (this.closed) return;
     this.closed = true;
     clearInterval(this.timer);
@@ -428,9 +589,9 @@ export class PlaybackSession {
     log(`${this.tag}: closed (${why})`);
   }
 
-  status() {
+  status(): SessionStatus {
     const now = Date.now();
-    const tracks = {};
+    const tracks: Record<string, TrackStatus> = {};
     for (const [k, t] of this.tracks) {
       const ds = t.demands(now);
       tracks[k] = {

@@ -10,32 +10,61 @@ the same session (see "Lives"). yt-dlp stays the fallback.
 
 | Path | What |
 |---|---|
-| `res/sofa-yt/main.mjs` | entry point (CLI, wiring, stdin watchdog) |
-| `res/sofa-yt/lib/app.mjs` | HTTP API, session registry, idle expiry |
-| `res/sofa-yt/lib/session.mjs` | playback session: demands, SABR scheduling, pacing, eviction, Range serving |
-| `res/sofa-yt/lib/vfile.mjs` | sparse virtual file per track (segments placed by absolute byte offset) |
-| `res/sofa-yt/lib/mediaindex.mjs` | WebM Cues / MP4 sidx parser (byte offset -> media time) |
-| `res/sofa-yt/lib/hls.mjs` | lives / post-live DVR: manifest URL preparation (n, PO token), variant choice, playlist proxy session |
-| `res/sofa-yt/lib/sabrpump.mjs` | one googlevideo `SabrStream` run, segments with their byte position |
-| `res/sofa-yt/lib/youtube.mjs` | Innertube session, player requests, decipher, per-video cache, budget |
-| `res/sofa-yt/lib/webpo.mjs` | in-process BotGuard (bgutils-js + jsdom) WebPO minter |
-| `res/sofa-yt/lib/formats.mjs` | video/audio/subtitle choice (same rules as `res/ytresolver.py`) |
-| `res/sofa-yt/lib/breaker.mjs` | bot-check circuit breaker, file shared with ytresolver.py |
-| `res/sofa-yt/lib/subs.mjs` | captions -> WebVTT |
-| `res/sofa-yt/package.json`, `package-lock.json` | exact dependency pins (googlevideo 5.0.1, youtubei.js 18.3.0, bgutils-js 4.0.3, jsdom 25.0.1) |
-| `tools/fetch-sofa-yt` | `npm ci` (lockfile integrity, no install scripts) -> `build/vendor/sofa-yt/node_modules` |
-| `tools/test-sofa-yt` | tests (offline; `SOFA_YT_LIVE=1` adds the live smoke test) |
+| `res/sofa-yt/main.ts` | entry point (CLI, wiring, stdin watchdog) |
+| `res/sofa-yt/lib/app.ts` | HTTP API, session registry, idle expiry |
+| `res/sofa-yt/lib/session.ts` | playback session: demands, SABR scheduling, pacing, eviction, Range serving |
+| `res/sofa-yt/lib/vfile.ts` | sparse virtual file per track (segments placed by absolute byte offset) |
+| `res/sofa-yt/lib/mediaindex.ts` | WebM Cues / MP4 sidx parser (byte offset -> media time) |
+| `res/sofa-yt/lib/hls.ts` | lives / post-live DVR: manifest URL preparation (n, PO token), variant choice, playlist proxy session |
+| `res/sofa-yt/lib/sabrpump.ts` | one googlevideo `SabrStream` run, segments with their byte position |
+| `res/sofa-yt/lib/youtube.ts` | Innertube session, player requests, decipher, per-video cache, budget |
+| `res/sofa-yt/lib/webpo.ts` | in-process BotGuard (bgutils-js + jsdom) WebPO minter |
+| `res/sofa-yt/lib/formats.ts` | video/audio/subtitle choice (same rules as `res/ytresolver.py`) |
+| `res/sofa-yt/lib/breaker.ts` | bot-check circuit breaker, file shared with ytresolver.py |
+| `res/sofa-yt/lib/subs.ts` | captions -> WebVTT |
+| `res/sofa-yt/lib/ytraw.ts` | types of the raw Innertube player response we read + its one narrowing boundary (`asPlayerResponse`) |
+| `res/sofa-yt/lib/json.ts`, `errors.ts` | narrowing helpers for untrusted JSON / caught values |
+| `res/sofa-yt/tsconfig.json` | type checking only (strict); not shipped |
+| `res/sofa-yt/package.json`, `package-lock.json` | exact dependency pins (googlevideo 5.0.1, youtubei.js 18.3.0, bgutils-js 4.0.3, jsdom 25.0.1; dev only: typescript 6.0.3, @types/node 26.6.5, @types/jsdom 21.1.7) |
+| `tools/fetch-sofa-yt` | `npm ci --omit=dev` (lockfile integrity, no install scripts) -> `build/vendor/sofa-yt/node_modules` (what ships) |
+| `tools/test-sofa-yt` | `tsc` type check first (failing types = failing suite), then the tests (offline; `SOFA_YT_LIVE=1` adds the live smoke test) |
 | `tests/sofa-yt/` | tests + fixtures (init segments, trimmed player responses, recorded SABR segment table, a recorded live response + HLS playlists) |
 
 `make` installs the dependencies when the lockfile changed and copies sources + `node_modules` to
 `Contents/Resources/sofa-yt` of both `Sofa.app` and `SofaDev.app`. `tools/make-release` strips source maps
-/ type declarations and runs `main.mjs --check` with the bundled `Contents/Runtime/bin/node`.
-`node_modules` is never committed.
+/ type declarations, drops stale source files and runs `main.ts --check` with the bundled
+`Contents/Runtime/bin/node`. `node_modules` is never committed.
+
+## TypeScript
+
+The sidecar is strict TypeScript that node runs **directly**: node 26 strips the type annotations when it
+loads a `.ts` file (built-in type stripping, on by default since node 22.18 / 23.6 - no flag; node does
+not do this inside `node_modules`, which our sources never are). No build step, no emitted JavaScript,
+no extra runtime in the bundle: the shipped files are the reviewed sources, stack traces point at real
+lines, and the bundled node stays the only runtime. Consequences:
+
+- only erasable syntax (`erasableSyntaxOnly`): no `enum`, no parameter properties, no namespaces;
+  type-only imports are written `import type` (`verbatimModuleSyntax`); relative imports name the `.ts`
+  file (`allowImportingTsExtensions`).
+- type checking is a separate, mandatory step: `tools/test-sofa-yt` runs `tsc -p res/sofa-yt`
+  (`strict`, `noUncheckedIndexedAccess`, unused locals/parameters) over the sources and the tests
+  before any test. `typescript` and the `@types/*` packages are exact-pinned **devDependencies** in the
+  same lockfile, installed with `npm ci --ignore-scripts` into `build/vendor/sofa-yt-dev` (reachable for
+  tsc and editors through the git-ignored symlink `res/sofa-yt/node_modules`); the bundle gets
+  `npm ci --omit=dev`, so no compiler ships.
+- typescript 6.0.x is the newest usable compiler: 7.x is the native (Go) port whose darwin-x64 binary
+  needs macOS 12 (`_clock_gettime`), 6.0 is plain JavaScript on the bundled node.
+- untrusted JSON (player responses, state files, BotGuard answers) is parsed into `unknown` and narrowed
+  (`json.ts`, `ytraw.ts asPlayerResponse`); the library types (youtubei.js, googlevideo, bgutils-js,
+  @types/jsdom) are used as shipped. No `any` in our code.
+- the tests are TypeScript too (`tests/sofa-yt/*.test.ts`, run by `node --test`); they load the modules
+  from the assembled run dir (shipped `node_modules`) and take the types from the sources
+  (`helpers.ts mod()`).
 
 ## Running
 
 ```
-node Contents/Resources/sofa-yt/main.mjs --port 0 --state <dir> --block-file <yt-dlp-cache>/youtube-block.json
+node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <yt-dlp-cache>/youtube-block.json
 ```
 
 | Option | Default | |
@@ -56,7 +85,7 @@ node Contents/Resources/sofa-yt/main.mjs --port 0 --state <dir> --block-file <yt
   exits on SIGTERM/SIGINT, and with code 70 on an uncaught exception (restart it).
 - Startup: ready line after ~0.2 s; the warm-up (Innertube session ~1 s, BotGuard ~1 s, no player
   request) runs after it. `/open` waits for it when needed. RSS after warm-up ~170 MB (jsdom/BotGuard).
-  `main.mjs --check` (loads every dependency) takes ~1.5-4 s.
+  `main.ts --check` (loads every dependency) takes ~1.5-4 s.
 
 ## HTTP API (127.0.0.1 only)
 
@@ -178,7 +207,7 @@ video run then carries that language and the audio-only run becomes redundant. P
 passed in (a seek start without one gets SPS 3 + a ~3 s backoff); `maxRetries` is 2. Max 3 concurrent
 runs and 12 starts per minute per session; 3 consecutive failed runs fail the session (no retry loops).
 
-googlevideo's public output is two byte streams without positions; `sabrpump.mjs` pairs each chunk with
+googlevideo's public output is two byte streams without positions; `sabrpump.ts` pairs each chunk with
 the MediaHeader from `Track#recordCompletedSegment` (called synchronously after the enqueue in
 googlevideo 5.0.1) and verifies length/position. Re-check that hook when bumping googlevideo.
 
@@ -240,15 +269,15 @@ a YouTube web player. Live SABR stays an option if YouTube ever drops HLS for WE
 
 ### How it works
 
-- `youtube.mjs` classifies the response (`classifyPlayer`): `live` (`isLive`) and `postlive`
+- `youtube.ts` classifies the response (`classifyPlayer`): `live` (`isLive`) and `postlive`
   (`isPostLiveDvr`) -> `liveInfo()`: `hlsManifestUrl` with the path `n` solved by the pinned player and
-  `/pot/<token>` (the request's video-bound token) appended (`hls.mjs prepareManifestUrl`); cached like VOD
+  `/pot/<token>` (the request's video-bound token) appended (`hls.ts prepareManifestUrl`); cached like VOD
   responses (`players/<id>.json`, until 15 min before the path `expire`). No HLS manifest / unsolved n ->
   `live:true` error (yt-dlp fallback). `upcoming` (`isUpcoming`, or `LIVE_STREAM_OFFLINE` with a
   `scheduledStartTime` in the offline slate; premieres: `liveBroadcastDetails.startTimestamp`) and
   `offline` throw before anything is cached; the answer is reused for 60 s (no request storm from
   repeated clicks), the breaker counts it as a success (it was no bot check).
-- `/open` (`app.mjs openLive`) creates a `LiveSession`, loads the master playlist right away (an unusable
+- `/open` (`app.ts openLive`) creates a `LiveSession`, loads the master playlist right away (an unusable
   URL fails `/open`, not mpv; a cached URL that fails is forgotten) and picks the best variant within
   `maxHeight` (height, fps, bandwidth).
 - `/s/<sid>/live.m3u8` serves that variant's media playlist, fetched with the session's web headers
@@ -264,7 +293,7 @@ a YouTube web player. Live SABR stays an option if YouTube ever drops HLS for WE
 Sidecar `/open` of `LuKwFajn37U`: 1 player request, 0.8 s, 1080p60 itag 301; `mpv --vo=null --ao=null
 --length=20 http://127.0.0.1:N/s/<sid>/live.m3u8` played 20 s of H.264 1080p60 + AAC, 4 playlist reloads,
 0 failures. Not verifiable on a given day without a matching stream: post-live DVR and upcoming answers
-(covered by synthetic fixtures in `unit-live.test.mjs` built from the recorded live response).
+(covered by synthetic fixtures in `unit-live.test.ts` built from the recorded live response).
 
 ## Integration notes for Sofa (ObjC)
 

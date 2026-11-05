@@ -1,9 +1,9 @@
 // sofa-yt: YouTube SABR sidecar for Sofa (long-lived child process).
 //
-//   node main.mjs --port 0 --state <dir> --block-file <path> [--debug] [--no-warm]
+//   node main.ts --port 0 --state <dir> --block-file <path> [--debug] [--no-warm]
 //                 [--ahead-low 30 --ahead-high 90]
 //                 [--max-player-requests N --budget-file <path> --budget-window <sec>]
-//   node main.mjs --check            load every dependency and exit (bundle self-test)
+//   node main.ts --check             load every dependency and exit (bundle self-test)
 //
 // stdout: exactly one line {"ready":true,"port":N} once the HTTP server listens on 127.0.0.1.
 // stderr: log lines prefixed "sofa-yt:". The process exits when stdin closes (parent died).
@@ -11,19 +11,26 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { log, setDebug } from './lib/log.mjs';
+import type { ReloadPlaybackContext } from 'googlevideo/protos';
+import { errorMessage, toError } from './lib/errors.ts';
+import { log, setDebug } from './lib/log.ts';
+import { parseJson, record } from './lib/json.ts';
+import type { AppStartPump } from './lib/app.ts';
+import type { PumpHandle, SessionConfig } from './lib/session.ts';
 
 const argv = process.argv.slice(2);
-const flag = (name) => argv.includes(`--${name}`);
-const opt = (name, def) => {
+const flag = (name: string): boolean => argv.includes(`--${name}`);
+function opt(name: string): string | undefined;
+function opt(name: string, def: string | number): string | number;
+function opt(name: string, def?: string | number): string | number | undefined {
   const i = argv.indexOf(`--${name}`);
   if (i >= 0 && i + 1 < argv.length) return argv[i + 1];
   const eq = argv.find((a) => a.startsWith(`--${name}=`));
   return eq ? eq.slice(name.length + 3) : def;
-};
+}
 
 // stdout belongs to the readiness line; libraries that console.log go to stderr
-const toStderr = (...a) => process.stderr.write(`sofa-yt: [lib] ${a.map(String).join(' ')}\n`);
+const toStderr = (...a: unknown[]): void => { process.stderr.write(`sofa-yt: [lib] ${a.map(String).join(' ')}\n`); };
 console.log = toStderr; console.info = toStderr; console.debug = () => {};
 
 if (flag('check')) {
@@ -35,9 +42,9 @@ if (flag('check')) {
   await import('bgutils-js/webpo');
   await import('bgutils-js/utils');
   await import('jsdom');
-  await import('./lib/app.mjs');
-  await import('./lib/sabrpump.mjs');
-  await import('./lib/webpo.mjs');
+  await import('./lib/app.ts');
+  await import('./lib/sabrpump.ts');
+  await import('./lib/webpo.ts');
   process.stderr.write(`sofa-yt: check ok (node ${process.version})\n`);
   process.exit(0);
 }
@@ -47,74 +54,74 @@ const WARM_AGAIN_MS = 30 * 60 * 1000;
 const stateDir = opt('state');
 if (!stateDir) { log('missing --state <dir>'); process.exit(2); }
 fs.mkdirSync(stateDir, { recursive: true });
-const blockFile = opt('block-file', path.join(stateDir, 'youtube-block.json'));
+const blockFile = String(opt('block-file', path.join(stateDir, 'youtube-block.json')));
 
-const { Breaker } = await import('./lib/breaker.mjs');
-const { PoTokenProvider } = await import('./lib/webpo.mjs');
-const { YouTube, PlayerBudget } = await import('./lib/youtube.mjs');
-const { startSabrPump } = await import('./lib/sabrpump.mjs');
-const { createApp } = await import('./lib/app.mjs');
+const { Breaker } = await import('./lib/breaker.ts');
+const { PoTokenProvider } = await import('./lib/webpo.ts');
+const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
+const { startSabrPump } = await import('./lib/sabrpump.ts');
+const { createApp } = await import('./lib/app.ts');
 
 const breaker = new Breaker(blockFile);
 const po = new PoTokenProvider();
 const maxReq = Number(opt('max-player-requests', 60));
 const budget = new PlayerBudget({
-  file: opt('budget-file', path.join(stateDir, 'player-requests.json')),
+  file: String(opt('budget-file', path.join(stateDir, 'player-requests.json'))),
   max: maxReq > 0 ? maxReq : Infinity,
   windowS: Number(opt('budget-window', 3600)),
 });
 const youtube = new YouTube({ stateDir, breaker, po, budget });
 
 /** Pump factory: real SABR with this process' PO tokens and reload path. */
-async function preMint(videoId) {
-  try { return await po.mintString(videoId); } catch (e) { log('PO token for SABR unavailable:', e.message); return undefined; }
+async function preMint(videoId: string): Promise<string | undefined> {
+  try { return await po.mintString(videoId); } catch (e) { log('PO token for SABR unavailable:', errorMessage(e)); return undefined; }
 }
-const tokenCache = new Map(); // videoId -> {token, at}: one pre-minted token per video, reused for restarts
-function startPump(info, formats, opts) {
-  let handle = null;
+const tokenCache = new Map<string, { token: string; at: number }>(); // videoId -> one pre-minted token per video, reused for restarts
+const startPump: AppStartPump = (info, formats, opts) => {
+  let handle: PumpHandle | null = null;
   let aborted = false;
   const tc = tokenCache.get(info.id);
-  const launch = (poToken) => {
+  const launch = (poToken: string | undefined): void => {
     if (aborted) return;
     try {
       handle = startSabrPump({
         ...opts, info, formats, poToken,
         mintPoToken: () => po.mintBytes(info.id),
-        reload: async (ctx) => {
+        reload: async (ctx?: ReloadPlaybackContext) => {
           const r = await youtube.reload(info.id, ctx, { bg: !!opts.bg });
           // the session keeps the info object: point it at the fresh URL for future runs
           const fresh = youtube.cached(info.id);
-          if (fresh) { info.sabrUrl = fresh.sabrUrl; info.ustreamer = fresh.ustreamer; info.expires = fresh.expires; }
+          if (fresh && fresh.kind !== 'hls') { info.sabrUrl = fresh.sabrUrl; info.ustreamer = fresh.ustreamer; info.expires = fresh.expires; }
           return r;
         },
       });
     } catch (e) {
-      opts.onEnd(e, 'error');
+      opts.onEnd(toError(e), 'error');
     }
   };
   if (tc && Date.now() - tc.at < 30 * 60 * 1000) launch(tc.token);
   else {
     preMint(info.id).then((token) => {
       if (token) {
-        if (tokenCache.size > 32) tokenCache.delete(tokenCache.keys().next().value); // bounded
+        if (tokenCache.size > 32) tokenCache.delete(tokenCache.keys().next().value!); // bounded
         tokenCache.set(info.id, { token, at: Date.now() });
       }
       launch(token);
     });
   }
   return { abort() { aborted = true; handle?.abort(); } };
-}
+};
 
 // pacing window (seconds of media buffered ahead of the reader): resume below low, pause above high
-const sessionCfg = {};
+const sessionCfg: Partial<SessionConfig> = {};
 if (opt('ahead-low')) sessionCfg.LOW_MS = Number(opt('ahead-low')) * 1000;
 if (opt('ahead-high')) sessionCfg.HIGH_MS = Number(opt('ahead-high')) * 1000;
 const app = createApp({ youtube, po, breaker, startPump, sessionCfg });
 const server = http.createServer(app.handler);
-server.on('clientError', (err, sock) => { try { sock.destroy(); } catch { /* gone */ } });
+server.on('clientError', (_err, sock) => { try { sock.destroy(); } catch { /* gone */ } });
 
 let shuttingDown = false;
-function shutdown(why) {
+function shutdown(why: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
   log(`exiting (${why})`);
@@ -132,12 +139,13 @@ process.stdin.resume();
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGPIPE', () => {});
-process.on('unhandledRejection', (e) => log('unhandled rejection:', e?.stack || e));
+process.on('unhandledRejection', (e) => log('unhandled rejection:', e instanceof Error ? e.stack || e : e));
 // an exception that escaped every handler leaves unknown state: exit, Sofa restarts the sidecar
-process.on('uncaughtException', (e) => { log('uncaught exception:', e?.stack || e); process.exit(70); });
+process.on('uncaughtException', (e) => { log('uncaught exception:', e.stack || e); process.exit(70); });
 
 server.listen(Number(opt('port', 0)), '127.0.0.1', () => {
-  const port = server.address().port;
+  const addr = server.address();
+  const port = addr !== null && typeof addr === 'object' ? addr.port : 0;   // always an AddressInfo for TCP
   app.setPort(port);
   process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
   log(`listening on 127.0.0.1:${port}, state ${stateDir}`);
@@ -146,7 +154,7 @@ server.listen(Number(opt('port', 0)), '127.0.0.1', () => {
   // YouTube twice; then the first /open (or preload) warms up on demand, ~2 s later.
   const warmFile = path.join(stateDir, 'last-warmup.json');
   let lastWarm = 0;
-  try { lastWarm = JSON.parse(fs.readFileSync(warmFile, 'utf8')).at || 0; } catch { /* never warmed */ }
+  try { lastWarm = Number(record(parseJson(fs.readFileSync(warmFile, 'utf8'))).at) || 0; } catch { /* never warmed */ }
   const recent = Date.now() - lastWarm < WARM_AGAIN_MS;
   if (recent) log(`warm-up deferred to first use (last one ${Math.round((Date.now() - lastWarm) / 60000)} min ago)`);
   if (!flag('no-warm') && !process.env.SOFA_NO_WARMUP && !recent) {

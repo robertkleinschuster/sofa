@@ -3,17 +3,17 @@
 let quiet = false;
 let debugOn = !!process.env.SOFA_YT_DEBUG;
 
-export function setQuiet(q) { quiet = q; }
-export function setDebug(d) { debugOn = d; }
+export function setQuiet(q: boolean): void { quiet = q; }
+export function setDebug(d: boolean): void { debugOn = d; }
 
-function fmt(args) {
+function fmt(args: unknown[]): string {
   return args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
 }
 
-export function log(...args) {
+export function log(...args: unknown[]): void {
   if (!quiet) process.stderr.write(`sofa-yt: ${fmt(args)}\n`);
 }
 
-export function debug(...args) {
+export function debug(...args: unknown[]): void {
   if (debugOn && !quiet) process.stderr.write(`sofa-yt: [debug] ${fmt(args)}\n`);
 }

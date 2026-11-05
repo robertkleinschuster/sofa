@@ -3,7 +3,18 @@
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_BYTES = 4 << 20;
 
-export function captionUrl(track, { poToken, clientVersion } = {}) {
+/** What a caption URL is built from (a SubtitleTrack of formats.ts). */
+export interface CaptionSource {
+  baseUrl: string;
+  tlang?: string;
+}
+
+export interface CaptionAuth {
+  poToken?: string | null;
+  clientVersion?: string;
+}
+
+export function captionUrl(track: CaptionSource, { poToken, clientVersion }: CaptionAuth = {}): string {
   const u = new URL(track.baseUrl);
   u.searchParams.set('fmt', 'vtt');
   if (track.tlang) u.searchParams.set('tlang', track.tlang);
@@ -16,13 +27,14 @@ export function captionUrl(track, { poToken, clientVersion } = {}) {
 }
 
 /** Minimal sanity check + normalization (BOM, CRLF) of a WebVTT body. */
-export function normalizeVtt(text) {
+export function normalizeVtt(text: string | null | undefined): string {
   const t = String(text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   if (!t.startsWith('WEBVTT')) throw new Error('not WebVTT');
   return t;
 }
 
-export async function fetchVtt(track, { headers, poToken, clientVersion, fetchFn = fetch }) {
+export async function fetchVtt(track: CaptionSource,
+  { headers, poToken, clientVersion, fetchFn = fetch }: CaptionAuth & { headers: Record<string, string>; fetchFn?: typeof fetch }): Promise<string> {
   const r = await fetchFn(captionUrl(track, { poToken, clientVersion }), {
     headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });

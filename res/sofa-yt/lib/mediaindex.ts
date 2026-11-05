@@ -3,10 +3,33 @@
 // the WebM Cues (webm) or the sidx box (mp4). Each returns a sorted array of {off, ms} entries,
 // one per cluster / subsegment, where `off` is the absolute byte offset in the file.
 
+/** One index entry: media time `ms` starts at absolute byte offset `off`. */
+export interface IndexEntry {
+  off: number;
+  ms: number;
+}
+
+/** Sorted by offset, offsets strictly increasing; null = no usable index. */
+export type MediaIndex = IndexEntry[];
+
+interface Vint {
+  value: number;
+  len: number;
+  unknown: boolean;
+}
+
+interface EbmlElement {
+  id: number;
+  dataStart: number;
+  dataEnd: number;
+  unknown: boolean;
+  truncated: boolean;
+}
+
 /** Read an EBML variable-length integer (element ID keeps its marker bit, size strips it). */
-function readVint(buf, pos, keepMarker) {
+function readVint(buf: Buffer, pos: number, keepMarker: boolean): Vint | null {
   if (pos >= buf.length) return null;
-  const first = buf[pos];
+  const first = buf[pos]!;
   let len = 1;
   let mask = 0x80;
   while (len <= 8 && !(first & mask)) { len++; mask >>= 1; }
@@ -14,15 +37,15 @@ function readVint(buf, pos, keepMarker) {
   let value = keepMarker ? first : first & (mask - 1);
   let allOnes = (first & (mask - 1)) === mask - 1;
   for (let i = 1; i < len; i++) {
-    value = value * 256 + buf[pos + i];
+    value = value * 256 + buf[pos + i]!;
     if (buf[pos + i] !== 0xff) allOnes = false;
   }
   return { value, len, unknown: !keepMarker && allOnes };
 }
 
-function readUint(buf, pos, len) {
+function readUint(buf: Buffer, pos: number, len: number): number {
   let v = 0;
-  for (let i = 0; i < len; i++) v = v * 256 + buf[pos + i];
+  for (let i = 0; i < len; i++) v = v * 256 + buf[pos + i]!;
   return v;
 }
 
@@ -37,7 +60,7 @@ const EBML_CUECLUSTERPOS = 0xf1;
 const EBML_CLUSTER = 0x1f43b675;
 
 /** Iterate child elements of [start, end). Yields {id, dataStart, dataEnd}. Stops on truncation. */
-function* ebmlChildren(buf, start, end) {
+function* ebmlChildren(buf: Buffer, start: number, end: number): Generator<EbmlElement> {
   let pos = start;
   while (pos < end) {
     const id = readVint(buf, pos, true);
@@ -54,14 +77,14 @@ function* ebmlChildren(buf, start, end) {
 }
 
 /** WebM: parse Segment > Info(TimecodeScale) + Cues from the file prefix `buf`. */
-export function parseWebmIndex(buf) {
-  let segment = null;
+export function parseWebmIndex(buf: Buffer): MediaIndex | null {
+  let segment: EbmlElement | null = null;
   for (const el of ebmlChildren(buf, 0, buf.length)) {
     if (el.id === EBML_SEGMENT) { segment = el; break; }
   }
   if (!segment) return null;
   let timecodeScale = 1000000; // ns per tick (WebM default = 1 ms)
-  let cues = null;
+  let cues: EbmlElement | null = null;
   for (const el of ebmlChildren(buf, segment.dataStart, segment.dataEnd)) {
     if (el.id === EBML_INFO) {
       for (const c of ebmlChildren(buf, el.dataStart, el.dataEnd)) {
@@ -74,11 +97,11 @@ export function parseWebmIndex(buf) {
     }
   }
   if (!cues || cues.truncated) return null; // partial Cues would map later offsets to wrong times
-  const out = [];
+  const out: IndexEntry[] = [];
   for (const cp of ebmlChildren(buf, cues.dataStart, cues.dataEnd)) {
     if (cp.id !== EBML_CUEPOINT) continue;
-    let time = null;
-    let pos = null;
+    let time: number | null = null;
+    let pos: number | null = null;
     for (const c of ebmlChildren(buf, cp.dataStart, cp.dataEnd)) {
       if (c.id === EBML_CUETIME) time = readUint(buf, c.dataStart, c.dataEnd - c.dataStart);
       else if (c.id === EBML_CUETRACKPOS && pos === null) {
@@ -95,7 +118,7 @@ export function parseWebmIndex(buf) {
 }
 
 /** MP4: find the top-level sidx box in the file prefix `buf` and expand its references. */
-export function parseMp4Index(buf) {
+export function parseMp4Index(buf: Buffer): MediaIndex | null {
   let pos = 0;
   while (pos + 8 <= buf.length) {
     let size = readUint(buf, pos, 4);
@@ -113,12 +136,12 @@ export function parseMp4Index(buf) {
   return null;
 }
 
-function parseSidx(buf, boxStart, header, boxSize) {
+function parseSidx(buf: Buffer, boxStart: number, header: number, boxSize: number): MediaIndex | null {
   let p = boxStart + header;
   const version = buf[p]; p += 4; // version + flags
   p += 4; // reference_ID
   const timescale = readUint(buf, p, 4); p += 4;
-  let earliest; let firstOffset;
+  let earliest: number; let firstOffset: number;
   if (version === 0) { earliest = readUint(buf, p, 4); firstOffset = readUint(buf, p + 4, 4); p += 8; }
   else { earliest = readUint(buf, p, 8); firstOffset = readUint(buf, p + 8, 8); p += 16; }
   p += 2; // reserved
@@ -126,7 +149,7 @@ function parseSidx(buf, boxStart, header, boxSize) {
   if (!timescale || p + count * 12 > boxStart + boxSize) return null;
   let off = boxStart + boxSize + firstOffset;
   let t = earliest;
-  const out = [];
+  const out: IndexEntry[] = [];
   for (let i = 0; i < count; i++) {
     const ref = readUint(buf, p, 4);
     const dur = readUint(buf, p + 4, 4);
@@ -139,14 +162,14 @@ function parseSidx(buf, boxStart, header, boxSize) {
   return normalize(out);
 }
 
-function normalize(entries) {
+function normalize(entries: IndexEntry[]): MediaIndex | null {
   if (!entries.length) return null;
   entries.sort((a, b) => a.off - b.off);
-  return entries.filter((e, i) => i === 0 || e.off > entries[i - 1].off);
+  return entries.filter((e, i) => i === 0 || e.off > entries[i - 1]!.off);
 }
 
 /** Parse whichever index the init segment carries (by MIME type). */
-export function parseIndex(initBuf, mimeType) {
+export function parseIndex(initBuf: Buffer, mimeType: string | undefined): MediaIndex | null {
   try {
     return (mimeType || '').includes('webm') ? parseWebmIndex(initBuf) : parseMp4Index(initBuf);
   } catch {
@@ -155,12 +178,12 @@ export function parseIndex(initBuf, mimeType) {
 }
 
 /** Index entry with the greatest offset <= off (binary search), or null. */
-export function indexLookup(index, off) {
-  if (!index || !index.length || off < index[0].off) return null;
+export function indexLookup(index: MediaIndex | null, off: number): IndexEntry | null {
+  if (!index || !index.length || off < index[0]!.off) return null;
   let lo = 0; let hi = index.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (index[mid].off <= off) lo = mid; else hi = mid - 1;
+    if (index[mid]!.off <= off) lo = mid; else hi = mid - 1;
   }
-  return index[lo];
+  return index[lo]!;
 }

@@ -9,7 +9,7 @@
 #   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
 #   Contents/Runtime/bin/{ffmpeg,node,rsvg-convert}
 #   Contents/Runtime/Python.framework     base Python for the yt-dlp venv (trimmed)
-#   Contents/Resources/sofa-yt            YouTube SABR sidecar (node ESM + node_modules, docs/sofa-yt.md)
+#   Contents/Resources/sofa-yt            YouTube SABR sidecar (TypeScript run by node + node_modules, docs/sofa-yt.md)
 #   Contents/Runtime/etc/{cert.pem,fonts/}
 #
 # Prerequisite (build machine): ports for the sofa dependencies installed.
@@ -51,11 +51,16 @@ find "$RT/Python.framework/Versions/3.14/bin" -mindepth 1 ! -name 'python3*' -de
 
 echo "==> YouTube SABR sidecar (Contents/Resources/sofa-yt, run with Contents/Runtime/bin/node)"
 SY="$APP/Contents/Resources/sofa-yt"
-[ -f "$SY/main.mjs" ] && [ -f "$SY/node_modules/.sofa-stamp" ] || { echo "ERROR: sofa-yt missing in the build"; exit 1; }
+[ -f "$SY/main.ts" ] && [ -f "$SY/node_modules/.sofa-stamp" ] || { echo "ERROR: sofa-yt missing in the build"; exit 1; }
+# only the current sources ship: an older build dir may still hold renamed/removed files (e.g. the .mjs
+# sources from before the TypeScript port)
+(cd "$SY" && find . -path ./node_modules -prune -o -type f -print) | while read -r f; do
+  [ -f "$SRC/res/sofa-yt/$f" ] || { echo "   removing stale sofa-yt/${f#./}"; rm -f "$SY/$f"; }
+done
 # source maps and type declarations are not needed at runtime (~half of node_modules)
 find "$SY/node_modules" -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -delete
 # every dependency must load with the bundled node (no network)
-"$RT/bin/node" "$SY/main.mjs" --check || { echo "ERROR: sofa-yt does not load with the bundled node"; exit 1; }
+"$RT/bin/node" "$SY/main.ts" --check || { echo "ERROR: sofa-yt does not load with the bundled node"; exit 1; }
 
 echo "==> CA certificates, fontconfig, empty module/config paths (against MacPorts modules, see SFRuntime)"
 mkdir -p "$RT/lib/gio/modules"
@@ -88,7 +93,7 @@ echo "==> checking: only system and bundle dependencies left, no rpaths"
 "$PY" -I "$SRC/tools/relink.py" --check "$APP"
 # runtime scripts: no /opt/local paths (exception: ytresolver.py
 # uses /opt/local only as a fallback when SOFA_NODE is missing)
-LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.mjs' --include='*.py' --include='*.json' "$MP/" "$APP/Contents/Resources/sofa-yt" \
+LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.mjs' --include='*.ts' --include='*.py' --include='*.json' "$MP/" "$APP/Contents/Resources/sofa-yt" \
        "$APP/Contents/Resources/yt-dlp-plugins" || true)
 [ -z "$LEFT" ] || { echo "ERROR: $MP paths in runtime scripts:"; echo "$LEFT"; exit 1; }
 

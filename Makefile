@@ -43,7 +43,8 @@ VENDOR  := $(BUILD)/vendor/yt-dlp
 
 # YouTube SABR sidecar (docs/sofa-yt.md): its sources + the npm dependencies pinned in
 # res/sofa-yt/package-lock.json (tools/fetch-sofa-yt, npm ci) -> Contents/Resources/sofa-yt
-SYSRC   := res/sofa-yt/package.json $(wildcard res/sofa-yt/*.mjs res/sofa-yt/lib/*.mjs)
+# (TypeScript run directly by node's type stripping: the .ts sources are what ships, docs/sofa-yt.md)
+SYSRC   := res/sofa-yt/package.json $(wildcard res/sofa-yt/*.ts res/sofa-yt/lib/*.ts)
 SYVEND  := $(BUILD)/vendor/sofa-yt
 SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources/%,$(SYSRC)) \
              $(b)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp)

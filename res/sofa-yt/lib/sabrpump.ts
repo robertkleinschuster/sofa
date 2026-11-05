@@ -10,7 +10,14 @@
 // tail only, so the FIFO head stays aligned.
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { EnabledTrackTypes, Logger, LogLevel } from 'googlevideo/utils';
-import { log, debug } from './log.mjs';
+import type { ReloadPlaybackContext } from 'googlevideo/protos';
+import type { ReloadResponse, SegmentInfo } from 'googlevideo/sabr-stream';
+import type { Track, TrackCollection } from 'googlevideo/utils';
+import { toError } from './errors.ts';
+import { log, debug } from './log.ts';
+import type { DescribedFormat } from './formats.ts';
+import type { PumpEnd, PumpHandle, PumpRequest, TrackKind } from './session.ts';
+import type { VodInfo } from './youtube.ts';
 
 Logger.getInstance().setLogLevels(LogLevel.ERROR);
 
@@ -18,25 +25,30 @@ const MAX_RETRIES = 2; // googlevideo default 10 = ~39 s of 403 retries; surface
 
 let nextId = 1;
 
-/**
- * @param {object} o
- * @param {object} o.info           cached player info (youtube.mjs)
- * @param {object[]} o.formats      described formats (formats.mjs)
- * @param {object|null} o.video     described video format or null (audio only)
- * @param {object} o.audio          described audio format
- * @param {number} o.startMs
- * @param {string} [o.poToken]      pre-minted websafe token (avoids SPS 3 + backoff on seek starts)
- * @param {() => Promise<Uint8Array>} o.mintPoToken
- * @param {(ctx) => Promise<{serverAbrStreamingUrl, videoPlaybackUstreamerConfig}>} o.reload
- * @param {(kind, seg) => void} o.onSegment   seg = {start, buf, startMs, durationMs, init}
- * @param {(err: Error|null, how: 'finished'|'aborted'|'error') => void} o.onEnd
- * @returns {{id, abort: () => void}}
- */
-export function startSabrPump(o) {
+/** One SABR run: the session's request plus what this process adds (main.ts). */
+export interface SabrPumpOptions extends PumpRequest {
+  info: VodInfo;                                   // cached player info (youtube.ts)
+  formats: DescribedFormat[];                      // described formats (formats.ts)
+  poToken?: string | undefined;                    // pre-minted websafe token (avoids SPS 3 + backoff on seek starts)
+  mintPoToken: () => Promise<Uint8Array>;
+  reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>;
+}
+
+/** Placement of one completed segment, recorded when googlevideo finalizes it. */
+interface SegmentHeader {
+  init: boolean;
+  start: number;
+  length: number;
+  startMs: number;
+  durationMs: number;
+}
+
+/** Start a run; segments go to o.onSegment, the end (once) to o.onEnd. */
+export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
   const id = nextId++;
   const tag = `pump#${id} ${o.info.id} ${o.video ? `${o.video.itag}+` : 'audio-only '}${o.audio.key} @${(o.startMs / 1000).toFixed(1)}s`;
   let ended = false;
-  const end = (err, how) => {
+  const end = (err: Error | null, how: PumpEnd): void => {
     if (ended) return;
     ended = true;
     debug(`${tag}: end (${how}${err ? `: ${err.message}` : ''})`);
@@ -52,18 +64,20 @@ export function startSabrPump(o) {
     poToken: o.poToken,
     callbacks: {
       onMintPoToken: () => o.mintPoToken(),
-      onReloadPlayerResponse: (ctx) => { log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
+      onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
     },
   });
 
-  const fifo = { video: [], audio: [] };
-  for (const kind of ['video', 'audio']) {
-    const track = sabr.trackCollection?.[kind];
+  const fifo: Record<TrackKind, SegmentHeader[]> = { video: [], audio: [] };
+  // private in googlevideo's types; bracket access is TypeScript's typed escape hatch for it
+  const tracks: TrackCollection | undefined = sabr['trackCollection'];
+  for (const kind of ['video', 'audio'] as const) {
+    const track: Track | undefined = tracks?.[kind];
     if (!track || typeof track.recordCompletedSegment !== 'function') {
       throw new Error('googlevideo internals changed (Track#recordCompletedSegment) - check the pinned version');
     }
     const orig = track.recordCompletedSegment.bind(track);
-    track.recordCompletedSegment = (info, emsg) => {
+    track.recordCompletedSegment = (info: SegmentInfo, emsg?: Parameters<Track['recordCompletedSegment']>[1]) => {
       orig(info, emsg);
       const done = track.trackedSegments.get(info.segmentNumber);
       const h = info.mediaHeader || {};
@@ -81,7 +95,7 @@ export function startSabrPump(o) {
   sabr.on('error', (e) => end(e instanceof Error ? e : new Error(String(e)), 'error'));
   // 'finish' closes both streams; the readers below report it once they drained every chunk
 
-  let started;
+  let started: ReturnType<SabrStream['start']>;
   try {
     started = sabr.start({
       videoFormat: o.video ? o.video.sabr : undefined,
@@ -93,12 +107,12 @@ export function startSabrPump(o) {
       isPostLiveDvr: false,
     });
   } catch (e) {
-    queueMicrotask(() => end(e, 'error'));
+    queueMicrotask(() => end(toError(e), 'error'));
     return { id, abort() {} };
   }
   debug(`${tag}: started`);
 
-  const pumpReader = async (kind, stream) => {
+  const pumpReader = async (kind: TrackKind, stream: ReadableStream<ArrayBufferView>): Promise<void> => {
     const reader = stream.getReader();
     try {
       for (;;) {
@@ -123,7 +137,7 @@ export function startSabrPump(o) {
   }, (e) => {
     if (sabr.isAborted || ended) return end(null, 'aborted');
     sabr.abort().catch(() => {});
-    end(e, 'error');
+    return end(toError(e), 'error');
   });
 
   return {

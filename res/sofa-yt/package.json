@@ -4,13 +4,20 @@
   "description": "Sofa YouTube SABR sidecar: Innertube player requests, WebPO tokens and SABR media served as local HTTP files for mpv",
   "private": true,
   "type": "module",
-  "main": "main.mjs",
+  "main": "main.ts",
   "license": "UNLICENSED",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "dependencies": {
     "bgutils-js": "4.0.3",
     "googlevideo": "5.0.1",
     "jsdom": "25.0.1",
     "youtubei.js": "18.3.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "21.1.7",
+    "@types/node": "26.6.5",
+    "typescript": "6.0.3"
   }
 }
