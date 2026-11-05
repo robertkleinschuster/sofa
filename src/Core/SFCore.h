@@ -16,6 +16,7 @@ typedef NS_ENUM(NSInteger, SFKey) {
 extern CGFloat SFScale;
 static inline CGFloat U(CGFloat v) { return round(v * SFScale); }
 
+void SFLogFlush(void);   // wait until queued log lines are written (before _exit)
 void SFLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
 extern NSString *SFLogFileName;   // "Sofa.log"; dev instances: "Sofa-dev-<instance>.log"
 

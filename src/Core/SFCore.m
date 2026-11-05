@@ -3,6 +3,9 @@
 CGFloat SFScale = 1.0;
 
 NSString *SFLogFileName = @"Sofa.log";
+static dispatch_queue_t gLogQueue;   // set by the first SFLog
+void SFLogFlush(void) { if (gLogQueue) dispatch_sync(gLogQueue, ^{}); }
+
 void SFLog(NSString *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];
@@ -11,6 +14,7 @@ void SFLog(NSString *fmt, ...) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         q = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
+        gLogQueue = q;
         NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"];
         NSString *p = [dir stringByAppendingPathComponent:SFLogFileName ?: @"Sofa.log"];
         NSDictionary *a = [[NSFileManager defaultManager] attributesOfItemAtPath:p error:nil];

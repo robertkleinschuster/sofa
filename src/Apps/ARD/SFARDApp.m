@@ -47,6 +47,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     i.backdrop = imageURL(nn(t[@"images"]), @"aspect16x9", 1280);
     NSString *pub = str(dict(t[@"publicationService"])[@"name"]);
     NSString *show = str(dict(t[@"show"])[@"title"]);
+    if (!show.length) show = nil;   // "" from the API: the broadcaster stands in
     i.channel = show ?: pub;
     NSString *sid = str(dict(t[@"show"])[@"id"]);
     if (sid.length) i.showRef = [@"ardshow:" stringByAppendingString:sid];

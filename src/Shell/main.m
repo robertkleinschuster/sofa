@@ -178,6 +178,7 @@ static uint16_t gPort = 8765;
     [[SFStore shared] flush];
     // Everything is saved. exit()'s library cleanup (OpenSSL, frameworks) races with worker
     // threads still in a request -> crash on quit; leave without it, like the update path.
+    SFLogFlush();
     _exit(0);
 }
 

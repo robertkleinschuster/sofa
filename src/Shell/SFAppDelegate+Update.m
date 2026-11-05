@@ -84,6 +84,7 @@ static id gHandover;   // activity token of the update handover (released = acti
 
 + (void)exitAfterUpdateSave {
     usleep(500 * 1000);   // the "updating" overlay is on screen, files are written
+    SFLogFlush();
     _exit(0);
 }
 

@@ -1001,8 +1001,38 @@ static NSDictionary *rssPublished(NSString *cid) {
     NSString *sigKey = [@"yt.feedsig." stringByAppendingString:cid];
     NSString *sig = published ? [[published.allKeys sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","] : nil;
     BOOL unchanged = sig && [[[SFStore shared] setting:sigKey] isEqualToString:sig];
-    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:unchanged ? 7 * 86400 : 900 done:^(id j, NSError *e) {
-        if (j && sig && !unchanged) [[SFStore shared] setSetting:sig forKey:sigKey];
+    [self feedItems:cid cache:unchanged ? 7 * 86400 : 900 done:^(NSArray *online, NSError *e) {
+        // The signature may only be stored next to an answer that holds every RSS video: a cached
+        // or fallback answer (SFNet serves stale data on errors) or InnerTube lagging behind RSS
+        // would otherwise freeze the list without the new upload for a week (review 2026-11-05).
+        // Incomplete: one fresh fetch; still incomplete (lag, a premiere not aired yet): try again next time.
+        BOOL (^complete)(NSArray *) = ^BOOL(NSArray *items) {
+            NSMutableSet *ids = [NSMutableSet new];
+            for (SFItem *i in items) [ids addObject:restOfID(i.identifier)];
+            return published.count && [[NSSet setWithArray:published.allKeys] isSubsetOfSet:ids];
+        };
+        void (^finish)(NSArray *, NSError *) = ^(NSArray *items, NSError *err) {
+            if (items && sig && !unchanged && complete(items)) [[SFStore shared] setSetting:sig forKey:sigKey];
+            NSDate *oldest = nil;
+            for (SFItem *i in items) {
+                NSDate *exact = published[restOfID(i.identifier)];
+                if (exact) { i.date = exact; oldest = oldest ? [oldest earlierDate:exact] : exact; }
+            }
+            // beyond the 15 RSS entries only the approximation exists (relative to a possibly week-old
+            // answer): never newer than the oldest exact entry, so the order stays right
+            for (SFItem *i in items)
+                if (oldest && !published[restOfID(i.identifier)] && (!i.date || [i.date compare:oldest] != NSOrderedAscending))
+                    i.date = [oldest dateByAddingTimeInterval:-60];
+            done(items, err);
+        };
+        if (online && published && !complete(online)) [self feedItems:cid cache:1 done:finish];   // fresh, and refreshes the cache
+        else finish(online, e);
+    }];
+}
+
+// the channel's long videos as online items (InnerTube browse of the UULF playlist)
++ (void)feedItems:(NSString *)cid cache:(NSTimeInterval)age done:(void (^)(NSArray *, NSError *))done {
+    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:age done:^(id j, NSError *e) {
         NSMutableArray *online = [NSMutableArray new];
         for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
             if (i.kind != SFItemVideo) continue;
@@ -1015,7 +1045,6 @@ static NSDictionary *rssPublished(NSString *cid) {
             }
             [online addObject:i];
         }
-        for (SFItem *i in online) { NSDate *exact = published[restOfID(i.identifier)]; if (exact) i.date = exact; }
         done(j ? online : nil, e);
     }];
 }

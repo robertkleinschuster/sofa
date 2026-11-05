@@ -157,6 +157,20 @@
     } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
         [[SFDownloads shared] expireRepairBackoffForTesting];
         [[SFDownloads shared] retryDueRepairs];
+    } else if ([cmd isEqualToString:@"shelves"] && arg) {   // Dev: an app's start page shelves (title, count, kinds) - content survey
+        Class<SFApp> app = [SFAppRegistry appNamed:arg];
+        if (!app) { SFLog(@"dev: shelves: no app %@", arg); return; }
+        [app homeLoader](^(SFPage *p, NSError *e) {
+            for (SFShelf *sh in p.shelves) {
+                NSCountedSet *kinds = [NSCountedSet new];
+                for (SFItem *i in sh.items) [kinds addObject:@(i.kind)];
+                SFItem *f = sh.items.firstObject;
+                SFLog(@"dev: shelves %@ | %@ | %lu items | kinds video=%lu live=%lu folder=%lu action=%lu | first: %@ (%@)", arg, sh.title ?: @"-", (unsigned long)sh.items.count,
+                      (unsigned long)[kinds countForObject:@(SFItemVideo)], (unsigned long)[kinds countForObject:@(SFItemLive)],
+                      (unsigned long)[kinds countForObject:@(SFItemFolder)], (unsigned long)[kinds countForObject:@(SFItemAction)], f.title, f.identifier);
+            }
+            SFLog(@"dev: shelves %@ end%@", arg, e ? [@" " stringByAppendingString:e.localizedDescription] : @"");
+        });
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     }
