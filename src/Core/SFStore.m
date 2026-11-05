@@ -87,7 +87,8 @@
             [self exec:@"CREATE TABLE feed_cache (id TEXT PRIMARY KEY, sig TEXT, items TEXT, updated REAL)"];
             [self exec:@"INSERT INTO feed_cache (id, sig, items, updated) SELECT 'ytchannel:' || substr(k, 9), "
                         "json_extract(CAST(v AS TEXT), '$.sig'), json_extract(CAST(v AS TEXT), '$.items'), t "
-                        "FROM jcache WHERE k LIKE 'yt.feed.%' AND json_type(CAST(v AS TEXT), '$.items') = 'array'"];
+                        "FROM jcache WHERE k LIKE 'yt.feed.%' AND json_valid(CAST(v AS TEXT)) "   // a broken entry must not block the step
+                        "AND json_type(CAST(v AS TEXT), '$.items') = 'array'"];
             [self exec:@"DELETE FROM jcache WHERE k LIKE 'yt.feed.%'"];
             [self exec:@"CREATE TABLE follow_items_new (follow TEXT, id TEXT, pos INTEGER, item TEXT, PRIMARY KEY(follow, id))"];
             [self exec:@"INSERT INTO follow_items_new (follow, id, pos, item) SELECT follow, id, "
@@ -332,22 +333,19 @@ static SFItem *playableItem(id json) {
 }
 
 - (id)cachedJSON:(NSString *)key maxAge:(NSTimeInterval)age {
-    __block id obj = nil;
-    dispatch_sync(_q, ^{
+    __block NSData *data = nil;
+    dispatch_sync(_q, ^{   // only the read under the queue; parsing (up to ~1 MB) happens outside
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, "SELECT t,v FROM jcache WHERE k=?", -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, key);
-        if (sqlite3_step(st) == SQLITE_ROW) {
-            double t = sqlite3_column_double(st, 0);
-            if ([NSDate date].timeIntervalSince1970 - t <= age) {
-                const void *b = sqlite3_column_blob(st, 1);
-                int n = sqlite3_column_bytes(st, 1);
-                if (b && n) obj = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:b length:n] options:0 error:nil];
-            }
+        if (sqlite3_step(st) == SQLITE_ROW && [NSDate date].timeIntervalSince1970 - sqlite3_column_double(st, 0) <= age) {
+            const void *b = sqlite3_column_blob(st, 1);
+            int n = sqlite3_column_bytes(st, 1);
+            if (b && n) data = [NSData dataWithBytes:b length:n];
         }
         sqlite3_finalize(st);
     });
-    return obj;
+    return data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
 }
 - (void)cacheJSON:(id)obj forKey:(NSString *)key {
     NSData *d = [NSJSONSerialization dataWithJSONObject:obj options:0 error:nil];

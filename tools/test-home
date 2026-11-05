@@ -42,7 +42,11 @@ rows() {   # rows TOPIC: the ids/badges of the row as Home shows it now
   grep "dev: homerows $1 =" "$LOG" | tail -1 | sed 's/.*= //'
 }
 has() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
-cleanup() { [ -n "$APP" ] && quit; rm -rf "$T"; }
+cleanup() {
+  [ -n "$APP" ] && quit
+  defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings: fresh per run
+  rm -rf "$T"
+}
 trap cleanup EXIT
 
 echo "==> 1. what plays here, region unknown"

@@ -30,7 +30,7 @@ run() {   # start the instance until its store is open, then quit
   for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
   kill $APP 2>/dev/null; APP=
 }
-trap '[ -n "$APP" ] && kill $APP 2>/dev/null; rm -rf "$T"' EXIT
+trap '[ -n "$APP" ] && kill $APP 2>/dev/null; defaults delete de.sofa.dev.$INST >/dev/null 2>&1; rm -rf "$T"' EXIT
 
 echo "==> legacy database (0.3.8)"
 mkdir -p "$SOFA_DATA_DIR"
@@ -55,6 +55,7 @@ INSERT INTO follow_items VALUES ('exampleshow:a', 'example:1', '{"id":"example:1
 INSERT INTO settings VALUES ('dev.keyboard.layout', 'qwertz'), ('lounge.dev.token', 'x'), ('lounge.token', 'keep'),
   ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json');
 INSERT INTO jcache VALUES ('yt.feed.UCabcdefghijklmnopqrstuv', $NOW, CAST('{"sig":"a,b","items":[{"id":"yt:aaaaaaaaaaa","kind":0}]}' AS BLOB));
+INSERT INTO jcache VALUES ('yt.feed.UCbroken0000000000000000', $NOW, CAST('{"sig":' AS BLOB));   -- cut off: must not block step 5
 INSERT INTO jcache VALUES ('GET https://old.example/', $NOW - 30 * 86400, CAST('{}' AS BLOB));
 SQL
 ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
@@ -69,6 +70,8 @@ check "3: jcache age index" "$(Q "select count(*) from sqlite_master where name=
 check "3: expired cache entry trimmed" "$(Q "select count(*) from jcache where k like 'GET https://old%'")" 0
 check "4: dev settings deleted, others kept" "$(Q "select group_concat(k) from settings where k like '%lounge%' or k like 'dev.%'")" "lounge.token"
 check "5: stored feed moved" "$(Q "select sig || ' ' || json_array_length(items) from feed_cache where id='ytchannel:UCabcdefghijklmnopqrstuv'")" "a,b 1"
+check "1: downloads columns added" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('failedAt','keep','online','onlineAt')")" 4
+check "5: broken feed entry skipped" "$(Q "select count(*) from feed_cache where id like '%UCbroken%'")" 0
 check "5: no feed left in the response cache" "$(Q "select count(*) from jcache where k like 'yt.feed.%'")" 0
 check "5: follow_items in written order" "$(Q "select group_concat(id, ' ') from (select id from follow_items order by follow, pos)")" "example:3 example:2 example:1"
 check "5: follow_items columns" "$(Q "select group_concat(name) from pragma_table_info('follow_items')")" "follow,id,pos,item"
@@ -81,6 +84,14 @@ echo "==> restart (no step runs twice)"
 run
 grep -q 'store: schema' "$LOG" && bad "migrated again: $(grep 'store: schema' "$LOG")" || ok "nothing to migrate"
 check "integrity after restart" "$(Q 'pragma integrity_check')" ok
+
+echo "==> fresh database (first launch)"
+export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
+run
+check "schema version" "$(Q 'pragma user_version')" 6
+check "integrity" "$(Q 'pragma integrity_check')" ok
+check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
+  "downloads feed_cache follow_items follows jcache progress recent_searches settings stats subscriptions watch_later"
 
 [ $fail = 0 ] && echo "==> test-schema ok" || echo "==> test-schema FAILED"
 exit $fail

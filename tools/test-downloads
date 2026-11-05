@@ -52,6 +52,7 @@ shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1"
 ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the dev download folder
 SRV=
 cleanup() {
+  defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings: fresh per run
   [ -n "$APP" ] && kill $APP 2>/dev/null
   [ -n "$SRV" ] && { kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; }
   for p in $(ffpids); do kill $p 2>/dev/null; done
@@ -94,7 +95,8 @@ sleep 1
 S=$(pgrep -f "part998")
 O=$(pgrep -f "orphan-test.part999")
 [ -n "$O" ] && [ "$(ps -o ppid= -p $O | tr -d ' ')" = 1 ] && ok "orphan running (pid $O, parent launchd)" || bad "could not create the orphan"
-start; sleep 2
+start
+for i in $(seq 1 40); do kill -0 $O 2>/dev/null || break; sleep 0.25; done   # swept at start (10 s at most)
 kill -0 $O 2>/dev/null && bad "orphan still alive" || ok "orphan killed at start"
 grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
 [ -n "$S" ] && ! kill -0 $S 2>/dev/null && grep -q "ffmpeg $S ignored SIGTERM - SIGKILL" "$LOG" && ok "SIGTERM-ignoring orphan escalated to SIGKILL" \
@@ -137,7 +139,7 @@ grep -q 'proctest status -2 after [12]\.' "$LOG" && ok "hung child process is ki
 echo "==> 3. quit during a download"
 cmd "dlget $REF"
 for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
-sleep 3
+for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done
 [ -n "$(ffpids)" ] && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
 quit; sleep 1
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after quit" || bad "ffmpeg survived the quit: $(ffpids)"
@@ -203,7 +205,7 @@ m=$(wc -l < "$LOG"); cmd "dlreserve 10"   # room again
 for i in $(seq 1 60); do sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
 sed -n "$m,\$p" "$LOG" | grep -q "storage free again" && sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" \
   && ok "continues by itself once there is room" || bad "did not continue: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
-sleep 3
+for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done   # the download is running
 m=$(wc -l < "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the run
 for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "deferred" && break; sleep 0.5; done
 sed -n "$m,\$p" "$LOG" | grep -q "disk nearly full while loading" && ok "running download stopped" || bad "running download not stopped"

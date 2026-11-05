@@ -107,7 +107,7 @@ awk "BEGIN{exit !($t3 > $t2 + 1)}" 2>/dev/null && ok "playback continues after M
 since $m | grep -q 'player: resolve\|player: play ' && bad "the panel restarted playback" || ok "no restart by the panel"
 
 echo "==> 4. broken stream -> fallback chain -> readable message"
-m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; sleep 8
+m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; waitlog $m 'player: failed' 60
 since $m | grep -q 'mpv fails -> AVFoundation' && ok "fallback chain ran" || bad "no fallback"
 since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no final failure"
 shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
@@ -177,7 +177,7 @@ ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"
 '{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":7000,"endMs":0,"image":"'$T'/esav.png"}]'
 export SOFA_OFFLINE=1
 start
-m=$(mark); cmd "playlist $T/local.mp4"; sleep 2; cmd "endscreen $ES"
+m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"
 waitlog $m 'endscreen: 3 tiles from 6.0 s' && ok "end screen data taken over" || bad "no end screen tiles: $(since $m | grep 'endscreen' | tail -2)"
 waitlog $m 'endscreen: shown at' 60
 at=$(since $m | grep 'endscreen: shown at' | head -1 | sed 's/.*shown at \([0-9.]*\) s/\1/')
@@ -197,7 +197,7 @@ m=$(mark); cmd "key play"; sleep 0.8; cmd "key prev"; waitlog $m 'endscreen: hid
 cmd "key play"
 m=$(mark); waitlog $m 'endscreen: shown at' 60; cmd "key down"; sleep 0.4; cmd "key select"
 waitlog $m 'player: play endvid.mp4' && ok "OK on a video tile plays it" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
-m=$(mark); cmd "playlist $T/local.mp4"; sleep 2; cmd "endscreen $ES"; sleep 0.5
+m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"; waitlog $m 'endscreen: 3 tiles' 
 for k in right right right left; do cmd "key $k"; sleep 0.3; done   # one jump of +80 s -> ~8 s before the end
 waitlog $m 'endscreen: shown at' 20; cmd "key down"
 waitlog $m 'ended while in the end screen' 80 && ok "the end waits while the tiles have focus" || bad "end did not wait: $(since $m | grep 'player:\|endscreen' | tail -2)"
