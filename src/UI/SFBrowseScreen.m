@@ -856,6 +856,7 @@ static void auditImages(SFPage *page) {
     NSString *src = it.backdrop ?: _page.backdrop;
     if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) return;
     if (!src.length) { SFAnimate(0.4, ^{ self->_backdropBox.opacity = 0; }); return; }
+    _backdrop.fallbackSource = it.backdrop && it.image.length ? it.image : nil;   // big image missing -> the tile image
     _backdrop.source = src;
     CGFloat op = self.showsHero ? 0.75 : 0.4;   // more restrained on grid pages
     if (self.theme.light) op *= 0.6;

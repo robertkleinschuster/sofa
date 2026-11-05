@@ -97,6 +97,7 @@
 
 @implementation SFImageCache {
     NSCache *_mem;
+    NSMutableSet *_missing;   // remote sources the server answered 404/410 for (this session): no refetch
     NSOperationQueue *_decode;
     NSOperationQueue *_net;
     NSString *_diskDir;
@@ -113,6 +114,7 @@
 - (instancetype)init {
     if ((self = [super init])) {
         _mem = [NSCache new];
+        _missing = [NSMutableSet new];
         _mem.totalCostLimit = 350 * 1024 * 1024;  // decoded pixels
         _decode = [NSOperationQueue new];
         _decode.maxConcurrentOperationCount = 3;
@@ -176,6 +178,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 - (void)imageForSource:(NSString *)src maxPixel:(CGFloat)px blurred:(BOOL)blur
             completion:(void (^)(CGImageRef))done {
     if (!src.length) { done(NULL); return; }
+    @synchronized (_missing) { if ([_missing containsObject:src]) { done(NULL); return; } }
     if (blur) px = 64;  // decode tiny, the GPU scales up smoothly = cheap blur
     px = ceil(px / 64) * 64;
     NSString *key = [NSString stringWithFormat:@"%@|%.0f", src, px];
@@ -240,7 +243,10 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             NSInteger st = 0;
             NSData *data = SFCurlFetch(src, @"GET", nil, nil, &st, NULL);
             if (data.length && st < 400) { [data writeToFile:disk atomically:YES]; decodeData(data); }
-            else finish(NULL);
+            else {
+                if (st == 404 || st == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
+                finish(NULL);
+            }
             return;
         }
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
@@ -251,6 +257,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
                 [data writeToFile:disk atomically:YES];
                 decodeData(data);
             } else {
+                if (code == 404 || code == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
                 finish(NULL);
             }
             dispatch_semaphore_signal(sem);
@@ -263,7 +270,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 #pragma mark - SFImageLayer
 
 @interface SFImageLayer (Fade)
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want;
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded;
 @end
 
 @interface SFImageLayer (Adaptive)
@@ -298,12 +305,13 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     if (!source.length) return;
     CGFloat px = MAX(self.bounds.size.width, self.bounds.size.height) * self.contentsScale;
     if (px < 1) px = 512;
-    NSString *want = _source;
+    NSString *want = _source, *fallback = [_fallbackSource isEqualToString:source] ? nil : _fallbackSource;
+    BOOL blurred = self.blurred;
     __weak SFImageLayer *ws = self;
-    [[SFImageCache shared] imageForSource:source maxPixel:px blurred:self.blurred completion:^(CGImageRef img) {
+    void (^apply)(CGImageRef, NSString *) = ^(CGImageRef img, NSString *loaded) {
         SFImageLayer *s = ws;
         if (!s || ![s.source isEqualToString:want] || !img) return;
-        if (s.fadeEdges) { [s applyFaded:img source:want]; return; }
+        if (s.fadeEdges) { [s applyFaded:img source:want loaded:loaded]; return; }
         if (s.adaptiveBackground) [s adaptBackgroundTo:img source:want];
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
@@ -312,6 +320,12 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
         fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.25;
         [s addAnimation:fade forKey:@"fadein"];
+    };
+    [[SFImageCache shared] imageForSource:source maxPixel:px blurred:blurred completion:^(CGImageRef img) {
+        if (img || !fallback.length) { apply(img, want); return; }
+        SFImageLayer *s = ws;
+        if (!s || ![s.source isEqualToString:want]) return;
+        [[SFImageCache shared] imageForSource:fallback maxPixel:px blurred:blurred completion:^(CGImageRef f) { apply(f, fallback); }];
     }];
 }
 @end
@@ -400,7 +414,9 @@ static CGImageRef fadedImage(CGImageRef src) {
 }
 
 @implementation SFImageLayer (Fade)
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want {
+// `want` = the layer's source (still current?), `loaded` = where the pixels came from (the source
+// or its fallback) - the faded result is cached by `loaded`.
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded {
     static NSCache *cache;
     static dispatch_once_t o;
     dispatch_once(&o, ^{ cache = [NSCache new]; cache.countLimit = 12; });
@@ -413,14 +429,14 @@ static CGImageRef fadedImage(CGImageRef src) {
         fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.35;
         [self addAnimation:fade forKey:@"fadein"];
     };
-    id hit = [cache objectForKey:want];
+    id hit = [cache objectForKey:loaded];
     if (hit) { set(hit); return; }
     CGImageRef keep = CGImageRetain(img);
     SFBackground(^{
         CGImageRef f = fadedImage(keep);
         CGImageRelease(keep);
         id obj = (__bridge_transfer id)f;
-        dispatch_async(dispatch_get_main_queue(), ^{ if (obj) { [cache setObject:obj forKey:want]; set(obj); } });
+        dispatch_async(dispatch_get_main_queue(), ^{ if (obj) { [cache setObject:obj forKey:loaded]; set(obj); } });
     });
 }
 @end

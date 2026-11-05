@@ -131,7 +131,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     if ([cid hasPrefix:@"UC"]) i.showRef = [@"ytchannel:" stringByAppendingString:cid];
     i.subtitle = meta;
     i.image = thumb ?: [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", vid];
-    i.backdrop = i.image;
+    i.backdrop = SFYouTubeBackdrop(vid);
     i.duration = dur;
     i.source = @"youtube"; i.themeName = @"youtube";
     i.style = SFTileStyleLandscape;
@@ -148,6 +148,7 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     i.resolverRef = i.identifier;
     i.externalID = vid;
     i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", vid];
+    i.backdrop = SFYouTubeBackdrop(vid);
     i.source = @"youtube"; i.themeName = @"youtube"; i.style = SFTileStyleLandscape;
     return i;
 }
@@ -609,7 +610,7 @@ static NSSet *skipKeys(void) {
                 item.resolverRef = [@"ytlive:" stringByAppendingString:item.externalID];
             }
             item.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", item.externalID];
-            item.backdrop = item.image;
+            item.backdrop = SFYouTubeBackdrop(item.externalID);
         }
         if (done) done();
     }];

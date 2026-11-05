@@ -19,6 +19,9 @@
 // fades in softly. Shared memory and disk cache.
 @interface SFImageLayer : CALayer
 @property (nonatomic, copy) NSString *source;  // file path or http(s) URL
+// shown when `source` can't be loaded (e.g. a high-resolution backdrop that doesn't exist for
+// this video: YouTube maxresdefault 404) - set before `source`
+@property (nonatomic, copy) NSString *fallbackSource;
 @property (nonatomic, strong) NSColor *placeholderColor;
 @property (nonatomic) BOOL blurred;            // for background images
 @property (nonatomic) BOOL adaptiveBackground; // logos: background by the image's brightness (dark logo -> light)

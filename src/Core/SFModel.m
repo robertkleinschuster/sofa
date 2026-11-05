@@ -1,5 +1,9 @@
 #import "SFModel.h"
 
+NSString *SFYouTubeBackdrop(NSString *videoID) {
+    return videoID.length ? [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/maxresdefault.jpg", videoID] : nil;
+}
+
 NSError *SFError(NSString *msg) {
     return [NSError errorWithDomain:@"Sofa" code:1 userInfo:@{NSLocalizedDescriptionKey: msg ?: @"Fehler"}];
 }
@@ -76,6 +80,10 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     if (gone(i.image)) i.image = [i.backdrop hasPrefix:@"http"] ? i.backdrop : nil;
     if (!i.image && [i.identifier hasPrefix:@"yt:"] && i.identifier.length > 3)
         i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", [i.identifier substringFromIndex:3]];
+    // stored YouTube entries (continue watching, history, watch later) carry the small tile picture as
+    // backdrop -> TV resolution; a local picture (download) stays
+    if ([i.identifier hasPrefix:@"yt:"] && i.identifier.length > 3 && (!i.backdrop || [i.backdrop hasPrefix:@"https://i.ytimg.com/vi/"]))
+        i.backdrop = SFYouTubeBackdrop([i.identifier substringFromIndex:3]);
     i.showRef = d[@"showRef"];
     if (i.localPath) i.playURL = [NSURL fileURLWithPath:i.localPath];
     else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
