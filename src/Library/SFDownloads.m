@@ -90,19 +90,28 @@ static NSString *ffmpegPath(void) {
 // ~16 h in total). YouTube throttles at times ("Sign in to confirm you're not a bot") – without
 // spacing, the attempts were used up within minutes and the episode was lost for good.
 static const NSInteger kSubMaxTries = 6;
-static NSTimeInterval SFRetryDelay(NSInteger tries) { return 900.0 * (1 << MAX(0, MIN(tries, 10) - 1)); }
+static NSTimeInterval SFRetryDelay(NSInteger tries) {
+    static double base;   // 15 min; tests shorten it (SOFA_RETRY_BASE seconds, dev instances only)
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ double t = SFDevMode ? [[NSProcessInfo processInfo].environment[@"SOFA_RETRY_BASE"] doubleValue] : 0; base = t > 0 ? t : 900; });
+    return base * (1 << MAX(0, MIN(tries, 10) - 1));
+}
 
 // Marks a finished file whose repair download failed and is to be retried (error column).
 static NSString *const kRepairPrefix = @"repair: ";
 
-// Re-queues repairs whose backoff has elapsed. Called at start and with every subscription check.
+// Re-queues repairs whose backoff has elapsed and schedules itself for the next one that becomes
+// due (before: only at start and every 3 h, so a 15-min backoff could take hours). Also called at
+// start, after a failed repair and with every subscription check.
 - (void)retryDueRepairs {
-    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970, next = 0;
     BOOL any = NO;
     for (NSMutableDictionary *r in _recs.allValues) {
         if ([r[@"state"] integerValue] != SFDLDone || ![r[@"error"] hasPrefix:kRepairPrefix]) continue;
         NSInteger n = [r[@"tries"] integerValue];
-        if (n >= kSubMaxTries || now - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) continue;
+        if (n >= kSubMaxTries) continue;
+        NSTimeInterval due = [r[@"failedAt"] doubleValue] + SFRetryDelay(n);
+        if (due > now) { next = next ? MIN(next, due) : due; continue; }
         if (![[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) continue;
         SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)n + 1);
         [r removeObjectForKey:@"error"];
@@ -111,6 +120,13 @@ static NSString *const kRepairPrefix = @"repair: ";
         any = YES;
     }
     if (any) [self pump];
+    if (next && (!_repairWake || next < _repairWake || _repairWake <= now)) {
+        _repairWake = next;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((next - now + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (self->_repairWake == next) self->_repairWake = 0;
+            [self retryDueRepairs];
+        });
+    }
 }
 
 - (void)expireRepairBackoffForTesting {
@@ -349,6 +365,7 @@ static NSString *gb(unsigned long long b) {
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
+    [self retryDueRepairs];   // due repairs go now, the others are scheduled for when they become due
     // subscriptions: shortly after start, then every 3 h; cleanup on every check
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
     _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
@@ -581,6 +598,7 @@ static const NSTimeInterval kSourceGap = 30;
         [self save:r];
         SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file, %@", ident, error,
               n < kSubMaxTries ? [NSString stringWithFormat:@"retry in %.0f min", SFRetryDelay(n) / 60] : @"giving up");
+        dispatch_async(dispatch_get_main_queue(), ^{ [self retryDueRepairs]; });   // schedules the retry
     } else if (r) {
         r[@"state"] = @(ok ? SFDLDone : SFDLFailed);
         r[@"progress"] = @(ok ? 1.0 : 0.0);

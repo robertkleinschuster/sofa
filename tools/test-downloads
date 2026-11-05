@@ -125,6 +125,14 @@ quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")
 [ "$st" = "2 2 repair:" ] && ok "marker persisted (state done, 2 tries)" || bad "unexpected record: $st"
 
+# without a manual trigger: the next retry is scheduled for exactly when it is due (it used to wait for
+# the next app start or the 3-hourly subscription check). Base delay 3 s instead of 15 min.
+/opt/local/bin/sqlite3 "$DEVDB" "update downloads set tries=1, failedAt=strftime('%s','now') where id='$BADREF';"
+SOFA_RETRY_BASE=3 start
+for i in $(seq 1 120); do grep -q "retrying the repair of $BADREF" "$LOG" && break; sleep 0.5; done
+grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && ok "retry ran on its own when due" || bad "no scheduled retry: $(grep "$BADREF" "$LOG" | tail -2)"
+quit
+
 echo "==> 5. YouTube download during a bot-check pause"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"   # leftovers of manual tests
 start

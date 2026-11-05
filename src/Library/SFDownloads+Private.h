@@ -21,6 +21,7 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
     BOOL _started, _checking;
     NSTimer *_checkTimer;
     NSTimeInterval _pauseWake;
+    NSTimeInterval _repairWake;  // retryDueRepairs scheduled for this time (epoch)
     NSMutableDictionary *_lastStart;   // source prefix -> epoch of its last download start   // pump already scheduled for when a paused source may continue
     NSMutableDictionary *_itemCache; // id -> SFItem (from JSON), invalidated by save:
     NSUInteger _generation;          // storage of the generation property (also for the subscription category)
