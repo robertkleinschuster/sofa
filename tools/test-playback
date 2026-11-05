@@ -1,6 +1,7 @@
 #!/bin/bash
 # test-playback -- robustness regression tests for the player, driven through an invisible dev
-# instance (own database, muted). No YouTube requests: uses a generated local file and ORF ON.
+# instance (own database, muted). Offline: generated local files and the Example app's test pattern
+# (SOFA_ONLY_APPS: no Mediathek, no network request at all).
 #
 # Checks (each one is a bug that happened in production):
 #   1. playback right after launch has a configured video output (render-context race, 2026-11-04:
@@ -36,7 +37,8 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
 DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
-ORF=orf:14345720   # ORF ON episode with subtitles (replace when it expires)
+export SOFA_ONLY_APPS=example,youtube   # YouTube only for the offline end screen (section 8)
+ORF=example:1   # an online item (the Example app's test pattern)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1

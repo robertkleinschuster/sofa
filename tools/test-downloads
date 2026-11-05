@@ -27,8 +27,11 @@ export SOFA_SOURCE_GAP=3         # per-source spacing of download starts: 3 s in
 ROOT="$SOFA_DATA_DIR/Downloads"
 DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
-REF=orf:14345720   # any ORF ON episode (replace when it expires)
-BADREF=orf:1       # an episode id that does not exist: its download always fails
+# Offline: the Example app serves its items from a local, throttled HTTP server (SOFA_EXAMPLE_MEDIA);
+# YouTube is registered for section 5 only (and stays paused there).
+export SOFA_ONLY_APPS=example,youtube
+REF=example:1      # downloadable (local server, slow enough to quit during the download)
+BADREF=example:0   # an id the Example app does not know: its download always fails
 YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube paused)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
@@ -47,14 +50,40 @@ shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1"
          [ -s "$1" ] || { bad "no screenshot $(basename "$1")"; return 1; }
          [ -n "${DLTEST_SHOTS:-}" ] && cp "$1" "$DLTEST_SHOTS/" 2>/dev/null; return 0; }
 ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the dev download folder
+SRV=
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
+  [ -n "$SRV" ] && { kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; }
   for p in $(ffpids); do kill $p 2>/dev/null; done
   for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
   rm -rf "$T"
 }
 trap cleanup EXIT
 mkdir -p "$ROOT"
+
+# test media: a healthy 60 s file (also the verifier's good case)
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine -t 60 \
+      -c:v libx264 -preset ultrafast -c:a aac -movflags +faststart "$T/good.mp4"
+# the Example app's media for the download sections: served at ~256 KB/s (a download takes a while)
+cat > "$T/slow.py" <<'PY'
+import http.server, sys, time, os
+F = sys.argv[1]
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Length", str(os.path.getsize(F)))
+        self.send_header("Content-Type", "video/mp4"); self.end_headers()
+        with open(F, "rb") as f:
+            while True:
+                b = f.read(65536)
+                if not b: break
+                try: self.wfile.write(b); self.wfile.flush()
+                except Exception: return
+                time.sleep(0.25)
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
+PY
+/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" 47982 & SRV=$!
+export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:47982/good.mp4
 
 echo "==> 1. orphaned ffmpeg from an earlier run"
 ( "$FF" -nostdin -v error -re -f lavfi -i testsrc=size=320x240:rate=10 -t 300 -c:v mpeg4 -y "$ROOT/orphan-test.part999.mp4" & )
@@ -73,8 +102,6 @@ grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
 [ -e "$ROOT/orphan-test.part999.mp4" ] && bad "stale part file left" || ok "stale part file swept"
 
 echo "==> 2. verifier"
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine -t 60 \
-      -c:v libx264 -preset ultrafast -c:a aac "$T/good.mp4"
 cp "$T/good.mp4" "$T/bad.mp4"
 S=$(stat -f %z "$T/bad.mp4")
 for f in 0.2 0.5; do   # overwrite chunks of payload with garbage (container stays readable)
