@@ -43,6 +43,7 @@ if (flag('check')) {
 }
 
 if (flag('debug')) setDebug(true);
+const WARM_AGAIN_MS = 30 * 60 * 1000;
 const stateDir = opt('state');
 if (!stateDir) { log('missing --state <dir>'); process.exit(2); }
 fs.mkdirSync(stateDir, { recursive: true });
@@ -140,9 +141,17 @@ server.listen(Number(opt('port', 0)), '127.0.0.1', () => {
   app.setPort(port);
   process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
   log(`listening on 127.0.0.1:${port}, state ${stateDir}`);
-  // warm up the web identity (no player request): Innertube session + BotGuard minter
-  if (!flag('no-warm') && !process.env.SOFA_NO_WARMUP) {
+  // warm up the web identity (no player request): Innertube session + BotGuard minter. Not when
+  // the last warm-up was recent: Sofa restarts often (deploys, updates) and each warm-up contacts
+  // YouTube twice; then the first /open (or preload) warms up on demand, ~2 s later.
+  const warmFile = path.join(stateDir, 'last-warmup.json');
+  let lastWarm = 0;
+  try { lastWarm = JSON.parse(fs.readFileSync(warmFile, 'utf8')).at || 0; } catch { /* never warmed */ }
+  const recent = Date.now() - lastWarm < WARM_AGAIN_MS;
+  if (recent) log(`warm-up deferred to first use (last one ${Math.round((Date.now() - lastWarm) / 60000)} min ago)`);
+  if (!flag('no-warm') && !process.env.SOFA_NO_WARMUP && !recent) {
     youtube.session().then(() => po.warm(), () => po.warm());
+    try { fs.writeFileSync(warmFile, JSON.stringify({ at: Date.now() })); } catch { /* best effort */ }
   }
 });
 server.on('error', (e) => { log('server error:', e.message); process.exit(1); });
