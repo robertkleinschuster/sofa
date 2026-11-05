@@ -104,8 +104,12 @@ void SFNoAnimate(dispatch_block_t changes) {
 }
 
 #import <AVFoundation/AVFoundation.h>
+#import <objc/message.h>
+// Video layers render black in renderInContext: (AVPlayerLayer, mpv's CAOpenGLLayer). They are
+// hidden while rendering; one that can produce its frame (mpv: devCopyFrameOfSize:, dev mode) is
+// drawn in its place, so dev screenshots and the dev stream show the real picture.
 static void collectPlayerLayers(CALayer *l, NSMutableArray *out) {
-    if ([l isKindOfClass:[AVPlayerLayer class]]) { [out addObject:l]; return; }
+    if ([l isKindOfClass:[AVPlayerLayer class]] || [l respondsToSelector:@selector(devCopyFrameOfSize:)]) { [out addObject:l]; return; }
     for (CALayer *s in l.sublayers) collectPlayerLayers(s, out);
 }
 void SFRenderLayerTree(CALayer *root, CGContextRef ctx) {
@@ -115,7 +119,24 @@ void SFRenderLayerTree(CALayer *root, CGContextRef ctx) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     for (CALayer *l in pl) { [states addObject:@(l.hidden)]; l.hidden = YES; }
+    // a frame drawn into ctx beforehand would be covered by opaque backgrounds (the black video
+    // host), so the frame goes into a temporary plain layer that takes the video layer's place
+    NSMutableArray *stand = [NSMutableArray new];
+    for (NSUInteger i = 0; i < pl.count; i++) {
+        CALayer *l = pl[i];
+        if ([states[i] boolValue] || !l.superlayer || ![l respondsToSelector:@selector(devCopyFrameOfSize:)]) continue;
+        CGImageRef img = ((CGImageRef (*)(id, SEL, CGSize))objc_msgSend)(l, @selector(devCopyFrameOfSize:), l.bounds.size);
+        if (!img) continue;
+        CALayer *f = [CALayer layer];
+        f.frame = l.frame;
+        f.contents = (__bridge id)img;
+        f.contentsGravity = kCAGravityResize;
+        CGImageRelease(img);
+        [l.superlayer insertSublayer:f above:l];
+        [stand addObject:f];
+    }
     [root renderInContext:ctx];
+    for (CALayer *f in stand) [f removeFromSuperlayer];
     for (NSUInteger i = 0; i < pl.count; i++) [pl[i] setHidden:[states[i] boolValue]];
     [CATransaction commit];
 }

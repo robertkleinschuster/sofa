@@ -28,7 +28,8 @@ NSDictionary *SFMPVSourceFor(NSURL *url) {
 NSString *SFMPVDevFrameShotPath = nil;
 
 #if SF_HAVE_MPV
-static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
+// Reads the FBO into a CGImage (+1). GL returns rows bottom-up.
+static CGImageRef devReadImage(GLint fbo, GLint w, GLint h) {
     NSMutableData *px = [NSMutableData dataWithLength:(NSUInteger)w * h * 4];
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.mutableBytes);
@@ -44,14 +45,10 @@ static void devWritePNG(NSString *path, GLint fbo, GLint w, GLint h) {
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef bc = CGBitmapContextCreate(px.mutableBytes, w, h, 8, w * 4, cs, (CGBitmapInfo)kCGImageAlphaNoneSkipLast);
     CGImageRef img = bc ? CGBitmapContextCreateImage(bc) : NULL;
-    if (img) {
-        CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], CFSTR("public.png"), 1, NULL);
-        if (d) { CGImageDestinationAddImage(d, img, NULL); CGImageDestinationFinalize(d); CFRelease(d); }
-        CGImageRelease(img);
-    }
     if (bc) CGContextRelease(bc);
     CGColorSpaceRelease(cs);
-    SFLog(@"mpv: dev frameshot %dx%d fbo=%d glerr=0x%x -> %@", w, h, fbo, err, path);
+    if (err != GL_NO_ERROR) SFLog(@"mpv: dev frame read %dx%d fbo=%d glerr=0x%x", w, h, fbo, err);
+    return img;
 }
 #endif
 
@@ -121,12 +118,27 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     return _ctx;
 }
 
-// Dev: render the current frame in the layer's GL context into a separate FBO and save it as PNG -
-// regardless of whether CoreAnimation draws the (offscreen) window.
+// Dev: save the current frame as PNG (frameshot command)
 - (void)devFrameShot {
     NSString *path = SFMPVDevFrameShotPath;
     if (!path || !_rc || !_ctx) return;   // not this layer (e.g. fallback engine) - the request stays for the playing one
     SFMPVDevFrameShotPath = nil;
+    CGImageRef img = [self devCopyFrameOfSize:CGSizeMake(1280, 720)];
+    if (!img) return;
+    CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], CFSTR("public.png"), 1, NULL);
+    if (d) { CGImageDestinationAddImage(d, img, NULL); CGImageDestinationFinalize(d); CFRelease(d); }
+    CGImageRelease(img);
+    SFLog(@"mpv: dev frameshot -> %@", path);
+}
+
+// Dev: render the current frame in the layer's GL context into a separate FBO and return it (+1) -
+// regardless of whether CoreAnimation draws the (offscreen) window. Used by frameshot and by the
+// dev screenshots / dev stream (SFRenderLayerTree), where the GL layer itself renders black.
+- (CGImageRef)devCopyFrameOfSize:(CGSize)size {
+    if (!SFDevMode || !_rc || !_ctx || size.width < 2 || size.height < 2) {
+        if (SFDevMode) SFLog(@"mpv: dev frame unavailable (rc %d ctx %d size %.0fx%.0f)", _rc != NULL, _ctx != NULL, size.width, size.height);
+        return NULL;
+    }
     CGLLockContext(_ctx);
     CGLContextObj prev = CGLGetCurrentContext();
     CGLSetCurrentContext(_ctx);
@@ -136,7 +148,7 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oRead);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &oTex);
     glGetIntegerv(GL_VIEWPORT, oVP);
-    GLint w = 1280, h = 720;
+    GLint w = (GLint)size.width, h = (GLint)size.height;
     GLuint tex = 0, fb = 0;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -149,7 +161,7 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     mpv_render_param p[] = { { MPV_RENDER_PARAM_OPENGL_FBO, &f }, { MPV_RENDER_PARAM_FLIP_Y, &flip },
                              { MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &noBlock }, { MPV_RENDER_PARAM_INVALID, NULL } };
     mpv_render_context_render(_rc, p);
-    devWritePNG(path, (GLint)fb, w, h);
+    CGImageRef img = devReadImage((GLint)fb, w, h);
     glDeleteFramebuffers(1, &fb);
     glDeleteTextures(1, &tex);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oDraw);
@@ -158,6 +170,7 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     glViewport(oVP[0], oVP[1], oVP[2], oVP[3]);
     CGLSetCurrentContext(prev);
     CGLUnlockContext(_ctx);
+    return img;
 }
 
 static void onUpdate(void *ctx) {
