@@ -21,5 +21,24 @@ NOTES=$(awk -v v="## $VER" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md | sed -e
 git tag -l "v$VER" | grep -q . || git tag -a "v$VER" -m "Sofa $VER"
 git push -q origin HEAD "v$VER"
 printf '%s\n\n<!-- sofa-notes-end -->\n**Installation:** `Sofa-%s.dmg` laden, öffnen, Sofa nach „Programme“ ziehen; erster Start: Rechtsklick → Öffnen.\n' "$NOTES" "$VER" > dist/notes.md
-gh release create "v$VER" --title "Sofa $VER" --notes-file dist/notes.md "$DMG" "$DMG.sig" "$DMG.sha256"
-echo "published: v$VER"
+# Draft first, assets uploaded, verified, only then public: Sofa's updater must never see a
+# release without its DMG (0.3.6: the DMG was missing at first). The ~110 MB DMG goes up
+# throttled (UPLOAD_RATE, default 300k/s) - unthrottled it saturated the uplink (2026-11-04).
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+gh release view "v$VER" >/dev/null 2>&1 || gh release create "v$VER" --draft --title "Sofa $VER" --notes-file dist/notes.md "$DMG.sig" "$DMG.sha256"
+ID=$(gh api "repos/$REPO/releases/tags/v$VER" -q .id 2>/dev/null || gh api "repos/$REPO/releases" -q ".[] | select(.tag_name==\"v$VER\") | .id")
+have() { gh api "repos/$REPO/releases/$ID/assets" -q ".[] | select(.name==\"$1\" and .state==\"uploaded\") | .size"; }
+NAME=$(basename "$DMG"); SIZE=$(stat -f %z "$DMG")
+if [ "$(have "$NAME")" != "$SIZE" ]; then
+  OLD=$(gh api "repos/$REPO/releases/$ID/assets" -q ".[] | select(.name==\"$NAME\") | .id")
+  [ -n "$OLD" ] && gh api -X DELETE "repos/$REPO/releases/assets/$OLD"   # broken earlier attempt
+  echo "uploading $NAME ($((SIZE / 1048576)) MB) at ${UPLOAD_RATE:-300k}/s ..."
+  curl -sS --fail --limit-rate "${UPLOAD_RATE:-300k}" -H "Authorization: token $(gh auth token)" \
+       -H "Content-Type: application/octet-stream" --data-binary @"$DMG" \
+       "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$NAME" >/dev/null
+fi
+for f in "$NAME" "$NAME.sig" "$NAME.sha256"; do
+  [ "$(have "$f")" = "$(stat -f %z "dist/$f")" ] || { echo "asset $f missing or incomplete - release stays a draft"; exit 1; }
+done
+gh release edit "v$VER" --draft=false --latest >/dev/null
+echo "published: v$VER (all three assets verified)"
