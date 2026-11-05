@@ -23,6 +23,33 @@ const RELOAD_FRESH_S = 300;
 const RELOAD_MAX = 2;
 const RELOAD_WINDOW_S = 600;
 
+/**
+ * End screen of the video (the tiles creators place in the last 5-20 s), from the same player
+ * response - no extra request. Positions are fractions of the video frame. Only targets Sofa can
+ * open: videos, playlists, channels (no websites/merch).
+ */
+export function endscreenElements(raw) {
+  const els = raw?.endscreen?.endscreenRenderer?.elements || [];
+  const out = [];
+  for (const e of els) {
+    const r = e.endscreenElementRenderer;
+    if (!r) continue;
+    const ep = r.endpoint || {};
+    const target = ep.watchEndpoint?.videoId ? { videoId: ep.watchEndpoint.videoId, playlistId: ep.watchEndpoint.playlistId }
+      : ep.browseEndpoint?.browseId ? { browseId: ep.browseEndpoint.browseId } : null;
+    if (!target || !['VIDEO', 'PLAYLIST', 'CHANNEL', 'SUBSCRIBE'].includes(r.style)) continue;
+    const thumbs = r.image?.thumbnails || [];
+    out.push({
+      style: r.style, ...target,
+      title: r.title?.simpleText || (r.title?.runs || []).map((x) => x.text).join('') || '',
+      left: Number(r.left) || 0, top: Number(r.top) || 0, width: Number(r.width) || 0, aspectRatio: Number(r.aspectRatio) || 0,
+      startMs: Number(r.startMs) || 0, endMs: Number(r.endMs) || 0,
+      image: thumbs.length ? thumbs[thumbs.length - 1].url : null,
+    });
+  }
+  return out;
+}
+
 export class YouTubeError extends Error {
   constructor(message, { bot = false, live = false, status = null } = {}) {
     super(message);
@@ -274,6 +301,7 @@ export class YouTube {
       playerId: player.player_id,
       formats: sd.adaptiveFormats || [],
       captions: raw.captions || null,
+      endscreen: endscreenElements(raw),
       fetchedAt: Math.floor(Date.now() / 1000),
     };
     this.cache.set(videoId, info);

@@ -117,3 +117,24 @@ test('downloads: codec preference gives H.264 720p + AAC (plain MP4), still non-
   assert.equal(a.drc, false);
   assert.equal(F.pickVideo(F.describeFormats(jnq.adaptiveFormats), 720, 'avc1').codec, 'avc1', 'small video too');
 });
+
+test('end screen: videos/playlists/channels with position and time, websites skipped', async () => {
+  const { endscreenElements } = await mod('lib/youtube.mjs');
+  const el = (style, endpoint, extra = {}) => ({ endscreenElementRenderer: {
+    style, endpoint, left: 0.05, top: 0.1, width: 0.3, aspectRatio: 1.7778, startMs: '590000', endMs: '610000',
+    title: { simpleText: `t-${style}` }, image: { thumbnails: [{ url: 'a' }, { url: 'b' }] }, ...extra } });
+  const raw = { endscreen: { endscreenRenderer: { elements: [
+    el('VIDEO', { watchEndpoint: { videoId: 'abcdefghijk' } }),
+    el('PLAYLIST', { watchEndpoint: { videoId: 'abcdefghijk', playlistId: 'PL1' } }),
+    el('CHANNEL', { browseEndpoint: { browseId: 'UCx' } }),
+    el('WEBSITE', { urlEndpoint: { url: 'https://shop' } }),
+  ] } } };
+  const e = endscreenElements(raw);
+  assert.deepEqual(e.map((x) => x.style), ['VIDEO', 'PLAYLIST', 'CHANNEL']);
+  assert.equal(e[0].videoId, 'abcdefghijk');
+  assert.equal(e[1].playlistId, 'PL1');
+  assert.equal(e[2].browseId, 'UCx');
+  assert.equal(e[0].startMs, 590000);
+  assert.equal(e[0].image, 'b', 'largest thumbnail');
+  assert.deepEqual(endscreenElements({}), []);
+});

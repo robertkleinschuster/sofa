@@ -110,6 +110,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
       vitag: v.itag, aitag: a.itag,
       audios,
       subs: s.subs.map((t) => ({ lang: t.lang, url: `${u}/subs/${encodeURIComponent(t.key)}.vtt`, kind: t.kind, name: t.name })),
+      endscreen: s.info.endscreen || [],
       ...extra,
     };
   }
@@ -162,7 +163,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     sessions.set(s.sid, s);
     if (prefetch) s.hint(startSec * 1000);
     log(`open ${vid}${bg ? ' (bg)' : ''}: ${video.itag} ${video.codec} ${video.height}p${video.fps} + ${audio.key} ${audio.codec} ${audio.lang || '?'}`
-      + `${list.length ? `, ${list.length} languages` : ''}, ${s.subs.length} subs, ${cached ? 'cached' : 'player request'} -> ${s.sid.slice(0, 6)}`);
+      + `${list.length ? `, ${list.length} languages` : ''}, ${s.subs.length} subs${info.endscreen?.length ? `, ${info.endscreen.length} end screen tiles` : ''}, ${cached ? 'cached' : 'player request'} -> ${s.sid.slice(0, 6)}`);
     return sendJson(res, 200, describeSession(s, { cached, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() }));
   }
 
