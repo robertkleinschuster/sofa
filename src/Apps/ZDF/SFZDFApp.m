@@ -75,7 +75,12 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
         if ([str(m[@"geoLocation"]) isEqualToString:@"DE"]) { i.badge = @"DE"; i.geoRegion = @"DE"; }
         break;
     }
-    if (live) { i.kind = SFItemLive; i.badge = @"LIVE"; }
+    if (live) {
+        i.kind = SFItemLive; i.badge = @"LIVE";
+        // the channel: canonicals of channel streams are "<channel>-live-beitrag-100" ("3sat", "phoenix", "kika")
+        NSRange r = [can rangeOfString:@"-live-beitrag"];
+        if (r.location != NSNotFound && r.location > 0) i.station = [can substringToIndex:r.location];
+    }
     NSMutableArray *sub = [NSMutableArray new];
     if (i.channel && ![i.channel isEqualToString:i.title]) [sub addObject:i.channel];
     if (i.date && !live) [sub addObject:SFFormatDateShort(i.date)];

@@ -315,9 +315,7 @@ static CGFloat textWidth(SFLabel *l) {
 }
 
 - (void)updateClock {
-    static NSDateFormatter *df;
-    if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"HH:mm"; }
-    NSString *s = [df stringFromDate:[NSDate date]];
+    NSString *s = SFFormatClock([NSDate date]);
     if (![_clock.text isEqualToString:s]) { _clock.text = s; [self layoutStatusRow]; }
 }
 
@@ -891,9 +889,20 @@ static void auditImages(SFPage *page) {
             if (it.duration > 0) [meta addObject:SFFormatDuration(it.duration)];
             if (!meta.count && it.subtitle.length) [meta addObject:it.subtitle];
             if (it.heroMeta.length) { [meta removeAllObjects]; [meta addObject:it.heroMeta]; }
+            // live channel with a programme: what runs now, its time, what comes next, its description
+            SFBroadcast *now = it.kind == SFItemLive ? [it broadcastAt:[NSDate date]] : nil;
+            NSString *plotText = it.plot;
+            if (now) {
+                SFBroadcast *next = [it broadcastAfter:now];
+                [meta removeAllObjects];
+                [meta addObject:now.title];
+                [meta addObject:[NSString stringWithFormat:@"%@ – %@", SFFormatClock(now.start), SFFormatClock(now.end)]];
+                if (next) [meta addObject:[@"Danach: " stringByAppendingString:next.title]];
+                plotText = now.plot.length ? now.plot : now.subtitle.length ? now.subtitle : it.plot;
+            }
             self->_heroMeta.text = [meta componentsJoinedByString:@"  ·  "];
             CGFloat h2 = [self->_heroMeta sizeToFitWidth:w];
-            NSString *plot = [it.plot stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+            NSString *plot = [plotText stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
             self->_heroPlot.text = plot;
             // fit the plot lines to the space available down to the shelves
             CGFloat y = self.overlay ? U(120) : U(190);   // overlay: no logo row above

@@ -183,6 +183,19 @@ static NSArray *listItems(id j) {
             i.source = @"orf"; i.themeName = @"orf"; i.style = SFTileStyleLandscape;
             i.drm = [nn(it[@"is_drm_protected"]) boolValue];
             i.badge = i.drm ? @"DRM" : @"LIVE";
+            i.station = k;
+            if ([str(it[@"right"]) isEqualToString:@"austria"]) i.geoRegion = @"AT";   // else "worldwide"
+            // the channel's programme: /livestreams lists its next broadcasts (start, end) - the first runs now
+            NSMutableArray *sched = [NSMutableArray new];
+            for (NSDictionary *b in arr(dict(dict(j)[k])[@"items"])) {
+                SFBroadcast *x = [SFBroadcast title:str(dict(b)[@"title"]) start:SFDateFromISO8601(str(b[@"start"])) end:SFDateFromISO8601(str(b[@"end"]))];
+                if (!x) continue;
+                NSString *sub = str(b[@"sub_headline"]);
+                if (![sub isEqualToString:x.title]) x.subtitle = sub;
+                x.plot = str(b[@"description"]);
+                [sched addObject:x];
+            }
+            i.schedule = sched;
             [a addObject:i];
         }
         done(j ? a : nil);   // nil = request failed (not: no channels)

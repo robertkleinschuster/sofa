@@ -18,7 +18,18 @@ typedef NS_ENUM(NSInteger, SFShelfLayout) {
     SFShelfGrid,     // wrapping grid
 };
 
-@class SFPage, SFItem;
+@class SFPage, SFItem, SFBroadcast;
+
+// One programme on a live channel (source EPG): shown on live tiles ("Brisant · bis 18:00", progress)
+// and in the hero ("17:15 – 18:00 · Danach: Tagesschau", its description).
+@interface SFBroadcast : NSObject
+@property (nonatomic, copy) NSString *title, *subtitle, *plot;
+@property (nonatomic, strong) NSDate *start, *end;
++ (instancetype)title:(NSString *)title start:(NSDate *)start end:(NSDate *)end;
+- (double)progressAt:(NSDate *)date;   // 0…1
+- (NSDictionary *)dictionaryRepresentation;
++ (instancetype)broadcastWithDictionary:(NSDictionary *)d;
+@end
 typedef void (^SFPageDone)(SFPage *page, NSError *error);
 typedef void (^SFPageLoader)(SFPageDone done);
 typedef void (^SFURLDone)(NSURL *url, NSError *error);
@@ -55,10 +66,14 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *heroMeta;        // hero meta line instead of channel/date/duration
 @property (nonatomic, copy) NSString *externalID;      // ID at the source (YouTube video ID)
 @property (nonatomic, copy) NSString *showRef;         // show/channel of the episode ("ytchannel:UC…", "zdfshow:…") → "Zur Sendung"
-@property (nonatomic) BOOL imageFit;
+@property (nonatomic) BOOL imageFit;                   // fit the image instead of filling (logos)
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
 @property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps); not copied - belongs to that row only
-@property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // fit the image instead of filling (logos)
+@property (nonatomic) NSInteger logoVariant;           // SFLogoVariant
+@property (nonatomic, copy) NSString *station;         // live: the TV channel itself ("3sat", "phoenix"), from the source's ids - the same channel offered by two apps
+@property (nonatomic, copy) NSArray *schedule;         // live: the channel's programme (SFBroadcast, by time) from the source's EPG
+- (SFBroadcast *)broadcastAt:(NSDate *)date;           // what runs on this live channel then (nil = no schedule / gap)
+- (SFBroadcast *)broadcastAfter:(SFBroadcast *)b;      // the next one ("Danach")
 
 - (NSDictionary *)dictionaryRepresentation;
 + (instancetype)itemWithDictionary:(NSDictionary *)d;

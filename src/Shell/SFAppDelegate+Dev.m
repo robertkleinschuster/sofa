@@ -161,7 +161,7 @@
     } else if ([cmd isEqualToString:@"homerows"]) {          // Dev: the mixed Home rows as Home shows them (ids per topic)
         for (NSString *t in @[SFHomeTopicLive, SFHomeTopicHighlights]) {
             NSMutableArray *ids = [NSMutableArray new];
-            for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@", i.identifier ?: @"?", i.badge ?: @"-"]];
+            for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@/%@", i.identifier ?: @"?", i.badge ?: @"-", [i broadcastAt:[NSDate date]].title ?: @"-"]];
             SFLog(@"dev: homerows %@ = %@", t, [ids componentsJoinedByString:@" "]);
         }
     } else if ([cmd isEqualToString:@"region"] && arg) {     // Dev: "region XX 0|1|-" - pretend a geo check found the device outside/inside XX; - = forget

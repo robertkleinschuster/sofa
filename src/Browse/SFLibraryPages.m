@@ -60,15 +60,13 @@
         NSDate *yesterday = [today dateByAddingTimeInterval:-86400], *week = [today dateByAddingTimeInterval:-6 * 86400];
         NSArray *names = @[@"Heute", @"Gestern", @"Diese Woche", @"Früher"];
         NSMutableArray *groups = [NSMutableArray arrayWithArray:@[[NSMutableArray new], [NSMutableArray new], [NSMutableArray new], [NSMutableArray new]]];
-        static NSDateFormatter *tf;
-        if (!tf) { tf = [NSDateFormatter new]; tf.dateFormat = @"HH:mm"; }
         for (NSDictionary *h in [[SFStore shared] history:300]) {
             SFItem *e = [h[@"item"] copy];
             NSDate *when = [NSDate dateWithTimeIntervalSince1970:[h[@"updated"] doubleValue]];
             NSInteger g = [when compare:today] != NSOrderedAscending ? 0 : [when compare:yesterday] != NSOrderedAscending ? 1 : [when compare:week] != NSOrderedAscending ? 2 : 3;
             NSString *state = [h[@"watched"] boolValue] ? @"gesehen"
                             : ([h[@"pos"] doubleValue] > 0 && e.duration > 0 ? [NSString stringWithFormat:@"noch %@", SFFormatDuration(MAX(0, e.duration - [h[@"pos"] doubleValue]))] : nil);
-            NSString *when2 = g < 2 ? [tf stringFromDate:when] : SFFormatDateShort(when);
+            NSString *when2 = g < 2 ? SFFormatClock(when) : SFFormatDateShort(when);
             NSMutableArray *sub = [NSMutableArray new];
             if (e.channel.length) [sub addObject:e.channel];
             [sub addObject:when2];

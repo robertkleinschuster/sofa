@@ -84,9 +84,13 @@ Mixed rows (`src/Core/SFHomeFeatures.h`): apps feature content on Home through t
 defined in Core, a topic is a promise about what the row means). Most apps derive them
 structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
 `SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
-items), merges per topic round-robin in registry order (fair: every app gets a place at the
-front; max 6 per app in Highlights), stores the rows (Home shows them at once after a launch)
-and refreshes every 30 min and when the network returns. Tiles in mixed rows carry the app
+items), keeps each app's list (stored: Home shows them at once after a launch) and refreshes
+every 30 min, when the network returns and when a live programme ends. A row is merged when
+shown: first what can't play here is left out, then round-robin in registry order (fair: every
+app gets a place at the front; max 6 per app in Highlights). Live channels may carry their
+programme (`SFItem.schedule` of `SFBroadcast`, from the source's EPG: ARD programm-api, ORF
+/livestreams): tiles show what runs now ("Brisant · bis 18:00") with its progress, the hero
+its time, "Danach: …" and description. Tiles in mixed rows carry the app
 logo (`SFItem.showsSourceMark`). Home only offers what plays here: no `drm` items and no
 items whose `geoRegion` (raw source data, e.g. ZDF `geoLocation`) the device is known to be
 outside of (`SFNet stateOfRegion:` – learned from every `checkRegion:…region:`, stored 24 h;

@@ -106,6 +106,11 @@ static NSArray *videos(NSString *filter) {
         i.kind = SFItemLive; i.badge = @"LIVE"; i.duration = 0; i.showRef = nil;
         i.drm = [e[2] isEqualToString:@"drm"];
         if ([e[2] length] == 2) i.geoRegion = e[2];   // only playable in country XX
+        // the channel's programme (a real app maps its EPG): tiles show what runs now, the hero what comes next
+        NSDate *t0 = [NSDate dateWithTimeIntervalSinceNow:-900];   // began 15 min ago, runs 45 min more (tests never cross a change)
+        SFBroadcast *now = [SFBroadcast title:@"Testsendung" start:t0 end:[t0 dateByAddingTimeInterval:3600]];
+        now.plot = @"Was gerade läuft – aus dem Programm der Quelle.";
+        i.schedule = @[now, [SFBroadcast title:@"Nächste Sendung" start:now.end end:[now.end dateByAddingTimeInterval:1800]]];
         [live addObject:i];
     }
     done(@{SFHomeTopicLive: live, SFHomeTopicHighlights: [videos(nil) subarrayWithRange:NSMakeRange(0, 2)]});

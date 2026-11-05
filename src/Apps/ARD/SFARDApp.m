@@ -26,7 +26,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
         [SFNet getJSON:url headers:nil cacheAge:900 done:^(id j, NSError *e) {
             if (![j isKindOfClass:[NSDictionary class]]) { done(nil, e ?: SFError(@"ARD Mediathek nicht erreichbar.")); return; }
             SFPage *p = [self pageFromGateway:j title:title ?: str(j[@"title"])];
-            done(p, nil);
+            [self attachSchedules:[self liveItemsOf:p] done:^{ done(p, nil); }];
         }];
     };
 }
@@ -163,7 +163,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             [front addObject:[SFShelf shelf:@"Entdecken" style:SFTileStyleWide items:nav]];
             [shelves insertObjects:front atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(MIN(1, shelves.count), front.count)]];
             p.shelves = shelves;
-            done(p, nil);
+            [self attachSchedules:[self liveItemsOf:p] done:^{ done(p, nil); }];
         }];
     };
 }
@@ -308,10 +308,56 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
 }
 
 // Home: the gateway start page (same cached request as homeLoader) - first widget = the editors'
-// lead, live widgets carry the TV channels
+// lead, live widgets carry the TV channels (with their programme)
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
     [SFNet getJSON:[kGW stringByAppendingString:@"/pages/ard/home?embedded=true"] headers:nil cacheAge:600 done:^(id j, NSError *e) {
-        done([j isKindOfClass:[NSDictionary class]] ? SFHomeFeaturesFromPage([self pageFromGateway:j title:nil], 0) : nil);
+        if (![j isKindOfClass:[NSDictionary class]]) { done(nil); return; }
+        NSDictionary *features = SFHomeFeaturesFromPage([self pageFromGateway:j title:nil], 0);
+        [self attachSchedules:features[SFHomeTopicLive] done:^{ done(features); }];
+    }];
+}
+
++ (NSArray *)liveItemsOf:(SFPage *)p {
+    NSMutableArray *a = [NSMutableArray new];
+    for (SFShelf *sh in p.shelves) for (SFItem *i in sh.items) if (i.kind == SFItemLive) [a addObject:i];
+    return a;
+}
+
+// The programme of the live channels: programm-api.ard.de, the EPG behind the Mediathek's TV guide
+// ("Programm"). One request per TV day (05:30 - 05:30, all channels, cached 3 h); a channel's `crid`
+// is the id of its live item (ardlive:<crid>). Each slot: title, subline, synopsis, broadcastedOn,
+// broadcastEnd. Without an answer the items simply keep no schedule.
++ (void)attachSchedules:(NSArray *)items done:(dispatch_block_t)done {
+    NSMutableDictionary *byCrid = [NSMutableDictionary new];
+    for (SFItem *i in items)
+        if (i.kind == SFItemLive && [SFRefPrefix(i.identifier) isEqualToString:@"ardlive"]) {
+            NSString *k = SFRefID(i.identifier);
+            byCrid[k] = [(byCrid[k] ?: @[]) arrayByAddingObject:i];
+        }
+    if (!byCrid.count) { done(); return; }
+    static NSDateFormatter *df;
+    if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd"; df.timeZone = [NSTimeZone timeZoneWithName:@"Europe/Berlin"]; }
+    NSString *day = [df stringFromDate:[NSDate dateWithTimeIntervalSinceNow:-(5 * 3600 + 30 * 60)]];   // TV day starts 05:30
+    NSString *u = [NSString stringWithFormat:@"https://programm-api.ard.de/program/api/program?day=%@&mode=channel", day];
+    [SFNet getJSON:u headers:nil cacheAge:3 * 3600 done:^(id j, NSError *e) {
+        for (NSDictionary *c in arr(dict(j)[@"channels"])) {
+            NSArray *targets = byCrid[str(dict(c)[@"crid"]) ?: @""];
+            if (!targets) continue;
+            NSMutableArray *sched = [NSMutableArray new];
+            for (NSArray *slot in arr(c[@"timeSlots"]))
+                for (NSDictionary *ev in arr(slot)) {
+                    NSDate *start = SFDateFromISO8601(str(dict(ev)[@"broadcastedOn"]));
+                    NSDate *end = SFDateFromISO8601(str(ev[@"broadcastEnd"])) ?: [start dateByAddingTimeInterval:[nn(ev[@"duration"]) doubleValue]];
+                    SFBroadcast *b = [SFBroadcast title:str(ev[@"title"]) start:start end:end];
+                    if (!b) continue;
+                    b.subtitle = str(ev[@"subline"]);
+                    b.plot = str(ev[@"synopsis"]);
+                    [sched addObject:b];
+                }
+            [sched sortUsingComparator:^NSComparisonResult(SFBroadcast *a, SFBroadcast *b) { return [a.start compare:b.start]; }];
+            for (SFItem *i in targets) { i.schedule = sched; i.station = str(c[@"id"]); }   // EPG channel id: "daserste", "3sat", "phoenix" …
+        }
+        done();
     }];
 }
 @end

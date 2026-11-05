@@ -583,9 +583,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
             self->_elapsed.text = SFFormatDuration(shown) ?: @"0:00";
             if (shown < 1) self->_elapsed.text = @"0:00";
             self->_remaining.text = [@"−" stringByAppendingString:SFFormatDuration(MAX(1, d - shown))];
-            static NSDateFormatter *df;
-            if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"HH:mm"; }
-            self->_endsAt.text = [NSString stringWithFormat:@"Endet um %@", [df stringFromDate:[NSDate dateWithTimeIntervalSinceNow:d - shown]]];
+            self->_endsAt.text = [NSString stringWithFormat:@"Endet um %@", SFFormatClock([NSDate dateWithTimeIntervalSinceNow:d - shown])];
         }
     });
 }

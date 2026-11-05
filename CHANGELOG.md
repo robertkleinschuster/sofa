@@ -22,6 +22,9 @@ Einstellungen → „Update installieren“.
   die aktuellen Empfehlungen der Redaktionen. Ein kleines Logo auf jeder Kachel zeigt, woher
   sie kommt. Sender, die hier nicht laufen (nur in Deutschland verfügbar oder kopiergeschützt),
   lässt Sofa weg.
+- **Was läuft gerade:** Bei den Sendern steht jetzt, welche Sendung läuft und bis wann
+  („Brisant · bis 18:00“), ein Balken zeigt, wie weit sie ist. Die große Vorschau nennt die
+  Uhrzeit, was danach kommt, und beschreibt die Sendung (ARD-Sender und ORF).
 - **Livestreams:** Die große Vorschau zeigt bei Sendern kein sinnloses Datum mehr.
 - **Unter der Haube:** Sofa ist neu gegliedert – jede App (YouTube, ZDF, ARD, ORF,
   media.ccc.de) steckt in einem eigenen Modul mit klarer Schnittstelle. Für dich ändert sich

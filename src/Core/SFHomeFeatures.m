@@ -8,12 +8,13 @@ NSString *const SFHomeTopicLive = @"live";
 NSString *const SFHomeTopicHighlights = @"highlights";
 NSString *const SFHomeFeaturesDidChangeNotification = @"SFHomeFeaturesDidChange";
 
-static NSString *const kStoreKey = @"home.features.v1";
+static NSString *const kStoreKey = @"home.features.v2";   // v2: per app, merged when shown
 static const NSTimeInterval kRefreshEvery = 30 * 60;
 static const NSTimeInterval kAppTimeout = 45;   // an app that never answers must not hold the others back
 
 // per topic: how many items one app may place in the merged row, and the row's length
 static NSUInteger perApp(NSString *topic) { return [topic isEqualToString:SFHomeTopicLive] ? 40 : 6; }
+static const NSUInteger kKeepPerApp = 40;   // kept per app and topic (before filtering what can't play here)
 static NSUInteger rowMax(NSString *topic) { return [topic isEqualToString:SFHomeTopicLive] ? 40 : 24; }
 
 static BOOL featurable(SFItem *i) {
@@ -33,9 +34,10 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 }
 
 @implementation SFHomeFeatures {
-    NSDictionary *_rows;        // topic -> merged SFItems
+    NSDictionary *_lists;       // topic -> app identifier -> SFItems in the app's order (merged only when shown)
     BOOL _refreshing;
-    NSTimer *_timer;
+    NSTimer *_timer, *_boundary;
+    NSDate *_lastRefresh;
 }
 
 + (instancetype)shared {
@@ -46,6 +48,7 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 
 - (void)start {
     [self restore];
+    [self scheduleBoundaryRefresh];
     [self refresh];
     _timer = [NSTimer scheduledTimerWithTimeInterval:kRefreshEvery target:self selector:@selector(refresh) userInfo:nil repeats:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onlineChanged) name:SFNetOnlineDidChangeNotification object:nil];
@@ -56,11 +59,28 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 
 - (void)onlineChanged { if ([SFNet isOnline]) [self refresh]; }
 
+// Filter first, then merge: an app whose first items can't play here moves its playable ones up
+// instead of losing its places at the front. A TV channel offered by two apps (3sat, phoenix, KiKA
+// in ZDF and ARD) appears once: at the first place either gets, as the richer of the two (with
+// its programme).
 - (NSArray *)itemsForTopic:(NSString *)topic {
+    NSMutableArray *lists = [NSMutableArray new];
+    NSMutableDictionary *best = [NSMutableDictionary new];   // station -> the item shown for it
+    for (Class<SFApp> app in [SFAppRegistry apps]) {   // registry order = home tile order
+        NSMutableArray *l = [NSMutableArray new];
+        for (SFItem *i in _lists[topic][[app appIdentifier]]) {
+            // Home offers only what plays here: no copy-protected streams, nothing limited to a region this device is known to be outside of
+            if (i.drm || [SFNet stateOfRegion:i.geoRegion] == SFRegionOutside) continue;
+            if (i.station.length && (!best[i.station] || (![best[i.station] schedule].count && i.schedule.count))) best[i.station] = i;
+            [l addObject:i];
+            if (l.count >= perApp(topic)) break;
+        }
+        if (l.count) [lists addObject:l];
+    }
     NSMutableArray *r = [NSMutableArray new];
-    for (SFItem *i in _rows[topic]) {
-        // Home offers only what plays here: no copy-protected streams, nothing limited to a region this device is known to be outside of
-        if (i.drm || [SFNet stateOfRegion:i.geoRegion] == SFRegionOutside) continue;
+    NSArray *merged = SFInterleave(lists, rowMax(topic), ^id(SFItem *i) { return i.station.length ? [@"station:" stringByAppendingString:i.station] : i.identifier; });   // fair: every app gets a place at the front
+    for (SFItem *m in merged) {
+        SFItem *i = m.station.length ? best[m.station] : m;
         SFItem *c = [i copy];
         c.showsSourceMark = YES;   // mixed row: say which app it comes from
         c.style = SFTileStyleLandscape;
@@ -74,6 +94,7 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 - (void)refresh {
     if (_refreshing || ![SFNet isOnline]) return;
     _refreshing = YES;
+    _lastRefresh = [NSDate date];
     NSArray *apps = [SFAppRegistry apps];
     NSMutableDictionary *byApp = [NSMutableDictionary new];   // app identifier -> {topic: items}
     dispatch_group_t g = dispatch_group_create();
@@ -98,38 +119,53 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
     }
     dispatch_group_notify(g, dispatch_get_main_queue(), ^{
         self->_refreshing = NO;
-        NSMutableDictionary *rows = [NSMutableDictionary new];
+        NSMutableDictionary *lists = [NSMutableDictionary new];
         for (NSString *topic in @[SFHomeTopicLive, SFHomeTopicHighlights]) {
-            NSMutableArray *lists = [NSMutableArray new];
-            for (Class<SFApp> app in apps) {   // registry order = home tile order
-                NSArray *items = byApp[[app appIdentifier]][topic];
-                if (!items) {
-                    // no answer for this topic now (failed request, timeout): keep what the app featured before
-                    NSMutableArray *old = [NSMutableArray new];
-                    for (SFItem *i in self->_rows[topic]) if ([i.source isEqualToString:[app appIdentifier]]) [old addObject:i];
-                    if (old.count) [lists addObject:old];
-                    continue;
-                }
+            NSMutableDictionary *t = [NSMutableDictionary new];
+            for (Class<SFApp> app in apps) {
+                NSString *aid = [app appIdentifier];
+                NSArray *items = byApp[aid][topic];
+                // no answer for this topic now (failed request, timeout): keep what the app featured before
+                if (!items) { if (self->_lists[topic][aid]) t[aid] = self->_lists[topic][aid]; continue; }
                 if (![items isKindOfClass:[NSArray class]] || !items.count) continue;   // answered: nothing to feature
-                [lists addObject:[items subarrayWithRange:NSMakeRange(0, MIN(items.count, perApp(topic)))]];
+                t[aid] = [items subarrayWithRange:NSMakeRange(0, MIN(items.count, kKeepPerApp))];
             }
-            rows[topic] = SFInterleave(lists, rowMax(topic), ^id(SFItem *i) { return i.identifier; });   // fair: every app gets a place at the front
+            lists[topic] = t;
         }
-        if ([[self signature:rows] isEqualToString:[self signature:self->_rows]]) return;   // same rows: no reload
-        self->_rows = rows;
+        BOOL same = [[self signature:lists] isEqualToString:[self signature:self->_lists]];
+        self->_lists = lists;
+        [self scheduleBoundaryRefresh];
+        if (same) return;   // same rows: no reload
         [self store];
-        SFLog(@"home features: live %lu, highlights %lu", (unsigned long)[rows[SFHomeTopicLive] count], (unsigned long)[rows[SFHomeTopicHighlights] count]);
+        SFLog(@"home features: live %lu, highlights %lu", (unsigned long)[self itemsForTopic:SFHomeTopicLive].count, (unsigned long)[self itemsForTopic:SFHomeTopicHighlights].count);
         [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil];
     });
 }
 
-- (NSString *)signature:(NSDictionary *)rows {
+- (NSString *)signature:(NSDictionary *)lists {
     NSMutableString *s = [NSMutableString new];
-    for (NSString *topic in [rows.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-        [s appendFormat:@"%@:", topic];
-        for (SFItem *i in rows[topic]) [s appendFormat:@"%@,", [self stored:i]];   // everything that is kept: a new broadcast on a channel changes ref, subtitle, drm
-    }
+    for (NSString *topic in [lists.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        for (NSString *aid in [[lists[topic] allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+            [s appendFormat:@"%@/%@:", topic, aid];
+            for (SFItem *i in lists[topic][aid]) [s appendFormat:@"%@,", [self stored:i]];   // everything that is kept: a new broadcast on a channel changes ref, subtitle, drm
+        }
     return s;
+}
+
+// A live channel's programme changes: ask the apps again when the first current broadcast ends
+// (new stream ref, drm, geo right per broadcast - ORF), at most every 5 min; the 30 min timer stays.
+- (void)scheduleBoundaryRefresh {
+    [_boundary invalidate]; _boundary = nil;
+    NSDate *now = [NSDate date], *first = nil;
+    for (NSArray *l in [_lists[SFHomeTopicLive] allValues])
+        for (SFItem *i in l) {
+            NSDate *end = [i broadcastAt:now].end;
+            if (end && (!first || [end compare:first] == NSOrderedAscending)) first = end;
+        }
+    if (!first) return;
+    NSTimeInterval at = MAX([first timeIntervalSinceNow] + 5, (_lastRefresh ? [_lastRefresh timeIntervalSinceNow] : 0) + 300);
+    if (at > kRefreshEvery) return;
+    _boundary = [NSTimer scheduledTimerWithTimeInterval:MAX(at, 5) target:self selector:@selector(refresh) userInfo:nil repeats:NO];
 }
 
 #pragma mark Store (Home shows the last rows at once after a launch)
@@ -143,10 +179,14 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 
 - (void)store {
     NSMutableDictionary *d = [NSMutableDictionary new];
-    for (NSString *topic in _rows) {
-        NSMutableArray *a = [NSMutableArray new];
-        for (SFItem *i in _rows[topic]) [a addObject:[self stored:i]];
-        d[topic] = a;
+    for (NSString *topic in _lists) {
+        NSMutableDictionary *t = [NSMutableDictionary new];
+        for (NSString *aid in _lists[topic]) {
+            NSMutableArray *a = [NSMutableArray new];
+            for (SFItem *i in _lists[topic][aid]) [a addObject:[self stored:i]];
+            t[aid] = a;
+        }
+        d[topic] = t;
     }
     [[SFStore shared] cacheJSON:d forKey:kStoreKey];
 }
@@ -154,24 +194,29 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
 - (void)restore {
     NSDictionary *d = [[SFStore shared] cachedJSON:kStoreKey maxAge:7 * 86400];
     if (![d isKindOfClass:[NSDictionary class]]) return;
-    NSMutableDictionary *rows = [NSMutableDictionary new];
+    NSMutableDictionary *lists = [NSMutableDictionary new];
     for (NSString *topic in d) {
-        NSMutableArray *a = [NSMutableArray new];
-        for (NSDictionary *x in d[topic]) {
-            if (![x isKindOfClass:[NSDictionary class]]) continue;
-            SFItem *i = [SFItem itemWithDictionary:x];
-            if (![SFAppRegistry appNamed:i.source]) continue;   // app gone
-            // what the dictionary does not carry: theme, live badge, the page of a show
-            i.themeName = i.source;
-            i.badge = [x[@"badge"] isKindOfClass:[NSString class]] ? x[@"badge"] : nil;
-            if (i.kind == SFItemFolder) {
-                i.pageLoader = [SFAppRegistry isShowRef:i.identifier] ? SFShowPageLoader(i.identifier, i.title) : nil;
-                if (!i.pageLoader) continue;
+        if (![d[topic] isKindOfClass:[NSDictionary class]]) continue;
+        NSMutableDictionary *t = [NSMutableDictionary new];
+        for (NSString *aid in d[topic]) {
+            if (![SFAppRegistry appNamed:aid] || ![d[topic][aid] isKindOfClass:[NSArray class]]) continue;   // app gone
+            NSMutableArray *a = [NSMutableArray new];
+            for (NSDictionary *x in d[topic][aid]) {
+                if (![x isKindOfClass:[NSDictionary class]]) continue;
+                SFItem *i = [SFItem itemWithDictionary:x];
+                // what the dictionary does not carry: theme, badge, the page of a show
+                i.themeName = i.source;
+                i.badge = [x[@"badge"] isKindOfClass:[NSString class]] ? x[@"badge"] : nil;
+                if (i.kind == SFItemFolder) {
+                    i.pageLoader = [SFAppRegistry isShowRef:i.identifier] ? SFShowPageLoader(i.identifier, i.title) : nil;
+                    if (!i.pageLoader) continue;
+                }
+                [a addObject:i];
             }
-            [a addObject:i];
+            if (a.count) t[aid] = a;
         }
-        rows[topic] = a;
+        lists[topic] = t;
     }
-    _rows = rows;
+    _lists = lists;
 }
 @end

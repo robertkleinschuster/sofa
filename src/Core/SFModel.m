@@ -19,7 +19,47 @@ void SFResolveRefOnline(NSString *ref, SFURLDone done) {
 
 NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar";
 
+@implementation SFBroadcast
++ (instancetype)title:(NSString *)title start:(NSDate *)start end:(NSDate *)end {
+    if (!title.length || !start || !end || [end compare:start] != NSOrderedDescending) return nil;
+    SFBroadcast *b = [self new];
+    b.title = title; b.start = start; b.end = end;
+    return b;
+}
+- (double)progressAt:(NSDate *)date {
+    double p = [date timeIntervalSinceDate:self.start] / [self.end timeIntervalSinceDate:self.start];
+    return MAX(0, MIN(1, p));
+}
+- (NSDictionary *)dictionaryRepresentation {
+    NSMutableDictionary *d = [@{@"title": self.title, @"start": @(self.start.timeIntervalSince1970), @"end": @(self.end.timeIntervalSince1970)} mutableCopy];
+    if (self.subtitle) d[@"subtitle"] = self.subtitle;
+    if (self.plot) d[@"plot"] = self.plot.length > 600 ? [self.plot substringToIndex:600] : self.plot;
+    return d;
+}
++ (instancetype)broadcastWithDictionary:(NSDictionary *)d {
+    if (![d isKindOfClass:[NSDictionary class]] || ![d[@"title"] isKindOfClass:[NSString class]]) return nil;
+    SFBroadcast *b = [self title:d[@"title"] start:[NSDate dateWithTimeIntervalSince1970:[d[@"start"] doubleValue]]
+                             end:[NSDate dateWithTimeIntervalSince1970:[d[@"end"] doubleValue]]];
+    b.subtitle = [d[@"subtitle"] isKindOfClass:[NSString class]] ? d[@"subtitle"] : nil;
+    b.plot = [d[@"plot"] isKindOfClass:[NSString class]] ? d[@"plot"] : nil;
+    return b;
+}
+@end
+
 @implementation SFItem
+
+- (SFBroadcast *)broadcastAt:(NSDate *)date {
+    for (SFBroadcast *b in self.schedule)
+        if ([b.start compare:date] != NSOrderedDescending && [b.end compare:date] == NSOrderedDescending) return b;
+    return nil;
+}
+
+- (SFBroadcast *)broadcastAfter:(SFBroadcast *)b {
+    SFBroadcast *next = nil;
+    for (SFBroadcast *x in self.schedule)
+        if ([x.start compare:b.end] != NSOrderedAscending && (!next || [x.start compare:next.start] == NSOrderedAscending)) next = x;
+    return next;
+}
 
 - (NSDictionary *)dictionaryRepresentation {
     NSMutableDictionary *d = [NSMutableDictionary new];
@@ -41,6 +81,13 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
     if (self.drm) d[@"drm"] = @YES;
     if (self.geoRegion) d[@"geo"] = self.geoRegion;
+    if (self.station) d[@"station"] = self.station;
+    if (self.schedule.count) {   // stored: what has not ended yet, a few hours ahead
+        NSMutableArray *a = [NSMutableArray new];
+        NSDate *now = [NSDate date];
+        for (SFBroadcast *b in self.schedule) if ([b.end compare:now] == NSOrderedDescending && a.count < 12) [a addObject:[b dictionaryRepresentation]];
+        if (a.count) d[@"schedule"] = a;
+    }
     return d;
 }
 
@@ -74,6 +121,12 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     i.resolverRef = d[@"ref"];
     i.drm = [d[@"drm"] boolValue];
     i.geoRegion = d[@"geo"];
+    i.station = d[@"station"];
+    if ([d[@"schedule"] isKindOfClass:[NSArray class]]) {
+        NSMutableArray *a = [NSMutableArray new];
+        for (NSDictionary *x in d[@"schedule"]) { SFBroadcast *b = [SFBroadcast broadcastWithDictionary:x]; if (b) [a addObject:b]; }
+        i.schedule = a.count ? a : nil;
+    }
     return i;
 }
 

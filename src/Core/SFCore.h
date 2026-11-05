@@ -34,6 +34,7 @@ NSString *SFFormatDuration(NSTimeInterval secs);   // 1:02:03 / 4:05
 // "…T01:00:00.000+01:00", "…T23:45:10+0100". The offset is honoured; a time without one is UTC;
 // a date without a time is local midnight (a calendar day). nil when unparseable. Thread-safe.
 NSDate *SFDateFromISO8601(NSString *s);
+NSString *SFFormatClock(NSDate *d);                // "18:05" (main thread)
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
 // channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)

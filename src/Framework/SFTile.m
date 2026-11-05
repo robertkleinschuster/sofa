@@ -227,9 +227,12 @@ static id<SFTileStatusSource> gStatus;
             CGFloat tth = [_title sizeToFitWidth:w];
             _title.position = CGPointMake(0, ih + U(14));
             [self addSublayer:_title];
-            if (item.subtitle.length && !center) {
+            // live channel with a programme: what runs now instead of the static subtitle
+            SFBroadcast *now = item.kind == SFItemLive ? [item broadcastAt:[NSDate date]] : nil;
+            NSString *sub = now ? SFDotJoin(now.title, [@"bis " stringByAppendingString:SFFormatClock(now.end)]) : item.subtitle;
+            if (sub.length && !center) {
                 _subtitle = [SFLabel labelWithFont:[theme regular:21] color:theme.textDim];
-                _subtitle.text = item.subtitle;
+                _subtitle.text = sub;
                 [_subtitle sizeToFitWidth:w];
                 _subtitle.position = CGPointMake(0, ih + U(18) + tth);
                 [self addSublayer:_subtitle];
@@ -270,7 +273,9 @@ static id<SFTileStatusSource> gStatus;
 - (void)refreshProgress {
     [self refreshDownload];
     if (!_progressBg) return;
-    double p = self.item.kind == SFItemVideo ? [gStatus progressForItem:self.item] : 0;
+    // video: watched fraction; live channel: how far the current programme has run
+    double p = self.item.kind == SFItemVideo ? [gStatus progressForItem:self.item]
+             : MIN(0.999, [[self.item broadcastAt:[NSDate date]] progressAt:[NSDate date]]);
     BOOL watched = p >= 1;
     SFNoAnimate(^{
         self->_progressBg.hidden = (p <= 0.01);

@@ -117,6 +117,12 @@ NSDate *SFDateFromISO8601(NSString *s) {
     return [utc dateByAddingTimeInterval:(sec - floor(sec)) - offset];
 }
 
+NSString *SFFormatClock(NSDate *d) {
+    static NSDateFormatter *df;
+    if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"HH:mm"; }
+    return d ? [df stringFromDate:d] : @"";
+}
+
 NSString *SFFormatDateShort(NSDate *d) {
     if (!d) return @"";
     NSCalendar *cal = [NSCalendar currentCalendar];

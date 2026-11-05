@@ -7,7 +7,8 @@
 # here. The Example app features three channels: a normal one, a DRM one, one limited to region XX.
 #   1. DRM never appears; the region item appears while the region is unknown; badges are kept
 #   2. a geo finding "outside XX" removes the region item at once (Home reloads), "inside" brings it back
-#   3. after a restart the stored rows come back before any refresh (offline), with badges, and the
+#   3. after a restart the stored rows come back before any refresh (offline), with badges and the
+#      channel's programme, and the
 #      stored region finding still filters
 # Exit code 0 = all ok.
 set -u
@@ -48,28 +49,28 @@ start
 cmd "region XX -"; waitlog "dev: region XX - done" || bad "region reset not confirmed"
 sleep 1   # the launch refresh: the Example app answers at once (rows only logged when they change)
 L=$(rows live); H=$(rows highlights)
-has "$L" "example:live1/LIVE" && ok "normal channel shown, with its LIVE badge" || bad "normal channel missing: $L"
+has "$L" "example:live1/LIVE/Testsendung" && ok "normal channel shown, with its LIVE badge and what runs now" || bad "normal channel missing: $L"
 case "$L" in *example:live2*) bad "DRM channel shown: $L" ;; *) ok "DRM channel left out" ;; esac
-has "$L" "example:live3/LIVE" && ok "region channel shown while the region is unknown" || bad "region channel missing: $L"
-has "$H" "example:1/-" && has "$H" "example:2/-" && ok "highlights shown" || bad "highlights: $H"
+has "$L" "example:live3/LIVE/Testsendung" && ok "region channel shown while the region is unknown" || bad "region channel missing: $L"
+has "$H" "example:1/-/-" && has "$H" "example:2/-/-" && ok "highlights shown" || bad "highlights: $H"
 
 echo "==> 2. geo findings"
 cmd "region XX 0"; waitlog "geo: device outside XX" || bad "outside not logged"
 L=$(rows live)
 case "$L" in *example:live3*) bad "region channel still shown outside XX: $L" ;; *) ok "outside XX: region channel left out" ;; esac
-has "$L" "example:live1/LIVE" && ok "normal channel stays" || bad "normal channel gone: $L"
+has "$L" "example:live1/LIVE/Testsendung" && ok "normal channel stays" || bad "normal channel gone: $L"
 cmd "region XX 1"; waitlog "geo: device inside XX" || bad "inside not logged"
 L=$(rows live)
-has "$L" "example:live3/LIVE" && ok "inside XX: region channel back" || bad "region channel not back: $L"
+has "$L" "example:live3/LIVE/Testsendung" && ok "inside XX: region channel back" || bad "region channel not back: $L"
 
 echo "==> 3. restart: stored rows, offline"
 cmd "region XX 0"; waitlog "geo: device outside XX"
 sleep 0.5; quit
 start SOFA_OFFLINE=1
 L=$(rows live); H=$(rows highlights)
-has "$L" "example:live1/LIVE" && ok "stored live row back at once, badge kept" || bad "stored live row: $L"
+has "$L" "example:live1/LIVE/Testsendung" && ok "stored live row back at once, badge and programme kept" || bad "stored live row: $L"
 case "$L" in *example:live2*|*example:live3*) bad "stored row offers what can't play: $L" ;; *) ok "stored row still filtered (drm, region outside)" ;; esac
-has "$H" "example:1/-" && ok "stored highlights back" || bad "stored highlights: $H"
+has "$H" "example:1/-/-" && ok "stored highlights back" || bad "stored highlights: $H"
 grep -q "home features: live" "$LOG" && bad "refreshed although offline" || ok "no refresh offline"
 
 [ $fail = 0 ] && echo "==> test-home ok" || echo "==> test-home FAILED"

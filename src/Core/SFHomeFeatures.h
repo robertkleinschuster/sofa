@@ -1,10 +1,11 @@
 // Content apps feature on Sofa's home page, merged across apps into shared rows ("topics").
 //
 // An app contributes through SFApp homeFeatures: (items per topic, in the app's own order of
-// importance). Sofa merges the contributions of all apps per topic - interleaved in registry
-// order so every app gets a fair place at the front (live: Das Erste, ZDF, ORF 1, …) - and keeps
-// the result (stored, so Home shows it at once after a launch; refreshed every 30 min and when
-// the network comes back). Rows of SFHome read itemsForTopic: synchronously.
+// importance). Sofa keeps each app's list (stored, so Home shows them at once after a launch;
+// refreshed every 30 min, when the network comes back and when a live programme changes) and
+// merges them when a row is shown: first what can't play here is left out, then the lists are
+// interleaved in registry order so every app gets a fair place at the front. Rows of SFHome read
+// itemsForTopic: synchronously.
 //
 // Topics are defined here, not by apps: a topic is a promise about what the row means.
 #import "SFModel.h"
