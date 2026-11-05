@@ -73,10 +73,16 @@
     [SFAppRegistry prepareAllForRelaunch];   // apps persist caches (a resumed video starts without a new resolve)
     SFLog(@"update: saved, quitting");
     // _exit instead of exit: everything is saved; exit() used to hang in framework cleanup handlers.
-    // On a background queue: a main-queue block didn't run while the main run loop was stuck
-    // in another mode -> the helper had to force-quit after 5 s (log "forcing").
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{ _exit(0); });
+    // On its own thread: a main-queue block didn't run while the main run loop was stuck in
+    // another mode, and a global-queue block didn't run either when the GCD pool was saturated
+    // (blocked network/download work) -> the helper force-quit after 15 s (log "forcing",
+    // 2026-11-05 12:37 and 15:06). A plain thread does not depend on either.
+    [NSThread detachNewThreadSelector:@selector(exitAfterUpdateSave) toTarget:[SFAppDelegate class] withObject:nil];
+}
+
++ (void)exitAfterUpdateSave {
+    usleep(500 * 1000);   // the "updating" overlay is on screen, files are written
+    _exit(0);
 }
 
 - (void)restoreAfterUpdate {
