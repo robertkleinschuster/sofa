@@ -149,7 +149,7 @@ static BOOL SFIsPlaylistURL(NSString *abs) {
 }
 static BOOL SFProxyPlaylistHost(NSString *host) {
     static BOOL off; static dispatch_once_t o;   // dev A/B test: SOFA_NO_PLAYLIST_PROXY=1
-    dispatch_once(&o, ^{ off = SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_NO_PLAYLIST_PROXY"] length] > 0; });
+    dispatch_once(&o, ^{ off = SFDevEnv(@"SOFA_NO_PLAYLIST_PROXY") != nil; });
     return !off && [host isEqualToString:@"manifest.googlevideo.com"];
 }
 

@@ -222,8 +222,18 @@ void SFRenderLayerTree(CALayer *root, CGContextRef ctx) {
     [CATransaction commit];
 }
 
+NSString *SFDevEnv(NSString *name) {
+    NSString *v = SFDevMode ? [NSProcessInfo processInfo].environment[name] : nil;
+    return v.length ? v : nil;
+}
+
+NSTimeInterval SFDevSeconds(NSString *name, NSTimeInterval dflt) {
+    double t = [SFDevEnv(name) doubleValue];
+    return t > 0 ? t : dflt;
+}
+
 BOOL SFSimulatedOffline(void) {
     static int v = -1;
-    if (v < 0) v = SFDevMode && [[NSProcessInfo processInfo].environment[@"SOFA_OFFLINE"] length] > 0;
+    if (v < 0) v = SFDevEnv(@"SOFA_OFFLINE") != nil;
     return v == 1;
 }

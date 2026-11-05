@@ -127,6 +127,13 @@ from an empty database, leave nothing behind and can run side by side. Caches st
 (`~/Library/Caches/Sofa`: the YouTube bot-check pause must hold for every instance on this IP).
 `SOFA_ONLY_APPS=a,b` registers only those apps (tests without network).
 
+Test knobs are environment variables read through `SFDevEnv` / `SFDevSeconds` (SFCore), which
+honour them in dev instances only - the real app never sees them:
+`SOFA_OFFLINE=1` (simulated offline), `SOFA_RETRY_BASE` / `SOFA_SOURCE_GAP` (download retry and
+per-source start spacing, seconds), `SOFA_STALL_LIMIT` (player stall watchdog, seconds),
+`SOFA_NO_PLAYLIST_PROXY=1`. Tests wait for log lines (`dev: shot written PATH`, ...), never for
+fixed times.
+
 ## Design system (Framework)
 
 - Tokens: `SFTheme` (`src/Framework/SFTheme.h`) holds the visual decisions as named tokens –

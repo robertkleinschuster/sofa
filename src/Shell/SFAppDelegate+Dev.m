@@ -210,7 +210,7 @@
         CGImageDestinationAddImage(d, img, NULL);
         CGImageDestinationFinalize(d);
         CFRelease(d); CGImageRelease(img);
-        SFLog(@"dev: shot %@", path);
+        SFLog(@"dev: shot written %@", path);
     });
 }
 

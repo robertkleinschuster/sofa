@@ -58,6 +58,10 @@ void SFAnimate(CFTimeInterval dur, dispatch_block_t changes);
 void SFNoAnimate(dispatch_block_t changes);
 
 extern BOOL SFDevMode;   // invisible development mode (main.m)
+// Test knobs: environment variable NAME, honoured in dev instances only (never in the real app).
+NSString *SFDevEnv(NSString *name);
+// a duration knob: NAME in seconds when set (> 0) in a dev instance, otherwise the default
+NSTimeInterval SFDevSeconds(NSString *name, NSTimeInterval dflt);
 
 // Dev: render the layer tree into a context (model layers, AVPlayerLayer left out —
 // presentationLayer copies of the AVPlayerLayer crash on release on 10.9).

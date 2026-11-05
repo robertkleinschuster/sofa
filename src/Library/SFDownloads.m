@@ -83,9 +83,9 @@ static NSString *ffmpegPath(void) {
 // spacing, the attempts were used up within minutes and the episode was lost for good.
 static const NSInteger kSubMaxTries = 6;
 static NSTimeInterval SFRetryDelay(NSInteger tries) {
-    static double base;   // 15 min; tests shorten it (SOFA_RETRY_BASE seconds, dev instances only)
+    static double base;   // 15 min; tests shorten it (SOFA_RETRY_BASE)
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ double t = SFDevMode ? [[NSProcessInfo processInfo].environment[@"SOFA_RETRY_BASE"] doubleValue] : 0; base = t > 0 ? t : 900; });
+    dispatch_once(&once, ^{ base = SFDevSeconds(@"SOFA_RETRY_BASE", 900); });
     return base * (1 << MAX(0, MIN(tries, 10) - 1));
 }
 
@@ -563,7 +563,11 @@ static NSString *gb(unsigned long long b) {
 // Epoch until which the record's source must not be asked (0 = go).
 // Starts per source at least this far apart: quick failures or short videos must not turn into a
 // burst of requests to one site (YouTube flags the IP for bursts of player requests).
-static const NSTimeInterval kSourceGap = 30;
+static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOURCE_GAP)
+    static NSTimeInterval gap; static dispatch_once_t once;
+    dispatch_once(&once, ^{ gap = SFDevSeconds(@"SOFA_SOURCE_GAP", 30); });
+    return gap;
+}
 
 - (NSString *)sourceOf:(NSDictionary *)r {
     SFItem *item = [self itemFromRec:r];
@@ -580,14 +584,14 @@ static const NSTimeInterval kSourceGap = 30;
 - (NSTimeInterval)notBefore:(NSDictionary *)r {
     NSString *src = [self sourceOf:r];
     NSTimeInterval last = [_lastStart[src] doubleValue];
-    return MAX([self pausedUntil:r], last ? last + kSourceGap : 0);
+    return MAX([self pausedUntil:r], last ? last + SFSourceGap() : 0);
 }
 
 - (void)pumpAt:(NSTimeInterval)when {
     if (_pauseWake && _pauseWake <= when && _pauseWake > [NSDate date].timeIntervalSince1970) return;   // earlier wake pending
     _pauseWake = when;
     NSTimeInterval in = MAX(1, when - [NSDate date].timeIntervalSince1970 + 1);
-    if (in > kSourceGap + 2) SFLog(@"downloads: source paused - next attempt in %.0f min", round(in / 60));
+    if (in > SFSourceGap() + 2) SFLog(@"downloads: source paused - next attempt in %.0f min", round(in / 60));
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(in * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (self->_pauseWake == when) self->_pauseWake = 0;
         [self pump];

@@ -271,8 +271,9 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
 // fallback chain takes over. 2026-11-05: the SABR sidecar died during playback; mpv's HTTP
 // reconnects hit "connection refused" and a seek then hung forever with no error event.
 static NSTimeInterval SFStallLimit(void) {
-    double t = [[NSProcessInfo processInfo].environment[@"SOFA_STALL_LIMIT"] doubleValue];   // tests
-    return t > 0 ? t : 45;
+    static NSTimeInterval t; static dispatch_once_t o;
+    dispatch_once(&o, ^{ t = SFDevSeconds(@"SOFA_STALL_LIMIT", 45); });   // tests shorten it
+    return t;
 }
 @synthesize delegate = _delegate, muted = _muted;
 

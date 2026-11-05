@@ -23,6 +23,7 @@ INST=dltest PORT=47995
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
+export SOFA_SOURCE_GAP=3         # per-source spacing of download starts: 3 s instead of 30
 ROOT="$SOFA_DATA_DIR/Downloads"
 DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
@@ -41,6 +42,9 @@ start() {
 }
 quit() { echo quit > "$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
 cmd() { echo "$*" > "$FIFO"; }
+# shot FILE: screenshot, waits until it is written; kept in DLTEST_SHOTS
+shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1" "$LOG" && break; sleep 0.25; done
+         [ -n "${DLTEST_SHOTS:-}" ] && cp "$1" "$DLTEST_SHOTS/" 2>/dev/null; return 0; }
 ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the dev download folder
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
@@ -83,7 +87,8 @@ done
 "$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=426x240:rate=15 -t 19 -c:v libvpx-vp9 -deadline realtime -b:v 300k "$T/v.webm"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i sine -t 19 -c:a libopus "$T/a.webm"
 "$FF" -hide_banner -loglevel error -y -i "$T/v.webm" -i "$T/a.webm" -map 0:v:0 -map 1:a:0 -shortest -c copy -movflags +faststart "$T/vp9.mp4"
-cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; cmd "dlverify $T/vp9.mp4"; sleep 10
+cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; cmd "dlverify $T/vp9.mp4"
+for i in $(seq 1 80); do [ "$(grep -c 'dlverify .* -> ' "$LOG")" -ge 4 ] && break; sleep 0.25; done
 grep -q "dlverify vp9.mp4 -> ok" "$LOG" && ok "healthy VP9/Opus MP4 accepted" || bad "vp9.mp4 rejected: $(grep 'dlverify vp9' "$LOG")"
 grep -q "dlverify latin.mp4 -> ok" "$LOG" && ok "invalid UTF-8 in metadata is no reason to reject" || bad "latin.mp4 rejected: $(grep 'dlverify latin' "$LOG")"
 grep -q "dlverify good.mp4 -> ok" "$LOG" && ok "healthy file accepted" || bad "healthy file rejected: $(grep 'dlverify good' "$LOG")"
@@ -123,8 +128,8 @@ for i in $(seq 1 60); do grep -q "repair of $BADREF failed" "$LOG" && break; sle
 grep -q "repair of $BADREF failed.*retry in 15 min" "$LOG" && ok "failed repair scheduled for a retry" || bad "no retry scheduled: $(grep "$BADREF" "$LOG" | tail -2)"
 [ -s "$ROOT/dev/Dev/repair.mp4" ] && ok "existing file kept" || bad "existing file lost"
 cmd dlretry
-# the retry starts only after the per-source spacing of starts (30 s since the first attempt)
-for i in $(seq 1 100); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
+# the retry starts only after the per-source spacing of starts (SOFA_SOURCE_GAP since the first attempt)
+for i in $(seq 1 60); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
 grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in 30 min" "$LOG" && ok "retried with a longer backoff" || bad "not retried: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")
@@ -164,7 +169,7 @@ sleep 2
 sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && bad "a download started on a full disk" || ok "no download started"
 for i in $(seq 1 10); do grep -q "asking the user to make room" "$LOG" && break; sleep 0.5; done
 grep -q "asking the user to make room" "$LOG" && ok "user asked to make room" || bad "no prompt"
-cmd "shot $T/full.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/full.png" "$DLTEST_SHOTS/" 2>/dev/null
+shot "$T/full.png"
 cmd "key menu"; sleep 0.5
 m=$(wc -l < "$LOG"); cmd "dlreserve 10"   # room again
 for i in $(seq 1 60); do sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
@@ -192,9 +197,9 @@ for v in online:1:0 gone:0:0 kept:1:1; do
 done
 start
 cmd "open room"; sleep 2
-cmd "shot $T/room.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/room.png" "$DLTEST_SHOTS/" 2>/dev/null
+shot "$T/room.png"
 cmd "key select"; sleep 1        # first tile of "Aufräumen": "Gesehen"
-cmd "shot $T/room-confirm.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/room-confirm.png" "$DLTEST_SHOTS/" 2>/dev/null
+shot "$T/room-confirm.png"
 cmd "key down"; sleep 0.3; cmd "key select"; sleep 1.5   # "Ja, 1 Video löschen"
 grep -q "Platz schaffen: 1 deleted" "$LOG" && ok "bulk deletion ran (1 video)" || bad "no bulk deletion: $(grep -i 'platz\|downloads' "$LOG" | tail -3)"
 [ ! -e "$ROOT/dev/Room/online.mp4" ] && ok "the online video was deleted" || bad "online video still there"
