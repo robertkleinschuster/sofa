@@ -12,6 +12,9 @@ Einstellungen → „Update installieren“.
   Weg bleibt als Ausweichlösung.
 - **Downloads in voller Qualität:** YouTube-Downloads laufen ebenfalls über den neuen Weg und
   haben jetzt dieselbe Qualität wie beim Abspielen (bis 1080p mit 60 Bildern/s, Originalton).
+- **YouTube-Livestreams** laufen jetzt ebenfalls über den neuen Weg (bis 1080p mit 60 Bildern/s).
+  Noch nicht gestartete Livestreams sagen, wann es losgeht („Dieser Livestream beginnt heute um
+  20:15 Uhr“), statt mit einem Fehler abzubrechen.
 - **Weitere Folgen im Player:** Die Info (OK halten) zeigt jetzt auch bei ZDF, ARD und ORF die
   anderen Folgen der Sendung – nicht nur bei heruntergeladenen.
 - **Vorpremieren:** Folgen, die schon vor der TV-Ausstrahlung online sind, zeigen „TV am …“
