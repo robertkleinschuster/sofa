@@ -10,6 +10,9 @@ NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSDa
 
 // curl_easy_init() without TLS certificate verification (see .m). Returns a CURL * (void *,
 // so this header does without curl.h).
+// curl/OpenSSL global init; call once at launch on main (lazy init on a worker raced with
+// exit()'s OpenSSL cleanup -> crash on quit, 2026-11-05). Idempotent.
+void SFCurlGlobalInit(void);
 void *SFCurlNew(void);
 
 // Download a large file straight to disk (follows redirects, HTTP error = failure). Background only.

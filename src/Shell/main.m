@@ -9,6 +9,7 @@
 #import "SFScreen.h"
 #import "SFHome.h"
 #import "SFTileStatus.h"
+#import "SFCurl.h"
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
@@ -50,6 +51,7 @@ static uint16_t gPort = 8765;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
+    SFCurlGlobalInit();   // before any worker thread uses curl/OpenSSL
     SFRegisterApps();   // first: themes and apps are looked up from here on
     // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
     // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
@@ -174,6 +176,9 @@ static uint16_t gPort = 8765;
     [SFAppRegistry stopRemotes];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
+    // Everything is saved. exit()'s library cleanup (OpenSSL, frameworks) races with worker
+    // threads still in a request -> crash on quit; leave without it, like the update path.
+    _exit(0);
 }
 
 #pragma mark First launch

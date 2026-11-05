@@ -40,7 +40,7 @@ BOOL SFIsTLSError(NSError *e) {
 
 #pragma mark - Fetch
 
-static void curlInit(void) {
+void SFCurlGlobalInit(void) {
     static dispatch_once_t o;
     dispatch_once(&o, ^{ curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
@@ -64,7 +64,7 @@ static size_t appendData(char *p, size_t sz, size_t n, void *ud) {
 
 static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                          NSInteger *status, NSString **effective, NSError **error) {
-    curlInit();
+    SFCurlGlobalInit();
     CURL *c = SFCurlNew();
     if (!c) return nil;
     NSMutableData *out = [NSMutableData new];
@@ -110,7 +110,7 @@ static size_t writeFile(char *p, size_t sz, size_t n, void *ud) {
 }
 
 BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
-    curlInit();
+    SFCurlGlobalInit();
     FILE *f = fopen(path.fileSystemRepresentation, "wb");
     if (!f) { if (error) *error = SFError(@"Datei nicht schreibbar."); return NO; }
     CURL *c = SFCurlNew();
@@ -397,7 +397,7 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
     }
 
     // segments / files: pass through (incl. Range) without buffering everything
-    curlInit();
+    SFCurlGlobalInit();
     CURL *c = SFCurlNew();
     NSMutableDictionary *hdrs = [NSMutableDictionary new];
     StreamCtx ctx = {fd, NO, NO, 0, hdrs};
