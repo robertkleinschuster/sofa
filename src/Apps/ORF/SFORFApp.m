@@ -5,6 +5,7 @@
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
+#import "SFCurl.h"
 #import "SFStore.h"
 
 static NSString *const kAPI = @"https://api-tvthek.orf.at/api/v4.3";
@@ -15,6 +16,13 @@ static NSString *const kAuth = @"Basic b3JmX29uX3Y0MzpqRlJzYk5QRmlQU3h1d25MYllEZ
 static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 @implementation SFORFApp
+
+// ORF's API, images and video CDNs speak AES-GCM/TLS 1.3 only, which 10.9's TLS stack can't
++ (void)start {
+    for (NSString *d in @[@"api-tvthek.orf.at", @".sf.apa.at", @".mdn.ors.at"]) {
+        if ([d hasPrefix:@"."]) SFMarkDomainNeedsCurl(d); else SFMarkHostNeedsCurl(d);
+    }
+}
 
 // Sofa's own entry points (no source image): icon tile instead of an empty area
 + (SFItem *)navFolder:(NSString *)title ident:(NSString *)ident icon:(NSString *)icon loader:(SFPageLoader)loader {

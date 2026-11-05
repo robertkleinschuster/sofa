@@ -4,6 +4,7 @@
 #import "SFCurl.h"
 
 #import <SystemConfiguration/SystemConfiguration.h>
+#include <netinet/in.h>
 
 NSString *const SFNetOnlineDidChangeNotification = @"SFNetOnlineDidChange";
 NSString *const SFNetRegionDidChangeNotification = @"SFNetRegionDidChange";
@@ -47,7 +48,9 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
 + (void)startMonitoring {
     if (gReach) return;
     if (SFSimulatedOffline()) { setOnline(NO); return; }
-    gReach = SCNetworkReachabilityCreateWithName(NULL, "www.youtube.com");
+    // the default route ("is there a network at all") - no particular service, no DNS lookup
+    struct sockaddr_in any = { .sin_len = sizeof(any), .sin_family = AF_INET };
+    gReach = SCNetworkReachabilityCreateWithAddress(NULL, (const struct sockaddr *)&any);
     if (!gReach) return;
     SCNetworkReachabilityFlags f;
     if (SCNetworkReachabilityGetFlags(gReach, &f)) reachCallback(gReach, f, NULL);

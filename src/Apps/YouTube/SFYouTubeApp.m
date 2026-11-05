@@ -1036,18 +1036,16 @@ static NSArray *itemsFrom(NSArray *dicts) {
 }
 
 + (void)storeFeed:(NSArray *)items sig:(NSString *)sig channel:(NSString *)cid {
-    NSData *j = [NSJSONSerialization dataWithJSONObject:[items valueForKey:@"dictionaryRepresentation"] options:0 error:nil];
+    NSString *j = SFJSONString([items valueForKey:@"dictionaryRepresentation"]);
     if (!j) return;
     [[SFStore shared] run:@"INSERT OR REPLACE INTO feed_cache (id, sig, items, updated) VALUES (?,?,?,?)"
-                     args:@[feedID(cid), sig ?: [NSNull null], [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding],
-                            @([NSDate date].timeIntervalSince1970)]];
+                     args:@[feedID(cid), sig ?: [NSNull null], j, @([NSDate date].timeIntervalSince1970)]];
 }
 
 + (NSArray *)storedFeed:(NSString *)cid sig:(NSString **)sig {
     NSDictionary *r = [[SFStore shared] rows:@"SELECT sig, items FROM feed_cache WHERE id=?" args:@[feedID(cid)]].firstObject;
     if (sig) *sig = [r[@"sig"] isKindOfClass:[NSString class]] ? r[@"sig"] : nil;
-    id list = [r[@"items"] isKindOfClass:[NSString class]]
-        ? [NSJSONSerialization JSONObjectWithData:[r[@"items"] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+    id list = SFJSONParse(r[@"items"]);
     return itemsFrom([list isKindOfClass:[NSArray class]] ? list : @[]);
 }
 

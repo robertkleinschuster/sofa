@@ -9,24 +9,29 @@
 
 #pragma mark - Hosts
 
+// Hosts (exact) and domains (".example.org": every host below) that need the curl path: learned
+// on TLS errors, or declared up front by the apps that know them (SFMarkDomainNeedsCurl).
 static NSMutableSet *curlHosts(void) {
     static NSMutableSet *s; static dispatch_once_t o;
-    dispatch_once(&o, ^{
-        // known: ORF (API, images, video CDNs) — AES-GCM/TLS 1.3 only
-        s = [NSMutableSet setWithArray:@[@"api-tvthek.orf.at", @"apasfiis.sf.apa.at", @"apasfpd.sf.apa.at",
-                                         @"vod-at.mdn.ors.at", @"vod-ww.mdn.ors.at", @"orf1.mdn.ors.at", @"orf2.mdn.ors.at",
-                                         @"orf2w.mdn.ors.at", @"orf3.mdn.ors.at", @"orfs.mdn.ors.at"]];
-    });
+    dispatch_once(&o, ^{ s = [NSMutableSet new]; });
+    return s;
+}
+static NSMutableSet *curlDomains(void) {
+    static NSMutableSet *s; static dispatch_once_t o;
+    dispatch_once(&o, ^{ s = [NSMutableSet new]; });
     return s;
 }
 BOOL SFHostNeedsCurl(NSString *host) {
     if (!host) return NO;
-    NSMutableSet *s = curlHosts();
-    @synchronized (s) {
-        if ([s containsObject:host]) return YES;
-        if ([host hasSuffix:@".mdn.ors.at"] || [host hasSuffix:@".sf.apa.at"]) return YES;
-    }
+    NSMutableSet *s = curlHosts(), *d = curlDomains();
+    @synchronized (s) { if ([s containsObject:host]) return YES; }
+    @synchronized (d) { for (NSString *suffix in d) if ([host hasSuffix:suffix]) return YES; }
     return NO;
+}
+void SFMarkDomainNeedsCurl(NSString *domain) {
+    if (!domain.length) return;
+    NSMutableSet *d = curlDomains();
+    @synchronized (d) { [d addObject:[domain hasPrefix:@"."] ? domain : [@"." stringByAppendingString:domain]]; }
 }
 void SFMarkHostNeedsCurl(NSString *host) {
     if (!host) return;

@@ -146,8 +146,7 @@ static NSString *const kRepairPrefix = @"repair: ";
 - (NSString *)itemJSON:(SFItem *)item {
     NSMutableDictionary *d = [[item dictionaryRepresentation] mutableCopy];
     [d removeObjectForKey:@"localPath"];
-    NSData *j = [NSJSONSerialization dataWithJSONObject:d options:0 error:nil];
-    return j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : nil;
+    return SFJSONString(d);
 }
 
 #pragma mark Queries

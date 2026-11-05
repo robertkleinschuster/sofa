@@ -243,3 +243,13 @@ BOOL SFSimulatedOffline(void) {
     if (v < 0) v = SFDevEnv(@"SOFA_OFFLINE") != nil;
     return v == 1;
 }
+
+NSString *SFJSONString(id obj) {
+    NSData *d = obj ? [NSJSONSerialization dataWithJSONObject:obj options:0 error:nil] : nil;
+    return d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+}
+
+id SFJSONParse(NSString *text) {
+    NSData *d = [text isKindOfClass:[NSString class]] ? [text dataUsingEncoding:NSUTF8StringEncoding] : nil;
+    return d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+}

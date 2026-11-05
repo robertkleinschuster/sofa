@@ -207,8 +207,7 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 }
 
 - (NSString *)json:(SFItem *)item {
-    NSData *d = [NSJSONSerialization dataWithJSONObject:[item dictionaryRepresentation] options:0 error:nil];
-    return d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+    return SFJSONString([item dictionaryRepresentation]);
 }
 
 - (void)write:(SFItem *)item pos:(double)pos dur:(double)dur watched:(BOOL)w {

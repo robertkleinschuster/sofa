@@ -41,7 +41,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
         _items = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
         for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY follow, pos" args:nil]) {
-            NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+            NSDictionary *d = SFJSONParse(r[@"item"]);
             if (![d isKindOfClass:[NSDictionary class]]) continue;
             NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
             [a addObject:[SFItem itemWithDictionary:d]];
@@ -204,9 +204,8 @@ static NSArray *stable(NSArray *dicts) {
                 if (same) { finish(); return; }   // most refreshes: nothing new, nothing to write
                 NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
                 [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
-                    NSData *j = [NSJSONSerialization dataWithJSONObject:dicts[n] options:0 error:nil];
                     [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos,item) VALUES (?,?,?,?)",
-                                        @[f[@"id"], c.identifier, @(n), j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : @"{}"]]];
+                                        @[f[@"id"], c.identifier, @(n), SFJSONString(dicts[n]) ?: @"{}"]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
             }

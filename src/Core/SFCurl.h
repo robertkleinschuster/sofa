@@ -21,6 +21,9 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error);
 // Hosts that need the curl path (learned automatically on SSL errors).
 BOOL SFHostNeedsCurl(NSString *host);
 void SFMarkHostNeedsCurl(NSString *host);
+// an app declares the hosts it knows need curl (e.g. TLS 1.3 / AES-GCM only) - exact host, or
+// ".domain" for every host below it; called from the app's +start
+void SFMarkDomainNeedsCurl(NSString *domain);
 BOOL SFIsTLSError(NSError *e);
 
 @interface SFStreamProxy : NSObject

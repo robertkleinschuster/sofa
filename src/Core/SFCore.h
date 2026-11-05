@@ -45,6 +45,9 @@ NSString *SFDotJoinN(NSUInteger n, ...);
 // Fair merge of several ranked lists: the first of each, then the second of each, … up to `max`;
 // an element whose key was seen before (or is nil) is skipped. E.g. Home rows mixed from all apps.
 NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id element));
+// JSON text <-> objects (stored items, feeds): nil when not representable / not parseable
+NSString *SFJSONString(id obj);
+id SFJSONParse(NSString *text);
 // Where Sofa keeps its state (database, sidecar state, a dev instance's downloads). The real app:
 // ~/Library/Application Support/Sofa. A dev instance never shares it - isolated by construction,
 // not by per-file checks: Application Support/Sofa-dev/<instance>, or $SOFA_DATA_DIR (tests: a

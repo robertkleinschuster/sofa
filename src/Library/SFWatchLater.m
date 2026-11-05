@@ -41,8 +41,7 @@
     if (!item.identifier.length || [self contains:item.identifier]) return NO;
     SFItem *c = [item copy];
     c.style = SFTileStyleLandscape;   // uniform in the shelf, wherever it was saved from
-    NSData *j = [NSJSONSerialization dataWithJSONObject:[c dictionaryRepresentation] options:0 error:nil];
-    NSString *js = j ? [[NSString alloc] initWithData:j encoding:NSUTF8StringEncoding] : nil;
+    NSString *js = SFJSONString([c dictionaryRepresentation]);
     if (!js) return NO;
     NSString *src = c.source ?: @"";
     [[SFStore shared] run:@"INSERT OR REPLACE INTO watch_later (id, source, item, added) VALUES (?, ?, ?, ?)" args:@[c.identifier, src, js, @(added)]];
@@ -71,17 +70,20 @@
 }
 
 - (NSArray *)items:(NSString *)source {
-    NSMutableArray *out = [NSMutableArray new], *seen = [NSMutableArray new];
+    NSMutableArray *out = [NSMutableArray new], *drop = [NSMutableArray new];
+    NSMutableIndexSet *watched = [NSMutableIndexSet new];
     SFStore *st = [SFStore shared];
-    for (NSDictionary *e in _entries) {
-        if ([st progressFor:e[@"id"]] >= 1) { [seen addObject:e[@"id"]]; continue; }   // watched: drops out
-        if (source && ![e[@"source"] isEqualToString:source]) continue;
+    [_entries enumerateObjectsUsingBlock:^(NSDictionary *e, NSUInteger i, BOOL *stop) {
+        if ([st progressFor:e[@"id"]] >= 1) {   // watched: drops out
+            [watched addIndex:i];
+            [drop addObject:@[@"DELETE FROM watch_later WHERE id = ?", @[e[@"id"]]]];
+            return;
+        }
+        if (source && ![e[@"source"] isEqualToString:source]) return;
         [out addObject:[e[@"item"] copy]];
-    }
-    for (NSString *i in seen) {   // clean up silently (without triggering a reload)
-        [_entries filterUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *e, NSDictionary *b) { return ![e[@"id"] isEqualToString:i]; }]];
-        [st run:@"DELETE FROM watch_later WHERE id = ?" args:@[i]];
-    }
+    }];
+    [_entries removeObjectsAtIndexes:watched];   // cleaned up silently (without triggering a reload)
+    [st runAll:drop];
     return out;
 }
 
