@@ -11,6 +11,10 @@ Einstellungen → „Update installieren“.
   funktioniert auch dann, wenn YouTube den bisherigen Weg mit „kein Bot“ blockiert; der alte
   Weg bleibt als Ausweichlösung.
 - **Downloads** von YouTube laufen ebenfalls über den neuen Weg (720p, Originalton).
+- **Weitere Folgen im Player:** Die Info (OK halten) zeigt jetzt auch bei ZDF, ARD und ORF die
+  anderen Folgen der Sendung – nicht nur bei heruntergeladenen.
+- **Vorpremieren:** Folgen, die schon vor der TV-Ausstrahlung online sind, zeigen „TV am …“
+  statt eines Datums in der Zukunft.
 - **Kein Hängenbleiben mehr:** Liefert ein Stream mitten im Video nichts mehr, merkt Sofa das
   und schaltet auf einen anderen Weg um, statt endlos zu laden.
 
