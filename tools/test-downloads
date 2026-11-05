@@ -9,6 +9,11 @@
 #   3. quitting during a download leaves no ffmpeg behind, and the download resumes on the next start
 #   4. a failed repair keeps the old file and is retried later (YouTube's bot check blocks for hours)
 #   5. during a YouTube bot-check pause a queued YouTube download waits without any request
+#   6. storage guard: below the reserve no download starts and a running one stops - both stay
+#      queued without using an attempt, the user is asked to make room, and the queue continues
+#      by itself once there is room (user 2026-11-05: never fill the disk, never delete by itself)
+#   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
+#      a video that is no longer online and a kept one stay
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -39,9 +44,10 @@ ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the de
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
   for p in $(ffpids); do kill $p 2>/dev/null; done
-  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF','$YTREF');" 2>/dev/null
+  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF','$YTREF') or id like 'room:%';" 2>/dev/null
+  /opt/local/bin/sqlite3 "$DEVDB" "delete from progress where id like 'room:%';" 2>/dev/null
   for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
-  rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/orphan-test."*
+  rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/dev/Room" "$ROOT/orphan-test."*
 }
 trap cleanup EXIT
 mkdir -p "$ROOT"
@@ -145,6 +151,55 @@ quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads where id='$YTREF';")
 [ "$st" = "0 0" ] && ok "still queued, no attempt used up" || bad "unexpected record: $st"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"
+
+echo "==> 6. storage guard (full disk)"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
+start
+cmd "dlreserve 1000000"; sleep 0.5    # 1 PB reserve: the disk counts as full
+m=$(wc -l < "$LOG"); cmd "dlget $REF"
+for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "storage full" && break; sleep 0.5; done
+sed -n "$m,\$p" "$LOG" | grep -q "storage full" && ok "full disk detected" || bad "not detected: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
+sleep 2
+sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && bad "a download started on a full disk" || ok "no download started"
+for i in $(seq 1 10); do grep -q "asking the user to make room" "$LOG" && break; sleep 0.5; done
+grep -q "asking the user to make room" "$LOG" && ok "user asked to make room" || bad "no prompt"
+cmd "shot $T/full.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/full.png" "$DLTEST_SHOTS/" 2>/dev/null
+cmd "key menu"; sleep 0.5
+m=$(wc -l < "$LOG"); cmd "dlreserve 10"   # room again
+for i in $(seq 1 60); do sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
+sed -n "$m,\$p" "$LOG" | grep -q "storage free again" && sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" \
+  && ok "continues by itself once there is room" || bad "did not continue: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
+sleep 3
+m=$(wc -l < "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the run
+for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "deferred" && break; sleep 0.5; done
+sed -n "$m,\$p" "$LOG" | grep -q "disk nearly full while loading" && ok "running download stopped" || bad "running download not stopped"
+sleep 1
+[ -z "$(ffpids)" ] && ok "ffmpeg ended" || bad "ffmpeg still running"
+quit
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads where id='$REF';")
+[ "$st" = "0 0" ] && ok "still queued, no attempt used up" || bad "unexpected record: $st"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$REF';"
+
+echo "==> 7. Platz schaffen: only replaceable videos are deleted"
+mkdir -p "$ROOT/dev/Room"
+for v in online gone kept; do cp "$T/good.mp4" "$ROOT/dev/Room/$v.mp4"; done
+now=$(date +%s)
+for v in online:1:0 gone:0:0 kept:1:1; do
+  IFS=: read name on keep <<< "$v"
+  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,bytes,added,keep,online,onlineAt) values ('room:$name','dev','Room','{\"id\":\"room:$name\",\"kind\":0,\"title\":\"Room $name\",\"ref\":\"room:$name\",\"source\":\"dev\",\"channel\":\"Room\"}','$ROOT/dev/Room/$name.mp4',2,1,$(stat -f %z "$T/good.mp4"),$now,$keep,$on,$now);"
+  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into progress (id,pos,dur,watched,updated,source,item) values ('room:$name',60,60,1,$now,'dev','{}');"
+done
+start
+cmd "open room"; sleep 2
+cmd "shot $T/room.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/room.png" "$DLTEST_SHOTS/" 2>/dev/null
+cmd "key select"; sleep 1        # first tile of "Aufräumen": "Gesehen"
+cmd "shot $T/room-confirm.png"; sleep 1.5; [ -n "${DLTEST_SHOTS:-}" ] && cp "$T/room-confirm.png" "$DLTEST_SHOTS/" 2>/dev/null
+cmd "key down"; sleep 0.3; cmd "key select"; sleep 1.5   # "Ja, 1 Video löschen"
+grep -q "Platz schaffen: 1 deleted" "$LOG" && ok "bulk deletion ran (1 video)" || bad "no bulk deletion: $(grep -i 'platz\|downloads' "$LOG" | tail -3)"
+[ ! -e "$ROOT/dev/Room/online.mp4" ] && ok "the online video was deleted" || bad "online video still there"
+[ -e "$ROOT/dev/Room/gone.mp4" ] && ok "the video that is no longer online stays" || bad "irreplaceable video deleted!"
+[ -e "$ROOT/dev/Room/kept.mp4" ] && ok "the kept video stays" || bad "kept video deleted!"
+quit
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

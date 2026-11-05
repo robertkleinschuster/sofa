@@ -172,7 +172,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 (text input for search → own on-screen keyboard).
 
 ## Backlog (user requests — queue, tick off when done)
-- [ ] **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05):
+- [x] 2026-11-05 **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05; done: SFDownloads+Storage.m, SFHome+Downloads.m "Platz schaffen", test-downloads 6+7):
       videos disappear from YouTube (deleted, private, region-locked) - then the local copy is the
       only one. Today `SFDownloads -cleanup` deletes subscription episodes after `keepDays` (default
       90) and, with "delete watched" on, 1 day after watching -> both go.

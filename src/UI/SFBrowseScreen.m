@@ -921,6 +921,7 @@ SFBrowseScreen *SFBrowseScreenForFolder(SFItem *item, SFTheme *fallback) {
     b.folderIdentifier = item.identifier;
     // offline pages (show, downloads) follow the inventory live
     if ([item.identifier hasPrefix:@"show:"] || [item.identifier hasPrefix:@"downloads:"] || [item.identifier hasPrefix:@"ytchannel:"]) b.reloadNotification = SFLibraryDidChangeNotification;
+    if ([item.identifier hasPrefix:@"room:"]) b.reloadNotification = SFDownloadsStorageDidChangeNotification;   // deletions, online checks
     if ([item.identifier hasPrefix:@"ytchannel:"]) b.showsHero = YES;   // channel header (banner, subscribers, description)
     return b;
 }

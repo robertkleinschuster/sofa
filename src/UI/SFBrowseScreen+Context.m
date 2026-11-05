@@ -41,7 +41,27 @@
                 o.detail = ds == SFDLRunning ? [NSString stringWithFormat:@"%d %%", (int)round(dp * 100)] : @"wartet";
                 [opts addObject:o];
             } else if (ds == SFDLDone || it.localPath) {
-                if (ds == SFDLDone) [opts addObject:[SFMenuOption option:@"Download löschen" action:^{ [dl remove:ident]; [nav toast:@"Download gelöscht"]; [ws reload]; }]];
+                if (ds == SFDLDone) {
+                    BOOL kept = [dl isKept:ident];
+                    SFMenuOption *keep = [SFMenuOption option:@"Behalten" action:^{
+                        [dl setKept:!kept forIdentifier:ident];
+                        [nav toast:!kept ? @"Wird behalten – nie zum Löschen vorgeschlagen" : @"Nicht mehr behalten"];
+                    }];
+                    keep.detail = kept ? @"An" : @"Aus";
+                    [opts addObject:keep];
+                    // deleting an irreplaceable copy (kept, or no longer online) asks first
+                    BOOL gone = [dl onlineStateFor:ident] == 0;
+                    [opts addObject:[SFMenuOption option:@"Download löschen" action:^{
+                        if (!kept && !gone) { [dl remove:ident]; [nav toast:@"Download gelöscht"]; [ws reload]; return; }
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
+                            SFMenuOption *yes = [SFMenuOption option:@"Ja, endgültig löschen" action:^{ [dl remove:ident]; [nav toast:@"Download gelöscht"]; [ws reload]; }];
+                            [nav push:[[SFMenuScreen alloc] initWithTitle:@"Download löschen?"
+                                                                 subtitle:gone ? @"Dieses Video ist nicht mehr online – die Kopie hier ist die einzige." : @"Dieses Video ist als „Behalten“ markiert."
+                                                                  options:@[no, yes] theme:ws.theme]];
+                        });
+                    }]];
+                }
             } else if (it.resolverRef || it.resolver) {
                 [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it]; [nav toast:@"Wird heruntergeladen – auch offline verfügbar"]; }]];
             }
@@ -70,14 +90,11 @@
     } else if (it.kind == SFItemFolder) {
         [opts addObject:[SFMenuOption option:@"Öffnen" action:^{ SFOpenItem(nav, it, items, idx); }]];
         SFDownloads *dl = [SFDownloads shared];
-        if ([it.identifier hasPrefix:@"downloads:"]) {   // settings of the offline layer
-            BOOL on = [dl deletesWatched];
-            SFMenuOption *o = [SFMenuOption option:@"Gesehenes löschen" action:^{
-                [dl setDeletesWatched:!on];
-                [nav toast:!on ? @"Abo-Folgen werden 1 Tag nach dem Ansehen gelöscht – spart Platz"
-                               : @"Gesehene Abo-Folgen bleiben erhalten"];
+        if ([it.identifier hasPrefix:@"downloads:"]) {   // the offline layer: making room by hand
+            SFMenuOption *o = [SFMenuOption option:@"Platz schaffen" action:^{
+                dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFHome roomTile], nil, 0); });
             }];
-            o.detail = on ? @"An" : @"Aus";
+            o.detail = [dl storageSummary:nil];
             [opts addObject:o];
         }
         if ([it.identifier hasPrefix:@"show:"]) {   // show in the offline inventory

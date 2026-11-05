@@ -13,6 +13,8 @@
 @interface SFHome (Downloads)
 + (SFPageLoader)downloadsLoader:(NSString *)source;           // nil = all sources
 + (SFItem *)downloadsTile:(NSString *)source;                  // opens the downloads page
++ (SFItem *)roomTile;                                          // opens "Platz schaffen" (bulk deleting, by hand)
++ (void)watchStorage;                                          // ask to make room when the disk becomes full
 @end
 
 // Settings and phone – SFHome+Settings.m

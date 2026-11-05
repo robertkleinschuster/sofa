@@ -19,6 +19,12 @@ Einstellungen → „Update installieren“.
   Videos, Playlists und Kanäle über dem Bild – mit ▼ auswählen, OK öffnet, MENU zurück zum Video.
 - **Schlanker im Hintergrund:** Sofa braucht für YouTube einen Hintergrunddienst weniger
   (~125 MB weniger Arbeitsspeicher, kleinerer Download); der Ausweichweg startet nur noch bei Bedarf.
+- **Sofa löscht nie mehr selbst:** Heruntergeladene Videos bleiben, bis du sie löschst – Videos
+  verschwinden manchmal von YouTube oder aus den Mediatheken, dann ist die Kopie die einzige.
+  Wird der Speicher knapp, pausieren die Downloads und Sofa fragt nach.
+- **Platz schaffen:** Unter Downloads gesehene oder alte Videos und ganze Sendungen gesammelt
+  löschen. Sofa prüft vorher, ob sie noch online sind – was nicht mehr online ist, bleibt.
+- **Behalten:** Videos mit OK halten → „Behalten“ markieren; sie werden nie zum Löschen vorgeschlagen.
 - **Weitere Folgen im Player:** Die Info (OK halten) zeigt jetzt auch bei ZDF, ARD und ORF die
   anderen Folgen der Sendung – nicht nur bei heruntergeladenen.
 - **Vorpremieren:** Folgen, die schon vor der TV-Ausstrahlung online sind, zeigen „TV am …“

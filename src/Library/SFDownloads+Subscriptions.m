@@ -1,5 +1,5 @@
 // SFDownloads – subscriptions ("download new episodes automatically"): feed registry,
-// subscription management, periodic checks, retention and smart delete of watched episodes.
+// subscription management, periodic checks (keepDays = download window: older episodes are not fetched).
 #import "SFDownloads+Private.h"
 
 static NSMutableDictionary *gFeeds;   // prefix -> SFFeedFetcher
@@ -101,7 +101,7 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
                     break;
                 }
                 double pub = it.date ? [it.date timeIntervalSince1970] : 0;
-                if (pub && pub < now - keep) break;                   // older than the retention period
+                if (pub && pub < now - keep) break;                   // older than the download window: not fetched
                 if (since > 0 && pub && pub <= since) break;         // migrated subscriptions: only new ones
                 if ([[SFStore shared] watched:it.identifier]) continue;
                 if (added >= 5) break;                               // at most 5 per check
@@ -119,7 +119,6 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
     [self retryDueRepairs];
     if (_checking || ![SFNet isOnline]) return;
     _checking = YES;
-    [self cleanup];
     NSArray *all = [_subs.allValues copy];
     __block NSUInteger i = 0;
     __block void (^next)(void);
@@ -140,54 +139,6 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);   // time limit per feed
     };
     next();
-}
-
-// user setting -> SFSettings; formerly in SQLite (downloads.deleteWatched): migrate once
-- (BOOL)deletesWatched {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSString *old = [[SFStore shared] setting:@"downloads.deleteWatched"];
-        if (old.length) {
-            SFSetDeleteWatchedDownloads(![old isEqualToString:@"0"]);
-            [[SFStore shared] setSetting:@"" forKey:@"downloads.deleteWatched"];
-        }
-    });
-    return SFDeleteWatchedDownloads();
-}
-- (void)setDeletesWatched:(BOOL)on {
-    SFSetDeleteWatchedDownloads(on);
-    _generation++;
-    [self changed:nil];
-    SFLog(@"downloads: delete watched subscription episodes %@", on ? @"on" : @"off");
-    if (on) [self cleanup];
-}
-
-// Retention: delete subscription episodes after keepDays (from publication);
-// Smart Downloads: watched subscription episodes 1 day after watching
-- (void)cleanup {
-    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-    if (self.deletesWatched) {
-        NSMutableDictionary *seen = [NSMutableDictionary new];   // id -> time "watched"
-        for (NSDictionary *row in [[SFStore shared] rows:@"SELECT id, updated FROM progress WHERE watched=1" args:nil]) seen[row[@"id"]] = row[@"updated"];
-        for (NSMutableDictionary *r in [_recs.allValues copy]) {
-            if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
-            NSNumber *w = seen[r[@"id"]];
-            if (w && [w doubleValue] < now - 86400) {
-                SFLog(@"downloads: watched, deleted: %@", r[@"id"]);
-                [self remove:r[@"id"]];
-            }
-        }
-    }
-    for (NSMutableDictionary *r in [_recs.allValues copy]) {
-        if ([r[@"state"] integerValue] != SFDLDone || !r[@"sub"]) continue;
-        NSDictionary *s = _subs[r[@"sub"]];
-        double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
-        double pub = [r[@"published"] doubleValue] ?: [r[@"added"] doubleValue];
-        if (pub && pub < now - keep) {
-            SFLog(@"downloads: retention expired: %@", r[@"id"]);
-            [self remove:r[@"id"]];
-        }
-    }
 }
 
 @end

@@ -85,6 +85,7 @@ static uint16_t gPort = 8765;
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
     [[SFFollows shared] start];   // after SFYouTube setup (pages/feeds registered)
+    [SFHome watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
     // phone pairing: real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {

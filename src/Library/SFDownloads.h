@@ -6,6 +6,8 @@
 #import "SFModel.h"
 
 extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (or nil = many)
+// storage became full or free again, an online check finished ("Platz schaffen" page reloads)
+extern NSString *const SFDownloadsStorageDidChangeNotification;
 extern NSString *const SFUnsortedChannel;   // show name for videos without a channel
 
 typedef NS_ENUM(NSInteger, SFDLState) {
@@ -32,6 +34,13 @@ void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
 // YouTube during a bot-check pause. Its queued downloads wait without using up attempts.
 typedef NSTimeInterval (^SFDownloadPause)(void);
 void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f);
+// Optional: is this downloaded video still online at its source? (for "Platz schaffen": what is not
+// online any more is irreplaceable). online: 1 yes, 0 no (deleted/private/expired), -1 unknown
+// (network error - ask again later). Without a registered check the source's online resolver
+// answers (a resolvable stream = online).
+typedef void (^SFAvailabilityDone)(NSInteger online);
+typedef void (^SFAvailabilityCheck)(SFItem *item, SFAvailabilityDone done);
+void SFRegisterAvailabilityCheck(NSString *prefix, SFAvailabilityCheck f);
 
 @interface SFDownloads : NSObject
 + (instancetype)shared;
@@ -51,11 +60,32 @@ void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f);
 - (unsigned long long)bytesUsedFor:(NSString *)source;   // nil = all
 - (unsigned long long)freeBytes;                           // free space on the storage volume
 - (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"
-- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // number of deleted downloads
+- (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // number of deleted downloads (kept ones stay)
+- (NSDictionary *)recordFor:(NSString *)identifier;   // finished download: bytes, added, published, channel, source, keep
 - (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // folder of a show in Sofa's storage
 
 // Migration (one-time): adopt an existing file (moved into Sofa's storage)
 - (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;
+@end
+
+// Storage (SFDownloads+Storage.m) - downloads are never deleted automatically
+@interface SFDownloads (Storage)
+// Storage guard: below the reserve no download starts, and a running one stops (back into the
+// queue, no attempt used); it continues by itself once there is room again. Never deletes anything.
+@property (nonatomic, readonly) BOOL storageFull;
+@property (nonatomic, readonly) unsigned long long storageReserve;   // bytes kept free
+- (void)setStorageReserveForTesting:(unsigned long long)bytes;      // dev instances only
+
+// "Behalten": never offered for deletion in bulk ("Platz schaffen"), never removed with a show.
+- (BOOL)isKept:(NSString *)identifier;
+- (void)setKept:(BOOL)kept forIdentifier:(NSString *)identifier;
+
+// Online availability of a download: 1 online, 0 gone, -1 not checked yet / unknown. Cached 30 days.
+- (NSInteger)onlineStateFor:(NSString *)identifier;
+// check these (finished downloads; cached ones are skipped), one after another with spacing; progress
+// via SFDownloadsStorageDidChangeNotification, done when all have an answer (or the run was cut short)
+- (void)checkOnline:(NSArray *)identifiers done:(dispatch_block_t)done;
+
 @end
 
 // Subscriptions (auto-download a channel/show) – SFDownloads+Subscriptions.m
@@ -64,11 +94,9 @@ void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f);
 - (void)subscribe:(SFItem *)folder;              // folder.identifier = "ytchannel:UC…", "zdfshow:…", …
 - (void)unsubscribe:(NSString *)folderIdentifier;
 - (BOOL)canSubscribe:(SFItem *)folder;           // is there a feed for this folder type?
-- (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays)
+- (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays = download window)
 - (void)checkSubscriptionsNow;
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
-// Smart Downloads: delete watched subscription episodes 1 day after watching (default: on; manual ones never)
-@property (nonatomic) BOOL deletesWatched;
 
 // Migration (one-time): adopt a subscription
 - (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image, keepDays

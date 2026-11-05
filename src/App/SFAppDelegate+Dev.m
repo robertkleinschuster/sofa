@@ -144,6 +144,12 @@
         SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:q[start] queue:q index:start];
         ps.startFromBeginning = YES;
         [self presentPlayer:ps];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"room"]) {      // Dev: "Platz schaffen"
+        SFOpenItem(self.nav, [SFHome roomTile], nil, 0);
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
+        SFOpenItem(self.nav, [SFHome downloadsTile:nil], nil, 0);
+    } else if ([cmd isEqualToString:@"dlreserve"] && arg) {   // Dev: disk reserve in GB (provoke a full disk)
+        [[SFDownloads shared] setStorageReserveForTesting:(unsigned long long)(arg.doubleValue * 1e9)];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"history"]) {
         SFItem *h = [SFHome historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/screenshots: app page

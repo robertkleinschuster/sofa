@@ -13,6 +13,7 @@
 #import "SFIconArt.h"
 #import "SFPairScreen.h"
 #import "SFDownloads.h"
+#import "SFCurl.h"
 #import "SFFollows.h"
 #import "SFWatchLater.h"
 #import "SFEngine.h"
@@ -794,6 +795,22 @@ static NSSet *skipKeys(void) {
             done(j ? online : nil, e);
         }];
     });
+    // still online? oEmbed answers without a player request (bot-flagged IP): 200 = public or
+    // unlisted, 401/403 = exists but embedding off, 400/404 = deleted or private. Used by
+    // "Platz schaffen", one check per video, cached 30 days (SFDownloads+Storage.m).
+    SFAvailabilityCheck oembed = ^(SFItem *item, SFAvailabilityDone done) {
+        NSString *vid = item.externalID ?: restOfID(item.identifier);
+        if (vid.length != 11) { done(-1); return; }
+        SFBackground(^{
+            NSInteger st = 0;
+            NSString *u = [NSString stringWithFormat:@"https://www.youtube.com/oembed?format=json&url=https%%3A%%2F%%2Fwww.youtube.com%%2Fwatch%%3Fv%%3D%@", vid];
+            NSData *d = SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
+            done(st == 200 || st == 401 || st == 403 ? 1 : (st == 400 || st == 404) ? 0 : -1);
+            (void)d;
+        });
+    };
+    SFRegisterAvailabilityCheck(@"yt", oembed);
+    SFRegisterAvailabilityCheck(@"ytlive", oembed);
     // YouTube downloads wait during a bot-check pause (no request, no attempt used up)
     SFRegisterDownloadPause(@"yt", ^NSTimeInterval { return [SFYTBreaker shared].blockedUntil; });
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {

@@ -43,6 +43,34 @@ NSString *SFIconArt(NSString *symbol, NSString *source) {
         [p appendBezierPathWithOvalInRect:NSMakeRect(cx - 100, cy - 100, 200, 200)];
         [p moveToPoint:NSMakePoint(cx, cy + 62)]; [p lineToPoint:NSMakePoint(cx, cy)]; [p lineToPoint:NSMakePoint(cx + 48, cy - 28)];
         [p stroke];
+    } else if ([symbol isEqualToString:@"storage"]) {   // drive with a usage bar ("Platz schaffen")
+        p.lineWidth = 20;
+        [p appendBezierPathWithRoundedRect:NSMakeRect(cx - 115, cy - 70, 230, 140) xRadius:24 yRadius:24];
+        [p stroke];
+        [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(cx - 82, cy - 18, 110, 36) xRadius:12 yRadius:12] fill];
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(cx + 58, cy - 13, 26, 26)] fill];
+    } else if ([symbol isEqualToString:@"check"]) {    // watched
+        [p moveToPoint:NSMakePoint(cx - 80, cy + 5)]; [p lineToPoint:NSMakePoint(cx - 20, cy - 60)]; [p lineToPoint:NSMakePoint(cx + 90, cy + 70)];
+        [p stroke];
+    } else if ([symbol isEqualToString:@"pin"]) {      // "Behalten"
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(cx - 62, cy - 10, 124, 124)] fill];
+        [p moveToPoint:NSMakePoint(cx, cy - 10)]; [p lineToPoint:NSMakePoint(cx, cy - 125)];
+        [p stroke];
+    } else if ([symbol isEqualToString:@"offline"]) {  // no longer online: cloud, struck through
+        NSBezierPath *c = [NSBezierPath bezierPath];
+        [c appendBezierPathWithOvalInRect:NSMakeRect(cx - 120, cy - 70, 120, 120)];
+        [c appendBezierPathWithOvalInRect:NSMakeRect(cx - 55, cy - 40, 150, 150)];
+        [c appendBezierPathWithOvalInRect:NSMakeRect(cx + 20, cy - 70, 110, 110)];
+        [c appendBezierPathWithRect:NSMakeRect(cx - 60, cy - 70, 140, 60)];
+        [c fill];
+        [acc setStroke];
+        NSBezierPath *slash = [NSBezierPath bezierPath];
+        slash.lineWidth = 46; slash.lineCapStyle = NSRoundLineCapStyle;
+        [slash moveToPoint:NSMakePoint(cx - 120, cy - 110)]; [slash lineToPoint:NSMakePoint(cx + 120, cy + 120)];
+        [slash stroke];
+        [fg setStroke];
+        slash.lineWidth = 20;
+        [slash stroke];
     } else {   // az
         NSDictionary *a = @{NSFontAttributeName: [NSFont boldSystemFontOfSize:118], NSForegroundColorAttributeName: fg};
         NSAttributedString *s = [[NSAttributedString alloc] initWithString:@"A–Z" attributes:a];

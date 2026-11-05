@@ -36,15 +36,6 @@ void SFSetSubtitleLanguage(NSString *lang) {
     CFPreferencesSetAppValue(CFSTR("subtitleLanguage"), (__bridge CFStringRef)(lang.length ? lang : nil), SFDomain());
     CFPreferencesAppSynchronize(SFDomain());
 }
-BOOL SFDeleteWatchedDownloads(void) {
-    Boolean valid = false;
-    Boolean v = CFPreferencesGetAppBooleanValue(CFSTR("deleteWatchedDownloads"), SFDomain(), &valid);
-    return valid ? v : YES;
-}
-void SFSetDeleteWatchedDownloads(BOOL on) {
-    CFPreferencesSetAppValue(CFSTR("deleteWatchedDownloads"), on ? kCFBooleanTrue : kCFBooleanFalse, SFDomain());
-    CFPreferencesAppSynchronize(SFDomain());
-}
 BOOL SFSubtitlesSameLanguage(void) {
     return CFPreferencesGetAppBooleanValue(CFSTR("subtitlesSameLanguage"), SFDomain(), NULL);
 }

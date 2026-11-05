@@ -4,6 +4,7 @@
 #import <signal.h>
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
+NSString *const SFDownloadsStorageDidChangeNotification = @"SFDownloadsStorageDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 static NSMutableDictionary *gDLURL;   // prefix -> SFDownloadURLFetcher
@@ -54,10 +55,12 @@ static NSString *ffmpegPath(void) {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
         [st run:@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)" args:nil];
-        // add column failedAt (subscription retry with backoff) to older databases
-        BOOL hasFailedAt = NO;
-        for (NSDictionary *c in [st rows:@"PRAGMA table_info(downloads)" args:nil]) if ([c[@"name"] isEqual:@"failedAt"]) hasFailedAt = YES;
-        if (!hasFailedAt) [st run:@"ALTER TABLE downloads ADD COLUMN failedAt REAL" args:nil];
+        // columns added later: failedAt (retry backoff), keep ("Behalten"), online/onlineAt (cached
+        // availability at the source, "Platz schaffen")
+        NSMutableSet *cols = [NSMutableSet new];
+        for (NSDictionary *c in [st rows:@"PRAGMA table_info(downloads)" args:nil]) if (c[@"name"]) [cols addObject:c[@"name"]];
+        for (NSArray *c in @[@[@"failedAt", @"REAL"], @[@"keep", @"INTEGER DEFAULT 0"], @[@"online", @"INTEGER"], @[@"onlineAt", @"REAL"]])
+            if (![cols containsObject:c[0]]) [st run:[NSString stringWithFormat:@"ALTER TABLE downloads ADD COLUMN %@ %@", c[0], c[1]] args:nil];
         [st run:@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)" args:nil];
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
@@ -79,11 +82,12 @@ static NSString *ffmpegPath(void) {
 - (void)save:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                      args:@[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
                             r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
                             r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
-                            r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null]]];
+                            r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null],
+                            r[@"keep"] ?: @0, r[@"online"] ?: [NSNull null], r[@"onlineAt"] ?: [NSNull null]]];
 }
 
 // Subscription episodes: retry failed downloads with growing intervals (15 min, 30 min, 1 h …,
@@ -245,6 +249,11 @@ static NSString *gb(unsigned long long b) {
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
 }
 
+- (NSDictionary *)recordFor:(NSString *)identifier {
+    NSDictionary *r = identifier ? _recs[identifier] : nil;
+    return [r[@"state"] integerValue] == SFDLDone ? [r copy] : nil;
+}
+
 - (NSString *)storageSummary:(NSString *)source {
     return [NSString stringWithFormat:@"%@ belegt · %@ frei", gb([self bytesUsedFor:source]), gb([self freeBytes])];
 }
@@ -255,7 +264,7 @@ static NSString *gb(unsigned long long b) {
         NSString *rc = [r[@"channel"] length] ? r[@"channel"] : SFUnsortedChannel;
         if (![rc isEqualToString:channel] || (source && ![r[@"source"] isEqualToString:source])) continue;
         SFDLState st = [r[@"state"] integerValue];
-        if (st == SFDLDismissed) continue;
+        if (st == SFDLDismissed || [r[@"keep"] boolValue]) continue;   // "Behalten" survives deleting the show
         [self remove:r[@"id"]];
         n++;
     }
@@ -324,6 +333,8 @@ static NSString *gb(unsigned long long b) {
         [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
     }
     [self changed:identifier];
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsStorageDidChangeNotification object:self];   // "Platz schaffen" follows
+    if (_storageFull) dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });   // room again? (pump re-checks)
 }
 
 - (void)pruneEmptyDirs:(NSString *)dir {
@@ -386,6 +397,7 @@ static NSString *gb(unsigned long long b) {
 - (void)pump {
     if (!_started || _runningID) return;
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
+    if ([self checkStorage]) return;   // below the reserve: wait (SFDownloads+Storage.m re-checks every minute)
     // manual downloads before subscription downloads, oldest request first in each
     NSDictionary *next = nil;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;
@@ -473,7 +485,10 @@ static NSString *gb(unsigned long long b) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             r[@"progress"] = @(p);
-            if (-[lastUI timeIntervalSinceNow] > 2) { lastUI = [NSDate date]; [self changed:ident]; }
+            if (-[lastUI timeIntervalSinceNow] > 2) {
+                lastUI = [NSDate date]; [self changed:ident];
+                [self stopIfDiskRunsOut];   // never fill the disk: stop, back into the queue
+            }
         });
     };
     NSMutableData *errData = [NSMutableData new];
@@ -578,9 +593,9 @@ static const NSTimeInterval kSourceGap = 30;
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
     NSMutableDictionary *r = _recs[ident];
     _task = nil; _runningID = nil;
-    if (r && !ok && [self pausedUntil:r] > [NSDate date].timeIntervalSince1970) {
-        // the source paused itself (YouTube bot check) - not the download's fault: back into the
-        // queue without using up an attempt; pump continues when the pause is over
+    if (r && !ok && ([self pausedUntil:r] > [NSDate date].timeIntervalSince1970 || self.storageFull)) {
+        // the source paused itself (YouTube bot check) or the disk is full - not the download's fault:
+        // back into the queue without using up an attempt; pump continues when the pause is over
         r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
         [self save:r]; [self changed:ident];
         SFLog(@"downloads: %@ deferred (%@)", ident, error);

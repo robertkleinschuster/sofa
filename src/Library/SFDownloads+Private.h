@@ -1,6 +1,8 @@
 // SFDownloads – private part: ivars and shared helpers for SFDownloads.m (persistence,
 // queries, queue, ffmpeg run, actions, migration) and SFDownloads+Subscriptions.m
-// (subscriptions, feeds, retention and smart delete of watched episodes).
+// (subscriptions, feeds) and SFDownloads+Storage.m (storage guard, "Behalten", online checks).
+// Downloads are never deleted automatically (user 2026-11-05: a video may vanish from its source,
+// then the copy is the only one) - only by hand, helped by the "Platz schaffen" page.
 #import "SFDownloads.h"
 #import "SFSettings.h"
 #import "SFStore.h"
@@ -8,6 +10,7 @@
 #import "SFNet.h"
 #import "SFFollows.h"
 #import "SFRuntime.h"
+#import "SFStats.h"
 
 // split a source ID "prefix:rest" (yt:…, zdfshow:…)
 static inline NSString *prefixOf(NSString *ref) { NSRange r = [ref rangeOfString:@":"]; return r.location == NSNotFound ? nil : [ref substringToIndex:r.location]; }
@@ -25,6 +28,11 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
     NSMutableDictionary *_lastStart;   // source prefix -> epoch of its last download start   // pump already scheduled for when a paused source may continue
     NSMutableDictionary *_itemCache; // id -> SFItem (from JSON), invalidated by save:
     NSUInteger _generation;          // storage of the generation property (also for the subscription category)
+    BOOL _storageFull;               // below the reserve (SFDownloads+Storage.m)
+    NSTimer *_storageTimer;          // re-check while full
+    BOOL _checkingOnline;            // an online check run is active
+    NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
+    NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
 }
 - (void)save:(NSDictionary *)r;
 - (void)changed:(NSString *)identifier;
@@ -38,6 +46,12 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
 @end
 
 // Integrity layer (SFDownloads+Integrity.m): orphan reaping, unique part files, verification, audit
+// Storage layer (SFDownloads+Storage.m): disk reserve, "Behalten", online availability
+@interface SFDownloads (StoragePrivate)
+- (BOOL)checkStorage;          // YES = below the reserve: don't start (schedules a re-check, notifies)
+- (void)stopIfDiskRunsOut;     // during a run: stop ffmpeg when the reserve is half used up
+@end
+
 @interface SFDownloads (Integrity)
 - (NSUInteger)reapOrphans;
 - (void)sweepStaleParts;
