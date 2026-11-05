@@ -54,7 +54,10 @@ NSString *SFDotJoinN(NSUInteger n, ...) {
     NSMutableArray *a = [NSMutableArray arrayWithCapacity:n];
     va_list ap;
     va_start(ap, n);
-    for (NSUInteger i = 0; i < n; i++) { NSString *p = va_arg(ap, NSString *); if (p.length) [a addObject:p]; }
+    for (NSUInteger i = 0; i < n; i++) {
+        NSString *p = [va_arg(ap, NSString *) stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (p.length) [a addObject:p];   // API strings carry stray spaces ("WDR ") -> uneven gaps around the dot
+    }
     va_end(ap);
     return [a componentsJoinedByString:@" · "];
 }

@@ -67,10 +67,8 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
         i.kind = SFItemVideo;
         i.identifier = [@"ard:" stringByAppendingString:tid];
         i.resolverRef = i.identifier;
-        NSMutableArray *sub = [NSMutableArray new];
-        if (show && pub) [sub addObject:pub];
-        if (i.date) [sub addObject:SFFormatDateShort(i.date)];
-        i.subtitle = [sub componentsJoinedByString:@" · "];
+        // like ZDF/ORF and the hero: the show (more telling than the broadcaster), else the broadcaster
+        i.subtitle = SFDotJoin(show ?: pub, i.date ? SFFormatDateShort(i.date) : nil);
         NSDate *until = isoDate(str(t[@"availableTo"]));
         if (until && [until timeIntervalSinceNow] < 3 * 86400) i.badge = @"BALD WEG";
     } else if ([type isEqualToString:@"live"]) {
