@@ -50,6 +50,9 @@
     _reloadNotification = [name copy];
     if (name) [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadSoon) name:name object:nil];
 }
+- (void)addReloadNotification:(NSString *)name {
+    if (name) [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadSoon) name:name object:nil];
+}
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
 #pragma mark Layout
@@ -883,7 +886,8 @@ static void auditImages(SFPage *page) {
             CGFloat h1 = [self->_heroTitle sizeToFitWidth:w];
             NSMutableArray *meta = [NSMutableArray new];
             if (it.channel.length && ![it.channel isEqualToString:it.title]) [meta addObject:it.channel];
-            if (it.date) [meta addObject:SFFormatDateShort(it.date)];
+            // a live stream's date is when its page was set up - meaningless; its subtitle (what is on now) says more
+            if (it.date && it.kind != SFItemLive) [meta addObject:SFFormatDateShort(it.date)];
             if (it.duration > 0) [meta addObject:SFFormatDuration(it.duration)];
             if (!meta.count && it.subtitle.length) [meta addObject:it.subtitle];
             if (it.heroMeta.length) { [meta removeAllObjects]; [meta addObject:it.heroMeta]; }

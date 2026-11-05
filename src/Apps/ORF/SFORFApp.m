@@ -382,4 +382,19 @@ static NSArray *listItems(id j) {
     }];
 }
 
+// Home: the start page's "hero" lane (ORF marks its lead placement in the data) + the live channels
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    [self get:@"/page/start" cache:900 done:^(id j, NSError *e) {
+        NSString *hero = nil;
+        for (NSDictionary *l in arr(j)) if ([str(dict(l)[@"type"]) isEqualToString:@"hero"]) { hero = href(dict(dict(l)[@"_links"])[@"self"]); break; }
+        [self liveItems:^(NSArray *live) {
+            if (!hero) { done(live.count ? @{SFHomeTopicLive: live} : nil); return; }
+            NSString *u = [hero stringByAppendingString:[hero rangeOfString:@"?"].location == NSNotFound ? @"?limit=20" : @"&limit=20"];
+            [self get:u cache:900 done:^(id lj, NSError *le) {
+                NSArray *top = [self episodeItems:lj] ?: @[];
+                done(@{SFHomeTopicLive: live ?: @[], SFHomeTopicHighlights: top});
+            }];
+        }];
+    }];
+}
 @end

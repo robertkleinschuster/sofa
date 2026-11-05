@@ -41,6 +41,7 @@ Every item that belongs to your app carries a ref `"<prefix>:<id>"` in `resolver
 | stored items (history …)             | `updateStoredItem:`                                  |
 | phone remote                         | `startRemoteWithHost:`, `stopRemote`, `remoteStatus:`, `remoteStatusNotification` |
 | home page sections                   | `homeSections`                                       |
+| mixed Home rows (Jetzt live, Highlights) | `homeFeatures:` (usually `SFHomeFeaturesFromPage`); set `drm` / `geoRegion` from raw data |
 | dev FIFO commands                    | `handleDevCommand:arg:host:`                         |
 
 Wording: `showsAreChannels = YES` makes shows "Kanäle" with "Videos" and round avatars

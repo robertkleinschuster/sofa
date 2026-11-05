@@ -1,12 +1,14 @@
 // A section (shelf) of Sofa's home page. The shell composes the page from its own sections and
 // the apps' contributions (SFApp homeSections), ordered by priority, stable inside a band:
 //   0 app tiles · 100 Weiterschauen · 200 Später ansehen · 300 Neue Folgen ·
+//   310 Jetzt live · 320 Highlights (both mixed from all apps, SFHomeFeatures) ·
 //   400 Meine Sendungen · 500+ app sections (e.g. YouTube "Meine Kanäle")
 #import "SFModel.h"
 
 enum {
     SFHomePriorityApps = 0, SFHomePriorityContinue = 100, SFHomePriorityWatchLater = 200,
-    SFHomePriorityNew = 300, SFHomePriorityFollows = 400, SFHomePriorityApp = 500
+    SFHomePriorityNew = 300, SFHomePriorityLive = 310, SFHomePriorityHighlights = 320,
+    SFHomePriorityFollows = 400, SFHomePriorityApp = 500
 };
 
 @interface SFHomeSection : NSObject

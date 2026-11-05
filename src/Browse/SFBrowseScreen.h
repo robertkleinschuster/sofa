@@ -9,6 +9,7 @@
 @property (nonatomic, copy) SFPageLoader loader;         // for loading/reloading
 @property (nonatomic) BOOL showsHero;                     // large info area for the focused item
 @property (nonatomic, copy) NSString *reloadNotification;  // reload on this notification
+- (void)addReloadNotification:(NSString *)name;             // a further trigger (kept for the screen's lifetime)
 @property (nonatomic, copy) NSString *folderIdentifier;    // identifier of the open folder (e.g. "zdfshow:…")
 @property (nonatomic, copy) NSString *searchSource;        // header: button "Suche" (Up from the first row)
 // Overlay mode (player info panel): not opaque (the screen below keeps running and stays visible,

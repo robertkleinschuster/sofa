@@ -17,6 +17,12 @@ Einstellungen → „Update installieren“.
   Datum oder Länge fehlen.
 - **media.ccc.de** zeigt jetzt wie die anderen Mediatheken „Meine Sendungen“ mit deinen
   Downloads, sobald du dort etwas heruntergeladen hast.
+- **Startseite: „Jetzt live“ und „Highlights“:** Die Startseite zeigt jetzt gemischte Reihen
+  aus allen Mediatheken – die laufenden Sender (tagesschau24, phoenix, ORF III, 3sat …) und
+  die aktuellen Empfehlungen der Redaktionen. Ein kleines Logo auf jeder Kachel zeigt, woher
+  sie kommt. Sender, die hier nicht laufen (nur in Deutschland verfügbar oder kopiergeschützt),
+  lässt Sofa weg.
+- **Livestreams:** Die große Vorschau zeigt bei Sendern kein sinnloses Datum mehr.
 - **Unter der Haube:** Sofa ist neu gegliedert – jede App (YouTube, ZDF, ARD, ORF,
   media.ccc.de) steckt in einem eigenen Modul mit klarer Schnittstelle. Für dich ändert sich
   nichts, neue Apps lassen sich aber künftig viel leichter ergänzen.

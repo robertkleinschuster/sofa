@@ -69,6 +69,7 @@
                             @"next": @(SFKeyNext), @"prev": @(SFKeyPrev), @"uphold": @(SFKeyUpHold), @"downhold": @(SFKeyDownHold)};
         NSNumber *k = m[arg.lowercaseString];
         if (k) [self.nav sendKey:k.integerValue];
+        else SFLog(@"dev: unknown key %@ (one of: %@)", arg, [m.allKeys componentsJoinedByString:@", "]);
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
     } else if ([cmd isEqualToString:@"mpvset"] && arg) {   // dev: set an mpv property, e.g. "mpvset vid no" (tests self-healing)

@@ -40,6 +40,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     else if (self.playURL) d[@"url"] = self.playURL.absoluteString;   // YouTube URLs expire -> only store without externalID
     if (self.resolverRef) d[@"ref"] = self.resolverRef;
     if (self.drm) d[@"drm"] = @YES;
+    if (self.geoRegion) d[@"geo"] = self.geoRegion;
     return d;
 }
 
@@ -72,6 +73,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     else if (d[@"url"]) i.playURL = [NSURL URLWithString:d[@"url"]];
     i.resolverRef = d[@"ref"];
     i.drm = [d[@"drm"] boolValue];
+    i.geoRegion = d[@"geo"];
     return i;
 }
 
@@ -81,6 +83,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     i.action = self.action; i.tint = self.tint; i.themeName = self.themeName; i.badge = self.badge;
     i.playURL = self.playURL; i.inDownloadsList = self.inDownloadsList; i.streamOnly = self.streamOnly;
     i.playlistID = self.playlistID; i.heroTitle = self.heroTitle; i.heroMeta = self.heroMeta;
+    i.showsSourceMark = self.showsSourceMark;
     return i;
 }
 

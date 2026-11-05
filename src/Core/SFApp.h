@@ -10,6 +10,7 @@
 #import "SFTheme.h"
 #import "SFPlayerHost.h"
 #import "SFHomeSection.h"
+#import "SFHomeFeatures.h"
 
 @class SFNavigator;
 
@@ -38,7 +39,12 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (NSArray *)showRefPrefixes;      // namespaces that are shows/channels: followable, have a page + feed
 + (BOOL)homeIncludesFollows;       // YES: homeLoader shows followed shows/new episodes itself (else the shell adds them)
 + (BOOL)showsAreChannels;
-+ (NSArray *)homeSections;         // SFHomeSection contributions to Sofa's home page (priority >= SFHomePriorityApp)          // YES: shows are "Kanäle" with "Videos" (YouTube), else "Sendungen" with "Folgen"
++ (NSArray *)homeSections;         // SFHomeSection contributions to Sofa's home page (priority >= SFHomePriorityApp)
+// Content for the shared home rows (SFHomeFeatures.h: SFHomeTopicLive, SFHomeTopicHighlights …),
+// merged with the other apps'. done once, any thread: topic -> SFItems in the app's own order of
+// importance; nil/missing topic = nothing this time. Called at launch and every 30 min - use the
+// source's cheap, cached start page data, never one request per item.
++ (void)homeFeatures:(void (^)(NSDictionary *itemsByTopic))done;          // YES: shows are "Kanäle" with "Videos" (YouTube), else "Sendungen" with "Folgen"
 // --- lifecycle ---
 + (void)start;                   // launch (services, warm-up); called once, in registry order
 + (void)stop;                    // quit (best effort, short)

@@ -72,7 +72,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
     for (NSDictionary *m in media) {
         if (![str(m[@"vodMediaType"]) isEqualToString:@"DEFAULT"] && m[@"vodMediaType"]) continue;
         i.duration = [nn(m[@"duration"]) doubleValue];
-        if ([str(m[@"geoLocation"]) isEqualToString:@"DE"]) i.badge = @"DE";
+        if ([str(m[@"geoLocation"]) isEqualToString:@"DE"]) { i.badge = @"DE"; i.geoRegion = @"DE"; }
         break;
     }
     if (live) { i.kind = SFItemLive; i.badge = @"LIVE"; }
@@ -350,7 +350,9 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
     else done(nil, SFError(@"Quelle nicht verfügbar"));
 }
 
-+ (void)resolve_zdf:(NSString *)canonical done:(SFURLDone)done {
+// The stream of a video: best URL, subtitles, and whether it is limited to Germany (raw geoLocation
+// or a /de/ CDN path). No side effects - also used for the region probe of homeFeatures:.
++ (void)stream:(NSString *)canonical done:(void (^)(NSString *url, NSArray *subs, BOOL germanyOnly, NSError *e))done {
 
     NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
     [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {
@@ -359,7 +361,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
         NSDictionary *m = nil;
         for (NSDictionary *x in media) if (!str(x[@"vodMediaType"]) || [str(x[@"vodMediaType"]) isEqualToString:@"DEFAULT"]) { m = x; break; }
         NSString *tpl = str(m[@"ptmdTemplate"]);
-        if (!tpl) { done(nil, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
+        if (!tpl) { done(nil, nil, NO, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
         NSString *url = [@"https://api.zdf.de" stringByAppendingString:[tpl stringByReplacingOccurrencesOfString:@"{playerId}" withString:kPlayer]];
         [self token:^(NSString *tok) {
             [SFNet getJSON:url headers:@{@"Api-Auth": [@"Bearer " stringByAppendingString:tok ?: @""]} cacheAge:0 done:^(id p, NSError *pe) {
@@ -381,24 +383,28 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
                     }
                 }
                 NSString *u = best ?: hls;
-                if (!u) { done(nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
+                if (!u) { done(nil, nil, NO, pe ?: SFError(@"Kein abspielbares Format.")); return; }
                 // subtitles: PTMD captions[] (class hoh = hearing impaired), WebVTT for mpv
                 NSMutableArray *subs = [NSMutableArray new];
                 for (NSDictionary *c in arr(dict(p)[@"captions"])) {
                     if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
                     [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
                 }
-                SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
-                // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
-                if ([u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"]) {
-                    [SFNet checkRegion:u expect:nil done:^(BOOL ok) {
-                        if (ok) done([NSURL URLWithString:u], nil);
-                        else done(nil, SFError(@"Nur in Deutschland verfügbar."));
-                    }];
-                    return;
-                }
-                done([NSURL URLWithString:u], nil);
+                done(u, subs, [u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"], nil);
             }];
+        }];
+    }];
+}
+
++ (void)resolve_zdf:(NSString *)canonical done:(SFURLDone)done {
+    [self stream:canonical done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *e) {
+        if (!u) { done(nil, e); return; }
+        SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
+        if (!germanyOnly) { done([NSURL URLWithString:u], nil); return; }
+        // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
+        [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) {
+            if (ok) done([NSURL URLWithString:u], nil);
+            else done(nil, SFError(@"Nur in Deutschland verfügbar."));
         }];
     }];
 }
@@ -409,5 +415,22 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
     f.pageLoader = [self categoryLoader:[arg substringFromIndex:8] title:@"Test"];
     SFOpenItem([host nav], f, nil, 0);
     return YES;
+}
+// Home: the curated start page (cached) - its first cluster is the editors' lead, the
+// "Livestreams" cluster carries the channels (kind live)
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    [self curatedLoader:@"mt2025-startseite-100" title:nil](^(SFPage *p, NSError *e) {
+        NSDictionary *features = SFHomeFeaturesFromPage(p, 0);
+        // Germany-only items (ZDF itself, ZDFneo, many films) are left out of Home where they can't play:
+        // Home needs to know the region before it shows them - probe one such stream if nobody has yet
+        SFItem *probe = nil;
+        for (NSArray *items in features.allValues)
+            for (SFItem *i in items) if ([i.geoRegion isEqualToString:@"DE"] && SFRefID(i.resolverRef) && !probe) probe = i;
+        if (!probe || [SFNet stateOfRegion:@"DE"] != SFRegionUnknown) { done(features); return; }
+        [self stream:SFRefID(probe.resolverRef) done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *se) {
+            if (!u || !germanyOnly) { done(features); return; }
+            [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) { done(features); }];
+        }];
+    });
 }
 @end

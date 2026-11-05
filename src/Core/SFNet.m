@@ -6,6 +6,7 @@
 #import <SystemConfiguration/SystemConfiguration.h>
 
 NSString *const SFNetOnlineDidChangeNotification = @"SFNetOnlineDidChange";
+NSString *const SFNetRegionDidChangeNotification = @"SFNetRegionDidChange";
 static BOOL gOnline = YES;
 static SCNetworkReachabilityRef gReach;
 
@@ -133,6 +134,29 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
     NSString *key = [NSString stringWithFormat:@"POST %@ %@", url, b ? [[NSString alloc] initWithData:b encoding:NSUTF8StringEncoding] : @""];
     [self request:r cacheKey:key cacheAge:age done:done];
 }
+static NSString *regionKey(NSString *region) { return [@"geo.region." stringByAppendingString:region]; }
+
++ (SFRegionState)stateOfRegion:(NSString *)region {
+    if (!region.length) return SFRegionInside;   // not limited
+    NSArray *v = [[[SFStore shared] setting:regionKey(region)] componentsSeparatedByString:@" "];   // "<0|1> <epoch>"
+    if (v.count != 2 || [NSDate date].timeIntervalSince1970 - [v[1] doubleValue] > 86400) return SFRegionUnknown;
+    return [v[0] isEqualToString:@"1"] ? SFRegionInside : SFRegionOutside;
+}
+
++ (void)checkRegion:(NSString *)url expect:(NSString *)expect region:(NSString *)region done:(void (^)(BOOL))done {
+    [self checkRegion:url expect:expect done:^(BOOL ok) {
+        if (region.length) {
+            SFRegionState before = [self stateOfRegion:region];
+            [[SFStore shared] setSetting:[NSString stringWithFormat:@"%d %.0f", ok, [NSDate date].timeIntervalSince1970] forKey:regionKey(region)];
+            if (before != (ok ? SFRegionInside : SFRegionOutside)) {
+                SFLog(@"geo: device %@ %@", ok ? @"inside" : @"outside", region);
+                [[NSNotificationCenter defaultCenter] postNotificationName:SFNetRegionDidChangeNotification object:nil];
+            }
+        }
+        done(ok);
+    }];
+}
+
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect done:(void (^)(BOOL))done {
     static NSMutableDictionary *cache;   // url -> @[@(allowed), date]
     static dispatch_once_t o; dispatch_once(&o, ^{ cache = [NSMutableDictionary new]; });

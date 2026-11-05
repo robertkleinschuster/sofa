@@ -175,6 +175,17 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 1/16 steps, HUD), holding repeats. Play/Pause = playback. Long-press detection in the helper
 (timing), the web viewer maps exactly these buttons. No feature may require keyboard/mouse
 (text input for search → own on-screen keyboard).
+- 2026-11-05: **Mixed Home rows from all apps** (user: apps feature content on Home, mixed lists
+  filled from several apps). Concept: topics defined in Core ("Jetzt live", "Highlights"), apps
+  contribute per topic (`homeFeatures:`), structurally from their start page (live = kind live,
+  highlights = the editors' lead shelf; no title heuristics), merged round-robin in registry
+  order, app logo on every tile, stored + refreshed every 30 min. Home only offers what plays
+  here: `drm` and items whose `geoRegion` the device is outside of are left out (region state
+  learned from geo checks, ZDF probes once). Found while testing: Das Erste outside DE is NOT
+  blocked (302 to the `int` feed, `isGeoBlocked` only means "programmes partly replaced") ->
+  ARD needs no region; ZDF `/de/` paths are hard 403. Next topic candidates: "Nachrichten"
+  (tagesschau API / ZDF heute / ORF ZIB from proper raw sources), Dokus/Filme; YouTube stays out
+  (bot-flagged IP, keep requests minimal).
 
 ## Backlog (user requests — queue, tick off when done)
 - [x] 2026-11-05 **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05; done: SFDownloads+Storage.m, SFHome+Downloads.m "Platz schaffen", test-downloads 6+7):

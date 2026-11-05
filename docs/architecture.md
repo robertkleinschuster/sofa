@@ -74,9 +74,23 @@ and hands it to remotes and to app dev commands (`handleDevCommand:arg:host:`).
 
 Sofa's home page is a list of `SFHomeSection`s (`src/Core/SFHomeSection.h`: id, title,
 priority, tile style, grid, items block). `SFHome homeSections` (Shell) contributes the
-app tiles (0), Weiterschauen (100), Später ansehen (200), Neue Folgen (300) and Meine
-Sendungen (400); apps add theirs through `homeSections` (500+, e.g. YouTube "Meine Kanäle"
-as circles). Sections are sorted by priority (stable) and empty ones disappear.
+app tiles (0), Weiterschauen (100), Später ansehen (200), Neue Folgen (300), the mixed rows
+"Jetzt live" (310) and "Highlights" (320), and Meine Sendungen (400); apps add theirs through
+`homeSections` (500+, e.g. YouTube "Meine Kanäle" as circles). Sections are sorted by
+priority (stable) and empty ones disappear.
+
+Mixed rows (`src/Core/SFHomeFeatures.h`): apps feature content on Home through the optional
+`homeFeatures:` – items per *topic* (`SFHomeTopicLive`, `SFHomeTopicHighlights`; topics are
+defined in Core, a topic is a promise about what the row means). Most apps derive them
+structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
+`SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
+items), merges per topic round-robin in registry order (fair: every app gets a place at the
+front; max 6 per app in Highlights), stores the rows (Home shows them at once after a launch)
+and refreshes every 30 min and when the network returns. Tiles in mixed rows carry the app
+logo (`SFItem.showsSourceMark`). Home only offers what plays here: no `drm` items and no
+items whose `geoRegion` (raw source data, e.g. ZDF `geoLocation`) the device is known to be
+outside of (`SFNet stateOfRegion:` – learned from every `checkRegion:…region:`, stored 24 h;
+an app that features region-limited items probes once if the state is unknown).
 An app's start page is framed the same way for every app (`SFHome appScreen:`): the app's
 `homeLoader` shelves + followed shows/Neue Folgen (unless `homeIncludesFollows`) + Später
 ansehen + the Suche tile and header button.

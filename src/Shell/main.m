@@ -9,6 +9,7 @@
 #import "SFScreen.h"
 #import "SFHome.h"
 #import "SFTileStatus.h"
+#import "SFHomeFeatures.h"
 #import "SFCurl.h"
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
@@ -86,6 +87,7 @@ static uint16_t gPort = 8765;
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
     [[SFFollows shared] start];   // after the apps (feeds)
+    [[SFHomeFeatures shared] start];   // live + highlights rows of Home (after the apps)
     [SFLibraryPages watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
     // remote control services (phone pairing): real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)

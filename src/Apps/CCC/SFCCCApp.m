@@ -189,4 +189,12 @@ static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offs
         });
     };
 }
+// Home: this year's most watched talks (the API's own ranking)
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    NSInteger year = [[NSCalendar currentCalendar] component:NSCalendarUnitYear fromDate:[NSDate date]];
+    [SFNet getJSON:[NSString stringWithFormat:@"%@/events/popular?year=%ld", kAPI, (long)year] headers:nil cacheAge:6 * 3600 done:^(id j, NSError *e) {
+        NSArray *items = [self eventItems:dict(j)[@"events"]];
+        done(items.count ? @{SFHomeTopicHighlights: items} : nil);
+    }];
+}
 @end

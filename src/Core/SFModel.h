@@ -36,6 +36,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *source;          // theme ID of the origin
 @property (nonatomic, copy) NSString *badge;           // "LIVE", "NEU", "UT", ...
 @property (nonatomic) BOOL drm;                        // copy-protected: not playable on 10.9 (no "Abspielen", selecting → notice)
+@property (nonatomic, copy) NSString *geoRegion;       // ISO country the stream is limited to (raw source data), nil = everywhere; see SFNet regionAllowed:
 @property (nonatomic, strong) NSDate *date;
 @property (nonatomic) NSTimeInterval duration;
 @property (nonatomic) SFTileStyle style;
@@ -56,6 +57,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *showRef;         // show/channel of the episode ("ytchannel:UC…", "zdfshow:…") → "Zur Sendung"
 @property (nonatomic) BOOL imageFit;
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
+@property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps)
 @property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // fit the image instead of filling (logos)
 
 - (NSDictionary *)dictionaryRepresentation;

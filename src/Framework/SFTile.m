@@ -147,6 +147,25 @@ static id<SFTileStatusSource> gStatus;
             [holder addSublayer:_badgeBg];
         }
 
+        // source mark top right: rows mixed from several apps say where an item comes from. The
+        // logo file is named like the item's source (res/logos/<source>.png); white pill because
+        // the original logos are made for white ground.
+        CGImageRef mark = item.showsSourceMark && item.source.length ? SFLogoImage(item.source, SFLogoOriginal) : NULL;
+        if (mark) {
+            CGFloat lh = U(22), lw = MIN(U(96), lh * CGImageGetWidth(mark) / MAX((size_t)1, CGImageGetHeight(mark)));
+            CALayer *pill = [CALayer layer];
+            pill.backgroundColor = [NSColor colorWithDeviceWhite:1 alpha:0.94].CGColor;
+            pill.cornerRadius = U(6);
+            pill.frame = CGRectMake(w - lw - U(16) - U(12), U(12), lw + U(16), lh + U(10));
+            pill.shadowOpacity = 0.35; pill.shadowRadius = U(4); pill.shadowOffset = CGSizeMake(0, -U(1));
+            CALayer *lg = [CALayer layer];
+            lg.contents = (__bridge id)mark;
+            lg.contentsGravity = kCAGravityResizeAspect;
+            lg.frame = CGRectMake(U(8), U(5), lw, lh);
+            [pill addSublayer:lg];
+            [holder addSublayer:pill];
+        }
+
         // duration bottom right
         if (item.duration > 0 && (st == SFTileStyleLandscape)) {
             _duration = [SFLabel labelWithFont:[theme medium:19] color:[NSColor whiteColor]];

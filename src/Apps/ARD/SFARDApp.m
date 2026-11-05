@@ -307,4 +307,11 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     }];
 }
 
+// Home: the gateway start page (same cached request as homeLoader) - first widget = the editors'
+// lead, live widgets carry the TV channels
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    [SFNet getJSON:[kGW stringByAppendingString:@"/pages/ard/home?embedded=true"] headers:nil cacheAge:600 done:^(id j, NSError *e) {
+        done([j isKindOfClass:[NSDictionary class]] ? SFHomeFeaturesFromPage([self pageFromGateway:j title:nil], 0) : nil);
+    }];
+}
 @end

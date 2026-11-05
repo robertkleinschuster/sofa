@@ -51,6 +51,13 @@
         for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
         return latest;
     }]];
+    // what the apps feature, merged across apps (SFHomeFeatures): live TV of every broadcaster, then the editors' picks
+    [r addObject:[SFHomeSection section:@"live" title:@"Jetzt live" priority:SFHomePriorityLive style:SFTileStyleLandscape items:^NSArray *{
+        return [[SFHomeFeatures shared] itemsForTopic:SFHomeTopicLive];
+    }]];
+    [r addObject:[SFHomeSection section:@"highlights" title:@"Highlights" priority:SFHomePriorityHighlights style:SFTileStyleLandscape items:^NSArray *{
+        return [[SFHomeFeatures shared] itemsForTopic:SFHomeTopicHighlights];
+    }]];
     // followed shows; apps whose shows are channels present theirs in their own section (homeSections)
     [r addObject:[SFHomeSection section:@"follows" title:@"Meine Sendungen" priority:SFHomePriorityFollows style:SFTileStyleLandscape items:^NSArray *{
         NSMutableArray *tv = [NSMutableArray new];
@@ -83,6 +90,7 @@
         SFOpenItem(ws.navigator, item, items, idx);
     };
     [SFLibraryPages reloadOnLibraryChange:s];
+    [s addReloadNotification:SFHomeFeaturesDidChangeNotification];   // live/highlights rows refreshed
     return s;
 }
 
