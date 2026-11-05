@@ -13,6 +13,8 @@
 // Autocomplete (suggestqueries-clients6.youtube.com, plain GET); done on main, never nil
 + (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;
 + (SFItem *)itemForVideoID:(NSString *)vid;                     // placeholder (local copy, if present)
+// Video known by title/thumbnail only (end screen tile); the local copy, if present, is preferred
++ (SFItem *)itemForVideoID:(NSString *)vid title:(NSString *)title thumb:(NSString *)thumb;
 + (void)upNextFor:(NSString *)videoID done:(void (^)(SFItem *next))done;   // "up next" (recommendation, without Shorts/live/watched)
 // Related videos of the watch page (no Shorts < 90 s, not the video itself); done on main, never nil
 + (void)relatedFor:(NSString *)videoID done:(void (^)(NSArray *items))done;

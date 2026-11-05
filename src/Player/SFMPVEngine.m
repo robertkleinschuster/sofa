@@ -497,6 +497,10 @@ static void onWakeup(void *ctx) {
 - (NSTimeInterval)currentTime { return _time > 0 ? _time : 0; }
 - (NSTimeInterval)duration { return _dur > 0 ? _dur : 0; }
 - (NSTimeInterval)bufferedUntil { return _cacheTime; }
+- (CGSize)videoSize {
+    double w = [[self prop:@"dwidth"] doubleValue], h = [[self prop:@"dheight"] doubleValue];
+    return w > 0 && h > 0 ? CGSizeMake(w, h) : CGSizeZero;
+}
 - (void)setMuted:(BOOL)m { _muted = m; if (_mpv) mpv_set_property_string(_mpv, "mute", m ? "yes" : "no"); }
 
 - (void)play { if (_mpv) mpv_set_property_string(_mpv, "pause", "no"); }

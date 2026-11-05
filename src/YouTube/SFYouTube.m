@@ -587,6 +587,10 @@ static NSSet *skipKeys(void) {
     return [self videoItem:vid title:@"YouTube" channel:nil channelID:nil meta:nil thumb:nil duration:0 live:NO];
 }
 
++ (SFItem *)itemForVideoID:(NSString *)vid title:(NSString *)title thumb:(NSString *)thumb {
+    return [self videoItem:vid title:title.length ? title : @"YouTube" channel:nil channelID:nil meta:nil thumb:thumb.length ? thumb : nil duration:0 live:NO];
+}
+
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done {
     if (item.localPath || !item.externalID) { if (done) done(); return; }
     [self call:@"player" body:@{@"videoId": item.externalID, @"contentCheckOk": @YES, @"racyCheckOk": @YES} cache:3600 done:^(id j, NSError *e) {

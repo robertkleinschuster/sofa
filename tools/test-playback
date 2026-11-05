@@ -14,8 +14,12 @@
 #   6. a remembered subtitle preference is applied automatically
 #   7. a stream that stops delivering mid-playback is detected (stall watchdog) and handled
 #      (2026-11-05: a dead SABR sidecar left mpv hanging in a seek forever, no error event)
-#   8. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
-#   9. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
+#   8. YouTube end screen (fake /open data via the dev command, offline, no YouTube request):
+#      tiles follow the timeline (also while paused), DOWN enters, arrows move, follow toggles,
+#      MENU leaves without touching playback, OK on a video plays it (a "downloaded" test video),
+#      the end of the video waits while the tiles have focus
+#   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
+#  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
 #      media) a YouTube live plays through the sidecar's HLS playlist, not yt-dlp
 #
 #   tools/test-playback            all checks
@@ -55,7 +59,12 @@ since() { sed -n "$1,\$p" "$LOG"; }   # log lines from line $1 on
 mark() { wc -l < "$LOG" | tr -d ' '; }
 keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS/"; return 0; }
 mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
-cleanup() { [ -n "$APP" ] && kill $APP 2>/dev/null; sqlite3 "$DEVDB" "delete from downloads where id='$ORF' and path like '$T/%';" 2>/dev/null; rm -rf "$T"; }
+ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
+cleanup() {
+  [ -n "$APP" ] && kill $APP 2>/dev/null
+  sqlite3 "$DEVDB" "delete from downloads where (id='$ORF' or id like 'yt:esTestVid0%') and path like '$T/%'; delete from follows where id='ytchannel:$ESCH';" 2>/dev/null
+  rm -rf "$T"
+}
 trap cleanup EXIT
 SQL=/opt/local/bin/sqlite3; sqlite3() { "$SQL" "$@"; }
 
@@ -130,8 +139,50 @@ since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable fa
 kill $SRV 2>/dev/null
 stop
 
+echo "==> 8. YouTube end screen (fake data, offline)"
+# thumbnails + a "downloaded" copy of the first tile's video: OK on it plays a local file, no network
+"$FF" -hide_banner -loglevel error -y -f lavfi -i mandelbrot=size=640x360 -frames:v 1 "$T/es1.png"
+"$FF" -hide_banner -loglevel error -y -f lavfi -i smptehdbars=size=640x360 -frames:v 1 "$T/es2.png"
+"$FF" -hide_banner -loglevel error -y -f lavfi -i "cellauto=size=300x300:rule=110" -frames:v 1 "$T/esav.png"
+cp "$T/local.mp4" "$T/endvid.mp4"
+sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}','$T/endvid.mp4',2,1,strftime('%s','now'));"
+ES='[{"style":"VIDEO","videoId":"esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es1.png"},'\
+'{"style":"VIDEO","videoId":"esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es2.png"},'\
+'{"style":"SUBSCRIBE","browseId":"'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":7000,"endMs":0,"image":"'$T'/esav.png"}]'
+waitlog() { for i in $(seq 1 ${3:-40}); do since $1 | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
+export SOFA_OFFLINE=1
+start
+m=$(mark); cmd "playlist $T/local.mp4"; sleep 2; cmd "endscreen $ES"
+waitlog $m 'endscreen: 3 tiles from 6.0 s' && ok "end screen data taken over" || bad "no end screen tiles: $(since $m | grep 'endscreen' | tail -2)"
+waitlog $m 'endscreen: shown at' 60
+at=$(since $m | grep 'endscreen: shown at' | head -1 | sed 's/.*shown at \([0-9.]*\) s/\1/')
+awk "BEGIN{exit !($at >= 6.0 && $at < 8)}" 2>/dev/null && ok "tiles appear at the first startMs ($at s)" || bad "tiles appeared at '$at' (want 6 s)"
+since $m | grep -q 'endscreen: video rect {{0, 0}, {1920, 1080}}' && ok "tiles placed over the video rect" || bad "video rect: $(since $m | grep 'video rect' | tail -1)"
+sleep 1.5; cmd "shot $T/endscreen.png"; sleep 1.5; [ -s "$T/endscreen.png" ] && { ok "end screen rendered"; keep "$T/endscreen.png"; } || bad "no end screen screenshot"
+m=$(mark); cmd "key down"; sleep 0.4; cmd "key right"; sleep 0.4; cmd "key left"; sleep 0.4; cmd "key down"; sleep 0.6
+since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q '0 (VIDEO) 1 (VIDEO) 0 (VIDEO) 2 (SUBSCRIBE)' \
+  && ok "DOWN enters, arrows move spatially" || bad "focus path: $(since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ')"
+cmd "shot $T/endscreen-focus.png"; sleep 1.5; keep "$T/endscreen-focus.png"
+m=$(mark); cmd "key select"; sleep 0.6; cmd "key select"; sleep 0.6
+since $m | grep -q 'follows: + Endscreen-Testkanal' && since $m | grep -q "follows: - ytchannel:$ESCH" && ok "follow tile follows and unfollows" || bad "follow toggle: $(since $m | grep 'follows' | tail -2)"
+m=$(mark); cmd "key menu"; sleep 0.6; cmd "mpvprop time-pos"; sleep 0.5; t1=$(mpvtime $m); sleep 1.5; m2=$(mark); cmd "mpvprop time-pos"; sleep 0.5; t2=$(mpvtime $m2)
+since $m | grep -q 'endscreen: left the tiles' && ok "MENU leaves the tiles" || bad "MENU did not leave the tiles"
+awk "BEGIN{exit !($t2 > $t1 + 0.5)}" 2>/dev/null && ok "playback goes on after leaving ($t1 -> $t2 s)" || bad "playback stopped after MENU ($t1 -> $t2)"
+m=$(mark); cmd "key play"; sleep 0.8; cmd "key prev"; waitlog $m 'endscreen: hidden' && ok "seeking back before the end screen hides it (paused)" || bad "tiles stayed after seeking back"
+cmd "key play"
+m=$(mark); waitlog $m 'endscreen: shown at' 60; cmd "key down"; sleep 0.4; cmd "key select"
+waitlog $m 'player: play endvid.mp4' && ok "OK on a video tile plays it" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
+m=$(mark); cmd "playlist $T/local.mp4"; sleep 2; cmd "endscreen $ES"; sleep 0.5
+for k in right right right left; do cmd "key $k"; sleep 0.3; done   # one jump of +80 s -> ~8 s before the end
+waitlog $m 'endscreen: shown at' 20; cmd "key down"
+waitlog $m 'ended while in the end screen' 80 && ok "the end waits while the tiles have focus" || bad "end did not wait: $(since $m | grep 'player:\|endscreen' | tail -2)"
+sleep 1.5; since $m | grep -q 'player: end ->' && bad "end flow ran while the tiles had focus" || ok "no up-next/leave under the tiles"
+m2=$(mark); cmd "key menu"; waitlog $m2 'player: end -> leaving' 12 && ok "leaving the tiles finishes the end" || bad "end flow did not run after MENU"
+stop
+unset SOFA_OFFLINE
+
 if [ -n "${SOFA_YT_LIVE:-}" ]; then
-  echo "==> 8. SABR playback + sidecar crash (YouTube media)"
+  echo "==> 9. SABR playback + sidecar crash (YouTube media)"
   start
   m=$(mark); cmd "play yt:OzCYsIrrRyw"; sleep 10
   since $m | grep -q 'sabr: opened OzCYsIrrRyw' && ok "opened via SABR" || bad "not via SABR: $(since $m | grep 'sabr\|yt:' | tail -2)"
@@ -146,7 +197,7 @@ fi
 
 if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then
   L=$SOFA_YT_LIVE_STREAM
-  echo "==> 9. YouTube live via the sidecar (HLS)"
+  echo "==> 10. YouTube live via the sidecar (HLS)"
   start
   m=$(mark); cmd "play ytlive:$L"
   for i in $(seq 1 60); do since $m | grep -q "sabr: opened $L\|SABR live unavailable\|resolve failed" && break; sleep 0.5; done

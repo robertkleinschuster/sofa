@@ -41,6 +41,9 @@ typedef NS_ENUM(NSInteger, SFEngineStatus) {
 - (void)close;                    // stop playback (engine stays usable)
 - (void)shutdown;                 // release for good - call BEFORE letting go (mpv: detach thread callbacks)
 @optional
+// Display size of the video (aspect-corrected pixels), CGSizeZero while unknown. The video layer
+// letterboxes into its bounds; overlays tied to the picture (YouTube end screen) need the real rect.
+- (CGSize)videoSize;
 // Audio/subtitle tracks (mpv only). type = @"audio" | @"sub". Entries: id (NSNumber), lang, title,
 // selected (BOOL), url (external tracks only).
 - (NSArray *)tracksOfType:(NSString *)type;

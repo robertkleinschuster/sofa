@@ -97,6 +97,7 @@ static AVPlayerLayer *sharedLayer(void) {
     }
     return buf;
 }
+- (CGSize)videoSize { return _pitem ? _pitem.presentationSize : CGSizeZero; }
 - (void)setMuted:(BOOL)m { _muted = m; _player.muted = m; }
 @synthesize muted = _muted;
 

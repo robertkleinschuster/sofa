@@ -34,6 +34,11 @@ typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnd
 - (void)adoptQueue:(NSArray *)items index:(NSUInteger)i;
 @end
 
+@interface SFPlayerScreen (EndscreenDev)   // SFPlayerScreen+Endscreen.m
+// dev: replace the YouTube end screen elements of the running source (nil = none), as /open delivers them
+- (void)devSetEndscreen:(NSArray *)elements;
+@end
+
 @interface SFPlayerScreen (Subtitles)   // SFPlayerScreen+Tracks.m
 // Subtitles (phone): object = SFPlayerScreen, userInfo = -subtitleState (empty = off); on every choice
 // (menu, remembered language, phone - a rejected phone choice also confirms the real state this way)

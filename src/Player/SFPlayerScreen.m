@@ -26,6 +26,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         _queue = queue;
         _index = index;
         _seekBase = -1;
+        _esFocus = -1;
     }
     return self;
 }
@@ -151,6 +152,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_message.maxLines = 4;
         [L addSublayer:self->_message];
     });
+    [self esLayout];
     [self updateTitles];
 }
 
@@ -224,6 +226,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (void)startItem {
     _ended = NO; _failed = NO;
+    [self esReset];
     if (_item != _lastStartedItem) { _reresolved = NO; _sabrRetried = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
@@ -543,6 +546,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     }
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];
+    [self esUpdate];
     if (_spinner && _engine.status == SFEngineReady && _engine.likelyToKeepUp) [self showSpinner:NO];
 }
 
@@ -650,8 +654,9 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
 - (void)updatePauseState {
     [self postState];
     BOOL paused = _engine && !_engine.playing && !_ended && !_failed && _engine.status == SFEngineReady;
-    SFAnimate(0.2, ^{ self->_pauseIcon.opacity = paused ? 1 : 0; });
-    if (paused) { [self showOSD:YES autoHide:NO]; [self setAssertion:NO]; }
+    BOOL tiles = [self esEngaged];   // choosing among end screen tiles: no OSD/pause icon over them
+    SFAnimate(0.2, ^{ self->_pauseIcon.opacity = paused && !tiles ? 1 : 0; });
+    if (paused) { if (!tiles) [self showOSD:YES autoHide:NO]; [self setAssertion:NO]; }
     else if (_engine.playing) {
         [self setAssertion:YES];
         if (_osdVisible && !_osdTimer && _pendingSeek == 0)
@@ -725,7 +730,17 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     [self postState];
     [self saveProgress];
     [self setAssertion:NO];
+    // choosing among the end screen tiles: don't pull the video away under them; the end flow
+    // runs when they leave the tiles (SFPlayerScreen+Endscreen.m)
+    if ([self esEngaged]) { _esEndDeferred = YES; SFLog(@"player: ended while in the end screen - waiting"); return; }
+    [self esUpdate];   // the "up next" card takes over from the tiles
+    [self finishEnd];
+}
+
+- (void)finishEnd {
+    _esEndDeferred = NO;
     SFItem *next = [self nextItem];
+    SFLog(@"player: end -> %@", next ? [@"up next: " stringByAppendingString:next.title ?: @"?"] : @"leaving");
     if (!next) {
         if (self.navigator.top == self) [self.navigator pop];   // else: an overlay is open, see didAppear
         return;
@@ -834,6 +849,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         if (key == SFKeySelect || key == SFKeyPlayPause) { [self playNext]; return YES; }
         if (key == SFKeyMenu) { [_nextTimer invalidate]; _nextTimer = nil; [self.navigator pop]; return YES; }
     }
+    if ([self esHandleKey:key]) return YES;   // end screen tiles (only DOWN enters them)
     switch (key) {
         case SFKeyPlayPause: [self togglePause]; return YES;
         case SFKeySelect:
@@ -849,8 +865,8 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
         case SFKeyPrev: [self seekBy:-120]; return YES;
         case SFKeyNext: [self seekBy:120]; return YES;
         // up/down (+/- on the remote ring) = system volume, holding repeats
-        case SFKeyUp: case SFKeyUpHold: [self.navigator volumeStep:+1]; return YES;
-        case SFKeyDown: case SFKeyDownHold: [self.navigator volumeStep:-1]; return YES;
+        case SFKeyUp: case SFKeyUpHold: _lastVolumeAt = [NSDate date]; [self.navigator volumeStep:+1]; return YES;
+        case SFKeyDown: case SFKeyDownHold: _lastVolumeAt = [NSDate date]; [self.navigator volumeStep:-1]; return YES;
         case SFKeyMenu:
             if (_pendingSeek != 0) { _pendingSeek = 0; [_seekTimer invalidate]; [self updateBar]; return YES; }
             [self saveProgress];

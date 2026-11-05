@@ -83,6 +83,10 @@
         id eng = [self topPlayer].engineForDiagnostics;
         if ([eng isKindOfClass:[SFMPVEngine class]])
             for (NSString *k in [arg componentsSeparatedByString:@","]) SFLog(@"dev: mpv %@ = %@", k, [(SFMPVEngine *)eng prop:k]);
+    } else if ([cmd isEqualToString:@"endscreen"] && arg) {   // Dev: fake YouTube end screen on the running video: endscreen <json array>|off
+        id j = [arg isEqualToString:@"off"] ? nil : [NSJSONSerialization JSONObjectWithData:[arg dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        if (j && ![j isKindOfClass:[NSArray class]]) { SFLog(@"dev: endscreen needs a JSON array"); return; }
+        [[self topPlayer] devSetEndscreen:j];
     } else if ([cmd isEqualToString:@"frameshot"] && arg) {   // Dev: real mpv frame from the GL framebuffer
         SFMPVDevFrameShot(arg);
     } else if ([cmd isEqualToString:@"home"]) {

@@ -1,0 +1,652 @@
+// SFPlayerScreen - YouTube end screen: the tiles a creator places over the last seconds of a video
+// (other videos, a playlist, channels, a follow button), at the creator's positions over the picture.
+//
+// Data: the SABR sidecar's /open answer carries `endscreen` (res/sofa-yt/lib/youtube.mjs
+// endscreenElements) and lands in the mpv source dict of the open URL; no request of its own here,
+// only the thumbnails are loaded (and only once a tile is about to show).
+//
+// Remote (7 buttons), never stealing normal playback keys unexpectedly:
+//  - tiles appear (subtle) with a hint "[▼] Empfehlungen des Kanals" above them; all keys keep
+//    their player meaning, except DOWN, which moves the focus into the tiles - unless the viewer is
+//    just adjusting the volume (DOWN within 2 s of a volume step stays volume)
+//  - with focus: arrows move spatially between tiles, OK opens (video plays here, playlist plays as
+//    playlist, channel -> channel page, follow toggles following), MENU (or UP at the top) goes back
+//    to normal playback; Play/Pause keeps working; the hint names what OK will do
+//  - the tiles follow the timeline (each element its own window; seeking back hides them, also
+//    while paused); at the end of the video the "Als Nächstes" card takes over - unless the
+//    viewer is choosing among the tiles: then the end flow waits until they leave the tiles
+#import "SFPlayerScreen+Private.h"
+#import "SFPlayerInfoScreen.h"
+#import "SFBrowseScreen.h"
+#import "SFFollows.h"
+
+static NSString *const kVideo = @"VIDEO", *const kPlaylist = @"PLAYLIST", *const kChannel = @"CHANNEL", *const kSubscribe = @"SUBSCRIBE";
+
+#pragma mark - Tile
+
+@interface SFEndTile : CALayer
+@property (nonatomic, strong) NSDictionary *element;
+@property (nonatomic, copy) NSString *kind;   // VIDEO, PLAYLIST, CHANNEL, SUBSCRIBE
+@property (nonatomic) double startS, endS;   // visibility window (s); endS 0 = until the end
+@property (nonatomic) BOOL shownNow;
+@property (nonatomic) BOOL focused;
+@property (nonatomic) BOOL following;        // SUBSCRIBE: current follow state
+@property (nonatomic, readonly) BOOL round;
+- (void)buildWithTheme:(SFTheme *)theme;
+- (void)loadImage;
+- (void)setLook:(BOOL)engaged focused:(BOOL)focused bounds:(CGRect)limit;
+- (NSString *)elementTitle;
+- (NSString *)okAction;                      // what OK does, for the hint
+- (CGRect)captionFrame;                      // focused round tile: its name caption (superlayer coords), else null
+@end
+
+@implementation SFEndTile {
+    SFTheme *_theme;
+    CALayer *_holder;            // shadow carrier
+    SFImageLayer *_image;
+    CAGradientLayer *_shade;     // under the title (video/playlist)
+    SFLabel *_title;             // focused video/playlist: title over the thumbnail
+    CALayer *_chip; SFLabel *_chipLabel;   // playlist marker / follow pill
+    CALayer *_ring;
+    CALayer *_caption; SFLabel *_capName, *_capAction;   // round tiles: name + action below (focused)
+}
+
+- (BOOL)round { return [_kind isEqualToString:kChannel] || [_kind isEqualToString:kSubscribe]; }
+
+- (NSString *)elementTitle {
+    NSString *t = _element[@"title"];
+    return [t isKindOfClass:[NSString class]] && t.length ? t : nil;
+}
+
+- (CGRect)captionFrame {
+    if (!_focused || !_caption) return CGRectNull;
+    return [self convertRect:_caption.frame toLayer:self.superlayer];
+}
+
+- (NSString *)okAction {
+    if ([_kind isEqualToString:kVideo]) return @"abspielen";
+    if ([_kind isEqualToString:kPlaylist]) return @"Playlist abspielen";
+    if ([_kind isEqualToString:kChannel]) return @"zum Kanal";
+    return _following ? @"nicht mehr folgen" : @"folgen";
+}
+
+- (void)buildWithTheme:(SFTheme *)theme {
+    _theme = theme;
+    CGSize sz = self.bounds.size;
+    CGFloat corner = self.round ? sz.width / 2 : U(10);
+    _holder = [CALayer layer];
+    _holder.frame = self.bounds;
+    _holder.cornerRadius = corner;
+    _holder.backgroundColor = [NSColor colorWithDeviceWhite:0.12 alpha:1].CGColor;
+    _holder.shadowColor = CGColorGetConstantColor(kCGColorBlack);
+    _holder.shadowOpacity = 0.6; _holder.shadowRadius = U(14); _holder.shadowOffset = CGSizeMake(0, U(4));
+    [self addSublayer:_holder];
+    _image = [SFImageLayer layer];
+    _image.frame = self.bounds;
+    _image.cornerRadius = corner; _image.masksToBounds = YES;
+    _image.contentsGravity = kCAGravityResizeAspectFill;
+    _image.placeholderColor = [NSColor colorWithDeviceWhite:0.16 alpha:1];
+    if (self.round) { _image.borderWidth = U(3); _image.borderColor = [NSColor colorWithDeviceWhite:1 alpha:0.85].CGColor; }
+    [_holder addSublayer:_image];
+
+    if (!self.round) {
+        // title over the lower part of the thumbnail, only while focused (YouTube's hover look)
+        _shade = [CAGradientLayer layer];
+        _shade.frame = CGRectMake(0, sz.height * 0.35, sz.width, sz.height * 0.65);
+        _shade.colors = @[(id)[NSColor colorWithDeviceWhite:0 alpha:0].CGColor, (id)[NSColor colorWithDeviceWhite:0 alpha:0.88].CGColor];
+        _shade.opacity = 0;
+        [_image addSublayer:_shade];
+        CGFloat fs = MAX(20, MIN(30, sz.width / SFScale / 17));
+        _title = [SFLabel labelWithFont:[theme bold:fs] color:[NSColor whiteColor]];
+        _title.maxLines = 2; _title.shadow = YES;
+        _title.text = [self elementTitle] ?: @"";
+        CGFloat pad = U(14), h = [_title sizeToFitWidth:sz.width - 2 * pad];
+        _title.position = CGPointMake(pad, sz.height - pad - h);
+        _title.opacity = 0;
+        [_image addSublayer:_title];
+    }
+    if ([_kind isEqualToString:kPlaylist]) {   // always visible: tells a playlist from a video
+        _chipLabel = [SFLabel labelWithFont:[theme bold:20] color:[NSColor whiteColor]];
+        _chipLabel.text = @"☰  Playlist";
+        CGFloat w = ceil([_chipLabel.text sizeWithAttributes:@{NSFontAttributeName: [theme bold:20]}].width) + U(24);
+        [_chipLabel sizeToFitWidth:w - U(24)];
+        _chip = [CALayer layer];
+        _chip.frame = CGRectMake(sz.width - w - U(10), U(10), w, U(34));
+        _chip.cornerRadius = U(6);
+        _chip.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.78].CGColor;
+        _chipLabel.position = CGPointMake(U(12), (U(34) - _chipLabel.bounds.size.height) / 2);
+        [_chip addSublayer:_chipLabel];
+        [_image addSublayer:_chip];
+    }
+    if ([_kind isEqualToString:kSubscribe]) {   // follow pill on the avatar's lower edge, always visible
+        _chip = [CALayer layer];
+        _chip.cornerRadius = U(17);
+        _chipLabel = [SFLabel labelWithFont:[theme bold:20] color:[NSColor whiteColor]];
+        _chipLabel.alignment = NSCenterTextAlignment;
+        [_chip addSublayer:_chipLabel];
+        [self addSublayer:_chip];
+        [self updateFollowPill];
+    }
+    if (self.round) {   // focused: name + action below the avatar
+        _caption = [CALayer layer];
+        _caption.cornerRadius = U(10);
+        _caption.backgroundColor = [NSColor colorWithDeviceWhite:0.05 alpha:0.85].CGColor;
+        _capName = [SFLabel labelWithFont:[theme bold:24] color:[NSColor whiteColor]];
+        _capName.alignment = NSCenterTextAlignment; _capName.maxLines = 1;
+        _capAction = [SFLabel labelWithFont:[theme medium:20] color:[NSColor colorWithDeviceWhite:1 alpha:0.7]];
+        _capAction.alignment = NSCenterTextAlignment;
+        [_caption addSublayer:_capName]; [_caption addSublayer:_capAction];
+        _caption.opacity = 0;
+        [self addSublayer:_caption];
+    }
+    _ring = [CALayer layer];
+    CGFloat pad = U(7);
+    _ring.frame = CGRectInset(self.bounds, -pad, -pad);
+    _ring.cornerRadius = corner + pad;
+    _ring.borderWidth = U(4);
+    _ring.borderColor = theme.focus.CGColor;
+    _ring.opacity = 0;
+    [self insertSublayer:_ring above:_holder];   // under the follow pill and the caption
+}
+
+- (void)setFollowing:(BOOL)f {
+    BOOL changed = f != _following;
+    _following = f;
+    if (changed) [self updateFollowPill];
+}
+
+- (void)updateFollowPill {
+    if (![_kind isEqualToString:kSubscribe] || !_chip) return;
+    CGSize sz = self.bounds.size;
+    SFNoAnimate(^{
+        self->_chipLabel.text = self->_following ? @"✓ Gefolgt" : @"Folgen";
+        CGFloat w = MAX(sz.width * 0.8, ceil([self->_chipLabel.text sizeWithAttributes:@{NSFontAttributeName: [self->_theme bold:20]}].width) + U(28));
+        self->_chip.frame = CGRectMake((sz.width - w) / 2, sz.height - U(22), w, U(34));
+        self->_chip.backgroundColor = self->_following ? [NSColor colorWithDeviceWhite:0.18 alpha:0.95].CGColor : self->_theme.accent.CGColor;
+        [self->_chipLabel sizeToFitWidth:w];
+        self->_chipLabel.position = CGPointMake(0, (U(34) - self->_chipLabel.bounds.size.height) / 2);
+    });
+}
+
+- (void)loadImage {
+    NSString *src = _element[@"image"];
+    if ([src isKindOfClass:[NSString class]] && src.length && !_image.source) _image.source = src;
+}
+
+// engaged = the tiles have focus: the focused one stands out (full, ring, text), the others step back.
+// limit = video rect (round tiles keep their caption inside it).
+- (void)setLook:(BOOL)engaged focused:(BOOL)focused bounds:(CGRect)limit {
+    _focused = focused;
+    if (focused && _caption) {
+        SFNoAnimate(^{
+            CGSize sz = self.bounds.size;
+            self->_capName.text = [self elementTitle] ?: @"Kanal";
+            self->_capAction.text = [self.kind isEqualToString:kChannel] ? @"Zum Kanal" : (self->_following ? @"Du folgst diesem Kanal" : @"Kanal folgen");
+            CGFloat tw = MAX([self->_capName.text sizeWithAttributes:@{NSFontAttributeName: self->_capName.font}].width,
+                             [self->_capAction.text sizeWithAttributes:@{NSFontAttributeName: self->_capAction.font}].width);
+            CGFloat w = MIN(MAX(ceil(tw) + U(36), sz.width), U(460)), pad = U(10);
+            CGFloat h1 = [self->_capName sizeToFitWidth:w - U(24)], h2 = [self->_capAction sizeToFitWidth:w - U(24)];
+            CGFloat h = pad + h1 + U(2) + h2 + pad;
+            CGFloat below = [self.kind isEqualToString:kSubscribe] ? U(26) : U(14);
+            CGFloat y = sz.height + below;
+            CGRect inSuper = [self convertRect:CGRectMake(0, y, w, h) toLayer:self.superlayer];
+            if (CGRectGetMaxY(inSuper) > CGRectGetMaxY(limit) - U(10)) y = -h - U(14);   // no room below: above
+            CGFloat x = (sz.width - w) / 2;
+            CGFloat sx = self.frame.origin.x + x;   // keep inside the video horizontally
+            if (sx < CGRectGetMinX(limit) + U(10)) x += CGRectGetMinX(limit) + U(10) - sx;
+            if (sx + w > CGRectGetMaxX(limit) - U(10)) x -= sx + w - CGRectGetMaxX(limit) + U(10);
+            self->_caption.frame = CGRectMake(x, y, w, h);
+            self->_capName.position = CGPointMake(U(12), pad);
+            self->_capAction.position = CGPointMake(U(12), pad + h1 + U(2));
+        });
+    }
+    CGFloat s = self.round ? 1.1 : 1.06;
+    SFAnimate(0.22, ^{
+        self.opacity = !self.shownNow ? 0 : (focused ? 1 : (engaged ? 0.55 : 0.92));
+        self.transform = focused ? CATransform3DMakeScale(s, s, 1) : CATransform3DIdentity;
+        self.zPosition = focused ? 10 : 0;
+        self->_ring.opacity = focused ? 1 : 0;
+        self->_shade.opacity = focused ? 1 : 0;
+        self->_title.opacity = focused ? 1 : 0;
+        self->_caption.opacity = focused ? 1 : 0;
+    });
+}
+@end
+
+#pragma mark - Player category
+
+@implementation SFPlayerScreen (Endscreen)
+
+static double SFNum(id v) { return [v isKindOfClass:[NSNumber class]] || [v isKindOfClass:[NSString class]] ? [v doubleValue] : 0; }
+static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v length] ? v : nil; }
+
+- (SFTheme *)esTheme { return [SFTheme themeNamed:@"youtube"]; }
+- (BOOL)esEngaged { return _esFocus >= 0 && _esFocus < (NSInteger)_esTiles.count; }
+
+- (void)esReset {
+    [_esLayer removeFromSuperlayer]; _esLayer = nil; _esScrim = nil; _esHint = nil;
+    _esTiles = nil; _esData = nil; _esFocus = -1; _esShown = NO; _esEndDeferred = NO;
+    _esVideoRect = CGRectZero;
+}
+
+// The picture inside the (full-screen) video layer: aspect fit, as mpv/AVPlayerLayer draw it
+- (CGRect)esComputeVideoRect {
+    CGRect b = self.layer.bounds;
+    CGSize vs = [_engine respondsToSelector:@selector(videoSize)] ? [_engine videoSize] : CGSizeZero;
+    if (!(vs.width > 0 && vs.height > 0)) vs = CGSizeMake(16, 9);
+    CGFloat s = MIN(b.size.width / vs.width, b.size.height / vs.height);
+    CGFloat w = round(vs.width * s), h = round(vs.height * s);
+    return CGRectMake(round((b.size.width - w) / 2), round((b.size.height - h) / 2), w, h);
+}
+
+- (void)esBuild:(NSArray *)data {
+    [self esReset];
+    _esData = data;
+    if (!data.count) return;
+    NSMutableArray *tiles = [NSMutableArray new];
+    for (NSDictionary *e in data) {
+        if (![e isKindOfClass:[NSDictionary class]]) continue;
+        NSString *st = SFStr(e[@"style"]);
+        BOOL ok = ([st isEqualToString:kVideo] && SFStr(e[@"videoId"]).length == 11)
+               || ([st isEqualToString:kPlaylist] && SFStr(e[@"playlistId"]))
+               || (([st isEqualToString:kChannel] || [st isEqualToString:kSubscribe]) && [SFStr(e[@"browseId"]) hasPrefix:@"UC"]);
+        double w = SFNum(e[@"width"]), ar = SFNum(e[@"aspectRatio"]);
+        if (!ok || !(w > 0.01) || !(ar > 0.05)) continue;
+        SFEndTile *t = [SFEndTile layer];
+        t.element = e; t.kind = st;
+        t.startS = SFNum(e[@"startMs"]) / 1000.0;
+        t.endS = SFNum(e[@"endMs"]) / 1000.0;
+        t.opacity = 0;
+        [tiles addObject:t];
+    }
+    _esTiles = tiles;
+    if (!tiles.count) return;
+    double first = HUGE_VAL;
+    for (SFEndTile *t in tiles) first = MIN(first, t.startS);
+    SFLog(@"endscreen: %lu tiles from %.1f s", (unsigned long)tiles.count, first);
+    _esLayer = [CALayer layer];
+    _esScrim = [CALayer layer];
+    _esScrim.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.5].CGColor;
+    _esScrim.opacity = 0;
+    [_esLayer addSublayer:_esScrim];
+    for (SFEndTile *t in tiles) [_esLayer addSublayer:t];
+    _esHint = [CALayer layer];
+    _esHint.opacity = 0;
+    [_esLayer addSublayer:_esHint];
+    SFNoAnimate(^{ [self.layer insertSublayer:self->_esLayer above:self->_videoHost]; });
+    [self esPlace];
+}
+
+// Tiles at the creator's positions: fractions of the picture (letterboxing respected); height from
+// the element's aspect ratio
+- (void)esPlace {
+    if (!_esLayer) return;
+    _esVideoRect = [self esComputeVideoRect];
+    CGRect vr = _esVideoRect;
+    SFTheme *th = [self esTheme];
+    SFNoAnimate(^{
+        if (self->_esLayer.superlayer != self.layer || [self.layer.sublayers indexOfObject:self->_esLayer] != [self.layer.sublayers indexOfObject:self->_videoHost] + 1)
+            [self.layer insertSublayer:self->_esLayer above:self->_videoHost];   // relayout re-added the OSD: stay below it
+        self->_esLayer.frame = self.layer.bounds;
+        self->_esScrim.frame = self.layer.bounds;
+        for (SFEndTile *t in self->_esTiles) {
+            NSDictionary *e = t.element;
+            CGFloat w = SFNum(e[@"width"]) * vr.size.width;
+            CGFloat h = w / SFNum(e[@"aspectRatio"]);
+            CGRect f = CGRectMake(vr.origin.x + SFNum(e[@"left"]) * vr.size.width, vr.origin.y + SFNum(e[@"top"]) * vr.size.height, w, h);
+            if (t.round) f.size.height = f.size.width;   // avatars are circles even with a rounded aspect ratio
+            f = CGRectIntegral(f);
+            if (CGRectEqualToRect(t.frame, f) && t.sublayers.count) continue;
+            BOOL hadImage = t.sublayers.count > 0;
+            for (CALayer *l in [t.sublayers copy]) [l removeFromSuperlayer];
+            t.transform = CATransform3DIdentity;
+            t.frame = f;
+            [t buildWithTheme:th];
+            if (hadImage || t.shownNow) [t loadImage];
+        }
+    });
+    SFLog(@"endscreen: video rect %@", NSStringFromRect(NSRectFromCGRect(vr)));
+    [self esRefreshLook];
+}
+
+- (void)esLayout {
+    if (!_esLayer) return;
+    [self esPlace];
+}
+
+// What the end screen shows at the current time; called on every tick (also while paused), after
+// seeks, at the end and on relayout. Robust against any order: the data is looked up afresh.
+- (void)esUpdate {
+    NSArray *data = SFMPVSourceFor(_openURL)[@"endscreen"];
+    if (![data isKindOfClass:[NSArray class]] || _failed || !_engine) data = nil;
+    if (data != _esData) [self esBuild:data];
+    if (!_esTiles.count) return;
+    if (!CGRectEqualToRect([self esComputeVideoRect], _esVideoRect)) [self esPlace];   // video size known later
+    if (!_ended) _esEndDeferred = NO;
+    double t = [self currentTime], first = HUGE_VAL;
+    for (SFEndTile *x in _esTiles) first = MIN(first, x.startS);
+    BOOL engaged = [self esEngaged];
+    if (engaged && t < first - 0.5 && !_ended) {   // seeked back before the end screen (phone, restart)
+        SFLog(@"endscreen: seeked before the end screen - leaving the tiles");
+        [self esLeave:NO];
+        engaged = NO;
+    }
+    BOOL any = NO, changed = NO;
+    SFFollows *fo = [SFFollows shared];
+    for (SFEndTile *x in _esTiles) {
+        BOOL inWindow = t >= x.startS && (x.endS <= 0 || t < x.endS);
+        // with focus the tiles stay (the end card waits); otherwise each one follows its own window,
+        // and after the end the "up next" card has the screen
+        BOOL show = engaged ? (x.shownNow || inWindow) : (!_ended && inWindow);
+        if (show != x.shownNow) { x.shownNow = show; changed = YES; if (show) [x loadImage]; }
+        if ([x.kind isEqualToString:kSubscribe]) {
+            BOOL f = [fo isFollowing:[@"ytchannel:" stringByAppendingString:SFStr(x.element[@"browseId"])]];
+            if (f != x.following) { x.following = f; changed = YES; }
+        }
+        any = any || show;
+    }
+    if (any != _esShown) {
+        _esShown = any;
+        SFLog(@"endscreen: %@", any ? [NSString stringWithFormat:@"shown at %.1f s", t] : @"hidden");
+    }
+    if (changed) [self esRefreshLook];
+}
+
+- (void)esRefreshLook {
+    BOOL engaged = [self esEngaged];
+    for (NSUInteger i = 0; i < _esTiles.count; i++) {
+        SFEndTile *t = _esTiles[i];
+        [t setLook:engaged focused:engaged && (NSInteger)i == _esFocus bounds:_esVideoRect];
+    }
+    SFAnimate(0.3, ^{ self->_esScrim.opacity = engaged ? 1 : 0; });
+    [self esLayoutHint];
+}
+
+// Hint above the visible tiles (below them when there is no room): how to get in, and once inside
+// what OK does on the focused tile and how to get back
+- (void)esLayoutHint {
+    if (!_esHint) return;
+    CGRect u = CGRectNull;
+    for (SFEndTile *t in _esTiles) if (t.shownNow) u = CGRectUnion(u, t.frame);
+    if (CGRectIsNull(u)) { SFAnimate(0.25, ^{ self->_esHint.opacity = 0; }); return; }
+    SFTheme *th = [self esTheme];
+    BOOL engaged = [self esEngaged];
+    NSColor *fg = [NSColor colorWithDeviceWhite:1 alpha:0.92];
+    SFNoAnimate(^{
+        for (CALayer *l in [self->_esHint.sublayers copy]) [l removeFromSuperlayer];
+        CGFloat h = U(50), pad = U(18);
+        __block CGFloat x = pad;
+        // key cap like the OSD's "[OK] halten: Info"
+        void (^key)(NSString *) = ^(NSString *cap) {
+            NSFont *kf = [th bold:20];
+            CGFloat kw = MAX(U(40), ceil([cap sizeWithAttributes:@{NSFontAttributeName: kf}].width) + U(18));
+            CALayer *k = [CALayer layer];
+            k.frame = CGRectMake(x, (h - U(32)) / 2, kw, U(32));
+            k.borderColor = fg.CGColor; k.borderWidth = U(2); k.cornerRadius = U(7);
+            SFLabel *kl = [SFLabel labelWithFont:kf color:fg];
+            kl.text = cap; kl.alignment = NSCenterTextAlignment;
+            [kl sizeToFitWidth:kw];
+            kl.position = CGPointMake(0, (U(32) - kl.bounds.size.height) / 2);
+            [k addSublayer:kl];
+            [self->_esHint addSublayer:k];
+            x += kw + U(12);
+        };
+        void (^text)(NSString *, BOOL) = ^(NSString *s, BOOL dim) {
+            NSFont *f = [th medium:24];
+            SFLabel *l = [SFLabel labelWithFont:f color:dim ? [NSColor colorWithDeviceWhite:1 alpha:0.7] : fg];
+            l.text = s;
+            CGFloat w = ceil([s sizeWithAttributes:@{NSFontAttributeName: f}].width) + U(2);
+            [l sizeToFitWidth:w];
+            l.position = CGPointMake(x, (h - l.bounds.size.height) / 2);
+            [self->_esHint addSublayer:l];
+            x += w;
+        };
+        if (engaged) {
+            key(@"OK"); text([self->_esTiles[self->_esFocus] okAction], NO);
+            x += U(30);
+            key(@"MENU"); text(@"zurück zum Video", YES);
+        } else {
+            key(@"▼"); text(@"Empfehlungen des Kanals", NO);
+        }
+        CGFloat w = x + pad;
+        self->_esHint.bounds = CGRectMake(0, 0, w, h);
+        self->_esHint.cornerRadius = h / 2;
+        self->_esHint.backgroundColor = [NSColor colorWithDeviceWhite:0.04 alpha:0.78].CGColor;
+        // Place it where it covers no tile: above all tiles, below them, above/below a single tile,
+        // at the top or bottom of the picture - first free spot wins (centred on the tiles, then the
+        // screen, then the sides); creators fill the frame in many ways
+        CGRect vr = CGRectIntersection(self->_esVideoRect, self.layer.bounds);
+        CGFloat gap = U(engaged ? 34 : 22), m = U(24);   // focused tiles grow (scale + ring)
+        NSMutableArray *rects = [NSMutableArray new];
+        for (SFEndTile *t in self->_esTiles) if (t.shownNow) {
+            CGRect f = CGRectInset(t.frame, -U(12), -U(12));
+            if (t.round) f.size.height += U(30);   // follow pill below the avatar
+            [rects addObject:[NSValue valueWithRect:NSRectFromCGRect(f)]];
+            CGRect cap = [t captionFrame];
+            if (!CGRectIsNull(cap)) [rects addObject:[NSValue valueWithRect:NSRectFromCGRect(CGRectInset(cap, -U(12), -U(12)))]];
+        }
+        // anchored to the tile the hint talks about: the focused one, else the one DOWN enters
+        CGRect a = engaged ? [self->_esTiles[self->_esFocus] frame] : [self esEntryTile].frame;
+        NSMutableArray *ys = [@[@(CGRectGetMinY(a) - gap - h), @(CGRectGetMaxY(a) + gap), @(CGRectGetMinY(u) - gap - h), @(CGRectGetMaxY(u) + gap)] mutableCopy];
+        for (SFEndTile *t in self->_esTiles) if (t.shownNow) { [ys addObject:@(CGRectGetMinY(t.frame) - gap - h)]; [ys addObject:@(CGRectGetMaxY(t.frame) + gap)]; }
+        [ys addObject:@(CGRectGetMinY(vr) + m)]; [ys addObject:@(CGRectGetMaxY(vr) - m - h)];
+        NSArray *xs = @[@(CGRectGetMinX(a)), @(CGRectGetMidX(a) - w / 2), @(CGRectGetMidX(u) - w / 2), @(CGRectGetMidX(vr) - w / 2), @(CGRectGetMinX(vr) + m), @(CGRectGetMaxX(vr) - m - w)];
+        CGRect best = CGRectNull; CGFloat bestCover = HUGE_VAL;
+        for (NSNumber *yv in ys) for (NSNumber *xv in xs) {
+            if (bestCover <= 0) break;
+            CGFloat x0 = MIN(MAX(xv.doubleValue, CGRectGetMinX(vr) + m), CGRectGetMaxX(vr) - m - w);
+            CGRect c = CGRectMake(x0, yv.doubleValue, w, h);
+            if (CGRectGetMinY(c) < CGRectGetMinY(vr) + U(12) || CGRectGetMaxY(c) > CGRectGetMaxY(vr) - U(12)) continue;
+            CGFloat cover = 0;
+            for (NSValue *r in rects) { CGRect i = CGRectIntersection(c, NSRectToCGRect(r.rectValue)); if (!CGRectIsNull(i)) cover += i.size.width * i.size.height; }
+            if (cover < bestCover - 1) { bestCover = cover; best = c; }
+        }
+        if (CGRectIsNull(best)) best = CGRectMake(CGRectGetMidX(vr) - w / 2, CGRectGetMaxY(vr) - m - h, w, h);
+        CGFloat cx = CGRectGetMidX(best), y = CGRectGetMinY(best);
+        self->_esHint.position = CGPointMake(round(cx), round(y + h / 2));
+    });
+    SFAnimate(0.3, ^{ self->_esHint.opacity = 1; });
+}
+
+- (void)devSetEndscreen:(NSArray *)elements {
+    if (!_openURL) return;
+    NSMutableDictionary *d = [SFMPVSourceFor(_openURL) mutableCopy] ?: [NSMutableDictionary new];
+    if (elements) d[@"endscreen"] = elements; else [d removeObjectForKey:@"endscreen"];
+    SFSetMPVSource(_openURL, d);
+    [self esUpdate];
+}
+
+#pragma mark Focus
+
+- (NSArray *)esVisible {
+    NSMutableArray *a = [NSMutableArray new];
+    for (SFEndTile *t in _esTiles) if (t.shownNow) [a addObject:t];
+    return a;
+}
+
+// Where DOWN enters: reading order - the top row (tiles reaching up to the topmost one's middle), leftmost
+- (SFEndTile *)esEntryTile {
+    NSArray *vis = [self esVisible];
+    SFEndTile *top = nil;
+    for (SFEndTile *t in vis) if (!top || CGRectGetMinY(t.frame) < CGRectGetMinY(top.frame)) top = t;
+    SFEndTile *pick = nil;
+    for (SFEndTile *t in vis) {
+        if (CGRectGetMinY(t.frame) > CGRectGetMidY(top.frame)) continue;
+        if (!pick || CGRectGetMinX(t.frame) < CGRectGetMinX(pick.frame)) pick = t;
+    }
+    return pick;
+}
+
+- (void)esEnter {
+    SFEndTile *pick = [self esEntryTile];
+    if (!pick) return;
+    _esFocus = [_esTiles indexOfObjectIdenticalTo:pick];
+    SFLog(@"endscreen: focus %ld (%@)", (long)_esFocus, pick.kind);
+    [self showOSD:NO autoHide:NO];
+    SFAnimate(0.2, ^{ self->_pauseIcon.opacity = 0; });
+    [self esRefreshLook];
+}
+
+// Back to normal playback keys. finish: run a deferred end (video ended while choosing)
+- (void)esLeave:(BOOL)finish {
+    if (_esFocus < 0) return;
+    _esFocus = -1;
+    SFLog(@"endscreen: left the tiles");
+    [self esRefreshLook];
+    if (finish && _esEndDeferred) { [self esUpdate]; [self finishEnd]; return; }
+    [self updatePauseState];   // paused: pause icon + OSD again
+    [self esUpdate];
+}
+
+// Spatial move: nearest visible tile in that direction (distance along it, plus off-axis offset weighted)
+- (BOOL)esMove:(SFKey)key {
+    SFEndTile *cur = _esTiles[_esFocus];
+    CGPoint c = CGPointMake(CGRectGetMidX(cur.frame), CGRectGetMidY(cur.frame));
+    CGFloat cw = cur.frame.size.width, ch = cur.frame.size.height;
+    SFEndTile *best = nil; CGFloat bestScore = HUGE_VAL;
+    for (SFEndTile *t in [self esVisible]) {
+        if (t == cur) continue;
+        CGRect f = t.frame;
+        CGFloat dx = CGRectGetMidX(f) - c.x, dy = CGRectGetMidY(f) - c.y, along, off;
+        switch (key) {
+            // the candidate has to lie beyond the current tile in that direction (30 % overlap allowed)
+            case SFKeyLeft:  if (CGRectGetMaxX(f) > CGRectGetMinX(cur.frame) + 0.3 * cw) continue; along = -dx; off = fabs(dy); break;
+            case SFKeyRight: if (CGRectGetMinX(f) < CGRectGetMaxX(cur.frame) - 0.3 * cw) continue; along = dx; off = fabs(dy); break;
+            case SFKeyUp:    if (CGRectGetMaxY(f) > CGRectGetMinY(cur.frame) + 0.3 * ch) continue; along = -dy; off = fabs(dx); break;
+            default:         if (CGRectGetMinY(f) < CGRectGetMaxY(cur.frame) - 0.3 * ch) continue; along = dy; off = fabs(dx); break;
+        }
+        CGFloat score = along + 2 * off;
+        if (score < bestScore) { bestScore = score; best = t; }
+    }
+    if (!best) return NO;
+    _esFocus = [_esTiles indexOfObjectIdenticalTo:best];
+    SFLog(@"endscreen: focus %ld (%@)", (long)_esFocus, best.kind);
+    [self esRefreshLook];
+    return YES;
+}
+
+- (BOOL)esHandleKey:(SFKey)key {
+    if (![self esEngaged]) {
+        if (!_esShown || _failed) return NO;
+        // DOWN goes into the tiles - but not in the middle of turning the volume down
+        if (key == SFKeyDown && !(_lastVolumeAt && -[_lastVolumeAt timeIntervalSinceNow] < 2)) { [self esEnter]; return YES; }
+        return NO;
+    }
+    switch (key) {
+        case SFKeyLeft: case SFKeyPrev: [self esMove:SFKeyLeft]; return YES;
+        case SFKeyRight: case SFKeyNext: [self esMove:SFKeyRight]; return YES;
+        case SFKeyDown: case SFKeyDownHold: [self esMove:SFKeyDown]; return YES;
+        case SFKeyUp: case SFKeyUpHold:
+            if (![self esMove:SFKeyUp]) [self esLeave:YES];   // above the top row: back to the video
+            return YES;
+        case SFKeyMenu: [self esLeave:YES]; return YES;
+        case SFKeySelect: [self esOpen:_esTiles[_esFocus]]; return YES;
+        case SFKeySelectHold:   // info panel as usual - unless the video is already over: then just finish
+            if (_esEndDeferred) { [self esLeave:YES]; return YES; }
+            [self esLeave:NO];
+            return NO;
+        default: return NO;                                    // Play/Pause: as usual
+    }
+}
+
+#pragma mark Open
+
+- (void)esOpen:(SFEndTile *)tile {
+    NSDictionary *e = tile.element;
+    NSString *st = tile.kind, *title = SFStr(e[@"title"]), *image = SFStr(e[@"image"]);
+    SFNavigator *nav = self.navigator;
+    SFLog(@"endscreen: open %@ %@", st, SFStr(e[@"videoId"]) ?: SFStr(e[@"playlistId"]) ?: SFStr(e[@"browseId"]));
+    if ([st isEqualToString:kVideo]) {   // like autoplay / the info panel's recommendations: play here
+        SFItem *it = [SFYouTube itemForVideoID:e[@"videoId"] title:title thumb:image];
+        if (!it) return;
+        _esEndDeferred = NO;
+        [self playItem:it];
+        return;
+    }
+    if ([st isEqualToString:kPlaylist]) { [self esOpenPlaylist:e]; return; }
+    // channel page / follow: through the same link rules as the info panel ("Zum Kanal")
+    SFItem *ep = [SFItem new];
+    ep.kind = SFItemVideo; ep.source = @"youtube"; ep.themeName = @"youtube";
+    ep.channel = title ?: ([st isEqualToString:kSubscribe] ? _item.channel : nil);
+    ep.showRef = [@"ytchannel:" stringByAppendingString:e[@"browseId"]];
+    SFShowLink *link = [SFShowLink linkFor:ep here:nil pageTitle:nil];
+    if ([st isEqualToString:kSubscribe]) {
+        SFItem *folder = [link.folder copy];
+        if (!folder || ![[SFFollows shared] canFollow:folder]) { [nav toast:@"Diesem Kanal kann hier nicht gefolgt werden"]; return; }
+        if (image) folder.image = image;
+        if (!folder.title.length) folder.title = @"Kanal";
+        SFToggleFollow(nav, folder, self.theme);
+        [self esUpdate];
+        return;
+    }
+    if (!link) { [nav toast:@"Kanal nicht gefunden"]; return; }
+    // leaving the video for a full screen replaces the player (progress saved), as from the info panel
+    __weak SFPlayerScreen *ws = self;
+    [link openOn:nav stillValid:^BOOL { return ws && nav.top == ws; } present:^(SFScreen *screen) {
+        SFPlayerScreen *s = ws;
+        if (s && [nav.stack containsObject:s]) { [nav popAbove:s]; [nav replaceTop:screen]; }
+        else [nav push:screen];
+    }];
+}
+
+// Playlist: the linked video starts right away as part of the playlist; the playlist's order is
+// adopted as the queue as soon as it has loaded (autoplay then follows the playlist, the info panel
+// shows it). Without a linked video the first one plays once the list is there.
+- (void)esOpenPlaylist:(NSDictionary *)e {
+    NSString *pid = SFStr(e[@"playlistId"]), *vid = SFStr(e[@"videoId"]), *title = SFStr(e[@"title"]) ?: @"Playlist";
+    // until the list is there the video's own title is unknown: the playlist's title stands in
+    SFItem *first = vid.length == 11 ? [SFYouTube itemForVideoID:vid title:title thumb:nil] : nil;
+    if (first) {
+        first = [first copy];
+        first.playlistID = pid;
+        _esEndDeferred = NO;
+        [self playItem:first];
+    } else {
+        [self esLeave:NO];
+        [self.navigator toast:[NSString stringWithFormat:@"Playlist „%@“ wird geladen …", title]];
+    }
+    SFItem *was = _item;
+    __weak SFPlayerScreen *ws = self;
+    SFPageLoader load = [SFYouTube playlistLoader:pid title:title];
+    load(^(SFPage *page, NSError *err) {
+        SFMain(^{
+            SFPlayerScreen *s = ws;
+            if (!s || s->_closing || s->_item != was) return;   // moved on meanwhile
+            NSArray *items = [(SFShelf *)page.shelves.firstObject items];
+            if (!items.count) {
+                SFLog(@"endscreen: playlist %@ not loaded (%@)", pid, err.localizedDescription);
+                [s.navigator toast:first ? @"Die Playlist ließ sich nicht laden – nur dieses Video wird abgespielt." : @"Die Playlist ließ sich nicht laden."];
+                return;
+            }
+            if (!first) {
+                SFLog(@"endscreen: playlist %@ (%lu videos), playing the first", pid, (unsigned long)items.count);
+                [s playQueue:items index:0];
+                return;
+            }
+            NSUInteger at = NSNotFound;
+            for (NSUInteger k = 0; k < items.count; k++) if ([[items[k] identifier] isEqualToString:first.identifier]) { at = k; break; }
+            if (at == NSNotFound) { SFLog(@"endscreen: playlist %@ does not contain %@", pid, vid); return; }
+            NSMutableArray *q = [items mutableCopy];
+            SFItem *li = items[at], *run = s->_item;
+            if (!run.localPath) {   // the list knows the real title, channel and length
+                run.title = li.title; run.channel = li.channel; run.showRef = run.showRef ?: li.showRef;
+                if (li.duration > 0 && run.duration <= 0) run.duration = li.duration;
+                [s updateTitles];
+            }
+            q[at] = run;   // the running item keeps its identity (autoplay finds its position)
+            s->_queue = q; s->_index = at; s->_explicitQueue = NO;
+            SFLog(@"endscreen: playlist %@ adopted (%lu videos, at %lu)", pid, (unsigned long)q.count, (unsigned long)at);
+        });
+    });
+}
+
+// Play a new list in this player (not the phone's explicit queue: autoplay follows the playlist)
+- (void)playQueue:(NSArray *)items index:(NSUInteger)i {
+    if (i >= items.count) return;
+    _queue = [items copy];
+    _explicitQueue = NO;
+    _index = i;
+    [self playItem:items[i]];
+}
+
+@end

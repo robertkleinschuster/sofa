@@ -8,6 +8,30 @@
 
 static NSString *const kRunningBadge = @"Läuft";
 
+void SFToggleFollow(SFNavigator *n, SFItem *folder, SFTheme *theme) {
+    SFFollows *fo = [SFFollows shared];
+    NSString *fid = folder.identifier, *ftitle = folder.title.length ? folder.title : @"Sendung";
+    if (!n || !fid) return;
+    if (![fo isFollowing:fid]) {
+        [fo follow:folder];
+        BOOL yt = [folder.identifier hasPrefix:@"ytchannel:"];
+        [n toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue %@ erscheinen unter „Neue Folgen“", ftitle, yt ? @"Videos" : @"Folgen"]];
+        return;
+    }
+    SFDownloads *dl = [SFDownloads shared];
+    dispatch_block_t unfollow = ^{
+        [fo unfollow:fid];
+        [n toast:[NSString stringWithFormat:@"Du folgst „%@“ nicht mehr", ftitle]];
+    };
+    if (![dl isSubscribed:fid]) { unfollow(); return; }
+    // Also ends "Automatisch herunterladen": only with confirmation (destructive)
+    SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
+    SFMenuOption *yes = [SFMenuOption option:@"Nicht mehr folgen" action:unfollow];
+    [n push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ nicht mehr folgen?", ftitle]
+                                        subtitle:@"Neue Folgen werden dann nicht mehr automatisch geladen. Vorhandene Downloads bleiben."
+                                         options:@[no, yes] theme:theme]];
+}
+
 @implementation SFPlayerInfoScreen {
     __weak SFPlayerScreen *_player;
     __weak SFNavigator *_nav;      // kept: after removal self.navigator may still be needed for cleanup
@@ -266,27 +290,9 @@ static NSString *SFSig(SFItem *i) {
     SFFollows *fo = [SFFollows shared];
     if (folder && [fo canFollow:folder]) {
         if (!folder.image.length && _details[@"avatar"]) folder.image = _details[@"avatar"];
-        NSString *fid = folder.identifier, *ftitle = folder.title.length ? folder.title : @"Sendung";
-        BOOL following = [fo isFollowing:fid];
+        BOOL following = [fo isFollowing:folder.identifier];
         SFItem *b = [self button:@"follow" title:following ? @"✓  Gefolgt" : @"Folgen" hero:hero action:^{
-            SFNavigator *n = ws.navigator ?: nav;
-            if (![fo isFollowing:fid]) {
-                [fo follow:folder];
-                [n toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Folgen erscheinen unter „Neue Folgen“", ftitle]];
-                return;
-            }
-            SFDownloads *dl = [SFDownloads shared];
-            dispatch_block_t unfollow = ^{
-                [fo unfollow:fid];
-                [n toast:[NSString stringWithFormat:@"Du folgst „%@“ nicht mehr", ftitle]];
-            };
-            if (![dl isSubscribed:fid]) { unfollow(); return; }
-            // Also ends "Automatisch herunterladen": only with confirmation (destructive)
-            SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
-            SFMenuOption *yes = [SFMenuOption option:@"Nicht mehr folgen" action:unfollow];
-            [n push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ nicht mehr folgen?", ftitle]
-                                                subtitle:@"Neue Folgen werden dann nicht mehr automatisch geladen. Vorhandene Downloads bleiben."
-                                                 options:@[no, yes] theme:ws.theme]];
+            SFToggleFollow(ws.navigator ?: nav, folder, ws.theme);
         }];
         if (!following) b.tint = self.theme.accent;
         [a addObject:b];

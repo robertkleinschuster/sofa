@@ -59,6 +59,18 @@
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;
     __weak SFItem *_lastStartedItem;
+
+    // YouTube end screen (SFPlayerScreen+Endscreen.m)
+    NSArray *_esData;            // elements of the current source as received (identity: rebuild on change)
+    CALayer *_esLayer;           // container over the video rect, below the OSD
+    CALayer *_esScrim;           // dims the video while the tiles have focus
+    NSArray *_esTiles;           // SFEndTile per valid element
+    NSInteger _esFocus;          // index into _esTiles, -1 = tiles not focused (normal playback keys)
+    CALayer *_esHint;            // "[▼] Empfehlungen des Kanals" / "OK: abspielen · MENU: zurück zum Video"
+    BOOL _esShown;               // at least one tile visible
+    BOOL _esEndDeferred;         // video ended while the tiles had focus: end flow runs on leaving them
+    CGRect _esVideoRect;         // where the picture is (letterboxing respected)
+    NSDate *_lastVolumeAt;       // last UP/DOWN volume step (DOWN keeps adjusting the volume right after)
 }
 - (NSTimeInterval)currentTime;
 - (void)togglePause;
@@ -66,6 +78,19 @@
 - (void)playItem:(SFItem *)item;      // play another item in this player, like autoplay
 - (BOOL)hasExplicitQueue;             // queue from the phone: next = next queue entry
 - (void)showInfo;                     // info panel (OK hold)
+- (void)finishEnd;                    // end of the video: "up next" card or leave the player
+- (void)showOSD:(BOOL)on autoHide:(BOOL)autoHide;
+- (void)updatePauseState;
+- (void)saveProgress;
+- (void)updateTitles;
+@end
+
+@interface SFPlayerScreen (Endscreen)
+- (void)esUpdate;                     // show/hide tiles for the current time (tick, seek, layout, end)
+- (void)esReset;                      // new item: forget the tiles
+- (void)esLayout;                     // size changed: re-place the tiles over the video rect
+- (BOOL)esEngaged;                    // tiles have focus
+- (BOOL)esHandleKey:(SFKey)key;       // YES = consumed by the end screen
 @end
 
 @interface SFPlayerScreen (Tracks)
