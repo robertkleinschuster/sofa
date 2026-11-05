@@ -26,7 +26,9 @@ printf '%s\n\n<!-- sofa-notes-end -->\n**Installation:** `Sofa-%s.dmg` laden, ö
 # throttled (UPLOAD_RATE, default 300k/s) - unthrottled it saturated the uplink (2026-11-04).
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 gh release view "v$VER" >/dev/null 2>&1 || gh release create "v$VER" --draft --title "Sofa $VER" --notes-file dist/notes.md "$DMG.sig" "$DMG.sha256"
-ID=$(gh api "repos/$REPO/releases/tags/v$VER" -q .id 2>/dev/null || gh api "repos/$REPO/releases" -q ".[] | select(.tag_name==\"v$VER\") | .id")
+# by listing (also finds drafts; the tags endpoint does not, and prints its 404 body on stdout)
+ID=$(gh api "repos/$REPO/releases" -q ".[] | select(.tag_name==\"v$VER\") | .id" | head -1)
+[ -n "$ID" ] || { echo "release v$VER not found"; exit 1; }
 have() { gh api "repos/$REPO/releases/$ID/assets" -q ".[] | select(.name==\"$1\" and .state==\"uploaded\") | .size"; }
 NAME=$(basename "$DMG"); SIZE=$(stat -f %z "$DMG")
 if [ "$(have "$NAME")" != "$SIZE" ]; then
