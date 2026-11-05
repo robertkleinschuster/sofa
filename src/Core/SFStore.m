@@ -249,25 +249,21 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     [self write:item pos:0 dur:item.duration watched:w];
 }
 
+// A stored progress item, or nil when it can't be played any more (local file gone, no online way)
+static SFItem *playableItem(id json) {
+    NSDictionary *d = SFJSONParse(json);
+    if (![d isKindOfClass:[NSDictionary class]]) return nil;
+    SFItem *i = [SFItem itemWithDictionary:d];
+    if (i.localPath && ![[NSFileManager defaultManager] fileExistsAtPath:i.localPath] && !i.resolverRef) return nil;
+    return i;
+}
+
+// rows read on the queue, decoded here (JSON, file checks) - not while holding the database
 - (NSArray *)query:(NSString *)where limit:(NSInteger)limit source:(NSString *)source {
-    __block NSMutableArray *out = [NSMutableArray new];
-    dispatch_sync(_q, ^{
-        NSString *sql = [NSString stringWithFormat:@"SELECT item,pos,dur FROM progress WHERE %@ %@ ORDER BY updated DESC LIMIT %ld",
-                         where, source ? @"AND source=?" : @"", (long)limit];
-        sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) return;
-        if (source) bindText(st, 1, source);
-        while (sqlite3_step(st) == SQLITE_ROW) {
-            const char *t = (const char *)sqlite3_column_text(st, 0);
-            if (!t) continue;
-            NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:t length:strlen(t)] options:0 error:nil];
-            if (![d isKindOfClass:[NSDictionary class]]) continue;
-            SFItem *i = [SFItem itemWithDictionary:d];
-            if (i.localPath && ![[NSFileManager defaultManager] fileExistsAtPath:i.localPath] && !i.resolverRef) continue;
-            [out addObject:i];
-        }
-        sqlite3_finalize(st);
-    });
+    NSString *sql = [NSString stringWithFormat:@"SELECT item FROM progress WHERE %@ %@ ORDER BY updated DESC LIMIT %ld",
+                     where, source ? @"AND source=?" : @"", (long)limit];
+    NSMutableArray *out = [NSMutableArray new];
+    for (NSDictionary *r in [self rows:sql args:source ? @[source] : nil]) { SFItem *i = playableItem(r[@"item"]); if (i) [out addObject:i]; }
     return out;
 }
 
@@ -284,21 +280,11 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
 // History: recently played content with timestamp (@{item, updated, watched, pos})
 - (NSArray *)history:(NSInteger)limit {
     NSMutableArray *out = [NSMutableArray new];
-    dispatch_sync(_q, ^{
-        sqlite3_stmt *st;
-        NSString *sql = [NSString stringWithFormat:@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld", (long)limit];
-        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) return;
-        while (sqlite3_step(st) == SQLITE_ROW) {
-            const char *t = (const char *)sqlite3_column_text(st, 0);
-            if (!t) continue;
-            NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:t length:strlen(t)] options:0 error:nil];
-            if (![d isKindOfClass:[NSDictionary class]]) continue;
-            SFItem *i = [SFItem itemWithDictionary:d];
-            if (i.localPath && ![[NSFileManager defaultManager] fileExistsAtPath:i.localPath] && !i.resolverRef) continue;
-            [out addObject:@{@"item": i, @"updated": @(sqlite3_column_double(st, 1)), @"watched": @(sqlite3_column_int(st, 2)), @"pos": @(sqlite3_column_double(st, 3))}];
-        }
-        sqlite3_finalize(st);
-    });
+    NSString *sql = [NSString stringWithFormat:@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld", (long)limit];
+    for (NSDictionary *r in [self rows:sql args:nil]) {
+        SFItem *i = playableItem(r[@"item"]);
+        if (i) [out addObject:@{@"item": i, @"updated": r[@"updated"] ?: @0, @"watched": r[@"watched"] ?: @0, @"pos": r[@"pos"] ?: @0}];
+    }
     return out;
 }
 
