@@ -333,5 +333,46 @@ class Subtitles(unittest.TestCase):
         self.assertEqual(R["subtitle_tracks"]({"subtitles": None, "automatic_captions": None}), [])
 
 
+
+def load_breaker(block_file):
+    """The bot-check circuit breaker (is_bot_check, blocked_until, note_result) with its constants."""
+    import threading, json as _json
+    tree = ast.parse(open(SRC, encoding="utf-8").read(), SRC)
+    body = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in ("is_bot_check", "blocked_until", "note_result"))
+            or (isinstance(n, ast.Assign) and any(getattr(t, "id", None) in ("BLOCK_MIN", "BLOCK_MAX") for t in getattr(n.targets[0], "elts", n.targets)))]
+    ns = {"time": time, "json": _json, "os": os, "log": lambda m: None, "threading": threading,
+          "block_lock": threading.Lock(), "block": {"until": 0, "backoff": 0}, "BLOCK_FILE": block_file}
+    exec(compile(ast.Module(body=body, type_ignores=[]), SRC, "exec"), ns)
+    return ns
+
+class BotCheckBreaker(unittest.TestCase):
+    """2026-11-04: warm-ups, preloads and downloads kept sending player requests while YouTube
+    answered "Sign in to confirm you're not a bot" - every request prolongs the flag."""
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        self.file = os.path.join(self.dir, "youtube-block.json")
+        self.B = load_breaker(self.file)
+    def test_recognizes_bot_check(self):
+        self.assertTrue(self.B["is_bot_check"](Exception("ERROR: [youtube] x: Sign in to confirm you\u2019re not a bot.")))
+        self.assertTrue(self.B["is_bot_check"]("Sign in to confirm you're not a bot (paused, no request sent)"))
+        self.assertFalse(self.B["is_bot_check"]("Video unavailable"))
+    def test_backoff_doubles_up_to_an_hour_and_resets(self):
+        B = self.B
+        self.assertEqual(B["blocked_until"](), 0)
+        steps = []
+        for _ in range(6):
+            B["note_result"](True); steps.append(B["block"]["backoff"])
+        self.assertEqual(steps, [300, 600, 1200, 2400, 3600, 3600])
+        self.assertGreater(B["blocked_until"](), time.time() + 3500)
+        with open(self.file) as f:   # persisted for the next resolver process
+            self.assertEqual(json.load(f)["backoff"], 3600)
+        B["note_result"](False)
+        self.assertEqual(B["blocked_until"](), 0)
+        self.assertEqual(B["block"]["backoff"], 0)
+    def test_expired_pause_is_no_pause(self):
+        self.B["block"].update(until=time.time() - 1, backoff=300)
+        self.assertEqual(self.B["blocked_until"](), 0)
+
 if __name__ == "__main__":
     unittest.main()

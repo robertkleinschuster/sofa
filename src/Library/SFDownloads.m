@@ -8,6 +8,8 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 static NSMutableDictionary *gDLURL;   // prefix -> SFDownloadURLFetcher
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f) { if (!gDLURL) gDLURL = [NSMutableDictionary new]; gDLURL[prefix] = [f copy]; }
+static NSMutableDictionary *gDLPause;   // prefix -> SFDownloadPause
+void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f) { if (!gDLPause) gDLPause = [NSMutableDictionary new]; gDLPause[prefix] = [f copy]; }
 
 static NSString *safeName(NSString *s, NSUInteger max) {
     NSMutableString *o = [NSMutableString new];
@@ -369,14 +371,17 @@ static NSString *gb(unsigned long long b) {
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
     // manual downloads before subscription downloads, oldest request first in each
     NSDictionary *next = nil;
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;
     for (NSDictionary *r in _recs.allValues) {
         if ([r[@"state"] integerValue] != SFDLQueued) continue;
+        NSTimeInterval until = [self notBefore:r];
+        if (until > now) { wake = wake ? MIN(wake, until) : until; continue; }   // source paused: later
         if (!next) { next = r; continue; }
         BOOL rm = r[@"sub"] == nil, nm = next[@"sub"] == nil;
         if (rm != nm) { if (rm) next = r; continue; }
         if ([r[@"added"] doubleValue] < [next[@"added"] doubleValue]) next = r;
     }
-    if (!next) return;
+    if (!next) { if (wake) [self pumpAt:wake]; return; }
     NSString *ff = ffmpegPath();
     if (!ff) { SFLog(@"downloads: ffmpeg missing"); return; }
     NSMutableDictionary *r = _recs[next[@"id"]];
@@ -388,6 +393,8 @@ static NSString *gb(unsigned long long b) {
         return;
     }
     _runningID = r[@"id"];
+    if (!_lastStart) _lastStart = [NSMutableDictionary new];
+    _lastStart[[self sourceOf:r]] = @(now);
     r[@"state"] = @(SFDLRunning); r[@"progress"] = @0;
     [self save:r];
     [self changed:_runningID];
@@ -511,9 +518,52 @@ static NSString *gb(unsigned long long b) {
     });
 }
 
+// Epoch until which the record's source must not be asked (0 = go).
+// Starts per source at least this far apart: quick failures or short videos must not turn into a
+// burst of requests to one site (YouTube flags the IP for bursts of player requests).
+static const NSTimeInterval kSourceGap = 30;
+
+- (NSString *)sourceOf:(NSDictionary *)r {
+    SFItem *item = [self itemFromRec:r];
+    return prefixOf(item.resolverRef ?: item.identifier ?: r[@"id"]);
+}
+
+// Epoch until which the record's source has paused itself (0 = go).
+- (NSTimeInterval)pausedUntil:(NSDictionary *)r {
+    SFDownloadPause p = gDLPause[[self sourceOf:r]];
+    return p ? p() : 0;
+}
+
+// pausedUntil plus the per-source spacing of starts
+- (NSTimeInterval)notBefore:(NSDictionary *)r {
+    NSString *src = [self sourceOf:r];
+    NSTimeInterval last = [_lastStart[src] doubleValue];
+    return MAX([self pausedUntil:r], last ? last + kSourceGap : 0);
+}
+
+- (void)pumpAt:(NSTimeInterval)when {
+    if (_pauseWake && _pauseWake <= when && _pauseWake > [NSDate date].timeIntervalSince1970) return;   // earlier wake pending
+    _pauseWake = when;
+    NSTimeInterval in = MAX(1, when - [NSDate date].timeIntervalSince1970 + 1);
+    if (in > kSourceGap + 2) SFLog(@"downloads: source paused - next attempt in %.0f min", round(in / 60));
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(in * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_pauseWake == when) self->_pauseWake = 0;
+        [self pump];
+    });
+}
+
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
     NSMutableDictionary *r = _recs[ident];
     _task = nil; _runningID = nil;
+    if (r && !ok && [self pausedUntil:r] > [NSDate date].timeIntervalSince1970) {
+        // the source paused itself (YouTube bot check) - not the download's fault: back into the
+        // queue without using up an attempt; pump continues when the pause is over
+        r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
+        [self save:r]; [self changed:ident];
+        SFLog(@"downloads: %@ deferred (%@)", ident, error);
+        dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
+        return;
+    }
     if (r && !ok && [r[@"path"] length] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) {
         // a repair download failed: keep the existing file instead of losing it, and remember the
         // repair (error prefix kRepairPrefix, persisted) so retryDueRepairs tries again with backoff -

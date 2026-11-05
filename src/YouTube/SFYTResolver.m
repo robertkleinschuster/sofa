@@ -61,7 +61,10 @@ static NSString *YTActiveDir(void) {
     return bv ? b : nil;
 }
 
+NSString *const SFYTBlockDidChangeNotification = @"SFYTBlockDidChange";
+
 @implementation SFYTResolver {
+    NSTimeInterval _blockedUntil;     // 0 = not read yet, 1 = no pause
     NSTask *_task;
     NSFileHandle *_in;
     NSMutableData *_buf, *_ebuf;
@@ -74,7 +77,15 @@ static NSString *YTActiveDir(void) {
     BOOL _wantRunning;
     BOOL _updating;                   // yt-dlp update running
     NSTimer *_updateTimer;
+    NSMutableArray *_preloads;        // times of recent focus preloads (budget)
 }
+
+// Focus preloads: at most this many player requests per window. Browsing a row quickly used to
+// resolve every video the focus rested on - each one two player requests on a bot-flagged IP.
+static const NSUInteger kPreloadBudget = 8;
+static const NSTimeInterval kPreloadWindow = 600;
+
+static NSString *YTBlockFile(void) { return [[SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"]; }
 
 + (instancetype)shared {
     static SFYTResolver *s; static dispatch_once_t o;
@@ -300,6 +311,11 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         if (!p) continue;
         [_pending removeObjectForKey:rid];
         NSString *key = p[0], *vid = p[1];
+        if (j[@"blocked_until"]) {
+            NSTimeInterval was = self.blockedUntil, now = [j[@"blocked_until"] doubleValue];
+            _blockedUntil = now ?: 1;
+            if (!was != !now) [[NSNotificationCenter defaultCenter] postNotificationName:SFYTBlockDidChangeNotification object:self];
+        }
         if ([j[@"url"] isKindOfClass:[NSString class]]) {
             SFLog(@"yt: resolved %@ -> %@p %@ in %.1fs (%@)", vid, j[@"height"], j[@"format"], [j[@"secs"] doubleValue], j[@"pool"]);
             if (![key hasPrefix:@"live:"]) _cache[vid] = j;
@@ -388,4 +404,32 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
     });
 }
 - (void)forget:(NSString *)videoID { if (videoID) [_cache removeObjectForKey:videoID]; }
+
+- (NSTimeInterval)blockedUntil {
+    if (!_blockedUntil) {   // before the first answer of this run: the resolver's persisted state
+        NSData *d = [NSData dataWithContentsOfFile:YTBlockFile()];
+        NSDictionary *j = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+        _blockedUntil = [j isKindOfClass:[NSDictionary class]] ? [j[@"until"] doubleValue] : 0;
+        if (!_blockedUntil) _blockedUntil = 1;   // read once
+    }
+    return _blockedUntil > [NSDate date].timeIntervalSince1970 ? _blockedUntil : 0;
+}
+
+- (void)simulateBlockForTesting:(NSTimeInterval)secs {
+    _blockedUntil = secs > 0 ? [NSDate date].timeIntervalSince1970 + secs : 1;
+    SFLog(@"dev: YouTube pause simulated for %.0f s", secs);
+}
+
+- (BOOL)preloadOnFocus:(NSString *)vid {
+    NSDictionary *c = _cache[vid];
+    if (c && [c[@"expires"] doubleValue] - 3600 > [NSDate date].timeIntervalSince1970) return NO;   // already resolved
+    if (_waiters[vid] || self.blockedUntil) return NO;
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    if (!_preloads) _preloads = [NSMutableArray array];
+    while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
+    if (_preloads.count >= kPreloadBudget) return NO;
+    [_preloads addObject:@(now)];
+    [self prefetch:vid done:nil];
+    return YES;
+}
 @end

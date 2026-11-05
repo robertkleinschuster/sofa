@@ -285,7 +285,7 @@ static CGFloat textWidth(SFLabel *l) {
     SFItem *it = [self focusedItem];
     NSString *ref = it.resolverRef ?: it.identifier;
     if (it.kind != SFItemVideo || ![ref hasPrefix:@"yt:"] || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
-    [[SFYTResolver shared] prefetch:[ref substringFromIndex:3] done:nil];
+    [[SFYTResolver shared] preloadOnFocus:[ref substringFromIndex:3]];
 }
 
 - (void)updatePhoneStatus {

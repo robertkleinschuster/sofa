@@ -28,6 +28,10 @@ void SFRegisterFeedFromLoader(NSString *prefix, SFPageLoader (^loaderFor)(NSStri
 typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSError *e);
 typedef void (^SFDownloadURLFetcher)(SFItem *item, SFDownloadURLDone done);
 void SFRegisterDownloadURL(NSString *prefix, SFDownloadURLFetcher f);
+// Optional: until when a source must not be asked for downloads (epoch, 0 = now is fine), e.g.
+// YouTube during a bot-check pause. Its queued downloads wait without using up attempts.
+typedef NSTimeInterval (^SFDownloadPause)(void);
+void SFRegisterDownloadPause(NSString *prefix, SFDownloadPause f);
 
 @interface SFDownloads : NSObject
 + (instancetype)shared;

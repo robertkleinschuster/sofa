@@ -722,6 +722,8 @@ static NSSet *skipKeys(void) {
             done(j ? online : nil, e);
         }];
     });
+    // YouTube downloads wait during a bot-check pause (no request, no attempt used up)
+    SFRegisterDownloadPause(@"yt", ^NSTimeInterval { return [SFYTResolver shared].blockedUntil; });
     // downloads in 720p (as ytdl-sub did): saves space, good enough on the TV
     SFRegisterDownloadURL(@"yt", ^(SFItem *item, SFDownloadURLDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);

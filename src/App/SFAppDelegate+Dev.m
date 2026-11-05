@@ -168,6 +168,8 @@
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
         [[SFDownloads shared] download:it];
+    } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // Dev: simulate a bot-check pause for <secs> (this instance only)
+        [[SFYTResolver shared] simulateBlockForTesting:arg.doubleValue];
     } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
         [[SFDownloads shared] expireRepairBackoffForTesting];
         [[SFDownloads shared] retryDueRepairs];

@@ -3,6 +3,8 @@
 // restart on crash, result cache until shortly before the URLs expire (6 h, IP-bound).
 #import "SFCore.h"
 
+extern NSString *const SFYTBlockDidChangeNotification;   // the bot-check pause began or ended
+
 @interface SFYTResolver : NSObject
 + (instancetype)shared;
 - (void)saveCache;             // before an update restart: save results for the new process
@@ -12,5 +14,12 @@
 - (void)resolve:(NSString *)videoID live:(BOOL)live done:(void (^)(NSDictionary *r, NSError *e))done;
 // background (preload on focus, downloads): own resolver pool, never blocks playback
 - (void)prefetch:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
-- (void)forget:(NSString *)videoID;   // drop the result (streams rejected) -> the next call resolves afresh
+- (void)forget:(NSString *)videoID;
+// Preload on focus: like prefetch, but within a request budget and never while YouTube's bot check
+// pauses background requests. Returns NO if nothing was sent.
+- (BOOL)preloadOnFocus:(NSString *)videoID;
+// > now: YouTube answered with a bot check, background requests are paused until then (the
+// resolver's circuit breaker, persisted across restarts). 0 = no pause.
+@property (nonatomic, readonly) NSTimeInterval blockedUntil;
+- (void)simulateBlockForTesting:(NSTimeInterval)secs;   // dev command ytblock: in memory only   // drop the result (streams rejected) -> the next call resolves afresh
 @end

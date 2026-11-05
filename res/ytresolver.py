@@ -87,7 +87,50 @@ class Job:
         self.superseded_by = None      # playback job that overtook this waiting preload job
         self.created = time.time()
 
-BG_MAX_WAIT = 60   # a preload that sat in the queue this long is stale (focus moved on long ago)
+BG_MAX_WAIT = 60
+
+# --- Bot-check circuit breaker -------------------------------------------------------------
+# YouTube answers player requests from a flagged IP with "Sign in to confirm you're not a bot".
+# Every further request while flagged prolongs the flag, so after a bot check the background
+# (preload, downloads, warm-up) sends nothing until the pause is over: 5 min, doubling up to
+# 1 h, reset by the first success. Playback the user starts still tries (the flag is often
+# intermittent). Persisted, because Sofa restarts the resolver with every app start.
+BLOCK_FILE = os.path.join(CACHE, "youtube-block.json")
+BLOCK_MIN, BLOCK_MAX = 300, 3600
+block_lock = threading.Lock()
+block = {"until": 0, "backoff": 0}
+try:
+    with open(BLOCK_FILE) as f:
+        b = json.load(f)
+        block = {"until": float(b.get("until", 0)), "backoff": float(b.get("backoff", 0))}
+except Exception:
+    pass
+
+def is_bot_check(e):
+    m = str(e).lower()
+    return "not a bot" in m or "sign in to confirm" in m
+
+def blocked_until():
+    with block_lock:
+        return block["until"] if block["until"] > time.time() else 0
+
+def note_result(bot_check):
+    with block_lock:
+        if bot_check:
+            block["backoff"] = min(BLOCK_MAX, max(BLOCK_MIN, block["backoff"] * 2))
+            block["until"] = time.time() + block["backoff"]
+            log("bot check - background requests paused for %d min" % (block["backoff"] // 60))
+        elif block["backoff"] or block["until"]:
+            block["until"], block["backoff"] = 0, 0
+            log("requests succeed again - pause lifted")
+        else:
+            return
+        try:
+            with open(BLOCK_FILE + ".tmp", "w") as f:
+                json.dump(block, f)
+            os.rename(BLOCK_FILE + ".tmp", BLOCK_FILE)
+        except Exception:
+            pass   # a preload that sat in the queue this long is stale (focus moved on long ago)
 
 def expires_of(url):
     m = re.search(r"/expire/(\d+)/", url) or re.search(r"[?&]expire=(\d+)", url)
@@ -257,12 +300,16 @@ def resolve(vid, live, pool):
                 log("slow %s via %s: %.1fs, %d formats, live=%s" % (vid, "vr" if ydl is vr else "web", dt,
                     len(info.get("formats") or []), bool(info.get("is_live"))))
             r = summarize(info)
+            note_result(False)
             if not live and ydl is vr and r.get("format") == "18":
                 r["lowq"] = True
             return r
         except Exception as e:
             last = e
             log("%s via %s: %s" % (vid, "vr" if ydl is vr else "web", str(e)[:200]))
+            if is_bot_check(e):   # the IP is flagged: the next client would only add a request
+                note_result(True)
+                break
     raise last or RuntimeError("unknown error")
 
 def run(job):
@@ -279,6 +326,8 @@ def run(job):
             if other is None:
                 if job.pool == "bg" and time.time() - job.created > BG_MAX_WAIT:
                     job.error = RuntimeError("preload dropped (stale)")
+                elif job.pool == "bg" and blocked_until():
+                    job.error = RuntimeError("Sign in to confirm you're not a bot (paused, no request sent)")
                 else:
                     try:
                         job.result = resolve(job.key[0], job.key[1], job.pool)
@@ -318,28 +367,49 @@ def handle(req):
     if job.result is not None:
         r = dict(job.result)
         r["rid"], r["secs"], r["pool"] = rid, round(time.time() - t0, 2), pool + ("" if mine else "+shared")
+        r["blocked_until"] = blocked_until()
         emit(r)
     else:
         msg = str(job.error or "timeout")
         m = re.search(r"ERROR: \[youtube\] [^:]+: (.*)", msg)
-        emit({"rid": rid, "error": (m.group(1) if m else msg)[:300]})
+        emit({"rid": rid, "error": (m.group(1) if m else msg)[:300], "blocked_until": blocked_until()})
+
+def current_player_id():
+    """Id of the current web player script (iframe_api is a static script, no player request)."""
+    import ssl, urllib.request
+    ctx = ssl._create_unverified_context()   # no TLS verification (user decision 2026-11-04)
+    with urllib.request.urlopen("https://www.youtube.com/iframe_api", timeout=10, context=ctx) as r:
+        m = re.search(r"player\\?/([0-9a-fA-F]{8})\\?/", r.read(200000).decode("utf-8", "replace"))
+    return m.group(1) if m else None
 
 def warmup():
-    # The first run after a YouTube player rollout takes ~20 s (JS preprocessing):
-    # do it ahead in the background so the first real click is fast. First bg (fills the
-    # disk cache), then fg - but only as long as no playback needs the fg pool.
-    for name in ("bg", "fg"):
-        web, _, lk = pools[name]
-        if not lk.acquire(blocking=(name == "bg")):
-            continue
+    # The first resolution after a YouTube player rollout takes ~20 s (JS preprocessing), so it
+    # is done ahead - but it costs player requests, and Sofa starts often (updates, deploys):
+    # 2026-11-04 the warm-up alone made ~80 player requests on a bot-flagged IP. Now: only when
+    # the player script is new (preprocessed result not in the disk cache yet), only in the bg
+    # pool (the fg pool reads the same disk cache), never during a bot-check pause.
+    if blocked_until():
+        log("warm-up skipped: requests paused after a bot check")
+        return
+    try:
+        pid = current_player_id()
+    except Exception as e:
+        log("warm-up: player version unknown (%s)" % str(e)[:100]); pid = None
+    solved = os.path.join(CACHE, "challenge-solver")
+    if pid and os.path.isdir(solved) and any(("2F" + pid + ",2F") in f for f in os.listdir(solved)):
+        log("warm-up not needed: player %s already prepared" % pid)
+        return
+    web, _, lk = pools["bg"]
+    with lk:
         try:
             t0 = time.time()
             web.extract_info("https://www.youtube.com/watch?v=jNQXAC9IVRw", download=False)
-            log("warm %s in %.1fs" % (name, time.time() - t0))
+            note_result(False)
+            log("warm bg in %.1fs (player %s)" % (time.time() - t0, pid))
         except Exception as e:
-            log("warmup %s failed: %s" % (name, str(e)[:200]))
-        finally:
-            lk.release()
+            if is_bot_check(e):
+                note_result(True)
+            log("warmup bg failed: %s" % str(e)[:200])
 
 def prune_cache():
     d = os.path.join(CACHE, "challenge-solver")

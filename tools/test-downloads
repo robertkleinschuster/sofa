@@ -8,6 +8,7 @@
 #   2. the verifier accepts a healthy file and rejects a corrupted one
 #   3. quitting during a download leaves no ffmpeg behind, and the download resumes on the next start
 #   4. a failed repair keeps the old file and is retried later (YouTube's bot check blocks for hours)
+#   5. during a YouTube bot-check pause a queued YouTube download waits without any request
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -21,6 +22,7 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 REF=orf:14345720   # any ORF ON episode (replace when it expires)
 BADREF=orf:1       # an episode id that does not exist: its download always fails
+YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube paused)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1
@@ -37,7 +39,7 @@ ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the de
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
   for p in $(ffpids); do kill $p 2>/dev/null; done
-  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF');" 2>/dev/null
+  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF','$YTREF');" 2>/dev/null
   for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
   rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/orphan-test."*
 }
@@ -115,6 +117,18 @@ grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in
 quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")
 [ "$st" = "2 2 repair:" ] && ok "marker persisted (state done, 2 tries)" || bad "unexpected record: $st"
+
+echo "==> 5. YouTube download during a bot-check pause"
+start
+cmd "ytblock 900"; sleep 0.5
+m=$(wc -l < "$LOG"); cmd "dlget $YTREF"
+for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "source paused" && break; sleep 0.5; done
+sed -n "$m,\$p" "$LOG" | grep -q "source paused - next attempt in 1[45] min" && ok "download waits for the end of the pause" || bad "no wait: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
+sed -n "$m,\$p" "$LOG" | grep -q "yt: resolve\|yt: resolved\|downloads: loading" && bad "a YouTube request was made during the pause" || ok "no YouTube request during the pause"
+quit
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads where id='$YTREF';")
+[ "$st" = "0 0" ] && ok "still queued, no attempt used up" || bad "unexpected record: $st"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
