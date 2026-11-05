@@ -12,7 +12,7 @@
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import <sys/stat.h>
 #import "../src/Core/SFCore.h"
-#import "../src/App/SFRemote.h"
+#import "../src/Shell/SFRemote.h"
 #import "../src/Core/SFRuntime.h"
 
 BOOL SFDevMode = NO;

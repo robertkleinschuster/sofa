@@ -13,7 +13,9 @@ BUILD   := build
 APP     := $(BUILD)/Sofa.app
 BIN     := $(APP)/Contents/MacOS/Sofa
 HBIN    := $(APP)/Contents/MacOS/SofaRemote
-SRCDIRS := $(wildcard src/*/)   # sources by responsibility: App Core UI Player Providers YouTube Library
+# layers (docs/architecture.md): Framework (TV UI) · Core/Library/Player (app-agnostic services) ·
+# Apps/<App> (everything source-specific) · Shell (the Sofa product, wires apps in)
+SRCDIRS := $(filter-out src/Apps/,$(wildcard src/*/)) $(wildcard src/Apps/*/)
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
@@ -22,7 +24,7 @@ LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -fra
 ifneq ($(wildcard $(MP)/lib/libmpv.dylib),)
 LDFLAGS += -framework OpenGL -weak-lmpv
 endif
-SRC     := $(wildcard src/*/*.m)
+SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)
 # the helper shares the runtime paths (SFRuntime) with Sofa
@@ -92,7 +94,7 @@ $(DEVBIN): $(BIN) res/Info.plist
 	@cp $(APP)/Contents/MacOS/Sofa $(DEVAPP)/Contents/MacOS/Sofa
 	@sed -e 's/<string>de.sofa.app<\/string>/<string>de.sofa.dev<\/string>/' -e 's/<string>Sofa<\/string><\/dict>/&/' res/Info.plist > $(DEVAPP)/Contents/Info.plist
 
-$(BUILD)/obj/%.o: src/%.m $(wildcard src/*/*.h)
+$(BUILD)/obj/%.o: src/%.m $(wildcard src/*/*.h src/Apps/*/*.h)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -100,7 +102,7 @@ $(BUILD)/hobj/SFRuntime.o: src/Core/SFRuntime.m src/Core/SFRuntime.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/hobj/%.o: helper/%.m $(wildcard helper/*.h) src/App/SFRemote.h src/Core/SFCore.h
+$(BUILD)/hobj/%.o: helper/%.m $(wildcard helper/*.h) src/Shell/SFRemote.h src/Core/SFCore.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
