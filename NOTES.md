@@ -251,6 +251,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       only if anonymous resolving becomes unreliable. Then sign-in IN Sofa itself (no browser),
       maybe conveniently via the phone (code/QR like "Mit TV verbinden").
 - [ ] Periodic background review agents (user request) — after every larger building block.
+  - 2026-11-05 12:10 review (tile subtitles, recent downloads, AV dev frames): no real bugs; hardened SFDotJoin (variadic, ARC-safe temporaries) and the dev output attach (active player only).
 - [x] Video frames in dev screenshots/stream (2026-11-05): mpv via GL readback; AVFoundation via AVPlayerItemVideoOutput on the shared `SFAVPlayerLayer` (dev only, files/progressive). HLS never delivers pixel buffers to a video output on 10.9 (tested before/after ready, without the layer, IOSurface buffers) → HLS items get no output and stay black in dev shots; mpv is the default engine anyway.
 - [x] 2026-11-05 MacPorts port in the overlay (final state): `multimedia/sofa` 0.3.8, builds without network (yt-dlp + sidecar node_modules as checksummed distfiles, `SOFA_DISTFILES`), no bgutil dependency; pushed (backport-toolkit 69c2196). Per release: bump version + checksums; the `sofa-yt-modules-<lock hash>` name changes with the sidecar lockfile. The real Mac still runs the release bundle in /Applications.
 - [x] System volume via remote (player: +/-), no app-internal volume.
