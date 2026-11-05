@@ -10,7 +10,8 @@ Einstellungen → „Update installieren“.
   Web-Player (eine Anfrage pro Video, Streams direkt im Original-Format bis 1080p). Das
   funktioniert auch dann, wenn YouTube den bisherigen Weg mit „kein Bot“ blockiert; der alte
   Weg bleibt als Ausweichlösung.
-- **Downloads** von YouTube laufen ebenfalls über den neuen Weg (720p, Originalton).
+- **Downloads in voller Qualität:** YouTube-Downloads laufen ebenfalls über den neuen Weg und
+  haben jetzt dieselbe Qualität wie beim Abspielen (bis 1080p mit 60 Bildern/s, Originalton).
 - **Weitere Folgen im Player:** Die Info (OK halten) zeigt jetzt auch bei ZDF, ARD und ORF die
   anderen Folgen der Sendung – nicht nur bei heruntergeladenen.
 - **Vorpremieren:** Folgen, die schon vor der TV-Ausstrahlung online sind, zeigen „TV am …“

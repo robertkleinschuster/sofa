@@ -14,7 +14,8 @@
 #   Contents/Runtime/etc/{cert.pem,fonts/}
 #
 # Prerequisite (build machine): ports for the sofa dependencies + bgutil-pot-server installed.
-# Usage: tools/make-release            -> dist/Sofa-<version>.dmg
+# Usage: tools/make-release            -> dist/Sofa-<version>.dmg (+ .sig, .sha256,
+#                                          sofa-yt-modules-<lock>.tar.gz for the MacPorts port)
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -117,5 +118,7 @@ KEY="${SOFA_SIGNING_KEY:-$HOME/.config/sofa/release-signing-key.pem}"
 "$MP/bin/openssl" dgst -sha256 -verify "$SRC/res/sofa-release-public.pem" -signature "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg" >/dev/null \
   || { echo "ERROR: signature does not match the public key in the bundle"; exit 1; }
 (cd "$DIST" && shasum -a 256 "Sofa-$VER.dmg" > "Sofa-$VER.dmg.sha256")
+# the sidecar's npm dependencies as a distfile for the MacPorts port (no network while building)
+"$SRC/tools/fetch-sofa-yt" --pack "$DIST" >/dev/null
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
 cat "$DIST/Sofa-$VER.dmg.sha256"

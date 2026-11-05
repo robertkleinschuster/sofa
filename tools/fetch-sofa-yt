@@ -5,20 +5,35 @@
 # (no dependency needs one - pure JS). Called by the Makefile when the lockfile is newer.
 #   build/vendor/sofa-yt/node_modules/...
 #   build/vendor/sofa-yt/STAMP            sha256 of the lockfile that was installed
+# SOFA_DISTFILES=dir: unpack $dir/sofa-yt-modules-<lockfile sha256, 12 chars>.tar.gz instead of running
+# npm (MacPorts port: no network while building; the tarball is a checksummed distfile, a release asset).
+#   tools/fetch-sofa-yt --pack DIR    write that tarball for the current lockfile into DIR (make-release)
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$SRC/build/vendor/sofa-yt"
 NODE_BIN="${NODE_BIN:-/opt/local/bin}"
+LOCK=$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)
+PACK="sofa-yt-modules-$(echo "$LOCK" | cut -c1-12).tar.gz"
+if [ "${1:-}" = --pack ]; then
+  [ -f "$OUT/STAMP" ] && [ "$(cat "$OUT/STAMP")" = "$LOCK" ] || "$0"
+  COPYFILE_DISABLE=1 tar -C "$OUT" -czf "$2/$PACK" STAMP node_modules
+  echo "$2/$PACK"; exit 0
+fi
 T="$OUT.tmp"; rm -rf "$T"; mkdir -p "$T"
-cp "$SRC/res/sofa-yt/package.json" "$SRC/res/sofa-yt/package-lock.json" "$T/"
-# npm is a node script: PATH must find the MacPorts node (no /usr/bin/env node elsewhere on 10.9)
-(cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --omit=dev --ignore-scripts --no-audit --no-fund \
-   --no-update-notifier --loglevel=error)
+if [ -n "${SOFA_DISTFILES:-}" ]; then
+  tar -C "$T" -xzf "$SOFA_DISTFILES/$PACK"
+  [ "$(cat "$T/STAMP")" = "$LOCK" ] || { echo "fetch-sofa-yt: $PACK does not match the lockfile"; exit 1; }
+else
+  cp "$SRC/res/sofa-yt/package.json" "$SRC/res/sofa-yt/package-lock.json" "$T/"
+  # npm is a node script: PATH must find the MacPorts node (no /usr/bin/env node elsewhere on 10.9)
+  (cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --omit=dev --ignore-scripts --no-audit --no-fund \
+     --no-update-notifier --loglevel=error)
+fi
 for p in googlevideo youtubei.js bgutils-js jsdom; do
   [ -f "$T/node_modules/$p/package.json" ] || { echo "fetch-sofa-yt: $p missing after npm ci"; exit 1; }
 done
-shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1 > "$T/STAMP"
+echo "$LOCK" > "$T/STAMP"
 rm -f "$T/package.json" "$T/package-lock.json"
 rm -rf "$OUT"; mv "$T" "$OUT"
 echo "sofa-yt dependencies -> $OUT/node_modules ($(ls "$OUT/node_modules" | wc -l | tr -d ' ') packages)"

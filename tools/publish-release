@@ -1,5 +1,6 @@
 #!/bin/bash
-# publish-release -- publish dist/Sofa-<version>.dmg (+ .sig, .sha256) as GitHub release v<version>.
+# publish-release -- publish dist/Sofa-<version>.dmg (+ .sig, .sha256, and the sidecar's npm
+# dependencies sofa-yt-modules-<lock>.tar.gz, a distfile of the MacPorts port) as GitHub release v<version>.
 # Release text = section "## <version>" from CHANGELOG.md (shown in Sofa on a manual update).
 # Before: version bumped in res/Info.plist, CHANGELOG updated, everything committed,
 #         tools/make-release and tools/test-release successful, screenshots current (tools/screenshots).
@@ -12,6 +13,8 @@ DMG="dist/Sofa-$VER.dmg"
 [ -f "$DMG" ] && [ -f "$DMG.sha256" ] && [ -f "$DMG.sig" ] || { echo "run tools/make-release first ($DMG missing)"; exit 1; }
 [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/Sofa.app/Contents/Info.plist)" = "$VER" ] \
   || { echo "dist/Sofa.app is not version $VER - rerun tools/make-release"; exit 1; }
+MODS=$(cd dist && ls sofa-yt-modules-*.tar.gz 2>/dev/null | head -1)
+[ -n "$MODS" ] || { echo "dist/sofa-yt-modules-*.tar.gz missing - rerun tools/make-release"; exit 1; }
 [ -z "$(git status --porcelain)" ] || { echo "working copy not clean - commit first"; exit 1; }
 (cd dist && shasum -a 256 -c "Sofa-$VER.dmg.sha256" >/dev/null) || { echo "checksum mismatch"; exit 1; }
 /opt/local/bin/openssl dgst -sha256 -verify res/sofa-release-public.pem -signature "$DMG.sig" "$DMG" >/dev/null \
@@ -25,7 +28,7 @@ printf '%s\n\n<!-- sofa-notes-end -->\n**Installation:** `Sofa-%s.dmg` laden, ö
 # release without its DMG (0.3.6: the DMG was missing at first). The ~110 MB DMG goes up
 # throttled (UPLOAD_RATE, default 300k/s) - unthrottled it saturated the uplink (2026-11-04).
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh release view "v$VER" >/dev/null 2>&1 || gh release create "v$VER" --draft --title "Sofa $VER" --notes-file dist/notes.md "$DMG.sig" "$DMG.sha256"
+gh release view "v$VER" >/dev/null 2>&1 || gh release create "v$VER" --draft --title "Sofa $VER" --notes-file dist/notes.md "$DMG.sig" "$DMG.sha256" "dist/$MODS"
 # by listing (also finds drafts; the tags endpoint does not, and prints its 404 body on stdout)
 ID=$(gh api "repos/$REPO/releases" -q ".[] | select(.tag_name==\"v$VER\") | .id" | head -1)
 [ -n "$ID" ] || { echo "release v$VER not found"; exit 1; }
@@ -39,8 +42,8 @@ if [ "$(have "$NAME")" != "$SIZE" ]; then
        -H "Content-Type: application/octet-stream" --data-binary @"$DMG" \
        "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$NAME" >/dev/null
 fi
-for f in "$NAME" "$NAME.sig" "$NAME.sha256"; do
+for f in "$NAME" "$NAME.sig" "$NAME.sha256" "$MODS"; do
   [ "$(have "$f")" = "$(stat -f %z "dist/$f")" ] || { echo "asset $f missing or incomplete - release stays a draft"; exit 1; }
 done
 gh release edit "v$VER" --draft=false --latest >/dev/null
-echo "published: v$VER (all three assets verified)"
+echo "published: v$VER (all four assets verified)"

@@ -1,6 +1,8 @@
 #!/bin/bash
 # fetch-ytdlp -- fetch yt-dlp (zipapp) + bgutil plugin as pinned in res/ytdlp.lock into build/vendor/yt-dlp
 # and verify them. Called by the Makefile when the files are missing or the lock is newer.
+# SOFA_DISTFILES=dir: take the files from there instead of the network (MacPorts port: its checksummed
+# distfiles yt-dlp, SHA2-256SUMS, SHA2-256SUMS.sig, bgutil-ytdlp-pot-provider.zip); verified the same way.
 #   build/vendor/yt-dlp/yt-dlp            zipapp (contains yt-dlp-ejs)
 #   build/vendor/yt-dlp/VERSION           e.g. 2026.10.26
 #   build/vendor/yt-dlp/plugins/yt_dlp_plugins/...
@@ -14,7 +16,10 @@ YV=$(awk '$1=="yt-dlp"{print $2}' "$SRC/res/ytdlp.lock")
 PV=$(awk '$1=="bgutil-ytdlp-pot-provider"{print $2}' "$SRC/res/ytdlp.lock")
 PS=$(awk '$1=="bgutil-ytdlp-pot-provider"{print $3}' "$SRC/res/ytdlp.lock")
 T="$OUT.tmp"; rm -rf "$T"; mkdir -p "$T/dl" "$T/plugins"
-get() { "$CURL" -fsSL --retry 3 -o "$2" "$1"; }
+get() {
+  if [ -n "${SOFA_DISTFILES:-}" ]; then cp "$SOFA_DISTFILES/$(basename "$1")" "$2"
+  else "$CURL" -fsSL --retry 3 -o "$2" "$1"; fi
+}
 R=https://github.com/yt-dlp/yt-dlp/releases/download/$YV
 for f in yt-dlp SHA2-256SUMS SHA2-256SUMS.sig; do get "$R/$f" "$T/dl/$f"; done
 "$PY" -I "$SRC/res/ytdlp_verify.py" "$SRC/res/yt-dlp-public.key" "$T/dl/SHA2-256SUMS" "$T/dl/SHA2-256SUMS.sig" "$T/dl/yt-dlp" yt-dlp
