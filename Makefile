@@ -40,7 +40,14 @@ YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.p
 YTFILES := $(foreach b,$(APP) $(DEVAPP),$(addprefix $(b)/Contents/Resources/,$(YTRES)) $(b)/Contents/Resources/yt-dlp/VERSION)
 VENDOR  := $(BUILD)/vendor/yt-dlp
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES)
+# YouTube SABR sidecar (docs/sofa-yt.md): its sources + the npm dependencies pinned in
+# res/sofa-yt/package-lock.json (tools/fetch-sofa-yt, npm ci) -> Contents/Resources/sofa-yt
+SYSRC   := res/sofa-yt/package.json $(wildcard res/sofa-yt/*.mjs res/sofa-yt/lib/*.mjs)
+SYVEND  := $(BUILD)/vendor/sofa-yt
+SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources/%,$(SYSRC)) \
+             $(b)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp)
+
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES)
 
 $(APP)/Contents/Resources/logos/%.png: res/logos/%.png
 	@mkdir -p $(dir $@)
@@ -59,6 +66,14 @@ $(VENDOR)/VERSION: res/ytdlp.lock res/ytdlp_verify.py
 $(APP)/Contents/Resources/yt-dlp/VERSION $(DEVAPP)/Contents/Resources/yt-dlp/VERSION: $(VENDOR)/VERSION
 	@rm -rf $(dir $@) && mkdir -p $(dir $@)
 	cp -R $(VENDOR)/ $(dir $@)
+
+$(SYVEND)/STAMP: res/sofa-yt/package-lock.json
+	tools/fetch-sofa-yt
+
+$(APP)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp $(DEVAPP)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp: $(SYVEND)/STAMP
+	@rm -rf $(dir $@) && mkdir -p $(dir $@)
+	cp -R $(SYVEND)/node_modules/ $(dir $@)
+	cp $(SYVEND)/STAMP $@
 
 # Dev bundle with its own bundle ID (de.sofa.dev): invisible test/preview
 # instances must never be confused with the real app (de.sofa.app)

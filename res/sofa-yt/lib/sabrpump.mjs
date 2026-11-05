@@ -1,0 +1,137 @@
+// One SABR "pump": a googlevideo SabrStream run from `startMs` for a video+audio pair (or audio only)
+// whose segments are handed out with their absolute byte position in the original file.
+//
+// googlevideo's public output is two plain byte streams. To place the bytes, every segment's
+// MediaHeader is needed: Track#recordCompletedSegment is called synchronously right after the
+// segment was enqueued into that track's stream (SabrSegmentBuffer#finalizeSegment, googlevideo
+// 5.0.1 - pinned in package-lock.json), so a per-track FIFO pairs each chunk read from the stream with
+// its header. Every pairing is verified (length == segmentLengthBytes, init at 0); a mismatch ends the
+// pump instead of serving misplaced bytes. Streams error out on abort, dropping queued chunks from the
+// tail only, so the FIFO head stays aligned.
+import { SabrStream } from 'googlevideo/sabr-stream';
+import { EnabledTrackTypes, Logger, LogLevel } from 'googlevideo/utils';
+import { log, debug } from './log.mjs';
+
+Logger.getInstance().setLogLevels(LogLevel.ERROR);
+
+const MAX_RETRIES = 2; // googlevideo default 10 = ~39 s of 403 retries; surface errors instead
+
+let nextId = 1;
+
+/**
+ * @param {object} o
+ * @param {object} o.info           cached player info (youtube.mjs)
+ * @param {object[]} o.formats      described formats (formats.mjs)
+ * @param {object|null} o.video     described video format or null (audio only)
+ * @param {object} o.audio          described audio format
+ * @param {number} o.startMs
+ * @param {string} [o.poToken]      pre-minted websafe token (avoids SPS 3 + backoff on seek starts)
+ * @param {() => Promise<Uint8Array>} o.mintPoToken
+ * @param {(ctx) => Promise<{serverAbrStreamingUrl, videoPlaybackUstreamerConfig}>} o.reload
+ * @param {(kind, seg) => void} o.onSegment   seg = {start, buf, startMs, durationMs, init}
+ * @param {(err: Error|null, how: 'finished'|'aborted'|'error') => void} o.onEnd
+ * @returns {{id, abort: () => void}}
+ */
+export function startSabrPump(o) {
+  const id = nextId++;
+  const tag = `pump#${id} ${o.info.id} ${o.video ? `${o.video.itag}+` : 'audio-only '}${o.audio.key} @${(o.startMs / 1000).toFixed(1)}s`;
+  let ended = false;
+  const end = (err, how) => {
+    if (ended) return;
+    ended = true;
+    debug(`${tag}: end (${how}${err ? `: ${err.message}` : ''})`);
+    o.onEnd(err, how);
+  };
+
+  const sabr = new SabrStream({
+    videoId: o.info.id,
+    formats: o.formats.map((f) => f.sabr),
+    serverAbrStreamingUrl: o.info.sabrUrl,
+    videoPlaybackUstreamerConfig: o.info.ustreamer,
+    clientInfo: { clientName: o.info.clientName, clientVersion: o.info.clientVersion },
+    poToken: o.poToken,
+    callbacks: {
+      onMintPoToken: () => o.mintPoToken(),
+      onReloadPlayerResponse: (ctx) => { log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
+    },
+  });
+
+  const fifo = { video: [], audio: [] };
+  for (const kind of ['video', 'audio']) {
+    const track = sabr.trackCollection?.[kind];
+    if (!track || typeof track.recordCompletedSegment !== 'function') {
+      throw new Error('googlevideo internals changed (Track#recordCompletedSegment) - check the pinned version');
+    }
+    const orig = track.recordCompletedSegment.bind(track);
+    track.recordCompletedSegment = (info, emsg) => {
+      orig(info, emsg);
+      const done = track.trackedSegments.get(info.segmentNumber);
+      const h = info.mediaHeader || {};
+      fifo[kind].push({
+        init: !!h.isInitializationSegment,
+        start: h.isInitializationSegment ? 0 : Number(h.segmentByteRangeStart),
+        length: Number(h.segmentLengthBytes || 0),
+        startMs: done?.startTimeMs ?? info.startTimeMs ?? 0,
+        durationMs: done?.durationMs ?? info.durationMs ?? 0,
+      });
+    };
+  }
+
+  sabr.on('streamProtectionStatusUpdate', (sps) => { if (sps?.status !== 1) debug(`${tag}: SPS ${sps?.status}`); });
+  sabr.on('error', (e) => end(e instanceof Error ? e : new Error(String(e)), 'error'));
+  // 'finish' closes both streams; the readers below report it once they drained every chunk
+
+  let started;
+  try {
+    started = sabr.start({
+      videoFormat: o.video ? o.video.sabr : undefined,
+      audioFormat: o.audio.sabr,
+      // SABR has no video-only mode; audio-only for an extra language track
+      enabledTrackTypes: o.video ? EnabledTrackTypes.VIDEO_AND_AUDIO : EnabledTrackTypes.AUDIO_ONLY,
+      startTimeMs: Math.max(0, Math.round(o.startMs)),
+      maxRetries: MAX_RETRIES,
+      isPostLiveDvr: false,
+    });
+  } catch (e) {
+    queueMicrotask(() => end(e, 'error'));
+    return { id, abort() {} };
+  }
+  debug(`${tag}: started`);
+
+  const pumpReader = async (kind, stream) => {
+    const reader = stream.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const h = fifo[kind].shift();
+        const buf = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+        if (!h || (h.length && h.length !== buf.length) || !Number.isFinite(h.start)) {
+          throw new Error(`segment bookkeeping mismatch on ${kind}: header=${JSON.stringify(h)} bytes=${buf.length}`);
+        }
+        o.onSegment(kind, { start: h.start, buf, startMs: h.startMs, durationMs: h.durationMs, init: h.init });
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+  const readers = [pumpReader('audio', started.audioStream)];
+  if (o.video) readers.push(pumpReader('video', started.videoStream));
+  Promise.all(readers).then(() => {
+    // both streams closed normally: googlevideo emits 'finish' as well
+    if (!sabr.isAborted && !sabr.isErrored) end(null, 'finished');
+  }, (e) => {
+    if (sabr.isAborted || ended) return end(null, 'aborted');
+    sabr.abort().catch(() => {});
+    end(e, 'error');
+  });
+
+  return {
+    id,
+    abort() {
+      if (ended) return;
+      sabr.abort().catch(() => {});
+      end(null, 'aborted');
+    },
+  };
+}

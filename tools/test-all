@@ -4,12 +4,13 @@
 #   tools/test-resolver   resolver selection logic (fixtures, no network)
 #   tools/test-playback   render-context race, video self-heal, fallback chain, download -> online
 #   tools/test-downloads  orphaned ffmpeg, verifier, quit during a download
+#   tools/test-sofa-yt    YouTube SABR sidecar: index/virtual files/pacing/eviction, mpv via fake SABR (offline)
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
 trap 'rm -f "$OUT"' EXIT
 fail=0
-for t in test-resolver test-playback test-downloads; do
+for t in test-resolver test-playback test-downloads test-sofa-yt; do
   if "$DIR/$t" > "$OUT" 2>&1; then echo "  ok    $t"
   else echo "  FAIL  $t"; tail -n 25 "$OUT" | sed 's/^/        /'; fail=1; fi
 done
