@@ -266,6 +266,22 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   - Page model: SFPage/SFShelf loaders, reloadSoon coalescing, live reload notifications.
   - Dev tooling as part of it: FIFO commands, screenshots/stream, a component gallery page
     (`open gallery`) rendering every component in every theme for visual regression shots.
+  - **App modules (user 2026-11-05: adding a new app should reuse almost all UI, and it must be
+    clear where the app-specific logic goes):** today every source is ad hoc (SFProviderZDF/ARD/
+    ORF/CCC classes, SFYouTube, scattered registries like SFRegisterAvailabilityCheck /
+    SFRegisterShowRefLookup, source-string switches in shared code). Target architecture:
+    - `SFApp` protocol = the ONLY place for app logic: identity (id, name, theme, logo), page
+      loaders (home, show/channel, category, search + suggestions), item mapping (API JSON →
+      SFItem), playback resolving (ref → streams/engine hints), optional capabilities declared
+      explicitly (live, downloads, follow/new episodes, availability check, show-ref lookup,
+      phone pairing) – the core asks the app instead of `if source == …`.
+    - App registry: one list of apps; home tiles, search, follows, downloads, stats iterate it.
+    - Shared core stays app-agnostic: library (downloads/storage/keep), progress/history, follows,
+      watch later, player + engines, net/cache, settings.
+    - Folder layout: src/Framework (UI + interaction + page model), src/Core, src/Apps/<App>/
+      (one folder per app, everything app-specific inside); docs/new-app.md = checklist +
+      a minimal template app; a test hook per app (tools/test-* via the app protocol).
+    - Migrate one app first (media.ccc.de, the smallest) as the reference, then the others.
   - Way: incremental – extract when touching code (no big-bang rewrite); docs/ui-framework.md as
     the contract; each extraction verified by screenshots in all themes + test-all.
 - [ ] Periodic background review agents (user request) — after every larger building block.
