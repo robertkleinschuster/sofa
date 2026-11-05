@@ -47,14 +47,14 @@ def base_opts():
         "format": FMT_VOD,
     }
 
-def make_web():
+def make_web(client="mweb"):
     o = base_opts()
     o["extractor_args"] = {
-        # mweb first: its DASH URLs carry a GVS PO token (bgutil) and are not 403'd like the
-        # token-less web_embedded ones (2026-11-04: 403 with every user agent, pot missing);
-        # web_embedded stays as a second client in the same call (HLS, formats mweb lacks).
-        # yt-dlp merges both format lists, the first client wins per itag.
-        "youtube": {"player_client": ["mweb", "web_embedded"], "player_skip": ["webpage"]},
+        # ONE client per call - every client is a player request (bot-flagged IP). mweb: DASH up
+        # to 1080p with a GVS PO token (bgutil) for mpv + itag 18 as the muxed fallback; enough for
+        # playback (2026-11-05 measured: 36 formats, no HLS). web_embedded (HLS) is only asked when
+        # mweb fails (resolve() chain); before, both were asked in every call.
+        "youtube": {"player_client": [client], "player_skip": ["webpage"]},
         # the script provider would otherwise probe node for 15 s -> HTTP provider only (127.0.0.1:4416)
         "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
     }
@@ -72,8 +72,8 @@ def make_vr():
 # Two pools with their own YoutubeDL instances (YoutubeDL is not thread-safe -> serial per pool):
 #   fg = playback (click), bg = warm-up, preload on focus, downloads.
 # So a click never waits behind a preload (previously up to 10 s instead of 3.5 s).
-pools = {"bg": (make_web(), make_vr(), threading.Lock()),
-         "fg": (make_web(), make_vr(), threading.Lock())}
+pools = {"bg": (make_web(), make_vr(), threading.Lock(), make_web("web_embedded")),
+         "fg": (make_web(), make_vr(), threading.Lock(), make_web("web_embedded"))}
 # Running resolutions per (vid, live): a second request for the same video waits for the
 # result instead of resolving again. A playback request overtakes a still WAITING preload.
 jobs = {}
@@ -297,9 +297,10 @@ def dash_pick(formats):
             "alang": audio_lang(a)}
 
 def resolve(vid, live, pool):
-    web, vr, _ = pools[pool]
+    web, vr, _, emb = pools[pool]
     u = "https://www.youtube.com/watch?v=" + vid
-    chain = [vr, web] if live else [web, vr]
+    # one player request per step; the next only if the previous failed (never after a bot check)
+    chain = [vr, web] if live else [web, emb, vr]
     last = None
     for ydl in chain:
         try:
@@ -307,7 +308,7 @@ def resolve(vid, live, pool):
             info = ydl.extract_info(u, download=False)
             dt = time.time() - t0
             if dt > 6:   # make slow resolutions traceable (client, format count, duration)
-                log("slow %s via %s: %.1fs, %d formats, live=%s" % (vid, "vr" if ydl is vr else "web", dt,
+                log("slow %s via %s: %.1fs, %d formats, live=%s" % (vid, {vr: "vr", emb: "web_embedded"}.get(ydl, "mweb"), dt,
                     len(info.get("formats") or []), bool(info.get("is_live"))))
             r = summarize(info)
             note_result(False)
@@ -316,7 +317,7 @@ def resolve(vid, live, pool):
             return r
         except Exception as e:
             last = e
-            log("%s via %s: %s" % (vid, "vr" if ydl is vr else "web", str(e)[:200]))
+            log("%s via %s: %s" % (vid, {vr: "vr", emb: "web_embedded"}.get(ydl, "mweb"), str(e)[:200]))
             if is_bot_check(e):   # the IP is flagged: the next client would only add a request
                 note_result(True)
                 break
@@ -409,7 +410,7 @@ def warmup():
     if pid and os.path.isdir(solved) and any(("2F" + pid + ",2F") in f for f in os.listdir(solved)):
         log("warm-up not needed: player %s already prepared" % pid)
         return
-    web, _, lk = pools["bg"]
+    web, _, lk, _ = pools["bg"]
     with lk:
         try:
             t0 = time.time()

@@ -757,6 +757,12 @@ static NSSet *skipKeys(void) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
         void (^viaYTDLP)(void) = ^{
         [[SFYTResolver shared] prefetch:vid done:^(NSDictionary *r, NSError *e) {
+            // the playback format, as with SABR: DASH video + the original audio track (mweb, the
+            // first client, has no HLS any more); otherwise the muxed/HLS stream as before
+            NSDictionary *d = [r[@"dash"] isKindOfClass:[NSDictionary class]] ? r[@"dash"] : nil;
+            if ([d[@"video"] isKindOfClass:[NSString class]] && [d[@"audio"] isKindOfClass:[NSString class]]) {
+                done([NSURL URLWithString:d[@"video"]], [NSURL URLWithString:d[@"audio"]], nil); return;
+            }
             NSString *u = r[@"url"];
             for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
             // several audio tracks: original audio separately (the muxed stream has YouTube's default track)
