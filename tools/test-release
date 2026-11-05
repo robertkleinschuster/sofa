@@ -70,6 +70,9 @@ F=$(SOFA_POT_URL="http://127.0.0.1:${SYPORT:-1}" np "$PY" -s "$YT/yt-dlp" -v --n
       --extractor-args "youtube:player_client=mweb;player_skip=webpage" \
       -f 'bv*[height<=1080]+ba/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>"$T/ytdlp.log" | tail -1)
 [[ "$F" =~ ^[0-9+]+$ ]] && ok "YouTube resolving via yt-dlp (format $F)" || bad "YouTube resolving: $F $(tail -2 "$T/ytdlp.log")"
+# only the muxed 360p format: the DASH formats were dropped (PO token or JS challenge) - not a
+# failure of the bundle, but say why (2026-11-05 a release run got 18 once, the rerun 395+251)
+[ "$F" = 18 ] && echo "  note  only format 18: $(/usr/bin/grep -i 'warning\|po token\|challenge.*fail\|missing' "$T/ytdlp.log" | tail -3 | tr '\n' ' ')"
 /usr/bin/grep -qi 'PO Token Providers: .*sofa' "$T/ytdlp.log" && ok "yt-dlp uses Sofa's PO token provider" \
   || bad "Sofa's PO token provider not registered: $(/usr/bin/grep -i 'PO Token Providers' "$T/ytdlp.log")"
 /usr/bin/grep -qi 'error.*sofa\|sofa-yt /pot' "$T/ytdlp.log" && bad "PO token from the sidecar failed: $(/usr/bin/grep -i 'sofa-yt /pot' "$T/ytdlp.log" | head -1)" || ok "PO tokens from the sidecar"
