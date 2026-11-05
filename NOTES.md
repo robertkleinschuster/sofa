@@ -172,6 +172,22 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 (text input for search → own on-screen keyboard).
 
 ## Backlog (user requests — queue, tick off when done)
+- [ ] **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05):
+      videos disappear from YouTube (deleted, private, region-locked) - then the local copy is the
+      only one. Today `SFDownloads -cleanup` deletes subscription episodes after `keepDays` (default
+      90) and, with "delete watched" on, 1 day after watching -> both go.
+      - Disk monitoring: free space checked before every download start and while ffmpeg writes;
+        below a reserve (e.g. 10 GB or 5 %), downloads pause ("Speicher voll"), resume by themselves
+        once space is free again. The user is asked on screen (banner/notification) to make room.
+      - "Behalten" (keep forever): a mark per download (context menu + info panel, pin icon on the
+        tile); kept videos are never offered for deletion in bulk suggestions.
+      - "Platz schaffen" (make room): a screen with bulk options, largest effect first, each group
+        with size and count, checkable: watched / older than N months / per channel or show /
+        "noch online" (verified: YouTube oembed/player status, Mediathek availability date) vs.
+        "nicht mehr online" (shown, never preselected - the copy is irreplaceable). Kept videos are
+        excluded. Online check sparse and cached (YouTube requests minimal).
+      - Migration: existing subscriptions keep their downloads; retention/delete-watched settings
+        removed or turned into suggestions inside "Platz schaffen".
 - [x] Official logos (YouTube, ZDF, ARD, ORF, media.ccc.de, 3sat, ARTE ...) as PNG
       (Wikimedia renderings, 10.9 cannot do SVG) in `res/logos/`, in app tiles + header.
       Home use → allowed (user 2026-11-03).
