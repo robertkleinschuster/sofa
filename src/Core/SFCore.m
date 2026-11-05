@@ -50,6 +50,12 @@ NSString *SFFormatDuration(NSTimeInterval secs) {
     return [NSString stringWithFormat:@"%ld:%02ld", s / 60, s % 60];
 }
 
+NSString *SFDotJoinN(NSString *__unsafe_unretained const *parts, NSUInteger n) {
+    NSMutableArray *a = [NSMutableArray arrayWithCapacity:n];
+    for (NSUInteger i = 0; i < n; i++) if (parts[i].length) [a addObject:parts[i]];
+    return [a componentsJoinedByString:@" · "];
+}
+
 NSString *SFFormatDateShort(NSDate *d) {
     if (!d) return @"";
     NSCalendar *cal = [NSCalendar currentCalendar];

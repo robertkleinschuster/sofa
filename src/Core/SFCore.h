@@ -30,6 +30,11 @@ NSColor *SFHex(uint32_t rgb);
 NSColor *SFHexA(uint32_t rgb, CGFloat a);
 NSString *SFFormatDuration(NSTimeInterval secs);   // 1:02:03 / 4:05
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
+// Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
+// channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)
+NSString *SFDotJoinN(NSString *__unsafe_unretained const *parts, NSUInteger n);
+#define SFDotJoin(...) SFDotJoinN((NSString *__unsafe_unretained const[]){__VA_ARGS__}, \
+    sizeof((NSString *__unsafe_unretained const[]){__VA_ARGS__}) / sizeof(NSString *))
 NSString *SFAppSupportDir(void);                   // ~/Library/Application Support/Sofa
 NSString *SFCacheDir(void);                        // ~/Library/Caches/Sofa
 

@@ -178,7 +178,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
         if (!i.identifier || [seen containsObject:i.identifier]) continue;
         [seen addObject:i.identifier];
         SFItem *c = [i copy];
-        c.subtitle = [NSString stringWithFormat:@"%@ · %@", c.channel ?: @"", SFFormatDateShort(c.date)];
+        c.subtitle = SFDotJoin(c.channel, SFFormatDateShort(c.date));
         [out addObject:c];
     }
     return out;

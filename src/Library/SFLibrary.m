@@ -7,6 +7,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
 
 @implementation SFLibrary {
     NSArray *_shows;
+    NSArray *_recent;   // all downloaded episodes, newest download first
     NSUInteger _gen;        // state of the grouping cache
     NSUInteger _notified;   // last notified state (separate, otherwise a rebuild swallows the notification)
     BOOL _pending;
@@ -52,6 +53,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSMutableDictionary *groups = [NSMutableDictionary new];   // "source\tchannel" -> SFShow
     NSMutableArray *order = [NSMutableArray new];
     NSMutableDictionary *eps = [NSMutableDictionary new];      // key -> NSMutableArray
+    NSMutableArray *recent = [NSMutableArray new];
     for (SFItem *e in [dl items:nil]) {   // newest first
         NSString *src = e.source.length ? e.source : @"youtube";
         NSString *ch = e.channel.length ? e.channel : SFUnsortedChannel;
@@ -71,6 +73,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
         e.style = SFTileStyleLandscape;
         e.subtitle = SFFormatDateShort(e.date);
         [eps[k] addObject:e];
+        [recent addObject:e];
     }
     for (NSString *k in eps) {
         SFShow *s = groups[k];
@@ -84,7 +87,13 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     [order sortUsingComparator:^NSComparisonResult(SFShow *a, SFShow *b) {
         return [(b.latest ?: [NSDate distantPast]) compare:(a.latest ?: [NSDate distantPast])];
     }];
+    NSMutableDictionary *added = [NSMutableDictionary new];
+    for (SFItem *e in recent) added[e.identifier] = [dl recordFor:e.identifier][@"added"] ?: @0;
+    [recent sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
+        return [added[b.identifier] compare:added[a.identifier]];
+    }];
     _shows = order;
+    _recent = recent;
     return _shows;
 }
 
@@ -92,6 +101,16 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
     NSArray *all = [self shows];
     if (!source) return all;
     return [all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"source == %@", source]];
+}
+
+- (NSArray *)recentDownloads:(NSInteger)n source:(NSString *)source {
+    [self shows];
+    NSMutableArray *r = [NSMutableArray new];
+    for (SFItem *e in _recent) {
+        if ((NSInteger)r.count >= n) break;
+        if (!source.length || [(e.source.length ? e.source : @"youtube") isEqualToString:source]) [r addObject:e];
+    }
+    return r;
 }
 
 - (NSArray *)latestEpisodes:(NSInteger)n source:(NSString *)source {

@@ -62,7 +62,7 @@ static NSDictionary *appInfo(void) {
             NSArray *latest = [fo latest:40 source:nil];
             if (!latest.count) {   // nothing followed yet / first refresh running: show downloaded content
                 latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
-                for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
+                for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
             }
             if (latest.count) [shelves addObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:latest]];
             NSMutableArray *channels = [NSMutableArray new], *tv = [NSMutableArray new];
@@ -99,7 +99,7 @@ static NSDictionary *appInfo(void) {
     i.identifier = [@"show:" stringByAppendingString:sh.name];
     i.title = sh.name;
     i.channel = sh.name;
-    i.subtitle = [NSString stringWithFormat:@"%lu %@ · %@", (unsigned long)sh.episodes.count, sh.episodes.count == 1 ? @"Folge" : @"Folgen", SFFormatDateShort(sh.latest)];
+    i.subtitle = SFDotJoin([NSString stringWithFormat:@"%lu %@", (unsigned long)sh.episodes.count, sh.episodes.count == 1 ? @"Folge" : @"Folgen"], SFFormatDateShort(sh.latest));
     i.image = [sh.source isEqualToString:@"youtube"] ? (sh.poster ?: ((SFItem *)sh.episodes.firstObject).image) : ((SFItem *)sh.episodes.firstObject).image;
     i.backdrop = ((SFItem *)sh.episodes.firstObject).image;
     i.plot = ((SFItem *)sh.episodes.firstObject).title ? [NSString stringWithFormat:@"Neueste Folge: %@", ((SFItem *)sh.episodes.firstObject).title] : nil;
@@ -235,7 +235,7 @@ static NSDictionary *appInfo(void) {
             if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
             NSArray *latest = [[SFLibrary shared] latestEpisodes:40 source:source];
             latest = [[NSArray alloc] initWithArray:latest copyItems:YES];
-            for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
+            for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
             BOOL yt = [source isEqualToString:@"youtube"];
             if (latest.count) [shelves addObject:[SFShelf shelf:yt ? @"Neu in deinen Abos" : @"Neue Folgen" style:SFTileStyleLandscape items:latest]];
             NSMutableArray *shows = [NSMutableArray new];

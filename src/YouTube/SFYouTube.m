@@ -547,8 +547,8 @@ static NSSet *skipKeys(void) {
             NSArray *news = [fo latest:40 source:@"youtube"];
             if (news.count) [shelves addObject:[SFShelf shelf:@"Neue Videos" style:SFTileStyleLandscape items:news]];
             else {   // offline / first refresh running: downloaded content
-                NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:@"youtube"] copyItems:YES];
-                for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel, SFFormatDateShort(e.date)];
+                NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] recentDownloads:40 source:@"youtube"] copyItems:YES];
+                for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
                 if (latest.count) [shelves addObject:[SFShelf shelf:@"Neu heruntergeladen" style:SFTileStyleLandscape items:latest]];
             }
             // channels: followed (real channel pages) + downloaded ones without a known channel ID (offline page)

@@ -30,15 +30,15 @@ static SFNavigator *SFAppNavigator(void) {
             SFItem *c = [i copy];
             double p = 0;
             SFDLState st = [dl stateFor:c.identifier progress:&p];
-            c.subtitle = [NSString stringWithFormat:@"%@ · %@", c.channel ?: @"", st == SFDLRunning ? @"wird geladen" : dl.storageFull ? @"wartet auf Platz" : @"wartet"];
+            c.subtitle = SFDotJoin(c.channel, st == SFDLRunning ? @"wird geladen" : dl.storageFull ? @"wartet auf Platz" : @"wartet");
             [active addObject:c];
         }
         // storage first when it is full (the queue waits for room), otherwise after the content
         SFShelf *storage = [SFShelf shelf:@"Speicher" style:SFTileStyleLandscape items:@[[self roomTile]]];
         if (dl.storageFull) [shelves addObject:storage];
         if (active.count) [shelves addObject:[SFShelf shelf:dl.storageFull ? @"Wartet auf Platz" : @"Wird geladen" style:SFTileStyleLandscape items:active]];
-        NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:source] copyItems:YES];
-        for (SFItem *e in latest) e.subtitle = [NSString stringWithFormat:@"%@ · %@", e.channel ?: @"", SFFormatDateShort(e.date)];
+        NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] recentDownloads:40 source:source] copyItems:YES];
+        for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
         if (latest.count) [shelves addObject:[SFShelf shelf:@"Zuletzt geladen" style:SFTileStyleLandscape items:latest]];
         NSMutableArray *shows = [NSMutableArray new];
         for (SFShow *sh in [[SFLibrary shared] showsForSource:source]) [shows addObject:[self showTile:sh]];
@@ -191,7 +191,7 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
             NSDictionary *r = [dl recordFor:i];
             if (!r) continue;
             SFItem *c = [it copy];
-            c.subtitle = [NSString stringWithFormat:@"%@ · %@", c.channel ?: @"", SFGB([r[@"bytes"] unsignedLongLongValue])];
+            c.subtitle = SFDotJoin(c.channel, SFGB([r[@"bytes"] unsignedLongLongValue]));
             if ([dl isKept:i]) { [keptItems addObject:c]; continue; }
             if ([dl onlineStateFor:i] == 0) [goneItems addObject:c];
             if ([st progressFor:i] >= 1) [watched addObject:i];

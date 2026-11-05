@@ -19,7 +19,8 @@ extern NSString *const SFLibraryDidChangeNotification;
 @property (nonatomic, readonly) BOOL ready;
 - (void)whenReady:(dispatch_block_t)block;       // main thread
 - (NSArray *)showsForSource:(NSString *)source;  // nil = all; sorted by newest episode
-- (NSArray *)latestEpisodes:(NSInteger)n source:(NSString *)source;
+- (NSArray *)latestEpisodes:(NSInteger)n source:(NSString *)source;    // newest publication first
+- (NSArray *)recentDownloads:(NSInteger)n source:(NSString *)source;   // newest download first
 - (SFShow *)showNamed:(NSString *)name;
 - (SFShow *)showNamed:(NSString *)name source:(NSString *)source;   // source nil = any
 - (SFItem *)episodeForYouTubeID:(NSString *)vid;  // downloaded copy of a YouTube video
