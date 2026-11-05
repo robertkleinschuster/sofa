@@ -81,18 +81,21 @@ SQL=/opt/local/bin/sqlite3; sqlite3() { "$SQL" "$@"; }
 
 echo "==> 1. playback right after launch"
 start
-cmd "play $T/local.mp4|$ORF"; sleep 5
-cmd "mpvprop vo-configured"; sleep 1
+m=$(mark); cmd "play $T/local.mp4|$ORF"; waitlog $m 'player: play local.mp4'
+vo() {   # vo MARK: ask mpv until it reports a configured video output (10 s)
+  for i in $(seq 1 20); do local n; n=$(mark); cmd "mpvprop vo-configured"; waitlog $n 'mpv vo-configured' 4; since $1 | grep -q 'mpv vo-configured = yes' && return 0; sleep 0.25; done; return 1
+}
+vo $m
 grep -q 'mpv vo-configured = yes' "$LOG" && ok "video output configured" || bad "no video output (audio only?)"
 grep -q 'No render context set' "$LOG" && bad "mpv started before the render context" || ok "no render-context race"
 
 echo "==> 2. self-healing of a dead video output"
-m=$(mark); cmd "mpvset vid no"; sleep 4; cmd "mpvprop vo-configured"; sleep 1
+m=$(mark); cmd "mpvset vid no"; waitlog $m 'video output missing' 40; vo $m
 since $m | grep -q 'video output missing' && ok "watchdog noticed the missing video" || bad "watchdog did not react"
 since $m | grep -q 'mpv vo-configured = yes' && ok "video output restored" || bad "video output not restored"
 
 echo "==> 3. info panel over the running video"
-m=$(mark); cmd "key selecthold"; sleep 1.5
+m=$(mark); cmd "key selecthold"; waitlog $m 'info: panel for'
 since $m | grep -q 'info: panel for' && ok "panel opened" || bad "panel did not open"
 shot "$T/info.png"; [ -s "$T/info.png" ] && { ok "panel rendered"; keep "$T/info.png"; } || bad "no panel screenshot"
 cmd "mpvprop time-pos"; sleep 0.5; t1=$(mpvtime $m); sleep 2
@@ -152,6 +155,7 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
 PY
 /opt/local/bin/python3.14 -I "$T/stall.py" "$T/local.mp4" 47981 & SRV=$!
+for i in $(seq 1 40); do nc -z 127.0.0.1 47981 2>/dev/null && break; sleep 0.1; done   # listening before the app asks
 start
 m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"
 for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' && break; sleep 0.5; done
