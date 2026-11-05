@@ -74,15 +74,19 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 }
 
 - (void)unsubscribe:(NSString *)fid {
-    if (!_subs[fid]) return;
+    [[SFStore shared] runAll:[self unsubscribeWrites:fid]];
+}
+
+- (NSArray *)unsubscribeWrites:(NSString *)fid {
+    if (!_subs[fid]) return @[];
     SFLog(@"downloads: auto-download off: %@ (%@)", _subs[fid][@"title"], fid);
     [_subs removeObjectForKey:fid];
     NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM subscriptions WHERE id=?", @[fid]]];
     // already downloaded episodes stay, but are no longer deleted automatically
     for (NSMutableDictionary *r in _recs.allValues)
         if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) { [r removeObjectForKey:@"sub"]; [writes addObject:[self write:r]]; }
-    [[SFStore shared] runAll:writes];
     [self changed:fid];
+    return writes;
 }
 
 - (void)checkSub:(NSMutableDictionary *)s initial:(BOOL)initial done:(dispatch_block_t)done {

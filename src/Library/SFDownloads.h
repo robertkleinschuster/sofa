@@ -85,6 +85,8 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (BOOL)isSubscribed:(NSString *)folderIdentifier;
 - (void)subscribe:(SFItem *)folder;              // folder.identifier = "ytchannel:UC…", "zdfshow:…", …
 - (void)unsubscribe:(NSString *)folderIdentifier;
+// the same, but its database writes are returned for the caller's transaction (SFStore runAll:)
+- (NSArray *)unsubscribeWrites:(NSString *)folderIdentifier;
 - (BOOL)canSubscribe:(SFItem *)folder;           // is there a feed for this folder type?
 - (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays = download window)
 - (void)checkSubscriptionsNow;

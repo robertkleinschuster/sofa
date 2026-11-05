@@ -114,10 +114,12 @@ static const NSTimeInterval kRefresh = 30 * 60;
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
-    [[SFStore shared] runAll:@[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
-                               @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]],
-                               @[@"DELETE FROM feed_cache WHERE id=?", @[identifier]]]];
-    if ([[SFDownloads shared] isSubscribed:identifier]) [[SFDownloads shared] unsubscribe:identifier];   // following is a prerequisite
+    // one transaction: the follow, its items, its stored feed and its auto-download (following is
+    // a prerequisite of auto-download)
+    NSArray *writes = @[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
+                        @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]],
+                        @[@"DELETE FROM feed_cache WHERE id=?", @[identifier]]];
+    [[SFStore shared] runAll:[writes arrayByAddingObjectsFromArray:[[SFDownloads shared] unsubscribeWrites:identifier]]];
     SFLog(@"follows: - %@", identifier);
     [self changed];
 }
