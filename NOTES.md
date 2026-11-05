@@ -45,12 +45,17 @@ AVX2, Radeon HD 6770M, 2560x1440).
   Diagnostic tool: `docs/probes/avtest.m` (prints the AVPlayerItem errorLog).
 
 ## Code structure (`~/src/sofa`)
-- `src/SFCore` basics, `SFTheme` looks per area, `SFLayers` (SFLabel, SFImageLayer,
-  image cache), `SFModel` (SFItem/SFShelf/SFPage + resolver registry), `SFStore` (SQLite:
-  progress, settings, jcache), `SFScreen` (screen + navigator), `SFTile`,
-  `SFBrowseScreen` (shelves/grid, virtualized, hero), `SFPlayerScreen`.
-- Providers (one file per source): YouTube, ZDF, ARD,
-  ORF, CCC, Mediathek.
+Layered since 2026-11-05 – contract and rules in **docs/architecture.md**, how to add an app in
+**docs/new-app.md**, rules enforced by `tools/check-arch` (part of test-all):
+- `src/Framework` UI kit + design system (SFTheme tokens, SFScreen/SFNavigator, SFTile,
+  SFMenuScreen, keyboard, SFLayers, icon art, logo).
+- `src/Core` (+ `Library`, `Player`, `Browse`) app-agnostic media core: SFModel, SFApp contract
+  + SFAppRegistry, SFHomeSection, SFStore, downloads/follows/watch later/search, player +
+  engines, SFBrowseScreen + library pages (SFLibraryPages).
+- `src/Apps/<App>` one folder per source (YouTube incl. SABR/yt-dlp/phone remote, ZDF, ARD, ORF,
+  CCC; Example = dev template with `SOFA_EXAMPLE_APP=1`).
+- `src/Shell` AppDelegate (player host, dev FIFO, update handover), app registration
+  (SFApps.m), home composition + settings (SFHome), migration.
 - `helper/` SofaRemote (LaunchAgent): holds Apple IR exclusively, Menu starts Sofa,
   forwards keys to the app via Mach port.
 - Data: `~/Library/Application Support/Sofa/sofa.db`, cache `~/Library/Caches/Sofa`,
@@ -250,7 +255,14 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 - [ ] **Distant future (user idea 2026-11-04):** multi-user + YouTube account sync natively in Sofa –
       only if anonymous resolving becomes unreliable. Then sign-in IN Sofa itself (no browser),
       maybe conveniently via the phone (code/QR like "Mit TV verbinden").
-- [ ] **Design system + TV UI framework** (user 2026-11-05: "in ein konsistentes wiederverwendbares
+- [~] **Design system + TV UI framework** – APP ARCHITECTURE DONE 2026-11-05 (branch arch/apps,
+      merged): SFApp protocol + registry, all five apps converted, player hooks, generic end cards,
+      theme tokens instead of identifier checks, remote service + SFPlayerHost, src/Browse layer,
+      SFTileStatusSource, home sections API, Example app, check-arch, docs/architecture.md +
+      docs/new-app.md; review agent found 5 issues, 4 fixed (CCC start page frame accepted).
+      OPEN (add when a second user appears): settings contributions per app, extra context-menu
+      actions per app, component gallery (`open gallery`), docs/ui-framework.md, motion/spacing
+      tokens. Original request (user 2026-11-05: "in ein konsistentes wiederverwendbares
       design system und framework umwandeln … auch das framework für die steuerung"; not urgent, but
       keep it in mind with EVERY UI change). Goal: easy extension (new apps/pages/dialogs without
       copying layout code). Scope:
@@ -295,6 +307,8 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
     the contract; each extraction verified by screenshots in all themes + test-all.
 - [ ] Periodic background review agents (user request) — after every larger building block.
   - 2026-11-05 12:10 review (tile subtitles, recent downloads, AV dev frames): no real bugs; hardened SFDotJoin (variadic, ARC-safe temporaries) and the dev output attach (active player only).
+  - 2026-11-05 15:00 review (architecture refactor): end-card playlist id (autoplay left the list), tile status set after the first page (no progress at launch), unknown app crashed appScreen – fixed; CCC start page now framed like the other Mediatheken (accepted, CHANGELOG).
+- [x] 2026-11-05 Update handover always force-quit after 15 s: App Nap stretched the hidden app's timers (sampled: exit thread asleep in a 0.5 s usleep for seconds). Sofa now holds an App Nap opt-out activity for its lifetime (idle system sleep allowed) + latency-critical during the handover; handover 1.3-2.6 s. Also: crash on quit (exit()'s OpenSSL cleanup vs. lazy curl_global_init on a worker) → curl init at launch, `_exit` after saving. sofa-yt live test pinned to the fixture's clock (failed from the recorded expiry on).
 - [x] Video frames in dev screenshots/stream (2026-11-05): mpv via GL readback; AVFoundation via AVPlayerItemVideoOutput on the shared `SFAVPlayerLayer` (dev only, files/progressive). HLS never delivers pixel buffers to a video output on 10.9 (tested before/after ready, without the layer, IOSurface buffers) → HLS items get no output and stay black in dev shots; mpv is the default engine anyway.
 - [x] 2026-11-05 MacPorts port in the overlay (final state): `multimedia/sofa` 0.3.8, builds without network (yt-dlp + sidecar node_modules as checksummed distfiles, `SOFA_DISTFILES`), no bgutil dependency; pushed (backport-toolkit 69c2196). Per release: bump version + checksums; the `sofa-yt-modules-<lock hash>` name changes with the sidecar lockfile. The real Mac still runs the release bundle in /Applications.
 - [x] System volume via remote (player: +/-), no app-internal volume.
