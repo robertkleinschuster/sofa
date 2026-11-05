@@ -25,37 +25,50 @@
     return i;
 }
 
+// Sofa's own home sections + the apps' contributions (docs/architecture.md, Home composition)
++ (NSArray *)homeSections {
+    NSMutableArray *r = [NSMutableArray new];
+    [r addObject:[SFHomeSection section:@"apps" title:nil priority:SFHomePriorityApps style:SFTileStyleApp items:^NSArray *{
+        NSMutableArray *apps = [NSMutableArray new];
+        for (Class app in [SFAppRegistry apps]) [apps addObject:[self appTile:app]];
+        [apps addObject:[SFLibraryPages downloadsTile:nil]];
+        [apps addObject:[SFLibraryPages historyTile]];
+        [apps addObject:[self settingsTile]];
+        return apps;
+    }]];
+    [r addObject:[SFHomeSection section:@"continue" title:@"Weiterschauen" priority:SFHomePriorityContinue style:SFTileStyleLandscape items:^NSArray *{
+        return [[SFStore shared] continueWatching:20 source:nil];
+    }]];
+    [r addObject:[SFHomeSection section:@"later" title:@"Später ansehen" priority:SFHomePriorityWatchLater style:SFTileStyleLandscape items:^NSArray *{
+        return [[SFWatchLater shared] items:nil];
+    }]];
+    // followed content (follows concept): stream new episodes, pages online; downloads live in the tile "Downloads"
+    [r addObject:[SFHomeSection section:@"new" title:@"Neue Folgen" priority:SFHomePriorityNew style:SFTileStyleLandscape items:^NSArray *{
+        NSArray *latest = [[SFFollows shared] latest:40 source:nil];
+        if (latest.count) return latest;
+        // nothing followed yet / first refresh running: show downloaded content
+        latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
+        for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
+        return latest;
+    }]];
+    // followed shows; apps whose shows are channels present theirs in their own section (homeSections)
+    [r addObject:[SFHomeSection section:@"follows" title:@"Meine Sendungen" priority:SFHomePriorityFollows style:SFTileStyleLandscape items:^NSArray *{
+        NSMutableArray *tv = [NSMutableArray new];
+        for (SFItem *f in [[SFFollows shared] follows:nil]) {
+            if (SFSourceShowsAreChannels(f.source)) continue;
+            f.style = SFTileStyleLandscape; [tv addObject:f];
+        }
+        return tv;
+    }]];
+    for (Class<SFApp> app in [SFAppRegistry apps])
+        if ([app respondsToSelector:@selector(homeSections)]) [r addObjectsFromArray:[app homeSections]];
+    return r;
+}
+
 + (SFScreen *)homeScreen {
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
         [[SFLibrary shared] whenReady:^{
-            NSMutableArray *apps = [NSMutableArray new];
-            for (Class app in [SFAppRegistry apps]) [apps addObject:[self appTile:app]];
-            [apps addObject:[SFLibraryPages downloadsTile:nil]];
-            [apps addObject:[SFLibraryPages historyTile]];
-            [apps addObject:[self settingsTile]];
-            // Kodi tile removed (user 2026-11-03); phone settings belong in the YouTube app (Mehr → Handy)
-
-            NSMutableArray *shelves = [NSMutableArray new];
-            [shelves addObject:[SFShelf shelf:nil style:SFTileStyleApp items:apps]];
-            NSArray *cont = [[SFStore shared] continueWatching:20 source:nil];
-            if (cont.count) [shelves addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];
-            NSArray *later = [[SFWatchLater shared] items:nil];
-            if (later.count) [shelves addObject:[SFShelf shelf:@"Später ansehen" style:SFTileStyleLandscape items:later]];
-            // followed content (follows concept): stream new episodes, pages online; downloads live in the tile "Downloads"
-            SFFollows *fo = [SFFollows shared];
-            NSArray *latest = [fo latest:40 source:nil];
-            if (!latest.count) {   // nothing followed yet / first refresh running: show downloaded content
-                latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
-                for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
-            }
-            if (latest.count) [shelves addObject:[SFShelf shelf:@"Neue Folgen" style:SFTileStyleLandscape items:latest]];
-            NSMutableArray *channels = [NSMutableArray new], *tv = [NSMutableArray new];
-            for (SFItem *f in [fo follows:nil]) {
-                if (SFSourceShowsAreChannels(f.source)) { f.style = SFTileStyleCircle; [channels addObject:f]; }
-                else { f.style = SFTileStyleLandscape; [tv addObject:f]; }
-            }
-            if (tv.count) [shelves addObject:[SFShelf shelf:@"Meine Sendungen" style:SFTileStyleLandscape items:tv]];
-            if (channels.count) [shelves addObject:[SFShelf shelf:@"Meine Kanäle" style:SFTileStyleCircle items:channels]];
+            NSArray *shelves = [SFHomeSection shelvesFrom:[self homeSections]];
             SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
             done(p, nil);
         }];

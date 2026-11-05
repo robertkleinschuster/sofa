@@ -4,6 +4,7 @@
 #import "SFARDApp.h"
 #import "SFORFApp.h"
 #import "SFCCCApp.h"
+#import "SFExampleApp.h"
 #import "SFLibrary.h"
 
 void SFRegisterApps(void) {
@@ -26,5 +27,6 @@ void SFRegisterApps(void) {
         // home tile order
         for (Class app in @[[SFYouTubeApp class], [SFZDFApp class], [SFARDApp class], [SFORFApp class], [SFCCCApp class]])
             [SFAppRegistry registerApp:app];
+        if (SFDevMode && getenv("SOFA_EXAMPLE_APP")) [SFAppRegistry registerApp:[SFExampleApp class]];   // template app (docs/new-app.md)
     });
 }

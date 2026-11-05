@@ -9,6 +9,7 @@
 #import "SFModel.h"
 #import "SFTheme.h"
 #import "SFPlayerHost.h"
+#import "SFHomeSection.h"
 
 @class SFNavigator;
 
@@ -34,7 +35,8 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (NSString *)searchPlaceholder;   // keyboard hint ("Vorträge suchen"); default "Sendungen und Videos suchen"
 + (NSArray *)showRefPrefixes;      // namespaces that are shows/channels: followable, have a page + feed
 + (BOOL)homeIncludesFollows;       // YES: homeLoader shows followed shows/new episodes itself (else the shell adds them)
-+ (BOOL)showsAreChannels;          // YES: shows are "Kanäle" with "Videos" (YouTube), else "Sendungen" with "Folgen"
++ (BOOL)showsAreChannels;
++ (NSArray *)homeSections;         // SFHomeSection contributions to Sofa's home page (priority >= SFHomePriorityApp)          // YES: shows are "Kanäle" with "Videos" (YouTube), else "Sendungen" with "Folgen"
 // --- lifecycle ---
 + (void)start;                   // launch (services, warm-up); called once, in registry order
 + (void)stop;                    // quit (best effort, short)

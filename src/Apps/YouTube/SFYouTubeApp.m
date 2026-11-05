@@ -1116,6 +1116,14 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
     [SFLounge shared].playerProvider = ^id { return [wh topPlayer]; };
     [[SFLounge shared] start];
 }
+// Home: followed channels as round avatars, after Sofa's own sections
++ (NSArray *)homeSections {
+    return @[[SFHomeSection section:@"youtube.channels" title:@"Meine Kanäle" priority:SFHomePriorityApp style:SFTileStyleCircle items:^NSArray *{
+        NSArray *f = [[SFFollows shared] follows:[self appIdentifier]];
+        for (SFItem *i in f) i.style = SFTileStyleCircle;
+        return f;
+    }]];
+}
 + (void)updateStoredItem:(SFItem *)i {
     NSString *vid = [SFRefPrefix(i.identifier) isEqualToString:@"yt"] ? SFRefID(i.identifier) : nil;
     if (!vid.length) return;
