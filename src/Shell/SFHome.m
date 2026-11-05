@@ -25,9 +25,30 @@
     return i;
 }
 
+// Rows mixed from several apps say where each item comes from (the app's logo on the tile).
+static NSArray *marked(NSArray *items) {
+    NSMutableArray *r = [NSMutableArray new];
+    for (SFItem *i in items) { SFItem *c = [i copy]; c.showsSourceMark = YES; [r addObject:c]; }
+    return r;
+}
+
 // Sofa's own home sections + the apps' contributions (docs/architecture.md, Home composition)
 + (NSArray *)homeSections {
     NSMutableArray *r = [NSMutableArray new];
+    // --- mine: what I am watching, what is new in what I follow
+    [r addObject:[SFHomeSection section:@"continue" title:@"Weiterschauen" priority:SFHomePriorityContinue style:SFTileStyleLandscape items:^NSArray *{
+        return marked([[SFStore shared] continueWatching:20 source:nil]);
+    }]];
+    // followed content (follows concept): stream new episodes, pages online; downloads live in the tile "Downloads"
+    [r addObject:[SFHomeSection section:@"new" title:@"Neue Folgen" priority:SFHomePriorityNew style:SFTileStyleLandscape items:^NSArray *{
+        NSArray *latest = [[SFFollows shared] latest:40 source:nil];
+        if (latest.count) return marked(latest);
+        // nothing followed yet / first refresh running: show downloaded content
+        latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
+        for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
+        return marked(latest);
+    }]];
+    // --- the apps (and Sofa's own places)
     [r addObject:[SFHomeSection section:@"apps" title:nil priority:SFHomePriorityApps style:SFTileStyleApp items:^NSArray *{
         NSMutableArray *apps = [NSMutableArray new];
         for (Class app in [SFAppRegistry apps]) [apps addObject:[self appTile:app]];
@@ -36,27 +57,19 @@
         [apps addObject:[self settingsTile]];
         return apps;
     }]];
-    [r addObject:[SFHomeSection section:@"continue" title:@"Weiterschauen" priority:SFHomePriorityContinue style:SFTileStyleLandscape items:^NSArray *{
-        return [[SFStore shared] continueWatching:20 source:nil];
-    }]];
-    [r addObject:[SFHomeSection section:@"later" title:@"Später ansehen" priority:SFHomePriorityWatchLater style:SFTileStyleLandscape items:^NSArray *{
-        return [[SFWatchLater shared] items:nil];
-    }]];
-    // followed content (follows concept): stream new episodes, pages online; downloads live in the tile "Downloads"
-    [r addObject:[SFHomeSection section:@"new" title:@"Neue Folgen" priority:SFHomePriorityNew style:SFTileStyleLandscape items:^NSArray *{
-        NSArray *latest = [[SFFollows shared] latest:40 source:nil];
-        if (latest.count) return latest;
-        // nothing followed yet / first refresh running: show downloaded content
-        latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] latestEpisodes:40 source:nil] copyItems:YES];
-        for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
-        return latest;
-    }]];
-    // what the apps feature, merged across apps (SFHomeFeatures): live TV of every broadcaster, then the editors' picks
+    // --- discover: what the apps feature, merged across apps (SFHomeFeatures)
     [r addObject:[SFHomeSection section:@"live" title:@"Jetzt live" priority:SFHomePriorityLive style:SFTileStyleLandscape items:^NSArray *{
         return [[SFHomeFeatures shared] itemsForTopic:SFHomeTopicLive];
     }]];
+    [r addObject:[SFHomeSection section:@"news" title:@"Nachrichten" priority:SFHomePriorityNews style:SFTileStyleLandscape items:^NSArray *{
+        return [[SFHomeFeatures shared] itemsForTopic:SFHomeTopicNews];
+    }]];
     [r addObject:[SFHomeSection section:@"highlights" title:@"Highlights" priority:SFHomePriorityHighlights style:SFTileStyleLandscape items:^NSArray *{
         return [[SFHomeFeatures shared] itemsForTopic:SFHomeTopicHighlights];
+    }]];
+    // --- my lists
+    [r addObject:[SFHomeSection section:@"later" title:@"Später ansehen" priority:SFHomePriorityWatchLater style:SFTileStyleLandscape items:^NSArray *{
+        return marked([[SFWatchLater shared] items:nil]);
     }]];
     // followed shows; apps whose shows are channels present theirs in their own section (homeSections)
     [r addObject:[SFHomeSection section:@"follows" title:@"Meine Sendungen" priority:SFHomePriorityFollows style:SFTileStyleLandscape items:^NSArray *{
@@ -65,7 +78,7 @@
             if (SFSourceShowsAreChannels(f.source)) continue;
             f.style = SFTileStyleLandscape; [tv addObject:f];
         }
-        return tv;
+        return marked(tv);
     }]];
     for (Class<SFApp> app in [SFAppRegistry apps])
         if ([app respondsToSelector:@selector(homeSections)]) [r addObjectsFromArray:[app homeSections]];

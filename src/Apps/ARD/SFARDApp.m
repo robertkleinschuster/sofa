@@ -312,8 +312,13 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
     [SFNet getJSON:[kGW stringByAppendingString:@"/pages/ard/home?embedded=true"] headers:nil cacheAge:600 done:^(id j, NSError *e) {
         if (![j isKindOfClass:[NSDictionary class]]) { done(nil); return; }
-        NSDictionary *features = SFHomeFeaturesFromPage([self pageFromGateway:j title:nil], 0);
-        [self attachSchedules:features[SFHomeTopicLive] done:^{ done(features); }];
+        NSMutableDictionary *features = [SFHomeFeaturesFromPage([self pageFromGateway:j title:nil], 0) mutableCopy];
+        // News: the editorial page "Nachrichten" (tagesschau) - its lead widget carries the current
+        // editions (tagesschau, tagesthemen, tagesschau in 100 Sekunden)
+        [SFNet getJSON:[kGW stringByAppendingString:@"/pages/ard/editorial/tagesschau?embedded=true"] headers:nil cacheAge:600 done:^(id nj, NSError *ne) {
+            if ([nj isKindOfClass:[NSDictionary class]]) features[SFHomeTopicNews] = SFHomeFeaturesLeadVideos([self pageFromGateway:nj title:nil]) ?: @[];
+            [self attachSchedules:features[SFHomeTopicLive] done:^{ done(features); }];
+        }];
     }];
 }
 

@@ -113,7 +113,11 @@ static NSArray *videos(NSString *filter) {
         i.schedule = @[now, [SFBroadcast title:@"Nächste Sendung" start:now.end end:[now.end dateByAddingTimeInterval:1800]]];
         [live addObject:i];
     }
-    done(@{SFHomeTopicLive: live, SFHomeTopicHighlights: [videos(nil) subarrayWithRange:NSMakeRange(0, 2)]});
+    // news: the app's own order is oldest first here - Home shows each app's news newest first
+    NSArray *news = [videos(nil) subarrayWithRange:NSMakeRange(2, 2)];
+    [news[0] setDate:[NSDate dateWithTimeIntervalSinceNow:-7200]];
+    [news[1] setDate:[NSDate dateWithTimeIntervalSinceNow:-600]];
+    done(@{SFHomeTopicLive: live, SFHomeTopicNews: news, SFHomeTopicHighlights: [videos(nil) subarrayWithRange:NSMakeRange(0, 2)]});
 }
 
 @end

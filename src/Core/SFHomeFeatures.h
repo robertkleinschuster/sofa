@@ -11,6 +11,7 @@
 #import "SFModel.h"
 
 extern NSString *const SFHomeTopicLive;         // "Jetzt live": live TV channels and streams
+extern NSString *const SFHomeTopicNews;         // "Nachrichten": the latest news (each app's news page), each app newest first
 extern NSString *const SFHomeTopicHighlights;   // "Highlights": each app's editorial top picks (videos, shows)
 extern NSString *const SFHomeFeaturesDidChangeNotification;
 
@@ -20,11 +21,15 @@ typedef void (^SFHomeFeaturesDone)(NSDictionary *itemsByTopic);   // topic -> NS
 // highlights = the playable videos and shows of the top shelf (`highlightShelf`, the editors' lead
 // placement; NSNotFound = none) - navigation tiles (categories, A-Z) are left out.
 NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf);
+// The videos of a page's first shelf that has any (e.g. a news page's lead: the current editions).
+NSArray *SFHomeFeaturesLeadVideos(SFPage *page);
 
 @interface SFHomeFeatures : NSObject
 + (instancetype)shared;
 - (void)start;                                   // restore the stored rows, refresh now + periodically
 - (void)refresh;                                 // ask every app again (coalesced while running)
 - (NSArray *)itemsForTopic:(NSString *)topic;    // merged; main thread; copies, marked showsSourceMark; only
-                                                 // what plays here (no drm, no geoRegion the device is outside of)
+                                                 // what plays here (no drm, no geoRegion the device is outside of),
+                                                 // nothing watched already
++ (NSArray *)topics;                             // all topics, in no particular order
 @end

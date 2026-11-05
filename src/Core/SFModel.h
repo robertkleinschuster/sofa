@@ -70,6 +70,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
 @property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps); not copied - belongs to that row only
 @property (nonatomic) NSInteger logoVariant;           // SFLogoVariant
+@property (nonatomic) long long viewCount;             // views at the source (raw count, e.g. YouTube RSS media:statistics); 0 = unknown
 @property (nonatomic, copy) NSString *station;         // live: the TV channel itself ("3sat", "phoenix"), from the source's ids - the same channel offered by two apps
 @property (nonatomic, copy) NSArray *schedule;         // live: the channel's programme (SFBroadcast, by time) from the source's EPG
 - (SFBroadcast *)broadcastAt:(NSDate *)date;           // what runs on this live channel then (nil = no schedule / gap)

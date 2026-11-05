@@ -58,8 +58,9 @@ Layered since 2026-11-05 – contract and rules in **docs/architecture.md**, how
   (SFApps.m), home composition + settings (SFHome), migration.
 - `helper/` SofaRemote (LaunchAgent): holds Apple IR exclusively, Menu starts Sofa,
   forwards keys to the app via Mach port.
-- Data: `~/Library/Application Support/Sofa/sofa.db`, cache `~/Library/Caches/Sofa`,
-  log `~/Library/Logs/Sofa.log`.
+- Data: `~/Library/Application Support/Sofa/sofa.db` (schema + rules: docs/architecture.md
+  "Data"), cache `~/Library/Caches/Sofa`, log `~/Library/Logs/Sofa.log`. Dev instances:
+  `Application Support/Sofa-dev/<instance>` or `$SOFA_DATA_DIR` (docs/architecture.md "Dev instances").
 
 ## Data sources
 - Offline library: `~/Movies/Sofa/<source>/<show>/<title> [<id>].mp4` + `.jpg`,

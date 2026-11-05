@@ -82,6 +82,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     if (self.drm) d[@"drm"] = @YES;
     if (self.geoRegion) d[@"geo"] = self.geoRegion;
     if (self.station) d[@"station"] = self.station;
+    if (self.viewCount > 0) d[@"views"] = @(self.viewCount);
     if (self.schedule.count) {   // stored: what has not ended yet, a few hours ahead
         NSMutableArray *a = [NSMutableArray new];
         NSDate *now = [NSDate date];
@@ -122,6 +123,7 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     i.drm = [d[@"drm"] boolValue];
     i.geoRegion = d[@"geo"];
     i.station = d[@"station"];
+    i.viewCount = [d[@"views"] longLongValue];
     if ([d[@"schedule"] isKindOfClass:[NSArray class]]) {
         NSMutableArray *a = [NSMutableArray new];
         for (NSDictionary *x in d[@"schedule"]) { SFBroadcast *b = [SFBroadcast broadcastWithDictionary:x]; if (b) [a addObject:b]; }

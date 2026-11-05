@@ -5,6 +5,7 @@
 #import "SFFollows.h"
 
 NSString *const SFHomeTopicLive = @"live";
+NSString *const SFHomeTopicNews = @"news";
 NSString *const SFHomeTopicHighlights = @"highlights";
 NSString *const SFHomeFeaturesDidChangeNotification = @"SFHomeFeaturesDidChange";
 
@@ -15,7 +16,10 @@ static const NSTimeInterval kAppTimeout = 45;   // an app that never answers mus
 // per topic: how many items one app may place in the merged row, and the row's length
 static NSUInteger perApp(NSString *topic) { return [topic isEqualToString:SFHomeTopicLive] ? 40 : 6; }
 static const NSUInteger kKeepPerApp = 40;   // kept per app and topic (before filtering what can't play here)
-static NSUInteger rowMax(NSString *topic) { return [topic isEqualToString:SFHomeTopicLive] ? 40 : 24; }
+static NSUInteger rowMax(NSString *topic) { return [topic isEqualToString:SFHomeTopicLive] ? 40 : [topic isEqualToString:SFHomeTopicNews] ? 18 : 24; }
+// news is about time: each app's items newest first (the others keep the app's own order); merged
+// round robin either way, so one broadcaster's clips of one programme don't fill the row
+static BOOL byDate(NSString *topic) { return [topic isEqualToString:SFHomeTopicNews]; }
 
 static BOOL featurable(SFItem *i) {
     return i.kind == SFItemVideo || (i.kind == SFItemFolder && [SFAppRegistry isShowRef:i.identifier]);
@@ -31,6 +35,15 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
     if (highlightShelf < page.shelves.count)
         for (SFItem *i in [page.shelves[highlightShelf] items]) if (featurable(i)) [top addObject:i];
     return @{SFHomeTopicLive: live, SFHomeTopicHighlights: top};
+}
+
+NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
+    for (SFShelf *sh in page.shelves) {
+        NSMutableArray *v = [NSMutableArray new];
+        for (SFItem *i in sh.items) if (i.kind == SFItemVideo) [v addObject:i];
+        if (v.count) return v;
+    }
+    return nil;
 }
 
 @implementation SFHomeFeatures {
@@ -55,6 +68,8 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(regionChanged) name:SFNetRegionDidChangeNotification object:nil];
 }
 
++ (NSArray *)topics { return @[SFHomeTopicLive, SFHomeTopicNews, SFHomeTopicHighlights]; }
+
 - (void)regionChanged { [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil]; }
 
 - (void)onlineChanged { if ([SFNet isOnline]) [self refresh]; }
@@ -71,10 +86,12 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
         for (SFItem *i in _lists[topic][[app appIdentifier]]) {
             // Home offers only what plays here: no copy-protected streams, nothing limited to a region this device is known to be outside of
             if (i.drm || [SFNet stateOfRegion:i.geoRegion] == SFRegionOutside) continue;
+            if (i.kind == SFItemVideo && [[SFStore shared] watched:i.identifier]) continue;   // seen already: no longer a suggestion
             if (i.station.length && (!best[i.station] || (![best[i.station] schedule].count && i.schedule.count))) best[i.station] = i;
             [l addObject:i];
             if (l.count >= perApp(topic)) break;
         }
+        if (byDate(topic)) [l sortUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) { return [(b.date ?: [NSDate distantPast]) compare:(a.date ?: [NSDate distantPast])]; }];
         if (l.count) [lists addObject:l];
     }
     NSMutableArray *r = [NSMutableArray new];
@@ -120,7 +137,7 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
     dispatch_group_notify(g, dispatch_get_main_queue(), ^{
         self->_refreshing = NO;
         NSMutableDictionary *lists = [NSMutableDictionary new];
-        for (NSString *topic in @[SFHomeTopicLive, SFHomeTopicHighlights]) {
+        for (NSString *topic in [SFHomeFeatures topics]) {
             NSMutableDictionary *t = [NSMutableDictionary new];
             for (Class<SFApp> app in apps) {
                 NSString *aid = [app appIdentifier];
@@ -137,7 +154,8 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
         [self scheduleBoundaryRefresh];
         if (same) return;   // same rows: no reload
         [self store];
-        SFLog(@"home features: live %lu, highlights %lu", (unsigned long)[self itemsForTopic:SFHomeTopicLive].count, (unsigned long)[self itemsForTopic:SFHomeTopicHighlights].count);
+        SFLog(@"home features: live %lu, news %lu, highlights %lu", (unsigned long)[self itemsForTopic:SFHomeTopicLive].count,
+              (unsigned long)[self itemsForTopic:SFHomeTopicNews].count, (unsigned long)[self itemsForTopic:SFHomeTopicHighlights].count);
         [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil];
     });
 }

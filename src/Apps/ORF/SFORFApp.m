@@ -52,23 +52,26 @@ static NSArray *listItems(id j) {
     SFItem *i = [SFItem new];
     NSString *eid = [nn(e[@"id"]) description];
     i.kind = SFItemVideo;
-    i.identifier = [@"orf:" stringByAppendingString:eid];
+    // a segment is one report out of a broadcast (the news lane: "ZIB 1", "Aktuell nach fünf"):
+    // its own id space (/segment/<id>), dated by its broadcast, the broadcast as channel
+    BOOL segment = [str(e[@"video_type"]) isEqualToString:@"segment"];
+    i.identifier = [(segment ? @"orfseg:" : @"orf:") stringByAppendingString:eid];
     i.resolverRef = i.identifier;
     i.title = str(e[@"title"]) ?: str(e[@"headline"]);
     i.plot = str(e[@"description"]) ?: str(e[@"teaser_text"]);
     i.image = [self image:e big:NO];
     i.backdrop = [self image:e big:YES];
-    i.channel = str(e[@"profile_title"]) ?: str(e[@"genre_title"]);
+    i.channel = segment ? (str(e[@"sub_headline"]) ?: str(e[@"genre_title"])) : (str(e[@"profile_title"]) ?: str(e[@"genre_title"]));
     NSString *ph = str(dict(dict(e[@"_links"])[@"profile"])[@"href"]);
     if (ph.length && str(e[@"profile_title"])) i.showRef = [@"orfprofile:" stringByAppendingString:ph.lastPathComponent];
-    i.date = isoDate(str(e[@"date"]));
+    i.date = isoDate(str(e[@"date"])) ?: isoDate(str(e[@"episode_date"]));
     i.duration = [nn(e[@"duration_seconds"]) doubleValue];
     i.source = @"orf"; i.themeName = @"orf";
     i.style = SFTileStyleLandscape;
     i.drm = [nn(e[@"is_drm_protected"]) boolValue];
     if (i.drm) i.badge = @"DRM";
     NSMutableArray *sub = [NSMutableArray new];
-    if (str(e[@"genre_title"])) [sub addObject:str(e[@"genre_title"])];
+    if (segment ? i.channel.length : str(e[@"genre_title"]).length) [sub addObject:segment ? i.channel : str(e[@"genre_title"])];
     if (i.date) [sub addObject:SFFormatDateShort(i.date)];
     i.subtitle = [sub componentsJoinedByString:@" · "];
     return i;
@@ -306,7 +309,7 @@ static NSArray *listItems(id j) {
 + (NSString *)appIdentifier { return @"orf"; }
 + (NSString *)appName { return @"ORF"; }
 + (NSString *)appSummary { return @"ORF ON, Sendungen und Live"; }
-+ (NSArray *)refPrefixes { return @[@"orf", @"orflive", @"orfprofile", @"orfaz", @"orfgenre"]; }
++ (NSArray *)refPrefixes { return @[@"orf", @"orfseg", @"orflive", @"orfprofile", @"orfaz", @"orfgenre"]; }
 + (NSArray *)showRefPrefixes { return @[@"orfprofile"]; }
 + (NSColor *)homeTileColor { return SFHex(0xffffff); }
 + (NSInteger)homeTileLogoVariant { return 0; }
@@ -359,13 +362,16 @@ static NSArray *listItems(id j) {
 + (void)resolve:(NSString *)ref done:(SFURLDone)done {
     NSString *p = SFRefPrefix(ref), *rid = SFRefID(ref);
     if ([p isEqualToString:@"orf"]) [self resolve_orf:rid done:done];
+    else if ([p isEqualToString:@"orfseg"]) [self resolve_path:[@"/segment/" stringByAppendingString:rid] done:done];
     else if ([p isEqualToString:@"orflive"]) [self resolve_orflive:rid done:done];
     else done(nil, SFError(@"Quelle nicht verfügbar"));
 }
 
-+ (void)resolve_orf:(NSString *)eid done:(SFURLDone)done {
++ (void)resolve_orf:(NSString *)eid done:(SFURLDone)done { [self resolve_path:[@"/episode/" stringByAppendingString:eid] done:done]; }
 
-    [self get:[@"/episode/" stringByAppendingString:eid] cache:300 done:^(id j, NSError *e) {
+// an episode or a segment: both carry sources + _embedded.subtitle
++ (void)resolve_path:(NSString *)path done:(SFURLDone)done {
+    [self get:path cache:300 done:^(id j, NSError *e) {
         NSDictionary *ep = dict(j);
         if (!ep) { done(nil, e); return; }
         BOOL drm = NO;
@@ -398,18 +404,28 @@ static NSArray *listItems(id j) {
 // Home: the start page's "hero" lane (ORF marks its lead placement in the data) + the live channels
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
     [self get:@"/page/start" cache:900 done:^(id j, NSError *e) {
-        NSString *hero = nil;
-        for (NSDictionary *l in arr(j)) if ([str(dict(l)[@"type"]) isEqualToString:@"hero"]) { hero = href(dict(dict(l)[@"_links"])[@"self"]); break; }
+        NSString *hero = nil, *news = nil;
+        for (NSDictionary *l in arr(j)) {
+            NSString *link = href(dict(dict(l)[@"_links"])[@"self"]);
+            if (!hero && [str(dict(l)[@"type"]) isEqualToString:@"hero"]) hero = link;
+            // the start page's news lane ("News - Aktuelle Meldungen aus Österreich und aller Welt");
+            // ORF marks it only by its title
+            NSString *t = str(dict(l)[@"title"]);
+            if (!news && t.length && ([t caseInsensitiveCompare:@"News"] == NSOrderedSame || [t caseInsensitiveCompare:@"Nachrichten"] == NSOrderedSame)) news = link;   // t.length: [nil compare:] is 0 = "same"
+        }
         // a topic left out (request failed) keeps what ORF featured before; an empty list clears it
-        [self liveItems:^(NSArray *live) {
-            NSMutableDictionary *r = [NSMutableDictionary new];
-            if (live) r[SFHomeTopicLive] = live;
-            if (!hero) { done(r); return; }
-            NSString *u = [hero stringByAppendingString:[hero rangeOfString:@"?"].location == NSNotFound ? @"?limit=20" : @"&limit=20"];
-            [self get:u cache:900 done:^(id lj, NSError *le) {
-                if (lj && !le) r[SFHomeTopicHighlights] = [self episodeItems:lj] ?: @[];
-                done(r);
+        NSMutableDictionary *r = [NSMutableDictionary new];
+        void (^lane)(NSString *, NSString *, NSInteger, dispatch_block_t) = ^(NSString *url, NSString *topic, NSInteger limit, dispatch_block_t next) {
+            if (!url) { next(); return; }
+            NSString *u = [url stringByAppendingFormat:@"%@limit=%ld", [url rangeOfString:@"?"].location == NSNotFound ? @"?" : @"&", (long)limit];
+            [self get:u cache:600 done:^(id lj, NSError *le) {
+                if (lj && !le) r[topic] = [self episodeItems:lj] ?: @[];
+                next();
             }];
+        };
+        [self liveItems:^(NSArray *live) {
+            if (live) r[SFHomeTopicLive] = live;
+            lane(hero, SFHomeTopicHighlights, 20, ^{ lane(news, SFHomeTopicNews, 12, ^{ done(r); }); });
         }];
     }];
 }

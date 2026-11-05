@@ -73,15 +73,20 @@ and hands it to remotes and to app dev commands (`handleDevCommand:arg:host:`).
 ## Home composition
 
 Sofa's home page is a list of `SFHomeSection`s (`src/Core/SFHomeSection.h`: id, title,
-priority, tile style, grid, items block). `SFHome homeSections` (Shell) contributes the
-app tiles (0), Weiterschauen (100), Später ansehen (200), Neue Folgen (300), the mixed rows
-"Jetzt live" (310) and "Highlights" (320), and Meine Sendungen (400); apps add theirs through
-`homeSections` (500+, e.g. YouTube "Meine Kanäle" as circles). Sections are sorted by
-priority (stable) and empty ones disappear.
+priority, tile style, grid, items block), read top down from "mine" to "discover"
+(user 2026-11-05: Weiterschauen stays first): Weiterschauen (100), Neue Folgen (200), the app
+tiles + Downloads/Verlauf/Einstellungen (300, two presses away), the mixed rows Jetzt live
+(400), Nachrichten (500), Highlights (600), then Später ansehen (700), Meine Sendungen (800)
+and the apps' own sections (`homeSections`, 900+, e.g. YouTube "Meine Kanäle" as circles).
+Sections are sorted by priority (stable) and empty ones disappear. Rows mixing apps (all of
+the above except the app tiles and an app's own section) show the app logo on each tile.
 
 Mixed rows (`src/Core/SFHomeFeatures.h`): apps feature content on Home through the optional
-`homeFeatures:` – items per *topic* (`SFHomeTopicLive`, `SFHomeTopicHighlights`; topics are
-defined in Core, a topic is a promise about what the row means). Most apps derive them
+`homeFeatures:` – items per *topic* (`SFHomeTopicLive`, `SFHomeTopicNews`,
+`SFHomeTopicHighlights`; topics are defined in Core, a topic is a promise about what the row
+means). ZDF/ARD/ORF read news from their news pages (lead cluster / "News" lane, ORF segments as
+`orfseg:`); YouTube contributes Highlights without a request: videos of followed channels far
+above the channel's usual views (RSS `media:statistics`, `SFItem.viewCount`). Most apps derive them
 structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
 `SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
 items), keeps each app's list (stored: Home shows them at once after a launch) and refreshes
@@ -91,13 +96,36 @@ app gets a place at the front; max 6 per app in Highlights). Live channels may c
 programme (`SFItem.schedule` of `SFBroadcast`, from the source's EPG: ARD programm-api, ORF
 /livestreams): tiles show what runs now ("Brisant · bis 18:00") with its progress, the hero
 its time, "Danach: …" and description. Tiles in mixed rows carry the app
-logo (`SFItem.showsSourceMark`). Home only offers what plays here: no `drm` items and no
+logo (`SFItem.showsSourceMark`). Watched videos are left out. Home only offers what plays here: no `drm` items and no
 items whose `geoRegion` (raw source data, e.g. ZDF `geoLocation`) the device is known to be
 outside of (`SFNet stateOfRegion:` – learned from every `checkRegion:…region:`, stored 24 h;
 an app that features region-limited items probes once if the state is unknown).
 An app's start page is framed the same way for every app (`SFHome appScreen:`): the app's
 `homeLoader` shelves + followed shows/Neue Folgen (unless `homeIncludesFollows`) + Später
 ansehen + the Suche tile and header button.
+
+## Data
+
+- One SQLite database (`SFStore`, `src/Core/SFStore.m`): the **whole schema lives there**,
+  versioned with `PRAGMA user_version` - each migration step runs once, in order, in one
+  transaction with its version bump (a failing step rolls back and is retried next launch).
+  Never change a shipped step, add one. Modules only read and write their tables.
+- Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
+  `downloads`, `subscriptions`, `follows`/`follow_items`, `watch_later`, `stats`. Items are
+  stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
+  indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
+- WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.
+  The response cache is trimmed after launch and daily: 14 days, 64 MB at most, oldest first.
+
+## Dev instances
+
+`Sofa --dev --instance NAME` (tools/sofa-dev) never shares state with the real app: the data
+directory is decided once at launch (`SFSetDevInstance`) - `~/Library/Application
+Support/Sofa-dev/NAME` (database, sidecar state, downloads under `Downloads/`), or
+`$SOFA_DATA_DIR`. Every test suite runs with a fresh temporary `SOFA_DATA_DIR`, so tests start
+from an empty database, leave nothing behind and can run side by side. Caches stay shared
+(`~/Library/Caches/Sofa`: the YouTube bot-check pause must hold for every instance on this IP).
+`SOFA_ONLY_APPS=a,b` registers only those apps (tests without network).
 
 ## Design system (Framework)
 

@@ -17,15 +17,20 @@ Einstellungen → „Update installieren“.
   Datum oder Länge fehlen.
 - **media.ccc.de** zeigt jetzt wie die anderen Mediatheken „Meine Sendungen“ mit deinen
   Downloads, sobald du dort etwas heruntergeladen hast.
-- **Startseite: „Jetzt live“ und „Highlights“:** Die Startseite zeigt jetzt gemischte Reihen
-  aus allen Mediatheken – die laufenden Sender (tagesschau24, phoenix, ORF III, 3sat …) und
-  die aktuellen Empfehlungen der Redaktionen. Ein kleines Logo auf jeder Kachel zeigt, woher
-  sie kommt. Sender, die hier nicht laufen (nur in Deutschland verfügbar oder kopiergeschützt),
-  lässt Sofa weg.
+- **Neue Startseite:** Oben steht weiter „Weiterschauen“, darunter „Neue Folgen“, dann deine
+  Apps. Danach gemischte Reihen aus allen Mediatheken: **„Jetzt live“** (die laufenden Sender),
+  **„Nachrichten“** (tagesschau, heute, ZIB und aktuelle Meldungen, jeweils das Neueste) und
+  **„Highlights“** – die Empfehlungen der Redaktionen und die Videos deiner YouTube-Kanäle,
+  die gerade besonders gut ankommen. Ein kleines Logo auf jeder Kachel zeigt, woher sie kommt.
+  Sender und Videos, die hier nicht laufen (nur in Deutschland verfügbar oder
+  kopiergeschützt), und Videos, die du schon gesehen hast, lässt Sofa weg. Jeder Sender
+  erscheint nur einmal, auch wenn ihn zwei Mediatheken anbieten.
 - **Was läuft gerade:** Bei den Sendern steht jetzt, welche Sendung läuft und bis wann
   („Brisant · bis 18:00“), ein Balken zeigt, wie weit sie ist. Die große Vorschau nennt die
   Uhrzeit, was danach kommt, und beschreibt die Sendung (ARD-Sender und ORF).
 - **Livestreams:** Die große Vorschau zeigt bei Sendern kein sinnloses Datum mehr.
+- **Schneller und schlanker:** Sofa räumt seinen Zwischenspeicher jetzt selbst auf – die
+  Datenbank ist von 234 auf etwa 68 MB geschrumpft.
 - **Unter der Haube:** Sofa ist neu gegliedert – jede App (YouTube, ZDF, ARD, ORF,
   media.ccc.de) steckt in einem eigenen Modul mit klarer Schnittstelle. Für dich ändert sich
   nichts, neue Apps lassen sich aber künftig viel leichter ergänzen.

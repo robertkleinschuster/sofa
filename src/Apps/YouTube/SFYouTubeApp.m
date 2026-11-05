@@ -970,21 +970,30 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
 // playlist (no Shorts) - 15 entries with <published> to the second, one light request outside
 // InnerTube. InnerTube lists only say "vor 11 Tagen" (relativeDate: approximate, fallback only).
 // Synchronous (call off main); nil when unavailable.
-static NSDictionary *rssPublished(NSString *cid) {
+// RSS of the channel's long videos: exact publication time per video id, and (out) its view count
+// (media:statistics - the raw number YouTube shows, used for "Highlights": videos far above the channel's usual)
+static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     NSInteger st = 0;
     NSString *u = [@"https://www.youtube.com/feeds/videos.xml?playlist_id=UULF" stringByAppendingString:[cid substringFromIndex:2]];
     NSData *d = SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
     NSString *xml = st == 200 && d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
     if (!xml) return nil;
-    static NSRegularExpression *re;
+    static NSRegularExpression *re, *vre;
     static dispatch_once_t o;
-    dispatch_once(&o, ^{ re = [NSRegularExpression regularExpressionWithPattern:@"<entry>.*?<yt:videoId>([^<]+)</yt:videoId>.*?<published>([^<]+)</published>"
-                                                                      options:NSRegularExpressionDotMatchesLineSeparators error:nil]; });
-    NSMutableDictionary *r = [NSMutableDictionary new];
+    dispatch_once(&o, ^{
+        re = [NSRegularExpression regularExpressionWithPattern:@"<entry>.*?<yt:videoId>([^<]+)</yt:videoId>.*?<published>([^<]+)</published>.*?</entry>"
+                                                       options:NSRegularExpressionDotMatchesLineSeparators error:nil];
+        vre = [NSRegularExpression regularExpressionWithPattern:@"<media:statistics views=\"([0-9]+)\"" options:0 error:nil];
+    });
+    NSMutableDictionary *r = [NSMutableDictionary new], *views = [NSMutableDictionary new];
     for (NSTextCheckingResult *m in [re matchesInString:xml options:0 range:NSMakeRange(0, xml.length)]) {
+        NSString *vid = [xml substringWithRange:[m rangeAtIndex:1]];
         NSDate *when = SFDateFromISO8601([xml substringWithRange:[m rangeAtIndex:2]]);
-        if (when) r[[xml substringWithRange:[m rangeAtIndex:1]]] = when;
+        if (when) r[vid] = when;
+        NSTextCheckingResult *v = [vre firstMatchInString:xml options:0 range:m.range];
+        if (v) views[vid] = @([[xml substringWithRange:[v rangeAtIndex:1]] longLongValue]);
     }
+    if (viewsOut) *viewsOut = views;
     return r.count ? r : nil;
 }
 
@@ -994,7 +1003,13 @@ static NSDictionary *rssPublished(NSString *cid) {
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done {
     NSString *cid = SFRefID(ref);
     if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
-    SFBackground(^{ [self feed:cid published:rssPublished(cid) done:done]; });
+    SFBackground(^{
+        NSDictionary *views = nil, *published = rssPublished(cid, &views);
+        [self feed:cid published:published done:^(NSArray *items, NSError *e) {
+            for (SFItem *i in items) { NSNumber *v = views[restOfID(i.identifier)]; if (v) i.viewCount = v.longLongValue; }
+            done(items, e);
+        }];
+    });
 }
 
 + (void)feed:(NSString *)cid published:(NSDictionary *)published done:(void (^)(NSArray *, NSError *))done {
@@ -1173,7 +1188,7 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
         SFYTRemoteCommand(host, lc, [j isKindOfClass:[NSDictionary class]] ? j : @{});
     } else if ([cmd isEqualToString:@"ytfeed"] && [arg hasPrefix:@"UC"]) {   // feed of a channel with its dates (RSS exact vs relative)
         SFBackground(^{
-            NSDictionary *pub = rssPublished(arg);
+            NSDictionary *pub = rssPublished(arg, NULL);
             SFLog(@"dev: ytfeed %@: rss %lu dates", arg, (unsigned long)pub.count);
             [self feed:arg published:pub done:^(NSArray *items, NSError *e) {
                 for (SFItem *i in items)
@@ -1196,6 +1211,40 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     [[SFLounge shared] start];
 }
 // Home: followed channels as round avatars, after Sofa's own sections
+// Home "Highlights": the standout new videos of the followed channels - no request: the feeds are
+// loaded anyway and their RSS carries each video's views. Standout = far above the channel's usual
+// (views / median of its recent videos), so a small channel's hit counts like a big one's;
+// at most one per channel, from the last 7 days.
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    NSMutableDictionary *byChannel = [NSMutableDictionary new];
+    for (SFItem *i in [[SFFollows shared] latest:2000 source:[self appIdentifier]]) {
+        NSString *k = i.showRef ?: i.channel;
+        if (k) byChannel[k] = [(byChannel[k] ?: @[]) arrayByAddingObject:i];
+    }
+    NSMutableArray *picks = [NSMutableArray new];   // @[score, item]
+    NSDate *week = [NSDate dateWithTimeIntervalSinceNow:-7 * 86400];
+    for (NSArray *items in byChannel.allValues) {
+        NSMutableArray *views = [NSMutableArray new];
+        for (SFItem *i in items) if (i.viewCount > 0) [views addObject:@(i.viewCount)];
+        if (views.count < 5) continue;   // too little history to say what is usual
+        [views sortUsingSelector:@selector(compare:)];
+        double median = [views[views.count / 2] doubleValue];
+        SFItem *best = nil; double bestScore = 0;
+        for (SFItem *i in items) {
+            if (i.viewCount <= 0 || !i.date || [i.date compare:week] == NSOrderedAscending) continue;
+            // plain ratio: a young video has had less time, so one that already beats the median is a clear signal
+            double score = i.viewCount / median;
+            if (score > bestScore) { bestScore = score; best = i; }
+        }
+        if (best && bestScore >= 1.5) [picks addObject:@[@(bestScore), best]];
+    }
+    [picks sortUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) { return [b[0] compare:a[0]]; }];
+    NSMutableArray *top = [NSMutableArray new];
+    for (NSArray *p in picks) if (top.count < 8) [top addObject:p[1]];
+    SFLog(@"home features: youtube %lu standout of %lu channels", (unsigned long)top.count, (unsigned long)byChannel.count);
+    done(@{SFHomeTopicHighlights: top});
+}
+
 + (NSArray *)homeSections {
     return @[[SFHomeSection section:@"youtube.channels" title:@"Meine Kanäle" priority:SFHomePriorityApp style:SFTileStyleCircle items:^NSArray *{
         NSArray *f = [[SFFollows shared] follows:[self appIdentifier]];

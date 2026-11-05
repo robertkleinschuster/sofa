@@ -159,7 +159,7 @@
         [[SFDownloads shared] expireRepairBackoffForTesting];
         [[SFDownloads shared] retryDueRepairs];
     } else if ([cmd isEqualToString:@"homerows"]) {          // Dev: the mixed Home rows as Home shows them (ids per topic)
-        for (NSString *t in @[SFHomeTopicLive, SFHomeTopicHighlights]) {
+        for (NSString *t in [SFHomeFeatures topics]) {
             NSMutableArray *ids = [NSMutableArray new];
             for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@/%@", i.identifier ?: @"?", i.badge ?: @"-", [i broadcastAt:[NSDate date]].title ?: @"-"]];
             SFLog(@"dev: homerows %@ = %@", t, [ids componentsJoinedByString:@" "]);

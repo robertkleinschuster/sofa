@@ -425,17 +425,22 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
 // "Livestreams" cluster carries the channels (kind live)
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
     [self curatedLoader:@"mt2025-startseite-100" title:nil](^(SFPage *p, NSError *e) {
-        NSDictionary *features = SFHomeFeaturesFromPage(p, 0);
-        // Germany-only items (ZDF itself, ZDFneo, many films) are left out of Home where they can't play:
-        // Home needs to know the region before it shows them - probe one such stream if nobody has yet
-        SFItem *probe = nil;
-        for (NSArray *items in features.allValues)
-            for (SFItem *i in items) if ([i.geoRegion isEqualToString:@"DE"] && SFRefID(i.resolverRef) && !probe) probe = i;
-        if (!probe || [SFNet stateOfRegion:@"DE"] != SFRegionUnknown) { done(features); return; }
-        [self stream:SFRefID(probe.resolverRef) done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *se) {
-            if (!u || !germanyOnly) { done(features); return; }
-            [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) { done(features); }];
-        }];
+        NSMutableDictionary *features = [SFHomeFeaturesFromPage(p, 0) mutableCopy] ?: [NSMutableDictionary new];
+        if (!p) [features removeAllObjects];   // failed: keep what ZDF featured before
+        // News: the editors' news page, its lead cluster "Aktuelle Nachrichten-Sendungen" (heute, heute journal …)
+        [self curatedLoader:@"nachrichten-politik-news-100" title:nil](^(SFPage *np, NSError *ne) {
+            if (np) features[SFHomeTopicNews] = SFHomeFeaturesLeadVideos(np) ?: @[];
+            // Germany-only items (ZDF itself, ZDFneo, many films) are left out of Home where they can't play:
+            // Home needs to know the region before it shows them - probe one such stream if nobody has yet
+            SFItem *probe = nil;
+            for (NSArray *items in features.allValues)
+                for (SFItem *i in items) if ([i.geoRegion isEqualToString:@"DE"] && SFRefID(i.resolverRef) && !probe) probe = i;
+            if (!probe || [SFNet stateOfRegion:@"DE"] != SFRegionUnknown) { done(features); return; }
+            [self stream:SFRefID(probe.resolverRef) done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *se) {
+                if (!u || !germanyOnly) { done(features); return; }
+                [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) { done(features); }];
+            }];
+        });
     });
 }
 @end
