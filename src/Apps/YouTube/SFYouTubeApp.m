@@ -1007,21 +1007,52 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done {
     NSString *cid = SFRefID(ref);
     if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
-    if ([SFYTBreaker shared].blockedUntil) {   // follows keep what they have
-        NSArray *last = [self storedFeed:cid];
-        done(last.count ? last : nil, last.count ? nil : SFError(@"YouTube pausiert gerade (Bot-Prüfung)."));
-        return;
-    }
     SFBackground(^{
+        [self adoptCachedFeeds];
+        if ([SFYTBreaker shared].blockedUntil) {   // follows keep what they have
+            NSArray *last = [self storedFeed:cid];
+            SFMain(^{ done(last.count ? last : nil, last.count ? nil : SFError(@"YouTube pausiert gerade (Bot-Prüfung).")); });
+            return;
+        }
         NSDictionary *views = nil, *published = rssPublished(cid, &views);
         [self feed:cid published:published done:^(NSArray *items, NSError *e) {
             for (SFItem *i in items) { NSNumber *v = views[restOfID(i.identifier)]; if (v) i.viewCount = v.longLongValue; }
-            done(items, e);
+            SFMain(^{ done(items, e); });   // the stored-list path answers on this background thread
         }];
     });
 }
 
 static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingString:cid]; }
+
+// One-time move (2026-11-05): until 0.3.9 the raw browse answers (~1 MB each) were kept in the
+// response cache. Their parsed lists become the stored feeds and the raw answers go - otherwise
+// every channel would ask InnerTube at once on the first refresh (a burst right after a bot pause).
++ (void)adoptCachedFeeds {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        SFStore *st = [SFStore shared];
+        if ([st setting:@"yt.feeds.adopted"]) return;
+        NSUInteger n = 0;
+        for (NSDictionary *r in [st rows:@"SELECT k, v FROM jcache WHERE k LIKE 'POST https://www.youtube.com/youtubei/v1/browse%VLUULF%'" args:nil]) {
+            NSRange at = [r[@"k"] rangeOfString:@"VLUULF"];
+            NSString *rest = [r[@"k"] substringFromIndex:NSMaxRange(at)];
+            if (rest.length < 22) continue;
+            NSString *cid = [@"UC" stringByAppendingString:[rest substringToIndex:22]];
+            id j = [r[@"v"] isKindOfClass:[NSData class]] ? [NSJSONSerialization JSONObjectWithData:r[@"v"] options:0 error:nil] : nil;
+            NSArray *items = j ? [self feedItemsIn:j] : nil;
+            if (items.count && ![self storedFeed:cid].count) { [self storeFeed:items channel:cid]; n++; }
+            [st run:@"DELETE FROM jcache WHERE k=?" args:@[r[@"k"]]];
+        }
+        [st setSetting:@"1" forKey:@"yt.feeds.adopted"];
+        if (n) SFLog(@"yt: %lu channel feeds taken over from the response cache", (unsigned long)n);
+    });
+}
+
++ (void)storeFeed:(NSArray *)items channel:(NSString *)cid {
+    NSMutableArray *dicts = [NSMutableArray new];
+    for (SFItem *i in items) [dicts addObject:[i dictionaryRepresentation]];
+    [[SFStore shared] cacheJSON:dicts forKey:feedKey(cid)];
+}
 
 + (NSArray *)storedFeed:(NSString *)cid {
     NSMutableArray *a = [NSMutableArray new];
@@ -1064,9 +1095,7 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
             finish(last.count ? last : nil, last.count ? nil : e);
             return;
         }
-        NSMutableArray *dicts = [NSMutableArray new];
-        for (SFItem *i in online) [dicts addObject:[i dictionaryRepresentation]];
-        [[SFStore shared] cacheJSON:dicts forKey:feedKey(cid)];
+        [self storeFeed:online channel:cid];
         if (sig) {
             NSMutableSet *ids = [NSMutableSet new];
             for (SFItem *i in online) [ids addObject:restOfID(i.identifier)];
@@ -1077,24 +1106,44 @@ static NSString *feedKey(NSString *cid) { return [@"yt.feed." stringByAppendingS
     }];
 }
 
+// Feed browses allowed per 30 min (any number of channels): a full refresh without stored lists
+// (first launch, cache lost) spreads over several cycles instead of one burst. Over budget the
+// follow keeps its items until the next cycle.
+static BOOL feedBudget(void) {
+    static NSMutableArray *recent; static dispatch_once_t once;
+    dispatch_once(&once, ^{ recent = [NSMutableArray new]; });
+    @synchronized (recent) {
+        NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+        while (recent.count && now - [recent.firstObject doubleValue] > 1800) [recent removeObjectAtIndex:0];
+        if (recent.count >= 20) return NO;
+        [recent addObject:@(now)];
+        return YES;
+    }
+}
+
 // the channel's long videos as online items (InnerTube browse of the UULF playlist). Not kept in
 // the response cache: the answer is ~1 MB, the parsed list (storedFeed) is what is reused.
 + (void)feedItems:(NSString *)cid done:(void (^)(NSArray *, NSError *))done {
+    if (!feedBudget()) { done(nil, SFError(@"YouTube: später erneut")); return; }
     [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:0 done:^(id j, NSError *e) {
-        NSMutableArray *online = [NSMutableArray new];
-        for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
-            if (i.kind != SFItemVideo) continue;
-            if (i.localPath) {   // local copy substituted: restore the online identity
-                SFItem *o = [self videoItemOnline:i.externalID ?: restOfID(i.identifier)];
-                if (!o) continue;
-                o.title = i.title; o.channel = i.channel; o.date = i.date; o.duration = i.duration;
-                [online addObject:o];
-                continue;
-            }
-            [online addObject:i];
-        }
-        done(j ? online : nil, e);
+        done(j ? [self feedItemsIn:j] : nil, e);
     }];
+}
+
++ (NSArray *)feedItemsIn:(id)browse {
+    NSMutableArray *online = [NSMutableArray new];
+    for (SFItem *i in [self videosIn:browse cont:NULL channels:nil]) {
+        if (i.kind != SFItemVideo) continue;
+        if (i.localPath) {   // local copy substituted: restore the online identity
+            SFItem *o = [self videoItemOnline:i.externalID ?: restOfID(i.identifier)];
+            if (!o) continue;
+            o.title = i.title; o.channel = i.channel; o.date = i.date; o.duration = i.duration;
+            [online addObject:o];
+            continue;
+        }
+        [online addObject:i];
+    }
+    return online;
 }
 
 // still online? oEmbed answers without a player request (bot-flagged IP): 200 = public or
