@@ -10,17 +10,7 @@
 static NSString *const kGW = @"https://api.ardmediathek.de/page-gateway";
 
 
-static NSDate *isoDate(NSString *s) {
-    if (s.length < 19) return nil;
-    static NSDateFormatter *df; static dispatch_once_t o;
-    dispatch_once(&o, ^{
-        df = [NSDateFormatter new];
-        df.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        df.timeZone = [NSTimeZone timeZoneWithAbbreviation:@"UTC"];
-        df.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
-    });
-    @synchronized (df) { return [df dateFromString:[s substringToIndex:19]]; }
-}
+static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
     images = dict(images);

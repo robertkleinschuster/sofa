@@ -81,7 +81,8 @@ static NSTimeInterval parseDuration(NSString *s) {
 }
 
 // "vor 3 Tagen", "vor 1 Stunde", "vor 2 Wochen", "vor 5 Monaten", "vor 1 Jahr" (also
-// "... gestreamt", "Premiere vor ...") -> approximate date (for sorting/retention)
+// "... gestreamt", "Premiere vor ...") -> approximate date. FALLBACK ONLY: InnerTube lists carry
+// nothing better; feeds take exact times from RSS (rssPublished), the info panel from the watch page.
 static NSDate *relativeDate(NSString *s) {
     if (!s.length) return nil;
     NSRange v = [s rangeOfString:@"vor "];
@@ -965,11 +966,43 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
     }];
 }
 
-// subscription feed: a channel's long videos, newest first (always as online items)
+// Exact publication times of a channel's latest long videos: YouTube's RSS feed of the UULF
+// playlist (no Shorts) - 15 entries with <published> to the second, one light request outside
+// InnerTube. InnerTube lists only say "vor 11 Tagen" (relativeDate: approximate, fallback only).
+// Synchronous (call off main); nil when unavailable.
+static NSDictionary *rssPublished(NSString *cid) {
+    NSInteger st = 0;
+    NSString *u = [@"https://www.youtube.com/feeds/videos.xml?playlist_id=UULF" stringByAppendingString:[cid substringFromIndex:2]];
+    NSData *d = SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
+    NSString *xml = st == 200 && d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+    if (!xml) return nil;
+    static NSRegularExpression *re;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ re = [NSRegularExpression regularExpressionWithPattern:@"<entry>.*?<yt:videoId>([^<]+)</yt:videoId>.*?<published>([^<]+)</published>"
+                                                                      options:NSRegularExpressionDotMatchesLineSeparators error:nil]; });
+    NSMutableDictionary *r = [NSMutableDictionary new];
+    for (NSTextCheckingResult *m in [re matchesInString:xml options:0 range:NSMakeRange(0, xml.length)]) {
+        NSDate *when = SFDateFromISO8601([xml substringWithRange:[m rangeAtIndex:2]]);
+        if (when) r[[xml substringWithRange:[m rangeAtIndex:1]]] = when;
+    }
+    return r.count ? r : nil;
+}
+
+// subscription feed: a channel's long videos, newest first (always as online items).
+// The RSS feed is the change detector + date source: while its video list is unchanged, the last
+// InnerTube answer is reused (up to a week) - most refreshes then cost no InnerTube request at all.
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done {
     NSString *cid = SFRefID(ref);
     if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
-    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:900 done:^(id j, NSError *e) {
+    SFBackground(^{ [self feed:cid published:rssPublished(cid) done:done]; });
+}
+
++ (void)feed:(NSString *)cid published:(NSDictionary *)published done:(void (^)(NSArray *, NSError *))done {
+    NSString *sigKey = [@"yt.feedsig." stringByAppendingString:cid];
+    NSString *sig = published ? [[published.allKeys sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","] : nil;
+    BOOL unchanged = sig && [[[SFStore shared] setting:sigKey] isEqualToString:sig];
+    [self call:@"browse" body:@{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]} cache:unchanged ? 7 * 86400 : 900 done:^(id j, NSError *e) {
+        if (j && sig && !unchanged) [[SFStore shared] setSetting:sig forKey:sigKey];
         NSMutableArray *online = [NSMutableArray new];
         for (SFItem *i in (j ? [self videosIn:j cont:NULL channels:nil] : @[])) {
             if (i.kind != SFItemVideo) continue;
@@ -982,6 +1015,7 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
             }
             [online addObject:i];
         }
+        for (SFItem *i in online) { NSDate *exact = published[restOfID(i.identifier)]; if (exact) i.date = exact; }
         done(j ? online : nil, e);
     }];
 }
@@ -1005,6 +1039,12 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
 // YouTube downloads wait during a bot-check pause (no request, no attempt used up)
 + (NSTimeInterval)downloadsPausedUntil { return [SFYTBreaker shared].blockedUntil; }
 
+// exact publication time from the sidecar (microformat) or yt-dlp (timestamp), epoch seconds
+static NSDictionary *publishedInfo(NSDictionary *r) {
+    NSNumber *p = [r[@"published"] isKindOfClass:[NSNumber class]] ? r[@"published"] : nil;
+    return p.doubleValue > 0 ? @{@"published": [NSDate dateWithTimeIntervalSince1970:p.doubleValue]} : nil;
+}
+
 + (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done {
     NSString *vid = item.externalID ?: restOfID(item.identifier);
     void (^viaYTDLP)(void) = ^{
@@ -1013,13 +1053,13 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         // first client, has no HLS any more); otherwise the muxed/HLS stream as before
         NSDictionary *d = [r[@"dash"] isKindOfClass:[NSDictionary class]] ? r[@"dash"] : nil;
         if ([d[@"video"] isKindOfClass:[NSString class]] && [d[@"audio"] isKindOfClass:[NSString class]]) {
-            done([NSURL URLWithString:d[@"video"]], [NSURL URLWithString:d[@"audio"]], nil); return;
+            done([NSURL URLWithString:d[@"video"]], [NSURL URLWithString:d[@"audio"]], publishedInfo(r), nil); return;
         }
         NSString *u = r[@"url"];
         for (NSString *a in r[@"alt"]) if ([a rangeOfString:@"/itag/95/"].location != NSNotFound) { u = a; break; }
         // several audio tracks: original audio separately (the muxed stream has YouTube's default track)
         NSString *au = r[@"dlaudio"];
-        done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, e);
+        done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, publishedInfo(r), e);
     }];
     };
     // first choice SABR: the playback format (up to 1080p60 VP9/AV1 + Opus, original audio track)
@@ -1032,7 +1072,7 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         if (!r) {
             // a bot check pauses both paths alike (SFYTSabr noted it in SFYTBreaker): no yt-dlp
             // request; the download is deferred without using up an attempt
-            if ([e.userInfo[@"bot"] boolValue]) { SFCount(@"yt.download.bot-check"); done(nil, nil, e); return; }
+            if ([e.userInfo[@"bot"] boolValue]) { SFCount(@"yt.download.bot-check"); done(nil, nil, nil, e); return; }
             SFLog(@"yt: SABR download of %@ unavailable (%@) -> yt-dlp", vid, e.localizedDescription);
             SFCount(@"yt.download.ytdlp.sidecar-error");
             viaYTDLP(); return;
@@ -1040,7 +1080,7 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         SFCount(@"yt.download.sabr");
         // the verifier needs the real length to catch a truncated file (cut-off local stream)
         if ([r[@"duration"] doubleValue] > 0) item.duration = [r[@"duration"] doubleValue];
-        done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], nil);
+        done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], publishedInfo(r), nil);
     }];
 }
 
@@ -1102,6 +1142,16 @@ static void ytdlpLive(NSString *vid, SFURLDone done) {
         NSString *lc = sp.location == NSNotFound ? arg : [arg substringToIndex:sp.location];
         id j = sp.location == NSNotFound ? @{} : [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:sp.location + 1] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
         SFYTRemoteCommand(host, lc, [j isKindOfClass:[NSDictionary class]] ? j : @{});
+    } else if ([cmd isEqualToString:@"ytfeed"] && [arg hasPrefix:@"UC"]) {   // feed of a channel with its dates (RSS exact vs relative)
+        SFBackground(^{
+            NSDictionary *pub = rssPublished(arg);
+            SFLog(@"dev: ytfeed %@: rss %lu dates", arg, (unsigned long)pub.count);
+            [self feed:arg published:pub done:^(NSArray *items, NSError *e) {
+                for (SFItem *i in items)
+                    SFLog(@"dev: ytfeed %@ %@ %@ %@", restOfID(i.identifier), i.date, pub[restOfID(i.identifier)] ? @"rss" : @"relative", i.title);
+                SFLog(@"dev: ytfeed end (%lu items%@)", (unsigned long)items.count, e ? [@", " stringByAppendingString:e.localizedDescription] : @"");
+            }];
+        });
     } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // simulate a bot-check pause for <secs> (this instance only)
         [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
     } else return NO;

@@ -29,6 +29,10 @@ static inline void SFBackground(dispatch_block_t b) {
 NSColor *SFHex(uint32_t rgb);
 NSColor *SFHexA(uint32_t rgb, CGFloat a);
 NSString *SFFormatDuration(NSTimeInterval secs);   // 1:02:03 / 4:05
+// ISO 8601 from source APIs: "2026-11-05", "2026-11-05T05:13:00Z", "…T18:25:00.000000+00:00",
+// "…T01:00:00.000+01:00", "…T23:45:10+0100". The offset is honoured; a time without one is UTC;
+// a date without a time is local midnight (a calendar day). nil when unparseable. Thread-safe.
+NSDate *SFDateFromISO8601(NSString *s);
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
 // channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)

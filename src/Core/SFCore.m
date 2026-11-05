@@ -62,6 +62,38 @@ NSString *SFDotJoinN(NSUInteger n, ...) {
     return [a componentsJoinedByString:@" · "];
 }
 
+NSDate *SFDateFromISO8601(NSString *s) {
+    if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
+    const char *c = s.UTF8String;
+    int y, mo, d, h = 0, mi = 0, n = 0;
+    double sec = 0;
+    if (sscanf(c, "%4d-%2d-%2d%n", &y, &mo, &d, &n) != 3 || n != 10) return nil;
+    NSDateComponents *dc = [NSDateComponents new];
+    dc.year = y; dc.month = mo; dc.day = d;
+    NSCalendar *cal = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
+    const char *p = c + 10;
+    if (*p != 'T' && *p != ' ') {   // date only: a calendar day in local time
+        if (*p) return nil;
+        cal.timeZone = [NSTimeZone localTimeZone];
+        return [cal dateFromComponents:dc];
+    }
+    p++;
+    int m = 0;
+    if (sscanf(p, "%2d:%2d%n", &h, &mi, &m) != 2 || m != 5) return nil;
+    p += 5;
+    if (*p == ':') { int k = 0; if (sscanf(p + 1, "%lf%n", &sec, &k) != 1) return nil; p += 1 + k; }   // seconds, fraction
+    NSInteger offset = 0;   // seconds east of UTC
+    if (*p == '+' || *p == '-') {
+        int oh = 0, om = 0;
+        if (sscanf(p + 1, "%2d:%2d", &oh, &om) < 2 && sscanf(p + 1, "%2d%2d", &oh, &om) < 1) return nil;
+        offset = (oh * 3600 + om * 60) * (*p == '-' ? -1 : 1);
+    } else if (*p && *p != 'Z') return nil;
+    dc.hour = h; dc.minute = mi; dc.second = (NSInteger)sec;
+    cal.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    NSDate *utc = [cal dateFromComponents:dc];
+    return [utc dateByAddingTimeInterval:(sec - floor(sec)) - offset];
+}
+
 NSString *SFFormatDateShort(NSDate *d) {
     if (!d) return @"";
     NSCalendar *cal = [NSCalendar currentCalendar];

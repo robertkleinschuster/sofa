@@ -54,6 +54,14 @@ interface InfoBase {
   captions: RawCaptions | null;
   endscreen: EndscreenElement[];
   fetchedAt: number;             // epoch seconds of the player request
+  published?: number | null;     // epoch seconds of the publication (microformat, exact); absent in old cache files
+}
+
+/** Exact publication time (microformat publishDate/uploadDate, ISO 8601 with offset) in epoch seconds. */
+export function publishedOf(raw: RawPlayerResponse | null | undefined): number | null {
+  const mf = raw?.microformat?.playerMicroformatRenderer;
+  const t = Date.parse(mf?.publishDate || mf?.uploadDate || '');
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
 }
 
 /** A VOD: SABR streaming URL (deciphered with the request's player) + the adaptive formats. */
@@ -486,6 +494,7 @@ export class YouTube {
       captions: raw.captions || null,
       endscreen: endscreenElements(raw),
       fetchedAt: Math.floor(Date.now() / 1000),
+      published: publishedOf(raw),
     };
     return this.store(info);
   }
@@ -533,6 +542,7 @@ export class YouTube {
       captions: live ? null : raw.captions || null,   // live captions are in-band (608) or none
       endscreen: [],
       fetchedAt: Math.floor(Date.now() / 1000),
+      published: publishedOf(raw),
     };
   }
 

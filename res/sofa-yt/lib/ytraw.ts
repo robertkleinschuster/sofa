@@ -85,7 +85,7 @@ export interface RawPlayerResponse {
   playabilityStatus?: RawPlayabilityStatus;
   videoDetails?: RawVideoDetails;
   microformat?: {
-    playerMicroformatRenderer?: { liveBroadcastDetails?: { isLiveNow?: boolean; startTimestamp?: string } };
+    playerMicroformatRenderer?: { liveBroadcastDetails?: { isLiveNow?: boolean; startTimestamp?: string }; publishDate?: string; uploadDate?: string };
   };
   streamingData?: RawStreamingData;
   playerConfig?: {

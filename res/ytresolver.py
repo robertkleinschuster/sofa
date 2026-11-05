@@ -158,6 +158,7 @@ def summarize(info):
          "format": info.get("format_id"), "live": bool(info.get("is_live")),
          "duration": info.get("duration"), "title": info.get("title"),
          "expires": expires_of(url),
+         "published": info.get("timestamp") or info.get("release_timestamp"),
          "v": RESULT_VERSION}
     d = dash_pick(info.get("formats") or [])
     if d:

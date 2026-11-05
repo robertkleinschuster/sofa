@@ -12,16 +12,7 @@ static NSString *const kAPI = @"https://api-tvthek.orf.at/api/v4.3";
 static NSString *const kAuth = @"Basic b3JmX29uX3Y0MzpqRlJzYk5QRmlQU3h1d25MYllEZkNMVU41WU5aMjhtdA==";
 
 
-static NSDate *isoDate(NSString *s) {
-    if (s.length < 19) return nil;
-    static NSDateFormatter *df; static dispatch_once_t o;
-    dispatch_once(&o, ^{
-        df = [NSDateFormatter new];
-        df.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        df.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZZZZZ";
-    });
-    @synchronized (df) { return [df dateFromString:s]; }
-}
+static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 @implementation SFORFApp
 

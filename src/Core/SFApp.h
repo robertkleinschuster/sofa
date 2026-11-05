@@ -13,8 +13,10 @@
 
 @class SFNavigator;
 
-// Download source of an item (video URL, optional separate audio URL)
-typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSError *e);
+// Download source of an item (video URL, optional separate audio URL). info: what the source knows
+// better than the list the item came from - "published" (NSDate, exact publication time; list
+// pages may only have "vor 2 Wochen"). nil = nothing to add.
+typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSDictionary *info, NSError *e);
 // Online state for "Platz schaffen": 1 online, 0 gone, -1 unknown (network/server trouble)
 typedef void (^SFAvailabilityDone)(NSInteger online);
 

@@ -7,12 +7,7 @@ static NSString *const kAPI = @"https://api.media.ccc.de/public";
 
 @implementation SFCCCApp
 
-static NSDate *parseDate(NSString *s) {
-    if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
-    static NSDateFormatter *df; static dispatch_once_t o;
-    dispatch_once(&o, ^{ df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd"; });
-    @synchronized (df) { return [df dateFromString:[s substringToIndex:10]]; }
-}
+static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 
 + (SFItem *)eventItem:(NSDictionary *)e {

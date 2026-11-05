@@ -91,6 +91,7 @@ export interface VodAnswer extends OpenMeta {
   audios: { lang: string; url: string; original: boolean; dubbed: boolean; described: boolean; name: string | null; itag: number; acodec: string }[];
   subs: SubsEntry[];
   endscreen: EndscreenElement[];
+  published: number | null;   // epoch seconds of the publication (exact, from the microformat)
 }
 
 /** /open of a live / post-live DVR recording: one muxed HLS stream. */
@@ -272,6 +273,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
       audios,
       subs: s.subs.map((t) => ({ lang: t.lang, url: `${u}/subs/${encodeURIComponent(t.key)}.vtt`, kind: t.kind, name: t.name })),
       endscreen: s.info.endscreen || [],
+      published: s.info.published ?? null,
       ...extra,
     };
   }

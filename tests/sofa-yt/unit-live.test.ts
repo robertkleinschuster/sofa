@@ -16,7 +16,7 @@ import type { RawPlayerResponse } from '../../res/sofa-yt/lib/ytraw.ts';
 import type { HlsInfo, VideoInfo, YouTubeErrorFlags } from '../../res/sofa-yt/lib/youtube.ts';
 
 const hls = await mod('lib/hls.ts');
-const { YouTube, classifyPlayer } = await mod('lib/youtube.ts');
+const { YouTube, classifyPlayer, publishedOf } = await mod('lib/youtube.ts');
 
 const LIVE = 'LuKwFajn37U';
 const rawLive = (): RawPlayerResponse => json<RawPlayerResponse>(fs.readFileSync(path.join(FIX, `player-${LIVE}-live.json`), 'utf8'));
@@ -35,6 +35,14 @@ function upcomingRaw(start = Math.floor(Date.now() / 1000) + 7200): RawPlayerRes
 }
 
 // ---- pure helpers ---------------------------------------------------------------------------
+
+test('publishedOf: exact publication time from the microformat (offset honoured), null without one', () => {
+  const at = (mf: Record<string, string>) => publishedOf({ microformat: { playerMicroformatRenderer: mf } } as RawPlayerResponse);
+  assert.equal(at({ publishDate: '2019-01-09T06:03:03-08:00' }), 1547042583);
+  assert.equal(at({ uploadDate: '2026-10-24T23:45:10+00:00' }), 1792885510);
+  assert.equal(at({}), null);
+  assert.equal(publishedOf(null), null);
+});
 
 test('classifyPlayer: live, post-live DVR, upcoming (slate and premiere), offline, VOD, error', () => {
   assert.equal(classifyPlayer(rawLive()).kind, 'live');

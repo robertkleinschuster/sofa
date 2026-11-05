@@ -15,17 +15,7 @@ static NSString *const kPlayer = @"android_native_6";
 #define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title canonical } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
 #define COLL_F  @"canonical title collectionType teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } }"
 
-static NSDate *isoDate(NSString *s) {
-    if (s.length < 19) return nil;
-    static NSDateFormatter *df; static dispatch_once_t o;
-    dispatch_once(&o, ^{
-        df = [NSDateFormatter new];
-        df.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        df.timeZone = [NSTimeZone timeZoneWithAbbreviation:@"UTC"];
-        df.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
-    });
-    @synchronized (df) { return [df dateFromString:[s substringToIndex:19]]; }
-}
+static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 @implementation SFZDFApp
 

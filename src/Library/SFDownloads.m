@@ -435,14 +435,21 @@ static NSString *gb(unsigned long long b) {
     NSString *ident = _runningID;
     Class<SFApp> app = [SFAppRegistry appForItem:item];
     BOOL custom = [app respondsToSelector:@selector(downloadSourceForItem:done:)];
-    SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSError *e) {
+    SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSDictionary *info, NSError *e) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             if (!url) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Kein Stream"]; return; }
+            NSDate *published = [info[@"published"] isKindOfClass:[NSDate class]] ? info[@"published"] : nil;
+            if (published) {   // exact time from the source replaces a list's approximation ("vor 2 Wochen")
+                item.date = published;
+                r[@"published"] = @([published timeIntervalSince1970]);
+                r[@"item"] = [self itemJSON:item];
+                [self save:r];
+            }
             [self runFFmpeg:ff url:url audio:audio rec:r item:item];
         });
     };
-    if (custom) [app downloadSourceForItem:item done:got]; else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, e); }];
+    if (custom) [app downloadSourceForItem:item done:got]; else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, nil, e); }];
 }
 
 - (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(NSMutableDictionary *)r item:(SFItem *)item {

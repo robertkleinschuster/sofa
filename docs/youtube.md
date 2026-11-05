@@ -428,6 +428,21 @@ continuation item that is the *last element of the item list*.
 
 ---
 
+### 3.10 Publication dates (which raw data to trust)
+InnerTube lists (browse, search, channel tabs, lockups) carry only relative text
+(`publishedTimeText` / metadata parts: "vor 11 Tagen", "vor 1 Jahr") – no timestamp anywhere in
+the entry (checked 2026-11-05). Exact sources, in Sofa's order of use:
+- **Feeds** (follows, "Neue Folgen", auto downloads): RSS of the uploads-without-Shorts playlist,
+  `https://www.youtube.com/feeds/videos.xml?playlist_id=UULF<channel id without UC>` – 15 newest
+  entries, `<published>` ISO 8601 to the second, ~0.5 s, outside InnerTube. Also Sofa's change
+  detector: while the RSS video list is unchanged, the last InnerTube feed answer is reused (up to
+  a week), so most follow refreshes cost no InnerTube request.
+- **Player response**: `microformat.playerMicroformatRenderer.publishDate` / `uploadDate`
+  ("2019-01-09T06:03:03-08:00"); the sidecar returns it as `published` (epoch s) from `/open`,
+  yt-dlp as `timestamp`. Downloads store this exact time (SFDownloadURLDone info).
+- **Watch page** (`next`): `dateText` "02.11.2026" (day; request is hl=de/gl=AT) – info panel.
+`relativeDate()` in SFYouTubeApp is the fallback for list entries only (approximate).
+
 ## 4. Images
 
 ### 4.1 Video thumbnails (`https://i.ytimg.com/vi/<id>/<name>.jpg`, no auth, no headers)
