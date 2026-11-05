@@ -32,8 +32,9 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=${PLAYTEST_INSTANCE:-playtest} PORT=${PLAYTEST_PORT:-47994}
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
-DEVDB="$HOME/Library/Application Support/Sofa/sofa-dev.db"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
+export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
+DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 ORF=orf:14345720   # ORF ON episode with subtitles (replace when it expires)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
@@ -62,7 +63,6 @@ mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
-  sqlite3 "$DEVDB" "delete from downloads where (id='$ORF' or id like 'yt:esTestVid0%') and path like '$T/%'; delete from follows where id='ytchannel:$ESCH';" 2>/dev/null
   rm -rf "$T"
 }
 trap cleanup EXIT
@@ -188,7 +188,7 @@ if [ -n "${SOFA_YT_LIVE:-}" ]; then
   since $m | grep -q 'sabr: opened OzCYsIrrRyw' && ok "opened via SABR" || bad "not via SABR: $(since $m | grep 'sabr\|yt:' | tail -2)"
   cmd "mpvprop vo-configured"; sleep 1
   since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"
-  pkill -f "sofa-yt/main.ts.*sofa-yt-dev"; sleep 8
+  pkill -f "sofa-yt/main.ts.*$SOFA_DATA_DIR/sofa-yt"; sleep 8
   since $m | grep -q 'SABR stream failed (sidecar exited) -> reopening via SABR' && ok "sidecar crash noticed" || bad "crash not noticed"
   m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 3; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"

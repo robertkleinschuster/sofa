@@ -1,6 +1,8 @@
 #!/bin/bash
 # test-all -- every offline/dev regression suite; make-release refuses to build when one fails.
-# Each suite runs in its own invisible dev instance and never touches the real app or its data.
+# Each suite runs in its own invisible dev instance with its own fresh data directory
+# (SOFA_DATA_DIR, docs/architecture.md "Dev instances") and never touches the real app or its
+# data - so the suites run side by side (~2 min instead of ~4.5). --serial: one after another.
 #   tools/check-arch      layer rules of docs/architecture.md (static)
 #   tools/test-units      pure core functions (tests/units, no app instance)
 #   tools/test-resolver   resolver selection logic (fixtures, no network)
@@ -10,12 +12,29 @@
 #   tools/test-sofa-yt    YouTube SABR sidecar: index/virtual files/pacing/eviction, mpv via fake SABR (offline)
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
-OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
-trap 'rm -f "$OUT"' EXIT
-fail=0
-for t in check-arch test-units test-resolver test-playback test-downloads test-home test-sofa-yt; do
-  if "$DIR/$t" > "$OUT" 2>&1; then echo "  ok    $t"
-  else echo "  FAIL  $t"; tail -n 25 "$OUT" | sed 's/^/        /'; fail=1; fi
+SUITES="check-arch test-units test-resolver test-playback test-downloads test-home test-sofa-yt"
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
+trap 'rm -rf "$OUT"' EXIT
+serial=0; [ "${1:-}" = "--serial" ] && serial=1
+
+# build once: the suites' own make is then a no-op (parallel makes in one tree would race)
+make -C "$DIR/.." >"$OUT/make.log" 2>&1 || { echo "  FAIL  make"; tail -n 25 "$OUT/make.log" | sed 's/^/        /'; exit 1; }
+
+run() {   # run SUITE: output + exit code + seconds into $OUT
+  local s=$(date +%s)
+  "$DIR/$1" >"$OUT/$1.log" 2>&1; echo $? >"$OUT/$1.rc"
+  echo $(( $(date +%s) - s )) >"$OUT/$1.sec"
+}
+t0=$(date +%s)
+for t in $SUITES; do
+  if [ $serial = 1 ]; then run $t; else run $t & fi
 done
-[ $fail = 0 ] && echo "==> all suites ok" || echo "==> SOME SUITES FAILED"
+wait
+
+fail=0
+for t in $SUITES; do
+  if [ "$(cat "$OUT/$t.rc")" = 0 ]; then printf "  ok    %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
+  else printf "  FAIL  %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"; tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
+done
+[ $fail = 0 ] && echo "==> all suites ok ($(( $(date +%s) - t0 ))s)" || echo "==> SOME SUITES FAILED"
 exit $fail

@@ -37,8 +37,6 @@ static const NSTimeInterval kRefresh = 30 * 60;
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:@"CREATE TABLE IF NOT EXISTS follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL)" args:nil];
-        [st run:@"CREATE TABLE IF NOT EXISTS follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id))" args:nil];
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];

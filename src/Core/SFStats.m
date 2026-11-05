@@ -12,7 +12,6 @@ static void SFStatsSetup(void) {
     static dispatch_once_t o;
     dispatch_once(&o, ^{
         SFStore *st = [SFStore shared];
-        [st run:@"CREATE TABLE IF NOT EXISTS stats (day TEXT, event TEXT, n INTEGER, PRIMARY KEY(day, event))" args:nil];
         [st run:@"DELETE FROM stats WHERE day < ?" args:@[SFStatsDay([NSDate dateWithTimeIntervalSinceNow:-180 * 86400])]];
     });
 }

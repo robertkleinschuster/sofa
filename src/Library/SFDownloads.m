@@ -44,20 +44,12 @@ static NSString *ffmpegPath(void) {
     return s;
 }
 
-// dev instances work separately (own folder, own tables) – never touch the real downloads
-+ (NSString *)root { return [NSHomeDirectory() stringByAppendingPathComponent:SFDevMode ? @"Movies/Sofa-dev" : @"Movies/Sofa"]; }
+// the real app: ~/Movies/Sofa; a dev instance keeps its downloads in its own data directory
++ (NSString *)root { return SFDevMode ? [SFAppSupportDir() stringByAppendingPathComponent:@"Downloads"] : [NSHomeDirectory() stringByAppendingPathComponent:@"Movies/Sofa"]; }
 
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)" args:nil];
-        // columns added later: failedAt (retry backoff), keep ("Behalten"), online/onlineAt (cached
-        // availability at the source, "Platz schaffen")
-        NSMutableSet *cols = [NSMutableSet new];
-        for (NSDictionary *c in [st rows:@"PRAGMA table_info(downloads)" args:nil]) if (c[@"name"]) [cols addObject:c[@"name"]];
-        for (NSArray *c in @[@[@"failedAt", @"REAL"], @[@"keep", @"INTEGER DEFAULT 0"], @[@"online", @"INTEGER"], @[@"onlineAt", @"REAL"]])
-            if (![cols containsObject:c[0]]) [st run:[NSString stringWithFormat:@"ALTER TABLE downloads ADD COLUMN %@ %@", c[0], c[1]] args:nil];
-        [st run:@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)" args:nil];
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];

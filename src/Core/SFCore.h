@@ -45,7 +45,12 @@ NSString *SFDotJoinN(NSUInteger n, ...);
 // Fair merge of several ranked lists: the first of each, then the second of each, … up to `max`;
 // an element whose key was seen before (or is nil) is skipped. E.g. Home rows mixed from all apps.
 NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id element));
-NSString *SFAppSupportDir(void);                   // ~/Library/Application Support/Sofa
+// Where Sofa keeps its state (database, sidecar state, a dev instance's downloads). The real app:
+// ~/Library/Application Support/Sofa. A dev instance never shares it - isolated by construction,
+// not by per-file checks: Application Support/Sofa-dev/<instance>, or $SOFA_DATA_DIR (tests: a
+// fresh temporary directory per run). Set once at launch, before anything is stored.
+void SFSetDevInstance(NSString *instance);
+NSString *SFAppSupportDir(void);
 NSString *SFCacheDir(void);                        // ~/Library/Caches/Sofa
 
 // Animation helper: animate all changes in the block with a uniform curve.

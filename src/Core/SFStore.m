@@ -5,6 +5,7 @@
 
 @implementation SFStore {
     sqlite3 *_db;
+    NSUInteger _errors;   // failed statements so far (a migration step that adds one is rolled back)
     dispatch_queue_t _q;
     NSMutableDictionary *_progressCache;   // id -> @[pos, dur, watched]
 }
@@ -19,27 +20,127 @@
     if ((self = [super init])) {
         _q = dispatch_queue_create("sofa.store", DISPATCH_QUEUE_SERIAL);
         _progressCache = [NSMutableDictionary new];
-        // Dev instances have their own database: tests cannot touch the real app's progress, follows,
-        // downloads, watch-later list and settings (previously: renaming tables
-        // via text replacement in every file – error-prone)
-        NSString *p = [SFAppSupportDir() stringByAppendingPathComponent:SFDevMode ? @"sofa-dev.db" : @"sofa.db"];
+        // dev instances: SFAppSupportDir is their own directory (SFSetDevInstance)
+        NSString *p = [SFAppSupportDir() stringByAppendingPathComponent:@"sofa.db"];
         if (sqlite3_open(p.fileSystemRepresentation, &_db) != SQLITE_OK) {
             SFLog(@"store: open failed %s", sqlite3_errmsg(_db));
         }
+        // WAL: readers never wait for the writer; NORMAL is durable against app crashes (a power loss
+        // can lose the last commits, never corrupt). One connection, used only on _q.
         [self exec:@"PRAGMA journal_mode=WAL"];
         [self exec:@"PRAGMA synchronous=NORMAL"];
-        [self exec:@"CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT)"];
-        [self exec:@"CREATE INDEX IF NOT EXISTS progress_updated ON progress(updated)"];
-        [self exec:@"CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)"];
-        [self exec:@"CREATE TABLE IF NOT EXISTS jcache (k TEXT PRIMARY KEY, t REAL, v BLOB)"];
+        [self exec:@"PRAGMA temp_store=MEMORY"];
+        [self exec:@"PRAGMA journal_size_limit=8388608"];   // WAL file trimmed back to 8 MB after checkpoints
+        [self migrate];
         [self loadProgress];
+        // response cache housekeeping: shortly after launch, then daily
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), _q, ^{ [self trimCache]; });
     }
     return self;
+}
+
+#pragma mark Schema
+// The whole schema, in one place and versioned (PRAGMA user_version): each step runs once, in
+// order, inside one transaction with its version bump. Never change a step that has shipped - add one.
+// Tables hold Sofa's own data; items are stored as their JSON (SFItem dictionaryRepresentation)
+// and loaded into memory at launch, so besides the primary keys only the queries that page or
+// sort on disk need an index (progress by updated, jcache by age for trimming).
+
+- (NSArray *)migrations {
+    return @[
+        // 1: the schema as it grew until 0.3.9 (tables were created by each module) - IF NOT EXISTS:
+        // existing databases have them; columns added to downloads later are added where missing
+        ^{
+            [self exec:@"CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT)"];
+            [self exec:@"CREATE INDEX IF NOT EXISTS progress_updated ON progress(updated)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS jcache (k TEXT PRIMARY KEY, t REAL, v BLOB)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0)"];
+            NSMutableSet *cols = [NSMutableSet new];
+            for (NSDictionary *c in [self rowsNow:@"PRAGMA table_info(downloads)" args:nil]) if (c[@"name"]) [cols addObject:c[@"name"]];
+            // failedAt: retry backoff · keep: "Behalten" · online/onlineAt: availability at the source ("Platz schaffen")
+            for (NSArray *c in @[@[@"failedAt", @"REAL"], @[@"keep", @"INTEGER DEFAULT 0"], @[@"online", @"INTEGER"], @[@"onlineAt", @"REAL"]])
+                if (![cols containsObject:c[0]]) [self exec:[NSString stringWithFormat:@"ALTER TABLE downloads ADD COLUMN %@ %@", c[0], c[1]]];
+            [self exec:@"CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id))"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS watch_later (id TEXT PRIMARY KEY, source TEXT, item TEXT, added REAL)"];
+            [self exec:@"CREATE TABLE IF NOT EXISTS stats (day TEXT, event TEXT, n INTEGER, PRIMARY KEY(day, event))"];
+        },
+        // 2: dev instances once kept dev_* copies of the tables in this (the real) database; they
+        // have their own directory now (SFSetDevInstance)
+        ^{
+            for (NSString *t in @[@"downloads", @"subscriptions", @"progress", @"follows", @"follow_items", @"watch_later"])
+                [self exec:[NSString stringWithFormat:@"DROP TABLE IF EXISTS dev_%@", t]];
+        },
+        // 3: the response cache is trimmed by age (trimCache)
+        ^{ [self exec:@"CREATE INDEX IF NOT EXISTS jcache_t ON jcache(t)"]; },
+    ];
+}
+
+- (NSInteger)pragma:(NSString *)name {
+    NSDictionary *r = [self rowsNow:[@"PRAGMA " stringByAppendingString:name] args:nil].firstObject;
+    return [r[name] integerValue];
+}
+
+- (void)migrate {
+    NSInteger v = [self pragma:@"user_version"];
+    NSArray *steps = [self migrations];
+    for (NSInteger i = v; i < (NSInteger)steps.count; i++) {
+        [self exec:@"BEGIN IMMEDIATE"];
+        NSUInteger before = _errors;
+        ((dispatch_block_t)steps[i])();
+        if (_errors != before) {   // keep the database as it was; the step is tried again next launch
+            [self exec:@"ROLLBACK"];
+            SFLog(@"store: schema step %ld failed - rolled back, staying at %ld", (long)i + 1, (long)i);
+            return;
+        }
+        [self exec:[NSString stringWithFormat:@"PRAGMA user_version=%ld", (long)i + 1]];
+        [self exec:@"COMMIT"];
+        SFLog(@"store: schema %ld", (long)i + 1);
+    }
+    // space freed by deletions goes back to the file system (incremental, see trimCache); switching an
+    // existing database over takes one full VACUUM
+    if ([self pragma:@"auto_vacuum"] != 2) {   // 2 = INCREMENTAL
+        [self trimCacheNow];   // nothing worth copying
+        NSDate *t0 = [NSDate date];
+        [self exec:@"PRAGMA auto_vacuum=INCREMENTAL"];
+        [self exec:@"VACUUM"];
+        [self exec:@"PRAGMA wal_checkpoint(TRUNCATE)"];   // VACUUM wrote the whole database through the WAL
+        SFLog(@"store: switched to incremental vacuum (%.1f s)", -[t0 timeIntervalSinceNow]);
+    }
+}
+
+#pragma mark Response cache housekeeping
+// SFNet keeps raw answers here (fresh for their cacheAge; older ones are the fallback when a source
+// fails). Kept for 14 days - twice the longest intended reuse (YouTube feeds, 7 days) - and 64 MB
+// at most, oldest first. Without this the cache grew to 217 MB (2026-11-05).
+static const NSTimeInterval kCacheKeep = 14 * 86400;
+static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
+
+- (void)trimCacheNow {
+    double now = [NSDate date].timeIntervalSince1970;
+    [self runNow:@"DELETE FROM jcache WHERE t < ?" args:@[@(now - kCacheKeep)]];
+    // size cap in one pass: newest first, everything from the entry that crosses the cap on goes
+    long long bytes = 0;
+    for (NSDictionary *r in [self rowsNow:@"SELECT t, LENGTH(v) AS n FROM jcache ORDER BY t DESC" args:nil]) {
+        bytes += [r[@"n"] longLongValue];
+        if (bytes > kCacheMaxBytes) { [self runNow:@"DELETE FROM jcache WHERE t <= ?" args:@[r[@"t"]]]; break; }
+    }
+}
+
+- (void)trimCache {   // on _q
+    [self trimCacheNow];
+    [self exec:@"PRAGMA incremental_vacuum"];
+    [self exec:@"PRAGMA wal_checkpoint(TRUNCATE)"];
+    __weak SFStore *ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(86400 * NSEC_PER_SEC)), _q, ^{ [ws trimCache]; });
 }
 
 - (void)exec:(NSString *)sql {
     char *err = NULL;
     if (sqlite3_exec(_db, sql.UTF8String, NULL, NULL, &err) != SQLITE_OK) {
+        _errors++;
         SFLog(@"store: %@ -> %s", sql, err);
         sqlite3_free(err);
     }
@@ -274,10 +375,16 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
 }
 
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args {
+    __block NSArray *out;
+    dispatch_sync(_q, ^{ out = [self rowsNow:sql args:args]; });
+    return out;
+}
+
+- (NSArray *)rowsNow:(NSString *)sql args:(NSArray *)args {   // on _q (or during init)
     NSMutableArray *out = [NSMutableArray new];
-    dispatch_sync(_q, ^{
+    {
         sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(self->_db)); return; }
+        if (sqlite3_prepare_v2(self->_db, sql.UTF8String, -1, &st, NULL) != SQLITE_OK) { SFLog(@"store: %@ -> %s", sql, sqlite3_errmsg(self->_db)); return out; }
         for (NSUInteger i = 0; i < args.count; i++) bindAny(st, (int)i + 1, args[i]);
         int n = sqlite3_column_count(st);
         while (sqlite3_step(st) == SQLITE_ROW) {
@@ -295,7 +402,7 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
             [out addObject:r];
         }
         sqlite3_finalize(st);
-    });
+    }
     return out;
 }
 

@@ -154,8 +154,16 @@ static NSString *ensureDir(NSString *p) {
     [[NSFileManager defaultManager] createDirectoryAtPath:p withIntermediateDirectories:YES attributes:nil error:nil];
     return p;
 }
+static NSString *gDataDir;   // dev instance only; nil = the real app's
+
+void SFSetDevInstance(NSString *instance) {
+    NSString *env = [NSProcessInfo processInfo].environment[@"SOFA_DATA_DIR"];
+    gDataDir = env.length ? env : [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa-dev"]
+                                    stringByAppendingPathComponent:instance.length ? instance : @"view"];
+}
+
 NSString *SFAppSupportDir(void) {
-    return ensureDir([NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa"]);
+    return ensureDir(gDataDir ?: [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa"]);
 }
 NSString *SFCacheDir(void) {
     return ensureDir([NSHomeDirectory() stringByAppendingPathComponent:@"Library/Caches/Sofa"]);

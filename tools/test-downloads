@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-downloads -- robustness regression tests for the download layer, in an invisible dev instance
-# (own database, own folder ~/Movies/Sofa-dev). No YouTube requests.
+# (a fresh data directory per run: database + download folder, removed at exit). No YouTube requests.
 #
 # Incident 2026-11-04: an update restart (_exit) left ffmpeg running as an orphan; it kept writing the
 # same .part file as the restarted download -> corrupt 1.2 GB file. Checks:
@@ -21,9 +21,10 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=dltest PORT=47995
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
-ROOT="$HOME/Movies/Sofa-dev"
-DEVDB="$HOME/Library/Application Support/Sofa/sofa-dev.db"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
+export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
+ROOT="$SOFA_DATA_DIR/Downloads"
+DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 REF=orf:14345720   # any ORF ON episode (replace when it expires)
 BADREF=orf:1       # an episode id that does not exist: its download always fails
@@ -44,10 +45,8 @@ ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the de
 cleanup() {
   [ -n "$APP" ] && kill $APP 2>/dev/null
   for p in $(ffpids); do kill $p 2>/dev/null; done
-  /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('$REF','$BADREF','$YTREF') or id like 'room:%';" 2>/dev/null
-  /opt/local/bin/sqlite3 "$DEVDB" "delete from progress where id like 'room:%';" 2>/dev/null
   for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
-  rm -rf "$T" "$ROOT/dev/Dev" "$ROOT/dev/Room" "$ROOT/orphan-test."*
+  rm -rf "$T"
 }
 trap cleanup EXIT
 mkdir -p "$ROOT"
@@ -140,7 +139,6 @@ grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && ok "retry ran on 
 quit
 
 echo "==> 5. YouTube download during a bot-check pause"
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"   # leftovers of manual tests
 start
 cmd "ytblock 900"; sleep 0.5
 m=$(wc -l < "$LOG"); cmd "dlget $YTREF"

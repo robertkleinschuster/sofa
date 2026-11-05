@@ -5,7 +5,8 @@
 # Incident 2026-11-05: "Jetzt live" offered ZDF (Germany only) and ORF 1 (DRM) on a device in
 # Austria - selecting them only showed "Wiedergabe nicht möglich". Home must offer only what plays
 # here. The Example app features three channels: a normal one, a DRM one, one limited to region XX.
-#   1. DRM never appears; the region item appears while the region is unknown; badges are kept
+#   1. DRM never appears; the region item appears while the region is unknown; badges are kept;
+#      news newest first
 #   2. a geo finding "outside XX" removes the region item at once (Home reloads), "inside" brings it back
 #   3. after a restart the stored rows come back before any refresh (offline), with badges and the
 #      channel's programme, and the
@@ -17,6 +18,8 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=hometest PORT=47993
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-hometest.XXXXXX")"
+export SOFA_DATA_DIR="$T/data"   # fresh state per run: no region findings or rows from earlier runs
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1
@@ -39,20 +42,19 @@ rows() {   # rows TOPIC: the ids/badges of the row as Home shows it now
   grep "dev: homerows $1 =" "$LOG" | tail -1 | sed 's/.*= //'
 }
 has() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
-cleanup() {
-  if [ -n "$APP" ]; then cmd "region XX -"; sleep 0.3; quit; fi
-}
+cleanup() { [ -n "$APP" ] && quit; rm -rf "$T"; }
 trap cleanup EXIT
 
 echo "==> 1. what plays here, region unknown"
 start
-cmd "region XX -"; waitlog "dev: region XX - done" || bad "region reset not confirmed"
 sleep 1   # the launch refresh: the Example app answers at once (rows only logged when they change)
 L=$(rows live); H=$(rows highlights)
 has "$L" "example:live1/LIVE/Testsendung" && ok "normal channel shown, with its LIVE badge and what runs now" || bad "normal channel missing: $L"
 case "$L" in *example:live2*) bad "DRM channel shown: $L" ;; *) ok "DRM channel left out" ;; esac
 has "$L" "example:live3/LIVE/Testsendung" && ok "region channel shown while the region is unknown" || bad "region channel missing: $L"
 has "$H" "example:1/-/-" && has "$H" "example:2/-/-" && ok "highlights shown" || bad "highlights: $H"
+N=$(rows news)
+case "$N" in "example:4/-/- example:3/-/-"*) ok "news newest first" ;; *) bad "news order: $N" ;; esac
 
 echo "==> 2. geo findings"
 cmd "region XX 0"; waitlog "geo: device outside XX" || bad "outside not logged"

@@ -111,7 +111,7 @@ static const NSTimeInterval kHealthyRun = 300;
     if (_task.isRunning || !self.available) return;
     if ([NSDate date].timeIntervalSince1970 < _nextStartAt) return;   // backing off after crashes
     signal(SIGPIPE, SIG_IGN);
-    NSString *state = [SFAppSupportDir() stringByAppendingPathComponent:SFDevMode ? @"sofa-yt-dev" : @"sofa-yt"];
+    NSString *state = [SFAppSupportDir() stringByAppendingPathComponent:@"sofa-yt"];   // dev instances: their own (SFSetDevInstance)
     NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
     [[NSFileManager defaultManager] createDirectoryAtPath:state withIntermediateDirectories:YES attributes:nil error:nil];
     [[NSFileManager defaultManager] createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:nil];

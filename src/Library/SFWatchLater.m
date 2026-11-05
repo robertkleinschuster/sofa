@@ -16,7 +16,6 @@
 - (instancetype)init {
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
-        [st run:@"CREATE TABLE IF NOT EXISTS watch_later (id TEXT PRIMARY KEY, source TEXT, item TEXT, added REAL)" args:nil];
         _entries = [NSMutableArray new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM watch_later ORDER BY added DESC" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];

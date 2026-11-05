@@ -298,7 +298,10 @@ int main(int argc, const char *argv[]) {
                 if (sscanf(argv[++i], "%dx%d", &w, &h) == 2) del.devSize = NSMakeSize(w, h);
             }
         }
-        if (SFDevMode) SFLogFileName = [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstance];
+        if (SFDevMode) {
+            SFLogFileName = [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstance];
+            SFSetDevInstance(gInstance);   // own data directory (docs/architecture.md, Dev instances)
+        }
         BOOL autostart = NO;
         for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--autostart")) autostart = YES;
         if (autostart && !SFDevMode && !SFAutostartEnabled()) {
