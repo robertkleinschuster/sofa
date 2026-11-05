@@ -252,7 +252,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       maybe conveniently via the phone (code/QR like "Mit TV verbinden").
 - [ ] Periodic background review agents (user request) — after every larger building block.
 - [ ] Video frames in the dev stream (AVPlayerItemVideoOutput), otherwise black.
-- [ ] MacPorts port in the overlay (final state), the /Applications copy is transitional.
+- [x] 2026-11-05 MacPorts port in the overlay (final state): `multimedia/sofa` 0.3.8, builds without network (yt-dlp + sidecar node_modules as checksummed distfiles, `SOFA_DISTFILES`), no bgutil dependency; pushed (backport-toolkit 69c2196). Per release: bump version + checksums; the `sofa-yt-modules-<lock hash>` name changes with the sidecar lockfile. The real Mac still runs the release bundle in /Applications.
 - [x] System volume via remote (player: +/-), no app-internal volume.
 - [x] Dev viewer in the browser (Tailscale), separate view/test instances.
 
