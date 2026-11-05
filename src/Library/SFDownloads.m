@@ -142,6 +142,15 @@ static NSString *const kRepairPrefix = @"repair: ";
     return r[@"sub"] && [r[@"state"] integerValue] == SFDLFailed && [r[@"tries"] integerValue] < kSubMaxTries;
 }
 
+- (void)storageChangedSoon {
+    if (_storagePostPending) return;
+    _storagePostPending = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_storagePostPending = NO;
+        [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsStorageDidChangeNotification object:self];
+    });
+}
+
 - (void)changed:(NSString *)identifier {
     SFMain(^{ [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsDidChangeNotification object:identifier]; });
 }
@@ -333,7 +342,7 @@ static NSString *gb(unsigned long long b) {
         [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
     }
     [self changed:identifier];
-    [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsStorageDidChangeNotification object:self];   // "Platz schaffen" follows
+    [self storageChangedSoon];   // "Platz schaffen" follows (coalesced: bulk deletions post once)
     if (_storageFull) dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });   // room again? (pump re-checks)
 }
 
@@ -397,7 +406,6 @@ static NSString *gb(unsigned long long b) {
 - (void)pump {
     if (!_started || _runningID) return;
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
-    if ([self checkStorage]) return;   // below the reserve: wait (SFDownloads+Storage.m re-checks every minute)
     // manual downloads before subscription downloads, oldest request first in each
     NSDictionary *next = nil;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;
@@ -410,7 +418,8 @@ static NSString *gb(unsigned long long b) {
         if (rm != nm) { if (rm) next = r; continue; }
         if ([r[@"added"] doubleValue] < [next[@"added"] doubleValue]) next = r;
     }
-    if (!next) { if (wake) [self pumpAt:wake]; return; }
+    if (!next) { if (wake) [self pumpAt:wake]; else [self setStorageFull:NO]; return; }
+    if ([self checkStorageFor:next]) return;   // not enough room for it: wait (re-checked every minute, user asked)
     NSString *ff = ffmpegPath();
     if (!ff) { SFLog(@"downloads: ffmpeg missing"); return; }
     NSMutableDictionary *r = _recs[next[@"id"]];
@@ -485,10 +494,7 @@ static NSString *gb(unsigned long long b) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             r[@"progress"] = @(p);
-            if (-[lastUI timeIntervalSinceNow] > 2) {
-                lastUI = [NSDate date]; [self changed:ident];
-                [self stopIfDiskRunsOut];   // never fill the disk: stop, back into the queue
-            }
+            if (-[lastUI timeIntervalSinceNow] > 2) { lastUI = [NSDate date]; [self changed:ident]; }
         });
     };
     NSMutableData *errData = [NSMutableData new];
@@ -525,6 +531,8 @@ static NSString *gb(unsigned long long b) {
     @try { [t launch]; }
     @catch (NSException *ex) { [self finish:ident ok:NO error:ex.reason]; return; }
     _task = t;
+    _runningPart = part;
+    [self watchDiskDuringRun:YES];   // never fill the disk: stop, back into the queue
     SFLog(@"downloads: loading %@", item.title);
 }
 
@@ -592,8 +600,14 @@ static const NSTimeInterval kSourceGap = 30;
 
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
     NSMutableDictionary *r = _recs[ident];
-    _task = nil; _runningID = nil;
-    if (r && !ok && ([self pausedUntil:r] > [NSDate date].timeIntervalSince1970 || self.storageFull)) {
+    _task = nil; _runningID = nil; _runningPart = nil;
+    [self watchDiskDuringRun:NO];
+    // a run that failed on a (nearly) full disk - ENOSPC, or stopped by the disk watch - is not the
+    // download's fault: the live free space decides, not the cached flag (review 2026-11-05)
+    BOOL diskFull = !ok && self.freeBytes < self.storageReserve;
+    if (diskFull) [self setStorageFull:YES];
+    if (ok) [_diskNeed removeObjectForKey:ident];
+    if (r && !ok && ([self pausedUntil:r] > [NSDate date].timeIntervalSince1970 || self.storageFull || diskFull)) {
         // the source paused itself (YouTube bot check) or the disk is full - not the download's fault:
         // back into the queue without using up an attempt; pump continues when the pause is over
         r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;

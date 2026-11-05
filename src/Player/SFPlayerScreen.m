@@ -306,7 +306,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (!_sabrObs) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFYTSabrDidExitNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
             SFPlayerScreen *s = wself;
-            if (s && s->_engine && !s->_closing && !s->_failed && [SFMPVSourceFor(s->_openURL)[@"sabr"] boolValue]) [s sabrFailed:@"sidecar exited"];
+            // not after the end (up-next card, end screen): the finished video must not restart
+            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [SFMPVSourceFor(s->_openURL)[@"sabr"] boolValue]) [s sabrFailed:@"sidecar exited"];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];

@@ -82,15 +82,18 @@ static NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download"
 #pragma mark Platz schaffen (make room; nothing is ever deleted automatically)
 
 // Videos of a group that bulk deletion may remove: not "Behalten", verified still online (the copy
-// of a vanished video is irreplaceable - deleted only one by one, by hand).
-+ (NSDictionary *)roomSplit:(NSArray *)ids {
+// of a vanished video is irreplaceable - deleted only one by one, by hand). maxAge: how old the
+// online check may be (deleting re-verifies anything older than a day).
+static const NSTimeInterval kVerifyBeforeDelete = 86400;
++ (NSDictionary *)roomSplit:(NSArray *)ids { return [self roomSplit:ids maxAge:30 * 86400]; }
++ (NSDictionary *)roomSplit:(NSArray *)ids maxAge:(NSTimeInterval)maxAge {
     SFDownloads *dl = [SFDownloads shared];
     NSMutableArray *ok = [NSMutableArray new];
     NSUInteger gone = 0, unchecked = 0;
     unsigned long long bytes = 0;
     for (NSString *i in ids) {
         if ([dl isKept:i]) continue;
-        NSInteger o = [dl onlineStateFor:i];
+        NSInteger o = [dl onlineStateFor:i maxAge:maxAge];
         if (o == 0) { gone++; continue; }
         if (o < 0) { unchecked++; continue; }
         [ok addObject:i];
@@ -108,12 +111,13 @@ static NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download"
 // Confirm and delete the deletable part of a group (online check first for what is unchecked).
 + (void)offerDeleting:(NSArray *)ids what:(NSString *)what on:(SFNavigator *)nav {
     SFDownloads *dl = [SFDownloads shared];
-    NSDictionary *sp = [self roomSplit:ids];
+    NSDictionary *sp = [self roomSplit:ids maxAge:kVerifyBeforeDelete];
     if ([sp[@"unchecked"] unsignedIntegerValue]) {
         NSUInteger n = [sp[@"unchecked"] unsignedIntegerValue];
-        [nav toast:[NSString stringWithFormat:@"Prüfe bei %@, ob sie noch online sind (ca. %.0f Min.) …", SFVideos(n), ceil(n * 1.6 / 60)]];
+        [nav toast:n > 40 ? [NSString stringWithFormat:@"Prüfe bei %@, ob sie noch online sind (ca. %.0f Min.) …", SFVideos(n), ceil(n * 1.6 / 60)]
+                          : [NSString stringWithFormat:@"Prüfe bei %@, ob sie noch online sind …", SFVideos(n)]];
         __weak SFNavigator *wn = nav;
-        [dl checkOnline:ids done:^{
+        [dl checkOnline:ids maxAge:kVerifyBeforeDelete done:^{
             SFNavigator *sn = wn;
             if (!sn) return;
             // only where the question was asked: never over a video or another page
@@ -129,7 +133,7 @@ static NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download"
 
 + (void)confirmDeleting:(NSArray *)ids what:(NSString *)what on:(SFNavigator *)nav {
     SFDownloads *dl = [SFDownloads shared];
-    NSDictionary *sp = [self roomSplit:ids];
+    NSDictionary *sp = [self roomSplit:ids maxAge:kVerifyBeforeDelete];   // only freshly verified ones
     NSArray *del = sp[@"ids"];
     NSUInteger gone = [sp[@"gone"] unsignedIntegerValue], unchecked = [sp[@"unchecked"] unsignedIntegerValue];
     NSMutableArray *notes = [NSMutableArray new];
@@ -205,9 +209,10 @@ static NSString *SFDownloadsArt(NSString *source) { return SFIconArt(@"download"
         if (groups.count) [shelves addObject:[SFShelf shelf:@"Aufräumen" style:SFTileStyleLandscape items:groups]];
         // shows by size, largest first: one tile per show (OK = its deletable part)
         NSMutableArray *shows = [NSMutableArray new];
+        NSMutableDictionary *size = [NSMutableDictionary new];
+        for (NSString *k in byShow) size[k] = @([self bytesOf:byShow[k]]);
         NSArray *keys = [byShow.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
-            unsigned long long x = [self bytesOf:byShow[a]], y = [self bytesOf:byShow[b]];
-            return x > y ? NSOrderedAscending : x < y ? NSOrderedDescending : NSOrderedSame;
+            return [size[b] compare:size[a]];   // largest first
         }];
         for (NSString *k in [keys subarrayWithRange:NSMakeRange(0, MIN(keys.count, 24))]) {
             NSString *name = [k substringFromIndex:[k rangeOfString:@"|"].location + 1];
@@ -266,6 +271,8 @@ static BOOL gRoomAsked;
         return;
     }
     gRoomAsked = YES;
+    static __weak SFScreen *shown;   // never a second copy on the stack
+    if (shown && [nav.top isEqual:shown]) return;
     SFLog(@"downloads: asking the user to make room");
     SFMenuOption *later = [SFMenuOption option:@"Später" action:^{}];
     SFMenuOption *room = [SFMenuOption option:@"Platz schaffen" action:^{
@@ -275,6 +282,7 @@ static BOOL gRoomAsked;
                                                  subtitle:[NSString stringWithFormat:@"Neue Downloads warten, bis wieder mehr als %@ frei sind. Sofa löscht nie selbst etwas – du entscheidest, was weg kann.", SFGB(dl.storageReserve)]
                                                   options:@[room, later] theme:nav.top.theme];
     m.subtitleLines = 5;
+    shown = m;
     [nav push:m];
 }
 

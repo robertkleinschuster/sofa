@@ -605,6 +605,9 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
         [self esLeave:NO];
         [self.navigator toast:[NSString stringWithFormat:@"Playlist „%@“ wird geladen …", title]];
     }
+    // the video had ended while the tiles had focus: if the playlist does not come, the end still
+    // has to run (up-next card or leaving), not leave the player on the ended video (review 2026-11-05)
+    BOOL endWaiting = !first && _ended;
     SFItem *was = _item;
     __weak SFPlayerScreen *ws = self;
     SFPageLoader load = [SFYouTube playlistLoader:pid title:title];
@@ -616,6 +619,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
             if (!items.count) {
                 SFLog(@"endscreen: playlist %@ not loaded (%@)", pid, err.localizedDescription);
                 [s.navigator toast:first ? @"Die Playlist ließ sich nicht laden – nur dieses Video wird abgespielt." : @"Die Playlist ließ sich nicht laden."];
+                if (endWaiting) [s finishEnd];
                 return;
             }
             if (!first) {

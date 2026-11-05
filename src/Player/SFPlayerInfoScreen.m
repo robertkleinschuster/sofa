@@ -312,13 +312,19 @@ static NSString *SFSig(SFItem *i) {
         } else if (ds == SFDLDone) {
             [a addObject:[self button:@"download" title:@"Download löschen" hero:hero action:^{
                 SFNavigator *n = ws.navigator ?: nav;
-                // Destructive and possibly the very file that is playing: ask, naming the video
+                // Destructive and possibly the very file that is playing: ask, naming the video - and
+                // say so when the copy is irreplaceable (kept, or no longer online), as the context menu does
+                BOOL kept = [dl isKept:ident], gone = [dl onlineStateFor:ident] == 0;
                 SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
-                SFMenuOption *yes = [SFMenuOption option:@"Ja, Download löschen" action:^{
+                SFMenuOption *yes = [SFMenuOption option:kept || gone ? @"Ja, endgültig löschen" : @"Ja, Download löschen" action:^{
                     [dl remove:ident];
-                    [n toast:@"Download gelöscht – das Video bleibt online verfügbar"];
+                    [n toast:kept || gone ? @"Download gelöscht" : @"Download gelöscht – das Video bleibt online verfügbar"];
                 }];
-                [n push:[[SFMenuScreen alloc] initWithTitle:@"Download löschen?" subtitle:it.title options:@[no, yes] theme:ws.theme]];
+                NSString *sub = gone ? [NSString stringWithFormat:@"„%@“ ist nicht mehr online – die Kopie hier ist die einzige.", it.title]
+                              : kept ? [NSString stringWithFormat:@"„%@“ ist als „Behalten“ markiert.", it.title] : it.title;
+                SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Download löschen?" subtitle:sub options:@[no, yes] theme:ws.theme];
+                m.subtitleLines = 4;
+                [n push:m];
             }]];
         } else if (it.resolverRef || it.resolver) {
             SFItem *dlItem = [it copy];

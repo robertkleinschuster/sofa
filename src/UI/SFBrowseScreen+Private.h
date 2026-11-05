@@ -35,6 +35,7 @@
 @end
 
 @interface SFBrowseScreen () {
+    BOOL _reloadPending;          // a coalesced notification reload is queued
     SFPage *_page;
     BOOL _pinTop;   // start focus below the first row: do not scroll while the row is visible
     CALayer *_bg;

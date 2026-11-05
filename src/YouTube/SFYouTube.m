@@ -687,8 +687,20 @@ static NSSet *skipKeys(void) {
     // could not serve a video - never after a bot check (SFYTBreaker). Every decision is counted
     // (SFCount, "yt.<what>.<path>[.<reason>]") so unused fallbacks can be retired on data.
     //
+    // While the bot-check breaker is open, no path falls back to yt-dlp - not only when the sidecar's
+    // own answer was the bot check, but also when the sidecar is restarting, timed out or skipped
+    // (review 2026-11-05): a fallback player request from the flagged IP only prolongs the flag.
+    static NSString *const kBotMsg = @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
+    BOOL (^botPaused)(SFURLDone) = ^BOOL(SFURLDone done) {
+        if (![SFYTBreaker shared].blockedUntil) return NO;
+        SFLog(@"yt: bot-check pause - no yt-dlp fallback");
+        SFCount(@"yt.ytdlp.skipped-bot-pause");
+        done(nil, SFError(kBotMsg));
+        return YES;
+    };
     // yt-dlp: HLS (+ DASH for mpv) via the resolver process
     SFRefResolver ytdlp = ^(NSString *vid, SFURLDone done) {
+        if (botPaused(done)) return;
         [[SFYTResolver shared] resolve:vid live:NO done:^(NSDictionary *r, NSError *e) {
             NSURL *u = r ? [NSURL URLWithString:r[@"url"]] : nil;
             if (u) SFSetAlternateURLs(u, r[@"alt"]);
@@ -723,7 +735,7 @@ static NSSet *skipKeys(void) {
     // either). Returns the message for the user, nil = fall back to yt-dlp.
     NSString *(^sabrFinal)(NSError *) = ^NSString *(NSError *e) {
         if ([e.userInfo[@"bot"] boolValue])   // SFYTSabr took the pause into SFYTBreaker
-            return @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
+            return kBotMsg;
         if ([e.userInfo[@"upcoming"] boolValue]) {
             double t = [e.userInfo[@"startTime"] doubleValue];
             if (!(t > 0)) return @"Dieser Livestream hat noch nicht begonnen.";
@@ -796,8 +808,9 @@ static NSSet *skipKeys(void) {
         }];
     });
     // still online? oEmbed answers without a player request (bot-flagged IP): 200 = public or
-    // unlisted, 401/403 = exists but embedding off, 400/404 = deleted or private. Used by
-    // "Platz schaffen", one check per video, cached 30 days (SFDownloads+Storage.m).
+    // unlisted -> online; 400/404 = gone (deleted, bad id). 401/403 is ambiguous (embedding off, but
+    // also private videos) -> unknown: never deletable in bulk, the copy may be the only one
+    // (review 2026-11-05). Used by "Platz schaffen" (SFDownloads+Storage.m).
     SFAvailabilityCheck oembed = ^(SFItem *item, SFAvailabilityDone done) {
         NSString *vid = item.externalID ?: restOfID(item.identifier);
         if (vid.length != 11) { done(-1); return; }
@@ -805,7 +818,7 @@ static NSSet *skipKeys(void) {
             NSInteger st = 0;
             NSString *u = [NSString stringWithFormat:@"https://www.youtube.com/oembed?format=json&url=https%%3A%%2F%%2Fwww.youtube.com%%2Fwatch%%3Fv%%3D%@", vid];
             NSData *d = SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
-            done(st == 200 || st == 401 || st == 403 ? 1 : (st == 400 || st == 404) ? 0 : -1);
+            done(st == 200 ? 1 : (st == 400 || st == 404) ? 0 : -1);
             (void)d;
         });
     };
@@ -855,6 +868,7 @@ static NSSet *skipKeys(void) {
     // requests got the bot check on this IP), yt-dlp as fallback. The local playlist is plain HLS:
     // mpv and AVFoundation both play it, so no mpv requirement here.
     SFRefResolver ytdlpLive = ^(NSString *vid, SFURLDone done) {
+        if (botPaused(done)) return;
         [[SFYTResolver shared] resolve:vid live:YES done:^(NSDictionary *r, NSError *e) {
             done(r ? [NSURL URLWithString:r[@"url"]] : nil, e);
         }];

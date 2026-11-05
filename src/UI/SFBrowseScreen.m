@@ -49,7 +49,7 @@
 - (void)setReloadNotification:(NSString *)name {
     if (_reloadNotification) [[NSNotificationCenter defaultCenter] removeObserver:self name:_reloadNotification object:nil];
     _reloadNotification = [name copy];
-    if (name) [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reload) name:name object:nil];
+    if (name) [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadSoon) name:name object:nil];
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
@@ -336,6 +336,14 @@ static CGFloat textWidth(SFLabel *l) {
 }
 - (void)willDisappear { [_clockTimer invalidate]; _clockTimer = nil; [_prefetchTimer invalidate]; _prefetchTimer = nil; }
 - (void)didAppear {}
+
+// Notification-driven reloads coalesce: deleting 200 downloads posts 200 notifications, the page
+// loads once (review 2026-11-05: each reload ran the whole loader on the main thread).
+- (void)reloadSoon {
+    if (_reloadPending) return;
+    _reloadPending = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{ self->_reloadPending = NO; [self reload]; });
+}
 
 - (void)reload {
     if (!self.loader) return;

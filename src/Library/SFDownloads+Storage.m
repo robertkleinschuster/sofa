@@ -15,7 +15,12 @@ void SFRegisterAvailabilityCheck(NSString *prefix, SFAvailabilityCheck f) {
 }
 
 static const unsigned long long kGB = 1000ULL * 1000ULL * 1000ULL;
-static const NSTimeInterval kOnlineValid = 30 * 86400;   // a checked state is trusted this long
+// How long a checked state is trusted: "online" for showing it (30 days), but bulk deletion
+// re-verifies anything older than a day right before deleting (Mediathek episodes expire after
+// 7-30 days - a month-old "online" must not delete the last copy, review 2026-11-05). "Gone" is
+// re-checked after 3 days (a transient source error must not mark a video irreplaceable for long).
+static const NSTimeInterval kOnlineValid = 30 * 86400;
+static const NSTimeInterval kGoneValid = 3 * 86400;
 static const NSTimeInterval kOnlineGap = 1.5;            // spacing between two checks (spare the sources)
 
 @implementation SFDownloads (Storage)
@@ -54,20 +59,44 @@ static unsigned long long gReserve = 10 * kGB;
 
 - (void)storageTick:(NSTimer *)t { [self pump]; }   // pump re-checks and continues when there is room
 
-- (BOOL)checkStorage {
-    BOOL anyQueued = NO;
-    for (NSDictionary *r in _recs.allValues) if ([r[@"state"] integerValue] == SFDLQueued) { anyQueued = YES; break; }
-    // full = below the reserve; only reported while something waits (an idle queue needs no room)
-    [self setStorageFull:anyQueued && self.freeBytes < self.storageReserve];
+// Room a download needs before it may start: the reserve plus twice its expected size (ffmpeg's
+// +faststart rewrites the finished file, ~2x at the very end). Expected size from the duration at
+// ~1 MB/s (1080p60 VP9 + Opus measured 0.4-0.9 MB/s), 2 GB when unknown. After a disk stop at least
+// 2.5x what that run had written - hysteresis: removing its part file frees the room again, and
+// without it the same download started over and over (review 2026-11-05).
+- (unsigned long long)roomNeededFor:(NSDictionary *)r {
+    SFItem *item = [self itemFromRec:r];
+    unsigned long long est = item.duration > 0 ? (unsigned long long)(item.duration * 1e6) : 2 * kGB;
+    unsigned long long need = self.storageReserve + 2 * est;
+    unsigned long long stopped = [_diskNeed[r[@"id"]] unsignedLongLongValue];
+    return MAX(need, self.storageReserve + stopped);
+}
+
+- (BOOL)checkStorageFor:(NSDictionary *)next {
+    if (!next) return NO;
+    [self setStorageFull:self.freeBytes < [self roomNeededFor:next]];
     return _storageFull;
 }
 
+// While ffmpeg runs (timer, every 10 s - also for unknown durations and the faststart phase, which
+// report no progress): stop it when the reserve is half used up.
 - (void)stopIfDiskRunsOut {
     if (!_task.isRunning || self.freeBytes >= self.storageReserve / 2) return;
-    SFLog(@"downloads: disk nearly full while loading %@ - stopping it (continues later)", _runningID);
+    unsigned long long written = _runningPart ? [[[NSFileManager defaultManager] attributesOfItemAtPath:_runningPart error:nil] fileSize] : 0;
+    SFLog(@"downloads: disk nearly full while loading %@ (%llu MB written) - stopping it (continues when there is room)", _runningID, written / 1000000ULL);
+    if (_runningID) {
+        if (!_diskNeed) _diskNeed = [NSMutableDictionary new];
+        _diskNeed[_runningID] = @((unsigned long long)(written * 2.5) + kGB);
+    }
     [self setStorageFull:YES];
-    [_task terminate];   // termination -> finish:ok:NO -> deferred (storageFull), the part file is removed
+    [_task terminate];   // termination -> finish:ok:NO -> deferred (disk), the part file is removed
 }
+
+- (void)watchDiskDuringRun:(BOOL)on {
+    [_diskWatch invalidate]; _diskWatch = nil;
+    if (on) _diskWatch = [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(diskWatchTick:) userInfo:nil repeats:YES];
+}
+- (void)diskWatchTick:(NSTimer *)t { [self stopIfDiskRunsOut]; }
 
 #pragma mark Behalten
 
@@ -84,23 +113,30 @@ static unsigned long long gReserve = 10 * kGB;
 
 #pragma mark Online availability
 
-- (NSInteger)onlineStateFor:(NSString *)identifier {
+- (NSInteger)onlineStateFor:(NSString *)identifier { return [self onlineStateFor:identifier maxAge:kOnlineValid]; }
+
+- (NSInteger)onlineStateFor:(NSString *)identifier maxAge:(NSTimeInterval)maxAge {
     NSDictionary *r = _recs[identifier];
     if (!r[@"online"] || r[@"online"] == [NSNull null]) return -1;
-    if ([NSDate date].timeIntervalSince1970 - [r[@"onlineAt"] doubleValue] > kOnlineValid) return -1;
-    return [r[@"online"] integerValue] ? 1 : 0;
+    BOOL online = [r[@"online"] integerValue] != 0;
+    NSTimeInterval age = [NSDate date].timeIntervalSince1970 - [r[@"onlineAt"] doubleValue];
+    if (age > (online ? maxAge : MIN(maxAge, kGoneValid))) return -1;
+    return online ? 1 : 0;
 }
 
-- (void)checkOnline:(NSArray *)identifiers done:(dispatch_block_t)done {
+- (void)checkOnline:(NSArray *)identifiers done:(dispatch_block_t)done { [self checkOnline:identifiers maxAge:kOnlineValid done:done]; }
+
+- (void)checkOnline:(NSArray *)identifiers maxAge:(NSTimeInterval)maxAge done:(dispatch_block_t)done {
     if (!_onlineQueue) { _onlineQueue = [NSMutableArray new]; _onlineDone = [NSMutableArray new]; }
     for (NSString *i in identifiers)
-        if ([self onlineStateFor:i] < 0 && [_recs[i][@"state"] integerValue] == SFDLDone && ![_onlineQueue containsObject:i]) [_onlineQueue addObject:i];
+        if ([self onlineStateFor:i maxAge:maxAge] < 0 && [_recs[i][@"state"] integerValue] == SFDLDone
+            && ![_onlineQueue containsObject:i] && ![i isEqualToString:_onlineCurrent]) [_onlineQueue addObject:i];
     if (done) [_onlineDone addObject:[done copy]];
     if (!_checkingOnline) [self nextOnlineCheck];
 }
 
 - (void)finishOnlineChecks {
-    _checkingOnline = NO;
+    _checkingOnline = NO; _onlineCurrent = nil;
     NSArray *d = [_onlineDone copy];
     [_onlineDone removeAllObjects];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsStorageDidChangeNotification object:self];
@@ -112,6 +148,7 @@ static unsigned long long gReserve = 10 * kGB;
     _checkingOnline = YES;
     NSString *ident = _onlineQueue[0];
     [_onlineQueue removeObjectAtIndex:0];
+    _onlineCurrent = ident;
     SFItem *item = [self itemFromRec:_recs[ident]];
     NSString *ref = item.resolverRef ?: item.identifier;
     NSString *prefix = prefixOf(ref);

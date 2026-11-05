@@ -166,15 +166,17 @@ static const NSTimeInterval kHealthyRun = 300;
     ((NSPipe *)t.standardOutput).fileHandleForReading.readabilityHandler = nil;
     ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
     _task = nil; _in = nil; _port = 0;
-    NSArray *q = [_queued copy]; [_queued removeAllObjects];
-    for (void (^w)(NSInteger) in q) w(0);
-    [[NSNotificationCenter defaultCenter] postNotificationName:SFYTSabrDidExitNotification object:self];
-    // backoff: 5 s, 10 s, 20 s ... up to 10 min for runs that died early; opens meanwhile go to yt-dlp
+    // backoff first: 5 s, 10 s, 20 s ... up to 10 min for runs that died early; opens meanwhile go to
+    // yt-dlp. Set BEFORE anyone hears of the exit - the player's observer reopens at once and would
+    // otherwise start a new sidecar right away, bypassing the backoff (review 2026-11-05).
     BOOL healthy = _launchedAt && -[_launchedAt timeIntervalSinceNow] > kHealthyRun;
     _crashes = healthy ? 0 : _crashes + 1;
     double delay = healthy ? 2 : MIN(600, 5 * pow(2, MAX(0, _crashes - 1)));
     _nextStartAt = [NSDate date].timeIntervalSince1970 + delay;
     if (_crashes > 1) SFLog(@"sabr: %ld short runs in a row - next start in %.0f s", (long)_crashes, delay);
+    NSArray *q = [_queued copy]; [_queued removeAllObjects];
+    for (void (^w)(NSInteger) in q) w(0);
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFYTSabrDidExitNotification object:self];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((delay + 0.1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (!self->_task && !SFDevMode) [self start];
     });

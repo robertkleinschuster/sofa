@@ -85,6 +85,9 @@ void SFRegisterAvailabilityCheck(NSString *prefix, SFAvailabilityCheck f);
 // check these (finished downloads; cached ones are skipped), one after another with spacing; progress
 // via SFDownloadsStorageDidChangeNotification, done when all have an answer (or the run was cut short)
 - (void)checkOnline:(NSArray *)identifiers done:(dispatch_block_t)done;
+// with a shorter trust window: bulk deletion re-verifies anything older than this right before deleting
+- (NSInteger)onlineStateFor:(NSString *)identifier maxAge:(NSTimeInterval)maxAge;
+- (void)checkOnline:(NSArray *)identifiers maxAge:(NSTimeInterval)maxAge done:(dispatch_block_t)done;
 
 @end
 

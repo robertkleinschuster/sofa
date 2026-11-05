@@ -265,7 +265,18 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self restartWhenIdle]; });
         return;
     }
-    if (_task.isRunning) { SFLog(@"yt: resolver ends for the new yt-dlp version (next request starts it)"); [_task terminate]; }
+    if (_task.isRunning) { SFLog(@"yt: resolver ends for the new yt-dlp version (next request starts it)"); [self retireTask]; }
+}
+
+// End the process without letting a request slip into it: detach first (a request right after this
+// starts a fresh process instead of writing into the dying one), then terminate. Only when idle.
+- (void)retireTask {
+    NSTask *t = _task;
+    ((NSPipe *)t.standardOutput).fileHandleForReading.readabilityHandler = nil;
+    ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
+    _task = nil; _in = nil;
+    [_idleTimer invalidate]; _idleTimer = nil;
+    [t terminate];
 }
 
 - (void)armIdleExit {
@@ -275,7 +286,7 @@ static const NSInteger kResultVersion = 2;   // = RESULT_VERSION in ytresolver.p
 - (void)idleExit:(NSTimer *)t {
     _idleTimer = nil;
     if (_pending.count) { [self armIdleExit]; return; }
-    if (_task.isRunning) { SFLog(@"yt: fallback resolver idle - ending it"); [_task terminate]; }
+    if (_task.isRunning) { SFLog(@"yt: fallback resolver idle - ending it"); [self retireTask]; }
 }
 
 - (void)terminated:(NSTask *)t {

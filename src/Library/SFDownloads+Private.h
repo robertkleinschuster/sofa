@@ -30,6 +30,11 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
     NSUInteger _generation;          // storage of the generation property (also for the subscription category)
     BOOL _storageFull;               // below the reserve (SFDownloads+Storage.m)
     NSTimer *_storageTimer;          // re-check while full
+    NSTimer *_diskWatch;             // disk check while ffmpeg runs
+    NSString *_runningPart;          // part file of the running download
+    NSMutableDictionary *_diskNeed;  // id -> bytes needed after a disk stop (hysteresis)
+    NSString *_onlineCurrent;        // identifier being checked right now
+    BOOL _storagePostPending;        // a coalesced storage notification is queued
     BOOL _checkingOnline;            // an online check run is active
     NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
@@ -48,8 +53,10 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
 // Integrity layer (SFDownloads+Integrity.m): orphan reaping, unique part files, verification, audit
 // Storage layer (SFDownloads+Storage.m): disk reserve, "Behalten", online availability
 @interface SFDownloads (StoragePrivate)
-- (BOOL)checkStorage;          // YES = below the reserve: don't start (schedules a re-check, notifies)
+- (BOOL)checkStorageFor:(NSDictionary *)next;   // YES = not enough room for it: don't start (re-check scheduled, notifies)
 - (void)stopIfDiskRunsOut;     // during a run: stop ffmpeg when the reserve is half used up
+- (void)watchDiskDuringRun:(BOOL)on;   // 10-s disk check while ffmpeg runs
+- (void)setStorageFull:(BOOL)full;
 @end
 
 @interface SFDownloads (Integrity)
