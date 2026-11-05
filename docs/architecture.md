@@ -109,10 +109,11 @@ ansehen + the Suche tile and header button.
 - One SQLite database (`SFStore`, `src/Core/SFStore.m`): the **whole schema lives there**,
   versioned with `PRAGMA user_version` - each migration step runs once, in order, in one
   transaction with its version bump (a failing step rolls back and is retried next launch).
-  Never change a shipped step, add one. Modules only read and write their tables.
+  Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
+  migrates a 0.3.8 database and checks every step - extend it with each new step.
 - Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
   `downloads`, `subscriptions`, `follows`/`follow_items` (ordered by `pos`), `feed_cache` (an
-  app's last parsed feed per followed show + change signature), `watch_later`, `stats`. Items are
+  app's last parsed feed per followed show + change signature), `watch_later`, `stats`, `recent_searches`. Items are
   stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
 - WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.

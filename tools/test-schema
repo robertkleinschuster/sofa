@@ -1,0 +1,86 @@
+#!/bin/bash
+# test-schema -- the database migrations (SFStore, docs/architecture.md "Data"), offline.
+# Builds a database as 0.3.8 left it (no user_version, the legacy places of data), starts an
+# invisible dev instance on it (only the Example app, offline) and checks every step:
+#   2  dev_* tables of the old dev mode dropped        4  dev.* / lounge.dev.* settings deleted
+#   3  jcache trimmed by age (index)                   5  feed_cache, follow_items.pos, no lastCheck
+#   6  recent searches as rows, newest first
+# plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
+# Exit code 0 = all ok.
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
+INST=schematest PORT=47992
+FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-schematest.XXXXXX")"
+export SOFA_DATA_DIR="$T/data" SOFA_OFFLINE=1 SOFA_ONLY_APPS=example
+DB="$SOFA_DATA_DIR/sofa.db"
+Q() { /opt/local/bin/sqlite3 "$DB" "$@"; }
+fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
+
+make -C "$SRC" >/dev/null || exit 1
+APP=
+run() {   # start the instance until its store is open, then quit
+  : > "$LOG"
+  "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
+  for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.1; done
+  echo quit > "$FIFO" 2>/dev/null
+  for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
+  kill $APP 2>/dev/null; APP=
+}
+trap '[ -n "$APP" ] && kill $APP 2>/dev/null; rm -rf "$T"' EXIT
+
+echo "==> legacy database (0.3.8)"
+mkdir -p "$SOFA_DATA_DIR"
+NOW=$(date +%s)
+Q <<SQL
+CREATE TABLE progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT);
+CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE jcache (k TEXT PRIMARY KEY, t REAL, v BLOB);
+CREATE TABLE downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0);
+CREATE TABLE subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL);
+CREATE TABLE follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL);
+CREATE TABLE follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id));
+CREATE TABLE dev_progress (id TEXT);
+INSERT INTO progress VALUES ('example:1', 30, 60, 0, $NOW, 'example', '{"id":"example:1","kind":0,"title":"Eins","source":"example"}');
+INSERT INTO downloads (id, source, state) VALUES ('example:2', 'example', 2);
+INSERT INTO subscriptions VALUES ('exampleshow:a', 'example', 'Show A', NULL, 90, 5, $NOW, $NOW);
+INSERT INTO follows VALUES ('exampleshow:a', 'example', 'Show A', NULL, $NOW);
+-- written newest first; the dates of the two older ones are equal (relative dates from a feed)
+INSERT INTO follow_items VALUES ('exampleshow:a', 'example:3', '{"id":"example:3","kind":0,"title":"Neu"}', 300);
+INSERT INTO follow_items VALUES ('exampleshow:a', 'example:2', '{"id":"example:2","kind":0,"title":"Mitte"}', 100);
+INSERT INTO follow_items VALUES ('exampleshow:a', 'example:1', '{"id":"example:1","kind":0,"title":"Alt"}', 100);
+INSERT INTO settings VALUES ('dev.keyboard.layout', 'qwertz'), ('lounge.dev.token', 'x'), ('lounge.token', 'keep'),
+  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json');
+INSERT INTO jcache VALUES ('yt.feed.UCabcdefghijklmnopqrstuv', $NOW, CAST('{"sig":"a,b","items":[{"id":"yt:aaaaaaaaaaa","kind":0}]}' AS BLOB));
+INSERT INTO jcache VALUES ('GET https://old.example/', $NOW - 30 * 86400, CAST('{}' AS BLOB));
+SQL
+ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
+
+echo "==> migrate"
+run
+check "schema version" "$(Q 'pragma user_version')" 6
+check "integrity" "$(Q 'pragma integrity_check')" ok
+grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
+check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
+check "3: jcache age index" "$(Q "select count(*) from sqlite_master where name='jcache_t'")" 1
+check "3: expired cache entry trimmed" "$(Q "select count(*) from jcache where k like 'GET https://old%'")" 0
+check "4: dev settings deleted, others kept" "$(Q "select group_concat(k) from settings where k like '%lounge%' or k like 'dev.%'")" "lounge.token"
+check "5: stored feed moved" "$(Q "select sig || ' ' || json_array_length(items) from feed_cache where id='ytchannel:UCabcdefghijklmnopqrstuv'")" "a,b 1"
+check "5: no feed left in the response cache" "$(Q "select count(*) from jcache where k like 'yt.feed.%'")" 0
+check "5: follow_items in written order" "$(Q "select group_concat(id, ' ') from (select id from follow_items order by follow, pos)")" "example:3 example:2 example:1"
+check "5: follow_items columns" "$(Q "select group_concat(name) from pragma_table_info('follow_items')")" "follow,id,pos,item"
+check "5: subscriptions without lastCheck" "$(Q "select count(*) from pragma_table_info('subscriptions') where name='lastCheck'")" 0
+check "6: recent searches newest first" "$(Q "select group_concat(query, '|') from (select query from recent_searches where source='zdf' order by at desc)")" "terra x|Bares für Rares"
+check "6: broken entry dropped, settings cleared" "$(Q "select count(*) from settings where k like 'search.recent.%'") $(Q "select count(*) from recent_searches where source='all'")" "0 0"
+check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1111"
+
+echo "==> restart (no step runs twice)"
+run
+grep -q 'store: schema' "$LOG" && bad "migrated again: $(grep 'store: schema' "$LOG")" || ok "nothing to migrate"
+check "integrity after restart" "$(Q 'pragma integrity_check')" ok
+
+[ $fail = 0 ] && echo "==> test-schema ok" || echo "==> test-schema FAILED"
+exit $fail

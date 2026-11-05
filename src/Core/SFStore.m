@@ -96,6 +96,14 @@
             [self exec:@"ALTER TABLE follow_items_new RENAME TO follow_items"];
             [self exec:@"ALTER TABLE subscriptions DROP COLUMN lastCheck"];
         },
+        // 6: recent searches as rows (were one JSON array per source in the settings), newest first
+        ^{
+            [self exec:@"CREATE TABLE recent_searches (source TEXT, query TEXT COLLATE NOCASE, at REAL, PRIMARY KEY(source, query))"];
+            [self exec:@"INSERT OR IGNORE INTO recent_searches (source, query, at) SELECT substr(s.k, 15), j.value, "
+                        "strftime('%s','now') - j.key FROM settings s, json_each(s.v) j "
+                        "WHERE s.k LIKE 'search.recent.%' AND json_valid(s.v) AND j.type = 'text'"];
+            [self exec:@"DELETE FROM settings WHERE k LIKE 'search.recent.%'"];
+        },
     ];
 }
 

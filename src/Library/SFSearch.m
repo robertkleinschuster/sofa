@@ -19,25 +19,24 @@ static NSString *placeholder(NSString *source) {
 
 #pragma mark Recent searches
 
-static NSString *recentKey(NSString *source) { return [@"search.recent." stringByAppendingString:source ?: @"all"]; }
-
+// table recent_searches (docs/architecture.md "Data"); "all" = the global search
 NSArray *SFRecentSearches(NSString *source) {
-    NSString *s = [[SFStore shared] setting:recentKey(source)];
-    NSData *d = [s dataUsingEncoding:NSUTF8StringEncoding];
-    id a = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
-    return [a isKindOfClass:[NSArray class]] ? a : @[];
+    NSMutableArray *a = [NSMutableArray new];
+    for (NSDictionary *r in [[SFStore shared] rows:@"SELECT query FROM recent_searches WHERE source=? ORDER BY at DESC LIMIT ?"
+                                              args:@[source ?: @"all", @(kMaxRecent)]])
+        if (r[@"query"]) [a addObject:r[@"query"]];
+    return a;
 }
+
+static NSString *const kTrimRecent = @"DELETE FROM recent_searches WHERE source=? AND query NOT IN "
+                                      "(SELECT query FROM recent_searches WHERE source=? ORDER BY at DESC LIMIT ?)";
 
 void SFAddRecentSearch(NSString *source, NSString *query) {
     if (!query.length) return;
-    NSMutableArray *a = [NSMutableArray arrayWithObject:query];
-    for (NSString *r in SFRecentSearches(source)) {
-        if (![r isKindOfClass:[NSString class]] || [r caseInsensitiveCompare:query] == NSOrderedSame) continue;
-        if (a.count >= kMaxRecent) break;
-        [a addObject:r];
-    }
-    NSData *d = [NSJSONSerialization dataWithJSONObject:a options:0 error:nil];
-    [[SFStore shared] setSetting:[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] forKey:recentKey(source)];
+    NSString *src = source ?: @"all";
+    [[SFStore shared] runAll:@[   // the same query in other case replaces the older one (COLLATE NOCASE)
+        @[@"INSERT OR REPLACE INTO recent_searches (source, query, at) VALUES (?,?,?)", @[src, query, @([NSDate date].timeIntervalSince1970)]],
+        @[kTrimRecent, @[src, src, @(kMaxRecent)]]]];
 }
 
 #pragma mark Suggestions

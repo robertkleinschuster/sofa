@@ -81,7 +81,7 @@ static __weak SFMenuScreen *gSettingsMenu;
         } else {
             if (up.lastCheck) subtitle = [subtitle stringByAppendingString:@" · aktuell"];
             u = [SFMenuOption option:up.busy ? @"Suche läuft …" : @"Nach Updates suchen" action:^{
-                [[SFUpdater shared] check:^(NSString *msg) { [nav toast:msg]; refresh(); }];
+                [[SFUpdater shared] check:^(NSString *msg) { SFLog(@"update-check: %@", msg); [nav toast:msg]; refresh(); }];
                 refresh();
             }];
             if (up.lastCheck) {

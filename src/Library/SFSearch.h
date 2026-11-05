@@ -9,6 +9,6 @@ SFPageLoader SFWithSearchTile(SFPageLoader loader, NSString *source);
 SFItem *SFSearchTile(NSString *source);
 BOOL SFHasSearch(NSString *source);   // does this app have a search?
 void SFOpenSearch(SFNavigator *nav, NSString *source, NSString *initialText);
-// Recent searches (SFStore setting "search.recent.<source>"), newest first.
+// Recent searches (table recent_searches), newest first.
 NSArray *SFRecentSearches(NSString *source);
 void SFAddRecentSearch(NSString *source, NSString *query);
