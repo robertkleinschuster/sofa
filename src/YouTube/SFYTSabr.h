@@ -14,9 +14,10 @@ extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process end
 // audios, subs) plus id, sid, title, duration; all URLs local. Error: userInfo[@"bot"] = @YES
 // when YouTube answered with a bot check, @"live" for lives (not handled by SABR).
 - (void)open:(NSString *)videoID background:(BOOL)bg done:(void (^)(NSDictionary *r, NSError *e))done;
-// Download variant: H.264 + AAC (plain MP4 without re-encoding, like the former 720p HLS downloads),
-// original audio track. The session lives as long as ffmpeg keeps reading.
-- (void)openForDownload:(NSString *)videoID maxHeight:(NSInteger)h done:(void (^)(NSDictionary *r, NSError *e))done;
+// Download variant: the same choice as playback (mpv plays everything, so no format limit any more -
+// the former 720p H.264 limit was only for Kodi; user 2026-11-05), original audio track. No
+// prefetch; the session lives as long as ffmpeg keeps reading.
+- (void)openForDownload:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
 // SABR playback of this video failed (e.g. mpv could not read the local streams): use yt-dlp for
 // it until the app restarts
 - (void)markFailed:(NSString *)videoID;

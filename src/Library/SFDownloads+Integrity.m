@@ -142,8 +142,12 @@ static double SFParseDuration(NSString *s) {
         NSString *e = SFRunFF(ff, @[@"-v", @"error", @"-ss", [NSString stringWithFormat:@"%.1f", at], @"-t", @"3",
                                     @"-i", path, @"-map", @"0:v:0?", @"-map", @"0:a:0?", @"-f", @"null", @"-"], 60);
         if (!e) return nil;
+        // count decoder errors only: the null muxer's timestamp warnings ("non monotonically
+        // increasing dts", e.g. VP9 in MP4 after -ss) say nothing about the file and rejected every
+        // healthy VP9 download (2026-11-05)
         NSUInteger lines = 0;
-        for (NSString *l in [e componentsSeparatedByString:@"\n"]) if (l.length) lines++;
+        for (NSString *l in [e componentsSeparatedByString:@"\n"])
+            if (l.length && [l rangeOfString:@"[null @"].location == NSNotFound) lines++;
         if (lines > 3) return [NSString stringWithFormat:@"%lu decode errors at %.0f s", (unsigned long)lines, at];
     }
     return nil;

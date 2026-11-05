@@ -753,12 +753,13 @@ static NSSet *skipKeys(void) {
             done(u ? [NSURL URLWithString:u] : nil, au ? [NSURL URLWithString:au] : nil, e);
         }];
         };
-        // first choice SABR: H.264 720p + original AAC track as two local streams (ffmpeg muxes them;
-        // ffmpeg's -readrate 3 also paces what SABR pulls). yt-dlp's HLS 720p stays the fallback
-        // (2026-11-05: yt-dlp's stream address of _4O-me6dWfc answered 404 for hours).
+        // first choice SABR: the playback format (up to 1080p60 VP9/AV1 + Opus, original audio track)
+        // as two local streams, muxed by ffmpeg into MP4 without re-encoding (ffmpeg's -readrate 3
+        // also paces what SABR pulls). yt-dlp's HLS 720p stays the fallback (2026-11-05: yt-dlp's
+        // stream address of _4O-me6dWfc answered 404 for hours).
         SFYTSabr *sabr = [SFYTSabr shared];
         if (!sabr.available) { viaYTDLP(); return; }
-        [sabr openForDownload:vid maxHeight:720 done:^(NSDictionary *r, NSError *e) {
+        [sabr openForDownload:vid done:^(NSDictionary *r, NSError *e) {
             if (!r) {
                 // a bot check pauses both paths alike: don't spend a yt-dlp request then
                 if ([e.userInfo[@"bot"] boolValue]) { done(nil, nil, e); return; }

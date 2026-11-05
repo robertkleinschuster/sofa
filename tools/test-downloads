@@ -73,7 +73,13 @@ done
 # metadata cut inside a UTF-8 sequence (ffmpeg does that with long YouTube descriptions): healthy
 # files were reported "unreadable" and downloaded again (2026-11-04)
 "$FF" -hide_banner -loglevel error -y -i "$T/good.mp4" -c copy -metadata comment="$(printf 'ab\xc3')" "$T/latin.mp4"
-cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; sleep 10
+# VP9 + Opus in MP4 muxed from WebM tracks like the SABR downloads: the null muxer warns about
+# timestamps after -ss (ms timebase), which used to count as decode errors
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=426x240:rate=15 -t 19 -c:v libvpx-vp9 -deadline realtime -b:v 300k "$T/v.webm"
+"$FF" -hide_banner -loglevel error -y -f lavfi -i sine -t 19 -c:a libopus "$T/a.webm"
+"$FF" -hide_banner -loglevel error -y -i "$T/v.webm" -i "$T/a.webm" -map 0:v:0 -map 1:a:0 -shortest -c copy -movflags +faststart "$T/vp9.mp4"
+cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; cmd "dlverify $T/vp9.mp4"; sleep 10
+grep -q "dlverify vp9.mp4 -> ok" "$LOG" && ok "healthy VP9/Opus MP4 accepted" || bad "vp9.mp4 rejected: $(grep 'dlverify vp9' "$LOG")"
 grep -q "dlverify latin.mp4 -> ok" "$LOG" && ok "invalid UTF-8 in metadata is no reason to reject" || bad "latin.mp4 rejected: $(grep 'dlverify latin' "$LOG")"
 grep -q "dlverify good.mp4 -> ok" "$LOG" && ok "healthy file accepted" || bad "healthy file rejected: $(grep 'dlverify good' "$LOG")"
 grep -q "dlverify bad.mp4 -> .*\(decode errors\|duration\|unreadable\|bitrate\)" "$LOG" && ok "corrupted file rejected ($(grep -o 'dlverify bad.mp4 -> .*' "$LOG" | cut -c20-))" \

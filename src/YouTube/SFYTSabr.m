@@ -161,8 +161,8 @@ static id SabrClean(id v) {
     [self open:vid query:[NSString stringWithFormat:@"bg=%d&maxHeight=1080&lang=de&prefetch=0", bg ? 1 : 0] done:done];
 }
 
-- (void)openForDownload:(NSString *)vid maxHeight:(NSInteger)h done:(void (^)(NSDictionary *, NSError *))done {
-    [self open:vid query:[NSString stringWithFormat:@"bg=1&maxHeight=%ld&vcodec=avc1&acodec=mp4a&prefetch=0", (long)h] done:done];
+- (void)openForDownload:(NSString *)vid done:(void (^)(NSDictionary *, NSError *))done {
+    [self open:vid query:@"bg=1&maxHeight=1080&lang=de&prefetch=0" done:done];
 }
 
 - (void)open:(NSString *)vid query:(NSString *)query done:(void (^)(NSDictionary *, NSError *))done {
