@@ -40,6 +40,7 @@ static inline NSString *restOf(NSString *ref) { NSRange r = [ref rangeOfString:@
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
 }
 - (void)save:(NSDictionary *)r;
+- (NSArray *)write:(NSDictionary *)r;   // the statement save: runs - for several records in one runAll:
 - (void)changed:(NSString *)identifier;
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = already present/rejected
 - (void)pump;

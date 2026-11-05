@@ -68,14 +68,20 @@ static NSString *ffmpegPath(void) {
 #pragma mark Persistence
 
 - (void)save:(NSDictionary *)r {
+    NSArray *w = [self write:r];
+    [[SFStore shared] run:w[0] args:w[1]];
+}
+
+// the statement that stores a record (save:, or several in one runAll:)
+- (NSArray *)write:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-                     args:@[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
-                            r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
-                            r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
-                            r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null],
-                            r[@"keep"] ?: @0, r[@"online"] ?: [NSNull null], r[@"onlineAt"] ?: [NSNull null]]];
+    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+             @[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
+               r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
+               r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
+               r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null],
+               r[@"keep"] ?: @0, r[@"online"] ?: [NSNull null], r[@"onlineAt"] ?: [NSNull null]]];
 }
 
 // Subscription episodes: retry failed downloads with growing intervals (15 min, 30 min, 1 h …,
@@ -97,7 +103,7 @@ static NSString *const kRepairPrefix = @"repair: ";
 // start, after a failed repair and with every subscription check.
 - (void)retryDueRepairs {
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, next = 0;
-    BOOL any = NO;
+    NSMutableArray *writes = [NSMutableArray new];
     for (NSMutableDictionary *r in _recs.allValues) {
         if ([r[@"state"] integerValue] != SFDLDone || ![r[@"error"] hasPrefix:kRepairPrefix]) continue;
         NSInteger n = [r[@"tries"] integerValue];
@@ -108,10 +114,9 @@ static NSString *const kRepairPrefix = @"repair: ";
         SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)n + 1);
         [r removeObjectForKey:@"error"];
         r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
-        [self save:r]; [self changed:r[@"id"]];
-        any = YES;
+        [writes addObject:[self write:r]]; [self changed:r[@"id"]];
     }
-    if (any) [self pump];
+    if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
     if (next && (!_repairWake || next < _repairWake || _repairWake <= now)) {
         _repairWake = next;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((next - now + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
