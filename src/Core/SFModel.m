@@ -83,7 +83,6 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     i.action = self.action; i.tint = self.tint; i.themeName = self.themeName; i.badge = self.badge;
     i.playURL = self.playURL; i.inDownloadsList = self.inDownloadsList; i.streamOnly = self.streamOnly;
     i.playlistID = self.playlistID; i.heroTitle = self.heroTitle; i.heroMeta = self.heroMeta;
-    i.showsSourceMark = self.showsSourceMark;
     return i;
 }
 

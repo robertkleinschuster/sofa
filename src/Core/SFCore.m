@@ -66,6 +66,25 @@ NSString *SFDotJoinN(NSUInteger n, ...) {
     return [a componentsJoinedByString:@" · "];
 }
 
+NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id)) {
+    NSMutableArray *r = [NSMutableArray new];
+    NSMutableSet *seen = [NSMutableSet new];
+    for (NSUInteger k = 0; r.count < max; k++) {
+        BOOL any = NO;
+        for (NSArray *l in lists) {
+            if (k >= l.count) continue;
+            any = YES;
+            id e = l[k], kk = key(e);
+            if (!kk || [seen containsObject:kk]) continue;
+            [seen addObject:kk];
+            [r addObject:e];
+            if (r.count >= max) break;
+        }
+        if (!any) break;
+    }
+    return r;
+}
+
 NSDate *SFDateFromISO8601(NSString *s) {
     if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
     const char *c = s.UTF8String;

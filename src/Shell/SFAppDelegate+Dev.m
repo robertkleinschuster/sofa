@@ -158,6 +158,17 @@
     } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
         [[SFDownloads shared] expireRepairBackoffForTesting];
         [[SFDownloads shared] retryDueRepairs];
+    } else if ([cmd isEqualToString:@"homerows"]) {          // Dev: the mixed Home rows as Home shows them (ids per topic)
+        for (NSString *t in @[SFHomeTopicLive, SFHomeTopicHighlights]) {
+            NSMutableArray *ids = [NSMutableArray new];
+            for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@", i.identifier ?: @"?", i.badge ?: @"-"]];
+            SFLog(@"dev: homerows %@ = %@", t, [ids componentsJoinedByString:@" "]);
+        }
+    } else if ([cmd isEqualToString:@"region"] && arg) {     // Dev: "region XX 0|1|-" - pretend a geo check found the device outside/inside XX; - = forget
+        NSArray *a = [arg componentsSeparatedByString:@" "];
+        if (a.count == 2 && [a[1] isEqualToString:@"-"]) [[SFStore shared] setSetting:nil forKey:[@"geo.region." stringByAppendingString:a[0]]];
+        else if (a.count == 2) [SFNet noteRegion:a[0] inside:[a[1] boolValue]];
+        SFLog(@"dev: region %@ done", arg);
     } else if ([cmd isEqualToString:@"shelves"] && arg) {   // Dev: an app's start page shelves (title, count, kinds) - content survey
         Class<SFApp> app = [SFAppRegistry appNamed:arg];
         if (!app) { SFLog(@"dev: shelves: no app %@", arg); return; }

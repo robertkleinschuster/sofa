@@ -185,7 +185,7 @@ static NSArray *listItems(id j) {
             i.badge = i.drm ? @"DRM" : @"LIVE";
             [a addObject:i];
         }
-        done(a);
+        done(j ? a : nil);   // nil = request failed (not: no channels)
     }];
 }
 
@@ -387,12 +387,15 @@ static NSArray *listItems(id j) {
     [self get:@"/page/start" cache:900 done:^(id j, NSError *e) {
         NSString *hero = nil;
         for (NSDictionary *l in arr(j)) if ([str(dict(l)[@"type"]) isEqualToString:@"hero"]) { hero = href(dict(dict(l)[@"_links"])[@"self"]); break; }
+        // a topic left out (request failed) keeps what ORF featured before; an empty list clears it
         [self liveItems:^(NSArray *live) {
-            if (!hero) { done(live.count ? @{SFHomeTopicLive: live} : nil); return; }
+            NSMutableDictionary *r = [NSMutableDictionary new];
+            if (live) r[SFHomeTopicLive] = live;
+            if (!hero) { done(r); return; }
             NSString *u = [hero stringByAppendingString:[hero rangeOfString:@"?"].location == NSNotFound ? @"?limit=20" : @"&limit=20"];
             [self get:u cache:900 done:^(id lj, NSError *le) {
-                NSArray *top = [self episodeItems:lj] ?: @[];
-                done(@{SFHomeTopicLive: live ?: @[], SFHomeTopicHighlights: top});
+                if (lj && !le) r[SFHomeTopicHighlights] = [self episodeItems:lj] ?: @[];
+                done(r);
             }];
         }];
     }];

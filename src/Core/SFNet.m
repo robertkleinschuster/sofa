@@ -139,42 +139,58 @@ static NSString *regionKey(NSString *region) { return [@"geo.region." stringByAp
 + (SFRegionState)stateOfRegion:(NSString *)region {
     if (!region.length) return SFRegionInside;   // not limited
     NSArray *v = [[[SFStore shared] setting:regionKey(region)] componentsSeparatedByString:@" "];   // "<0|1> <epoch>"
-    if (v.count != 2 || [NSDate date].timeIntervalSince1970 - [v[1] doubleValue] > 86400) return SFRegionUnknown;
-    return [v[0] isEqualToString:@"1"] ? SFRegionInside : SFRegionOutside;
+    if (v.count != 2) return SFRegionUnknown;
+    BOOL inside = [v[0] isEqualToString:@"1"];
+    // outside hides content -> asked again sooner (travel, VPN) than inside
+    if ([NSDate date].timeIntervalSince1970 - [v[1] doubleValue] > (inside ? 86400 : 6 * 3600)) return SFRegionUnknown;
+    return inside ? SFRegionInside : SFRegionOutside;
 }
 
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect region:(NSString *)region done:(void (^)(BOOL))done {
-    [self checkRegion:url expect:expect done:^(BOOL ok) {
-        if (region.length) {
-            SFRegionState before = [self stateOfRegion:region];
-            [[SFStore shared] setSetting:[NSString stringWithFormat:@"%d %.0f", ok, [NSDate date].timeIntervalSince1970] forKey:regionKey(region)];
-            if (before != (ok ? SFRegionInside : SFRegionOutside)) {
-                SFLog(@"geo: device %@ %@", ok ? @"inside" : @"outside", region);
-                [[NSNotificationCenter defaultCenter] postNotificationName:SFNetRegionDidChangeNotification object:nil];
-            }
-        }
+    [self probeRegion:url expect:expect done:^(BOOL ok, BOOL definite) {
+        if (definite && region.length) [self noteRegion:region inside:ok];
         done(ok);
     }];
 }
 
++ (void)noteRegion:(NSString *)region inside:(BOOL)inside {
+    if (!region.length) return;
+    SFMain(^{
+        SFRegionState before = [self stateOfRegion:region];
+        [[SFStore shared] setSetting:[NSString stringWithFormat:@"%d %.0f", inside, [NSDate date].timeIntervalSince1970] forKey:regionKey(region)];
+        if (before == (inside ? SFRegionInside : SFRegionOutside)) return;
+        SFLog(@"geo: device %@ %@", inside ? @"inside" : @"outside", region);
+        [[NSNotificationCenter defaultCenter] postNotificationName:SFNetRegionDidChangeNotification object:nil];
+    });
+}
+
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect done:(void (^)(BOOL))done {
-    static NSMutableDictionary *cache;   // url -> @[@(allowed), date]
+    [self probeRegion:url expect:expect done:^(BOOL ok, BOOL definite) { done(ok); }];
+}
+
+// `definite`: the answer really says something about the device's location (2xx with the expected
+// text = inside; 403/451 or a wrong text = outside). Network errors, 5xx, a refused HEAD … are not
+// - the stream is still allowed then (don't block), but nothing is learned about the region.
++ (void)probeRegion:(NSString *)url expect:(NSString *)expect done:(void (^)(BOOL ok, BOOL definite))done {
+    static NSMutableDictionary *cache;   // url -> @[@(allowed), date] (definite answers only)
     static dispatch_once_t o; dispatch_once(&o, ^{ cache = [NSMutableDictionary new]; });
     NSArray *hit;
     @synchronized (cache) { hit = cache[url]; }
-    if (hit && [hit[1] timeIntervalSinceNow] > -3600) { done([hit[0] boolValue]); return; }
+    if (hit && [hit[1] timeIntervalSinceNow] > -3600) { done([hit[0] boolValue], YES); return; }
     NSURL *u = [NSURL URLWithString:url];
-    if (!u) { done(YES); return; }
+    if (!u) { done(YES, NO); return; }
     // without expected text: media URL -> HEAD only (don't download the whole file)
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
     if (!expect) req.HTTPMethod = @"HEAD";
     [[[self session] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
         NSInteger code = [(NSHTTPURLResponse *)r statusCode];
         NSString *body = d ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : nil;
-        BOOL ok = e ? YES : (code < 400 && (!expect || [body isEqualToString:expect]));   // network error: don't block
-        if (!e) @synchronized (cache) { cache[url] = @[@(ok), [NSDate date]]; }
-        SFLog(@"geo: %@ -> %@", u.path, ok ? @"allowed" : @"blocked");
-        SFMain(^{ done(ok); });
+        BOOL inside = !e && code >= 200 && code < 300 && (!expect || [body isEqualToString:expect]);
+        BOOL outside = !e && (code == 403 || code == 451 || (expect && code >= 200 && code < 300 && !inside));
+        BOOL ok = !outside;   // undecided: don't block
+        if (inside || outside) @synchronized (cache) { cache[url] = @[@(ok), [NSDate date]]; }
+        SFLog(@"geo: %@ -> %@", u.path, inside ? @"allowed" : outside ? @"blocked" : [NSString stringWithFormat:@"undecided (%ld%@)", (long)code, e ? @", error" : @""]);
+        SFMain(^{ done(ok, inside || outside); });
     }] resume];
 }
 + (NSString *)escape:(NSString *)s {

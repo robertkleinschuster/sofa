@@ -41,6 +41,9 @@ NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. O
 // sizeof literal only counts the arguments and is never evaluated.
 NSString *SFDotJoinN(NSUInteger n, ...);
 #define SFDotJoin(...) SFDotJoinN(sizeof((NSString *__unsafe_unretained const[]){__VA_ARGS__}) / sizeof(NSString *), __VA_ARGS__)
+// Fair merge of several ranked lists: the first of each, then the second of each, … up to `max`;
+// an element whose key was seen before (or is nil) is skipped. E.g. Home rows mixed from all apps.
+NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id element));
 NSString *SFAppSupportDir(void);                   // ~/Library/Application Support/Sofa
 NSString *SFCacheDir(void);                        // ~/Library/Caches/Sofa
 

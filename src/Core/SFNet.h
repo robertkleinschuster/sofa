@@ -23,10 +23,12 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 + (NSString *)escape:(NSString *)s;
 // Geo check (e.g. ARD regionCheckUrl): YES if the URL returns the expected text.
 // Result cached per URL for 1 h. With `region` (ISO country the URL is limited to, e.g. "DE")
-// the answer is also remembered as "is this device in that region" (stored, 24 h) - see stateOfRegion:.
+// the answer is also remembered as "is this device in that region" (definite answers only: 2xx /
+// 403 / 451 / wrong text; stored 24 h inside, 6 h outside) - see stateOfRegion:.
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect done:(void (^)(BOOL allowed))done;
 + (void)checkRegion:(NSString *)url expect:(NSString *)expect region:(NSString *)region done:(void (^)(BOOL allowed))done;
 // What the geo checks so far say about the device being in `region` (SFItem.geoRegion). Unknown
 // until some app checked a stream limited to it; SFNetRegionDidChangeNotification when it changes.
 + (SFRegionState)stateOfRegion:(NSString *)region;
++ (void)noteRegion:(NSString *)region inside:(BOOL)inside;   // record a finding (checkRegion:…region: does this itself)
 @end

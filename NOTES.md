@@ -186,6 +186,11 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   ARD needs no region; ZDF `/de/` paths are hard 403. Next topic candidates: "Nachrichten"
   (tagesschau API / ZDF heute / ORF ZIB from proper raw sources), Dokus/Filme; YouTube stays out
   (bot-flagged IP, keep requests minimal).
+  Review (background agent, same day) fixed: row signature now over the full stored item (a new
+  broadcast changes ref/drm/subtitle under the same id), region knowledge only from definite
+  answers (2xx/403/451/wrong text; 5xx, refused HEAD, network errors teach nothing; outside valid
+  6 h, inside 24 h), a topic an app leaves out keeps its old items (ORF on a failed request),
+  showsSourceMark not copied (leaked into "Später ansehen"), badges stored. Regression: tools/test-home.
 
 ## Backlog (user requests — queue, tick off when done)
 - [x] 2026-11-05 **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05; done: SFDownloads+Storage.m, SFHome+Downloads.m "Platz schaffen", test-downloads 6+7):

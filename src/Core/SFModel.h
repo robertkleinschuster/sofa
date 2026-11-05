@@ -57,7 +57,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *showRef;         // show/channel of the episode ("ytchannel:UC…", "zdfshow:…") → "Zur Sendung"
 @property (nonatomic) BOOL imageFit;
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
-@property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps)
+@property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps); not copied - belongs to that row only
 @property (nonatomic) NSInteger logoVariant;           // SFLogoVariant                   // fit the image instead of filling (logos)
 
 - (NSDictionary *)dictionaryRepresentation;

@@ -103,16 +103,17 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
             NSMutableArray *lists = [NSMutableArray new];
             for (Class<SFApp> app in apps) {   // registry order = home tile order
                 NSArray *items = byApp[[app appIdentifier]][topic];
-                if (![items isKindOfClass:[NSArray class]] || !items.count) {
-                    // this app failed now: keep what it featured before instead of dropping it
+                if (!items) {
+                    // no answer for this topic now (failed request, timeout): keep what the app featured before
                     NSMutableArray *old = [NSMutableArray new];
                     for (SFItem *i in self->_rows[topic]) if ([i.source isEqualToString:[app appIdentifier]]) [old addObject:i];
-                    if (!byApp[[app appIdentifier]] && old.count) [lists addObject:old];
+                    if (old.count) [lists addObject:old];
                     continue;
                 }
+                if (![items isKindOfClass:[NSArray class]] || !items.count) continue;   // answered: nothing to feature
                 [lists addObject:[items subarrayWithRange:NSMakeRange(0, MIN(items.count, perApp(topic)))]];
             }
-            rows[topic] = [self interleave:lists max:rowMax(topic)];
+            rows[topic] = SFInterleave(lists, rowMax(topic), ^id(SFItem *i) { return i.identifier; });   // fair: every app gets a place at the front
         }
         if ([[self signature:rows] isEqualToString:[self signature:self->_rows]]) return;   // same rows: no reload
         self->_rows = rows;
@@ -126,38 +127,25 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
     NSMutableString *s = [NSMutableString new];
     for (NSString *topic in [rows.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
         [s appendFormat:@"%@:", topic];
-        for (SFItem *i in rows[topic]) [s appendFormat:@"%@|%@|%@,", i.identifier, i.title, i.image];
+        for (SFItem *i in rows[topic]) [s appendFormat:@"%@,", [self stored:i]];   // everything that is kept: a new broadcast on a channel changes ref, subtitle, drm
     }
     return s;
 }
 
-// round robin over the apps: the first of each, then the second of each, … (no duplicates)
-- (NSArray *)interleave:(NSArray *)lists max:(NSUInteger)max {
-    NSMutableArray *r = [NSMutableArray new];
-    NSMutableSet *seen = [NSMutableSet new];
-    for (NSUInteger k = 0; r.count < max; k++) {
-        BOOL any = NO;
-        for (NSArray *l in lists) {
-            if (k >= l.count) continue;
-            any = YES;
-            SFItem *i = l[k];
-            if (!i.identifier || [seen containsObject:i.identifier]) continue;
-            [seen addObject:i.identifier];
-            [r addObject:i];
-            if (r.count >= max) break;
-        }
-        if (!any) break;
-    }
-    return r;
-}
-
 #pragma mark Store (Home shows the last rows at once after a launch)
+
+// an item as stored: its dictionary + what the dictionary leaves out but a tile shows (badge)
+- (NSDictionary *)stored:(SFItem *)i {
+    NSMutableDictionary *d = [[i dictionaryRepresentation] mutableCopy];
+    if (i.badge) d[@"badge"] = i.badge;
+    return d;
+}
 
 - (void)store {
     NSMutableDictionary *d = [NSMutableDictionary new];
     for (NSString *topic in _rows) {
         NSMutableArray *a = [NSMutableArray new];
-        for (SFItem *i in _rows[topic]) [a addObject:[i dictionaryRepresentation]];
+        for (SFItem *i in _rows[topic]) [a addObject:[self stored:i]];
         d[topic] = a;
     }
     [[SFStore shared] cacheJSON:d forKey:kStoreKey];
@@ -175,7 +163,7 @@ NSDictionary *SFHomeFeaturesFromPage(SFPage *page, NSUInteger highlightShelf) {
             if (![SFAppRegistry appNamed:i.source]) continue;   // app gone
             // what the dictionary does not carry: theme, live badge, the page of a show
             i.themeName = i.source;
-            if (i.kind == SFItemLive) i.badge = @"LIVE";
+            i.badge = [x[@"badge"] isKindOfClass:[NSString class]] ? x[@"badge"] : nil;
             if (i.kind == SFItemFolder) {
                 i.pageLoader = [SFAppRegistry isShowRef:i.identifier] ? SFShowPageLoader(i.identifier, i.title) : nil;
                 if (!i.pageLoader) continue;

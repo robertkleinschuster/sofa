@@ -73,3 +73,5 @@ One line in `src/Shell/SFApps.m` (`SFRegisterApps`); the order is the home tile 
 - `make` without warnings, `tools/check-arch` (layer rules: apps import Framework + Core
   only, never Shell or another app; no app literals outside `src/Apps`).
 - `tools/test-all`, then a dev instance (`tools/sofa-dev`): `open app:<id>`, search, play.
+- `SOFA_ONLY_APPS=<id>` (dev instances) registers only your app – no other app's requests;
+  dev commands `shelves <id>` (start page survey) and `homerows` (what Home's mixed rows show).

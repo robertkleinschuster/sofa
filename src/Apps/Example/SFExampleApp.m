@@ -96,4 +96,19 @@ static NSArray *videos(NSString *filter) {
 
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { done(videos(nil), nil); }
 
+// Home rows mixed from all apps (SFHomeFeatures.h): items per topic. A real app reads them from its
+// start page (SFHomeFeaturesFromPage) and sets `drm` / `geoRegion` from the source's raw data -
+// Home then leaves out what can't play here. The three channels exercise exactly that (tools/test-home).
++ (void)homeFeatures:(void (^)(NSDictionary *))done {
+    NSMutableArray *live = [NSMutableArray new];
+    for (NSArray *e in @[@[@"live1", @"Testkanal", @""], @[@"live2", @"Testkanal DRM", @"drm"], @[@"live3", @"Testkanal XX", @"XX"]]) {
+        SFItem *i = video(@[e[0], e[1], @""]);
+        i.kind = SFItemLive; i.badge = @"LIVE"; i.duration = 0; i.showRef = nil;
+        i.drm = [e[2] isEqualToString:@"drm"];
+        if ([e[2] length] == 2) i.geoRegion = e[2];   // only playable in country XX
+        [live addObject:i];
+    }
+    done(@{SFHomeTopicLive: live, SFHomeTopicHighlights: [videos(nil) subarrayWithRange:NSMakeRange(0, 2)]});
+}
+
 @end
