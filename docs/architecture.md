@@ -116,6 +116,11 @@ ansehen + the Suche tile and header button.
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
 - WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.
   The response cache is trimmed after launch and daily: 14 days, 64 MB at most, oldest first.
+- `settings` holds preferences and small state only. Derived data an app keeps between runs
+  goes into `jcache` under its own key (e.g. YouTube `yt.feed.<channel>` = parsed feed + RSS
+  signature), so it expires with the cache and never grows the settings.
+- Several writes that belong together go through `runAll:` (one transaction); write only what
+  changed (follows compare the new list with the loaded one).
 
 ## Dev instances
 
