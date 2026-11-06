@@ -6,6 +6,16 @@ Einstellungen → „Update installieren“.
 
 ## 0.3.10
 
+- **YouTube: weniger „Bist du ein Bot?“-Sperren.** Sofa tritt bei YouTube jetzt als ein einziger,
+  gewöhnlicher Browser auf und schaut bei deinen Kanälen nicht mehr alle auf einmal nach, sondern
+  jeden in seinem eigenen Rhythmus – nachts seltener. Die Startseite fragt die Mediatheken nur
+  noch ab, während der Bildschirm an ist.
+- **YouTube-Highlights auf der Startseite sind zurück** (Videos deiner Kanäle, die weit mehr
+  Aufrufe haben als sonst).
+- **Klare Meldungen statt Umwegen:** Kann YouTube ein Video gerade nicht liefern, sagt Sofa das
+  direkt („YouTube antwortet gerade nicht“) und versucht Downloads später erneut. Der frühere
+  Ersatzweg über yt-dlp ist entfernt – er hat kaum noch geholfen und Sofa bei YouTube verdächtig
+  gemacht. Sofa wird dadurch auch kleiner (keine eingebaute Python-Laufzeit mehr).
 - **Scharfe Hintergrundbilder überall:** Hat ein Video den Fokus, zeigt Sofa jetzt auch auf der
   Startseite und den Startseiten der Apps das große Bild im Hintergrund statt des kleinen
   Kachelbilds.

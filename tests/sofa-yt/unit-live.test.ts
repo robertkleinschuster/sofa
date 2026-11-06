@@ -158,7 +158,7 @@ test('post-live DVR: HLS info with the recording duration, live=false', async ()
   assert.equal(info.durationMs, 5400000);
 });
 
-test('live without an HLS manifest: live error (Sofa falls back to yt-dlp)', async () => {
+test('live without an HLS manifest: live error (Sofa reports it)', async () => {
   const r = rawLive(); delete must(r.streamingData).hlsManifestUrl;
   const yt = makeYouTube([r]);
   await assert.rejects(yt.info(LIVE), (e: YtErr) => e.live === true && !e.upcoming && /without HLS/.test(e.message));

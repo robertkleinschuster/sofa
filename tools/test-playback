@@ -21,7 +21,7 @@
 #      the end of the video waits while the tiles have focus
 #   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
 #  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
-#      media) a YouTube live plays through the sidecar's HLS playlist, not yt-dlp
+#      media) a YouTube live plays through the sidecar's HLS playlist
 #
 #   tools/test-playback            all checks
 #   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
@@ -228,7 +228,6 @@ if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then
   for i in $(seq 1 60); do since $m | grep -q "sabr: opened $L\|SABR live unavailable\|resolve failed" && break; sleep 0.5; done
   since $m | grep -q "sabr: opened $L -> live HLS" && ok "opened via the sidecar: $(since $m | grep "sabr: opened $L" | tail -1 | sed 's/.*-> //')" \
     || bad "not via the sidecar: $(since $m | grep 'sabr\|yt:\|player:' | tail -3)"
-  since $m | grep -q "yt: resolved $L\|yt: resolve $L failed" && bad "yt-dlp was asked" || ok "no yt-dlp request"
   sleep 6
   cmd "mpvprop vo-configured"; sleep 1
   since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"

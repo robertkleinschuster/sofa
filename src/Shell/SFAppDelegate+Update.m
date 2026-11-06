@@ -72,7 +72,6 @@ static id gHandover;   // activity token of the update handover (released = acti
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];   // save positions
     [[SFDownloads shared] stopForExit];   // _exit below skips cleanup: ffmpeg would survive as an orphan
     [[SFStore shared] flush];
-    [SFAppRegistry prepareAllForRelaunch];   // apps persist caches (a resumed video starts without a new resolve)
     SFLog(@"update: saved, quitting");
     // _exit instead of exit: everything is saved; exit() used to hang in framework cleanup handlers.
     // On its own thread: a main-queue block didn't run while the main run loop was stuck in
@@ -99,8 +98,8 @@ static id gHandover;   // activity token of the update handover (released = acti
     }
     if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
         SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
-        // Don't reuse the old process's stream address (local proxy) (failed with -1102)
-        // -> go through the resolver, which took over its results from the old process
+        // Don't reuse the old process's stream address (local proxy / sidecar, gone with it: -1102)
+        // -> resolve afresh (the sidecar keeps player responses on disk: no new YouTube request)
         if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
         NSMutableArray *queue = [NSMutableArray new];
         for (NSDictionary *d in ([st[@"queue"] isKindOfClass:[NSArray class]] ? st[@"queue"] : @[])) {

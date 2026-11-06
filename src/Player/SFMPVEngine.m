@@ -92,7 +92,7 @@ static void onWakeup(void *ctx) {
         for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
         // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
         // 2026-11-04): pure media data, an outdated CA bundle on the frozen 10.9 must never break
-        // playback. Code (updater, yt-dlp/pip, node) is still loaded with verification.
+        // playback. Code (updater) is still loaded with verification.
         int r = mpv_initialize(_mpv);
         if (r < 0) { SFLog(@"mpv: init: %s", mpv_error_string(r)); mpv_terminate_destroy(_mpv); _mpv = NULL; return self; }
         mpv_observe_property(_mpv, kPropTime, "time-pos", MPV_FORMAT_DOUBLE);

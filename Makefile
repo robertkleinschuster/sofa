@@ -36,12 +36,8 @@ DEVBIN  := $(DEVAPP)/Contents/MacOS/Sofa
 # targets are FILES (directory mtime doesn't change on relink)
 LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard res/logos/*.png))
 
-# yt-dlp baseline (res/ytdlp.lock, tools/fetch-ytdlp) + verifier and public keys
-# for updates (yt-dlp: maintainers' GPG; Sofa: its own RSA key, see SFSignature.h)
-YTRES   := ytresolver.py ytdlp_verify.py yt-dlp-public.key sofa-release-public.pem \
-           yt-dlp-plugins/yt_dlp_plugins/extractor/getpot_sofa.py
-YTFILES := $(foreach b,$(APP) $(DEVAPP),$(addprefix $(b)/Contents/Resources/,$(YTRES)) $(b)/Contents/Resources/yt-dlp/VERSION)
-VENDOR  := $(BUILD)/vendor/yt-dlp
+# Sofa's own update key (SFSignature.h)
+KEYFILES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/sofa-release-public.pem)
 
 # YouTube SABR sidecar (docs/sofa-yt.md): its sources + the npm dependencies pinned in
 # res/sofa-yt/package-lock.json (tools/fetch-sofa-yt, npm ci) -> Contents/Resources/sofa-yt
@@ -54,7 +50,7 @@ SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources
 # user-facing changelog: Einstellungen -> "Neu in Version …"
 NOTES_RES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/CHANGELOG.md)
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES) $(NOTES_RES) compile_commands.json
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(SYFILES) $(NOTES_RES) compile_commands.json
 
 # clangd (editor / Claude Code LSP) compilation database from the build's own CC + CFLAGS
 # (tools/gen-compile-commands). Machine-local absolute paths -> git-ignored. Depends on the
@@ -77,13 +73,6 @@ $(APP)/Contents/Resources/%: res/%
 $(DEVAPP)/Contents/Resources/%: res/%
 	@mkdir -p $(dir $@)
 	cp $< $@
-
-$(VENDOR)/VERSION: res/ytdlp.lock res/ytdlp_verify.py
-	tools/fetch-ytdlp
-
-$(APP)/Contents/Resources/yt-dlp/VERSION $(DEVAPP)/Contents/Resources/yt-dlp/VERSION: $(VENDOR)/VERSION
-	@rm -rf $(dir $@) && mkdir -p $(dir $@)
-	cp -R $(VENDOR)/ $(dir $@)
 
 $(SYVEND)/STAMP: res/sofa-yt/package-lock.json
 	tools/fetch-sofa-yt

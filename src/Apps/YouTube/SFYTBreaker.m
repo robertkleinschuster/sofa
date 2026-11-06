@@ -1,7 +1,7 @@
 #import "SFYTBreaker.h"
 
 @implementation SFYTBreaker {
-    NSTimeInterval _noted;                 // from the last answer (sidecar/resolver) or the dev command
+    NSTimeInterval _noted;                 // from the last answer (sidecar) or the dev command
     NSTimeInterval _fromFile, _readAt;     // the shared file, re-read at most every 2 s
 }
 
@@ -12,7 +12,7 @@
 }
 
 + (NSString *)filePath {
-    return [[SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"];   // one IP: every instance
+    return [SFSharedCacheDir() stringByAppendingPathComponent:@"youtube-block.json"];   // one IP: every instance
 }
 
 - (NSTimeInterval)blockedUntil {

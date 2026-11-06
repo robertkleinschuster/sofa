@@ -52,8 +52,8 @@
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
     NSURL *_mpvFailedURL;        // mpv failed on this URL -> try AVFoundation
-    BOOL _sabrRetried;
-    id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)           // SABR stream failed once -> reopen via SABR (sidecar restart is cheap), then yt-dlp
+    NSTimeInterval _sessionReopenedAt;   // position of the last session reopen (-1 = none for this item)
+    id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)
     BOOL _reresolved;            // YouTube: streams rejected -> resolve afresh once
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;

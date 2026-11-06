@@ -8,7 +8,6 @@
 #   Contents/MacOS/{Sofa,SofaRemote}
 #   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
 #   Contents/Runtime/bin/{ffmpeg,node,rsvg-convert}
-#   Contents/Runtime/Python.framework     base Python for the yt-dlp venv (trimmed)
 #   Contents/Resources/sofa-yt            YouTube SABR sidecar (TypeScript run by node + node_modules, docs/sofa-yt.md)
 #   Contents/Runtime/etc/{cert.pem,fonts/}
 #
@@ -35,19 +34,6 @@ mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
 
 echo "==> tools"
 for t in ffmpeg node rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
-
-echo "==> Python (trimmed)"
-PF="$MP/Library/Frameworks/Python.framework/Versions/3.14"
-mkdir -p "$RT/Python.framework/Versions"
-# patterns with a leading / are anchored at the source folder
-rsync -a --exclude '__pycache__/*.opt-*.pyc' \
-  --exclude '/lib/python3.14/test/' --exclude '/lib/python3.14/idlelib/' \
-  --exclude '/lib/python3.14/tkinter/' --exclude '/lib/python3.14/turtledemo/' \
-  --exclude '/lib/python3.14/lib-dynload/_tkinter*' \
-  --exclude '/lib/python3.14/site-packages/*' --exclude '/share/' \
-  "$PF/" "$RT/Python.framework/Versions/3.14/"
-# bin/: only Python itself (MacPorts puts scripts of other ports there, with an /opt/local shebang)
-find "$RT/Python.framework/Versions/3.14/bin" -mindepth 1 ! -name 'python3*' -delete
 
 echo "==> YouTube SABR sidecar (Contents/Resources/sofa-yt, run with Contents/Runtime/bin/node)"
 SY="$APP/Contents/Resources/sofa-yt"
@@ -91,10 +77,8 @@ strip -x "$RT"/bin/* "$APP"/Contents/Frameworks/*.dylib 2>/dev/null || true
 
 echo "==> checking: only system and bundle dependencies left, no rpaths"
 "$PY" -I "$SRC/tools/relink.py" --check "$APP"
-# runtime scripts: no /opt/local paths (exception: ytresolver.py
-# uses /opt/local only as a fallback when SOFA_NODE is missing)
-LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.mjs' --include='*.ts' --include='*.py' --include='*.json' "$MP/" "$APP/Contents/Resources/sofa-yt" \
-       "$APP/Contents/Resources/yt-dlp-plugins" || true)
+# runtime scripts: no /opt/local paths
+LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.mjs' --include='*.ts' --include='*.json' "$MP/" "$APP/Contents/Resources/sofa-yt" || true)
 [ -z "$LEFT" ] || { echo "ERROR: $MP paths in runtime scripts:"; echo "$LEFT"; exit 1; }
 
 echo "==> DMG"

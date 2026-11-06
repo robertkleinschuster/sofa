@@ -1,8 +1,8 @@
 #!/bin/bash
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
-#   bundle dependencies, ffmpeg/node/rsvg-convert, Python + TLS, yt-dlp (zipapp, signature verifier),
-#   SABR sidecar (session + PO tokens), the yt-dlp fallback resolving with tokens from the sidecar.
+#   bundle dependencies, ffmpeg/node/rsvg-convert, no Python/yt-dlp left, SABR sidecar (session +
+#   PO tokens, the one browser identity handed over in its ready line).
 # Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -14,7 +14,7 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-test.XXXXXX")"
 fail=0
 ok()  { echo "  ok    $*"; }
 bad() { echo "  FAIL  $*"; fail=1; }
-cleanup() { [ -n "${POT:-}" ] && { kill "$POT" 2>/dev/null; wait "$POT" 2>/dev/null; }; rm -rf "$T"; }
+cleanup() { rm -rf "$T"; }
 trap cleanup EXIT
 
 printf '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/local"))\n' > "$T/nomp.sb"
@@ -35,23 +35,11 @@ np "$RT/bin/node" -e 'process.exit(0)' && ok node || bad node
 echo '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><text x="0" y="15">ARD</text></svg>' > "$T/t.svg"
 np "$RT/bin/rsvg-convert" -o "$T/t.png" "$T/t.svg" 2>/dev/null && [ -s "$T/t.png" ] && ok rsvg-convert || bad rsvg-convert
 
-PY="$RT/Python.framework/Versions/3.14/bin/python3.14"
-np "$PY" -c 'import ssl, sqlite3, lzma, ctypes, urllib.request as u; u.urlopen("https://www.youtube.com", timeout=20)' \
-  && ok "python + TLS" || bad "python + TLS"
-YT="$APP/Contents/Resources/yt-dlp"
-export PYTHONPATH="$YT/yt-dlp:$APP/Contents/Resources/yt-dlp-plugins"
-V=$(np "$PY" -s "$YT/yt-dlp" --version 2>&1)
-[ "$V" = "$(cat "$YT/VERSION")" ] && ok "yt-dlp $V (zipapp in the bundle)" || bad "yt-dlp: $V"
-np "$PY" -s -c 'import yt_dlp_ejs, yt_dlp_plugins.extractor.getpot_sofa' 2>/dev/null && ok "yt-dlp-ejs + Sofa PO token plugin" || bad "ejs/plugin not importable"
-[ -e "$RT/bgutil" ] && bad "obsolete bgutil server still in the bundle" || ok "no separate PO token server"
-# signature verifier (yt-dlp updates): real release valid, tampered sums invalid
-R="https://github.com/yt-dlp/yt-dlp/releases/download/$(cat "$YT/VERSION")"
-curl -fsSL -o "$T/sums" "$R/SHA2-256SUMS" && curl -fsSL -o "$T/sums.sig" "$R/SHA2-256SUMS.sig"
-if np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums" "$T/sums.sig" "$YT/yt-dlp" yt-dlp; then
-  sed 's/^./0/' "$T/sums" > "$T/sums.bad"
-  np "$PY" -I "$APP/Contents/Resources/ytdlp_verify.py" "$APP/Contents/Resources/yt-dlp-public.key" "$T/sums.bad" "$T/sums.sig" "$YT/yt-dlp" yt-dlp 2>/dev/null \
-    && bad "signature verifier accepts tampered sums" || ok "signature verifier (yt-dlp GPG)"
-else bad "signature verifier rejects the real yt-dlp"; fi
+# YouTube has one path since 2026-11-06 (the sidecar): nothing of the yt-dlp fallback may ship
+left=; for x in "$RT/Python.framework" "$APP/Contents/Resources/yt-dlp" "$APP/Contents/Resources/ytresolver.py" "$RT/bgutil"; do
+  [ -e "$x" ] && left="$left ${x##*/}"
+done
+[ -z "$left" ] && ok "no Python / yt-dlp / PO token server in the bundle" || bad "obsolete parts still in the bundle:$left"
 
 # SABR sidecar with the bundled node only: dependencies load, it gets ready, and its warm-up
 # (youtube.com session + BotGuard PO token, no player request) works with the bundle's TLS setup
@@ -64,18 +52,8 @@ for i in $(seq 1 30); do SYPORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$T/sy.o
 H=; for i in $(seq 1 40); do [ -n "${SYPORT:-}" ] || break; H=$(curl -s "127.0.0.1:$SYPORT/health"); echo "$H" | /usr/bin/grep -q '"poToken":"\(ready\|error\)"' && break; sleep 1; done
 echo "$H" | /usr/bin/grep -q '"session":"ready".*"poToken":"ready"\|"poToken":"ready".*"session":"ready"' && ok "sofa-yt session + PO token ready" \
   || bad "sofa-yt not ready: ${H:-no port} $(tail -2 "$T/sy.log")"
-# the yt-dlp fallback as Sofa runs it: mweb client, PO tokens from the sidecar via Sofa's plugin
-# (one player request); -v shows which provider answered
-F=$(SOFA_POT_URL="http://127.0.0.1:${SYPORT:-1}" np "$PY" -s "$YT/yt-dlp" -v --no-check-certificates --js-runtimes "node:$RT/bin/node" \
-      --extractor-args "youtube:player_client=mweb;player_skip=webpage" \
-      -f 'bv*[height<=1080]+ba/18' --print format_id 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>"$T/ytdlp.log" | tail -1)
-[[ "$F" =~ ^[0-9+]+$ ]] && ok "YouTube resolving via yt-dlp (format $F)" || bad "YouTube resolving: $(/usr/bin/grep -m1 '^ERROR' "$T/ytdlp.log" || tail -2 "$T/ytdlp.log")"
-# only the muxed 360p format: the DASH formats were dropped (PO token or JS challenge) - not a
-# failure of the bundle, but say why (2026-11-05 a release run got 18 once, the rerun 395+251)
-[ "$F" = 18 ] && echo "  note  only format 18: $(/usr/bin/grep -i 'warning\|po token\|challenge.*fail\|missing' "$T/ytdlp.log" | tail -3 | tr '\n' ' ')"
-/usr/bin/grep -qi 'PO Token Providers: .*sofa' "$T/ytdlp.log" && ok "yt-dlp uses Sofa's PO token provider" \
-  || bad "Sofa's PO token provider not registered: $(/usr/bin/grep -i 'PO Token Providers' "$T/ytdlp.log")"
-/usr/bin/grep -qi 'error.*sofa\|sofa-yt /pot' "$T/ytdlp.log" && bad "PO token from the sidecar failed: $(/usr/bin/grep -i 'sofa-yt /pot' "$T/ytdlp.log" | head -1)" || ok "PO tokens from the sidecar"
+/usr/bin/grep -q '"userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/[0-9]*\.0\.0\.0 Safari/537.36"' "$T/sy.out" \
+  && ok "sofa-yt hands over its browser identity" || bad "no identity in the ready line: $(head -1 "$T/sy.out")"
 pkill -f "sleep 120" 2>/dev/null; wait $SYJOB 2>/dev/null
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"

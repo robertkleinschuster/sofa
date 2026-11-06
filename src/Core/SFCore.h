@@ -56,7 +56,7 @@ void SFSetDevInstance(NSString *instance);
 NSString *SFDevInstanceName(void);   // "view" by default; nil in the real app
 NSString *SFAppSupportDir(void);
 // Caches: the real app ~/Library/Caches/Sofa, a dev instance <data dir>/Caches (images, the
-// updater's work dir, yt-dlp's cache - nothing a test does reaches the real app's).
+// updater's work dir - nothing a test does reaches the real app's).
 NSString *SFCacheDir(void);
 // Shared by every instance on this machine, on purpose: what must hold for all of them (the
 // YouTube bot-check pause: one IP) and the dev control pipes. ~/Library/Caches/Sofa.

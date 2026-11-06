@@ -5,7 +5,7 @@
 #import "SFYTWatch.h"
 #import "SFYTFeeds.h"
 #import "SFYTParser.h"
-#import "SFYTResolver.h"
+#import "SFStore.h"
 #import "SFYTSabr.h"
 #import "SFYTBreaker.h"
 #import "SFLounge.h"
@@ -42,8 +42,20 @@
 }
 
 + (void)start {
-    [[SFYTResolver shared] start];   // housekeeping + update schedule; the process starts on demand
+    [self removeYTDLPLeftovers];
     if (!SFDevMode) [[SFYTSabr shared] start];   // warm session + BotGuard before the first click
+}
+
+// yt-dlp was removed on 2026-11-06 (docs/youtube.md): what it kept on disk goes too - its updated
+// copies, caches (with the bot-check file's old place), resolved-URL cache and update stamp.
+// Idempotent; costs a few stat calls once there is nothing left.
++ (void)removeYTDLPLeftovers {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *p in @[[SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp"], [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp.new"],
+                          [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp.old"], [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"],
+                          [SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"], [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]])
+        if ([fm fileExistsAtPath:p] && [fm removeItemAtPath:p error:nil]) SFLog(@"yt: removed yt-dlp leftover %@", p.lastPathComponent);
+    if ([[SFStore shared] setting:@"ytdlp.updated"]) [[SFStore shared] setSetting:nil forKey:@"ytdlp.updated"];
 }
 
 #pragma mark Pages

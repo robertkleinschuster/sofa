@@ -51,15 +51,26 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     return [app respondsToSelector:@selector(playbackIsSession:)] && [app playbackIsSession:SFMPVSourceFor(_openURL)];
 }
 
-// A session stream broke: the app recovers its side (fresh session, or its fallback path on the
-// second failure), the player restarts the item at the same position.
+// A session stream broke: the app recovers its side (fresh session), the player reopens the item at
+// the same position - as long as each reopen played at least a minute; a stream that breaks again
+// right away ends in a message instead of a loop of reopens.
+static const NSTimeInterval kSessionReopenMinPlay = 60;
 - (void)sessionFailed:(NSString *)why {
-    Class<SFApp> app = [SFAppRegistry appForItem:_item];
-    if ([app respondsToSelector:@selector(playbackSessionFailed:item:retried:reason:)])
-        [app playbackSessionFailed:SFMPVSourceFor(_openURL) item:_item retried:_sabrRetried reason:why];
-    _sabrRetried = YES;
-    self.startPaused = self.startPaused || _holdPaused;
     NSTimeInterval pos = [self failurePosition];
+    if (_sessionReopenedAt >= 0 && pos < _sessionReopenedAt + kSessionReopenMinPlay) {
+        [self showSpinner:NO];
+        _failed = YES;
+        SFLog(@"player: session stream failed again right after reopening (%@)", why);
+        SFCount(@"player.session-failed");
+        [self showMessage:@"Wiedergabe fehlgeschlagen\nDer Stream ist wiederholt abgebrochen.\n\nOK – zurück"];
+        [self postState];
+        return;
+    }
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    if ([app respondsToSelector:@selector(playbackSessionFailed:item:reason:)])
+        [app playbackSessionFailed:SFMPVSourceFor(_openURL) item:_item reason:why];
+    _sessionReopenedAt = MAX(0, pos);
+    self.startPaused = self.startPaused || _holdPaused;
     if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
     [self teardownPlayer];
     [self startItem];

@@ -13,7 +13,7 @@
 // (with a 1 s micro cache), the manifest URL is renewed through the guarded player request path
 // (YouTube#refresh: breaker, reload limit, budget) shortly before it expires or when YouTube
 // rejects it, and the session fails after MAX_FAILURES consecutive failed fetches (Sofa then
-// reopens once and falls back to yt-dlp). #EXT-X-ENDLIST from upstream = the broadcast ended
+// reopens it; one that fails again right away ends in a message). #EXT-X-ENDLIST from upstream = the broadcast ended
 // (`ended` in /status: a real end, not an error).
 import crypto from 'node:crypto';
 import { errorMessage } from './errors.ts';

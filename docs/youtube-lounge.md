@@ -56,7 +56,7 @@ receiver), `plaincast` (aykevl, Go, receiver), `pyytlounge` (FabioGNR, Python, s
   `onHasPreviousNextChanged + nowPlaying + onStateChange + onVolumeChanged +
   onAutoplayModeChanged(UNSUPPORTED)`; then `nowPlaying` + `onStateChange` on every
   player change, `onVolumeChanged` on `getVolume`/`setVolume`.
-* `ctt` is not needed – Sofa resolves streams itself (yt-dlp, see `docs/youtube.md`).
+* `ctt` is not needed – Sofa resolves streams itself (the sofa-yt sidecar, see `docs/youtube.md`).
 * **Use libcurl (already linked by Sofa) or CFReadStream for the long-poll GET. NSURLSession
   on 10.9 buffers the stream and delivers nothing** **[live]**.
 
@@ -468,7 +468,7 @@ pyytlounge-style web remote, not the Android app).
 | `getSubtitlesTrack` **[live]** | – | `onSubtitlesTrackChanged{videoId}` |
 | `getDiscoveryDeviceId` **[live]** | – | in every new session; no reference implementation answers it; ignoring it did not break the self-test. Unknown what the Android app expects (TODO with phone) |
 | `getPartyGamesMode` **[live]** | – | sent after `remoteConnected`; unhandled by all references; ignore |
-| `setPlaylist` **[live]** | `videoId, videoIds` (comma list), `currentIndex`, `currentTime`, `listId`, `eventDetails` (JSON `{"eventType":"PLAYLIST_SET","videoIds":[…]}`), `sourceDeviceType`; from phones also `ctt`, `params`, `audioOnly`, `prioritizeMobileSenderPlaybackStateOnConnection` **[src]** | build queue, play `videoIds[currentIndex]` from `currentTime`. `ctt` (credential transfer token) is **not needed** – yt-dlp resolves the stream |
+| `setPlaylist` **[live]** | `videoId, videoIds` (comma list), `currentIndex`, `currentTime`, `listId`, `eventDetails` (JSON `{"eventType":"PLAYLIST_SET","videoIds":[…]}`), `sourceDeviceType`; from phones also `ctt`, `params`, `audioOnly`, `prioritizeMobileSenderPlaybackStateOnConnection` **[src]** | build queue, play `videoIds[currentIndex]` from `currentTime`. `ctt` (credential transfer token) is **not needed** – Sofa resolves the stream itself (sofa-yt sidecar) |
 | `updatePlaylist` | `videoIds, listId, eventDetails` (`VIDEO_ADDED/VIDEO_REMOVED/PLAYLIST_CLEARED…`), `currentIndex?` | replace queue keeping current video; if current vanished → stop |
 | `play` **[live]** | – | resume |
 | `pause` **[live]** | – | pause |
@@ -712,7 +712,7 @@ get_screen, unknown/expired code    → 404
 * Sender queue: coalesce pending messages, one POST in flight, `ofs`/`RID` advanced only
   inside the queue; retry a failed POST with the *same* body (same `ofs`, new `RID`).
 * Player bridge: map Sofa's AVPlayer events to `onStateChange`/`nowPlaying`; resolve
-  `setPlaylist.videoId` with the existing yt-dlp resolver (`docs/youtube.md`) and send state
+  `setPlaylist.videoId` with Sofa's own stream resolution (the sofa-yt sidecar) (`docs/youtube.md`) and send state
   `3` immediately so the phone shows "loading" during the 2.5–25 s resolve.
 * UI: "Mit TV verbinden" screen shows the code grouped 3-3-3-3, refreshes every 5 min;
   toast on `remoteConnected`.

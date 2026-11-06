@@ -230,7 +230,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     { vid: string; bg: boolean; maxHeight: number; lang: string; cached: boolean; t0: number }): Promise<LiveAnswer | OpenFailure> {
     const extra = (): OpenMeta => ({ cached, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() });
     if (bg) {
-      // downloads/preloads of lives are yt-dlp's job (a live never ends; post-live DVR chunks expire)
+      // lives are not downloaded or preloaded (a live never ends; post-live DVR chunks expire)
       return { id: vid, error: info.live ? 'live' : 'post-live', live: true, bot: false, blocked_until: breaker.blockedUntil() };
     }
     for (const s of sessions.values()) {
@@ -449,15 +449,6 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     }
     if (url.pathname === '/open') return open(url.searchParams, res);
     if (url.pathname === '/suggest') return suggest(url.searchParams.get('q') || '', res);
-    // PO token for yt-dlp (the fallback resolver): its token provider plugin (res/yt-dlp-plugins,
-    // provider "sofa") asks here, so both YouTube paths use the one BotGuard identity of this
-    // process. binding = yt-dlp's content binding (visitor data for GVS, video id for player).
-    if (url.pathname === '/pot') {
-      const binding = url.searchParams.get('binding') || '';
-      if (!binding || binding.length > 512) return sendJson(res, 400, { error: 'binding missing or too long' });
-      try { return sendJson(res, 200, { poToken: await po.mintString(binding) }); }
-      catch (e) { return sendJson(res, 503, { error: 'no PO token: ' + errorMessage(e) }); }
-    }
     if (url.pathname === '/close') {
       const s = sessions.get(url.searchParams.get('sid') || '');
       if (s) { s.close('closed by client'); forget(s); }

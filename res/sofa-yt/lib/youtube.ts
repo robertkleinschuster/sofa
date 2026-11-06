@@ -151,7 +151,7 @@ export function endscreenElements(raw: RawPlayerResponse | null | undefined): En
 export interface YouTubeErrorFlags {
   bot?: boolean;
   /** YouTube did not answer (network, timeout, 5xx, no session/PO token) - not a refusal: asking
-   *  again through another path (yt-dlp) would only be a second identity for the same video */
+   *  again as another client would only be a second identity for the same video */
   unanswered?: boolean;
   live?: boolean;
   status?: string | null;

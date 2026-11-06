@@ -1,4 +1,4 @@
-// Format / track choice (mirrors ytresolver.py's rules) on real player-response fixtures.
+// Format / track choice on real player-response fixtures.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mod, fixturePlayer, must, nth } from './helpers.ts';

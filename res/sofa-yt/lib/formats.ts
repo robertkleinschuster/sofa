@@ -1,5 +1,6 @@
-// Format / track choice for Sofa (mirrors res/ytresolver.py: dash_pick, audio_rank, audio_tracks,
-// subtitle_tracks). Pure functions over the raw player response (camelCase JSON).
+// Format / track choice for Sofa (the rules of the former yt-dlp resolver: best video up to the
+// height asked, original audio language first, subtitle tracks). Pure functions over the raw player
+// response (camelCase JSON).
 import { buildSabrFormat } from 'googlevideo/utils';
 import { FormatXTags } from 'googlevideo/protos';
 import type { SabrFormat } from 'googlevideo/shared-types';
@@ -189,7 +190,7 @@ export function audioTracks(formats: DescribedFormat[]): AudioTrackChoice[] {
 }
 
 /**
- * Subtitle tracks as in ytresolver.subtitle_tracks: all manual tracks, the automatic track in the
+ * Subtitle tracks: all manual tracks, the automatic track in the
  * spoken language ("auto"), and the automatic translation into `userLang` only if there is no real
  * track in that language and the video is not spoken in it.
  * Returns [{key, lang, name, kind, baseUrl, tlang?}]; `key` names the local URL.

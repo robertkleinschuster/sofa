@@ -220,7 +220,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)startItem {
     _ended = NO; _failed = NO;
     [self esReset];
-    if (_item != _lastStartedItem) { _reresolved = NO; _sabrRetried = NO; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) { _reresolved = NO; _sessionReopenedAt = -1; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];

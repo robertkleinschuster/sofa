@@ -272,7 +272,7 @@ test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is re
     const bot = await openJson<OpenFailure>(app, 'v=jNQXAC9IVRw');
     assert.equal(bot.bot, true);
     assert.ok(bot.blocked_until > Date.now() / 1000 + 200, 'breaker opened (5 min)');
-    assert.deepEqual(json<BlockState>(fs.readFileSync(file, 'utf8')).backoff, 300, 'same file format as ytresolver.py');
+    assert.deepEqual(json<BlockState>(fs.readFileSync(file, 'utf8')).backoff, 300, 'the file format SFYTBreaker reads');
     const before = youtube.requests;
     const bg = await openJson<OpenFailure>(app, `v=${ID}&bg=1`);
     assert.equal(bg.bot, true);

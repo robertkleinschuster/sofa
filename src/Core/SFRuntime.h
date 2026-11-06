@@ -1,14 +1,13 @@
-// Locate runtime tools (ffmpeg, node, python, rsvg-convert).
+// Locate runtime tools (ffmpeg, node, rsvg-convert).
 //
 // Release bundle (tools/make-release): everything lives in Sofa.app/Contents/Runtime
-// (bin/, Python.framework/, etc/; libraries in Contents/Frameworks), the libraries are relinked
+// (bin/, etc/; libraries in Contents/Frameworks), the libraries are relinked
 // @loader_path-relative -> Sofa needs no MacPorts. Development/port build without a Runtime folder:
 // tools from the MacPorts prefix.
 #import <Foundation/Foundation.h>
 
 NSString *SFRuntimeDir(void);              // .../Contents/Runtime or nil (port/dev)
 NSString *SFTool(NSString *name);          // Runtime/bin/<name> or /opt/local/bin/<name>
-NSString *SFPythonPath(void);              // base Python for the yt-dlp fallback
 NSString *SFCABundle(void);                // CA certificates for libcurl (nil = libcurl default)
 // Release bundle: set up ~/Library/LaunchAgents/de.sofa.{remote,app}.plist for this bundle
 // (load the remote helper right away, autostart from the next login).

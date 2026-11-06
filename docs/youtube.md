@@ -9,17 +9,18 @@ identity, and every request to YouTube is counted and justified.**
 | Layer | What | Runs |
 |---|---|---|
 | Browsing | InnerTube `browse`/`search`/`next`/`navigation/resolve_url` built and parsed in ObjC (`SFYTInnerTube` request, `SFYTParser` meaning, `SFYTPages`; modules: `SFYouTubeApp.h`), **sent by the sidecar's session** (`POST /yt/<endpoint>`); search suggestions via `GET /suggest` | in the app, transport in the sidecar |
-| **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted); **PO tokens for the fallback** (`GET /pot`) | always (node, ~50 MB) |
-| yt-dlp fallback (`res/ytresolver.py`, `SFYTResolver`) | only when the sidecar could not serve a video (video marked failed after two SABR failures, a live it can't play, no mpv) - never after a bot check or when YouTube did not answer (`unanswered`: network, timeout, no session/PO token; asking again as another client would be a second identity); one client per request; tokens from the sidecar via Sofa's own provider plugin (`res/yt-dlp-plugins`, provider "Sofa") | **on demand**, ends after 10 min idle |
-| Breaker (`SFYTBreaker`, shared file `Caches/Sofa/yt-dlp/youtube-block.json`) | a bot check pauses background work (preloads, downloads) 5 min → 1 h; playback never falls back to the other path after a bot check | both paths read/write it |
-| Counters (`SFStats`, table `stats`) | `yt.play.sabr`, `yt.play.ytdlp.<reason>`, `yt.download.*`, `yt.live.*`, `yt.ytdlp.ok/failed`, `player.<fallback step>` per day | dev command `stats [days]` |
+| **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted). What it can't serve gets a clear message (bot check, not on air, `unanswered`, no mpv), never a second client | always (node, ~50 MB) |
+| Breaker (`SFYTBreaker`, shared file `Caches/Sofa/youtube-block.json`) | a bot check pauses background work (follow checks, preloads, downloads) 5 min → 1 h | the sidecar writes it, every instance reads it |
+| Counters (`SFStats`, table `stats`) | `yt.play.<outcome>`, `yt.live.*`, `yt.download.*`, `player.<fallback step>` per day | dev command `stats [days]` |
 
-Retired 2026-11-05: the bgutil PO token server (separate node process, ~125 MB, native `canvas`,
-port `bgutil-pot-server`) and its yt-dlp plugin – the sidecar mints the same tokens with the same
-BotGuard library; the resolver warm-up (the sidecar warms up, and yt-dlp is no longer the first
-path); yt-dlp preloading. **Fallbacks stay as long as the counters show they are needed** (user
-2026-11-05): yt-dlp is an independent implementation that is updated daily (signed), the sidecar's
-libraries only with Sofa updates.
+Retired 2026-11-05: the bgutil PO token server (separate node process, ~125 MB, native `canvas`)
+and its yt-dlp plugin – the sidecar mints the same tokens with the same BotGuard library.
+Retired 2026-11-06 (user: "brauchen wir yt-dlp überhaupt noch?", then "entscheide du"): **the yt-dlp
+fallback** (`ytresolver.py`, `SFYTResolver`, Sofa's PO token plugin, `/pot`, the bundled Python). The
+rule "fallbacks stay as long as the counters show they are needed" decided it: 11-05..06 it was used
+25 times, delivered once (muxed low quality after 49 s) and sent 54 failed player requests as three
+other clients (mweb, web_embedded, android_vr) - the second identity the bot check looks for. A
+leftover cleanup removes its files once (`SFYouTubeApp removeYTDLPLeftovers`).
 
 ### One identity, human cadence (2026-11-06)
 
@@ -45,11 +46,11 @@ the sidecar got no answer. Fixed causes:
   requests of their own).
 - No RSS (gone since 2026-11-05 ~21:30, HTTP 404), no table `feed_cache`.
 
-Everything ships in the app bundle (user requirement): node, Python, yt-dlp, the sidecar's
-node_modules - nothing to install.
+Everything ships in the app bundle (user requirement): node and the sidecar's node_modules -
+nothing to install.
 
-The sections below are the original research (2026-11-03) and the yt-dlp resolver's history;
-bgutil details there are historical.
+The sections below are the original research (2026-11-03) and the yt-dlp resolver's history
+(retired 2026-11-06); yt-dlp and bgutil details there are historical.
 
 Original status: researched and **live-tested on 2026-11-03** on the iMac itself (macOS 10.9.5,
 yt-dlp 2026.10.21, QuickJS 2026-06-04, bgutil POT server 1.3.1 on 127.0.0.1:4416).

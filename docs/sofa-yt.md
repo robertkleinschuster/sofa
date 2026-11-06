@@ -2,9 +2,9 @@
 
 A long-lived node process that looks like YouTube's own web player (one persistent Innertube session,
 WEB-client player requests with a BotGuard/WebPO token, SABR streaming) and hands mpv plain local HTTP
-files with Range support. It replaces yt-dlp for VOD playback on IPs where yt-dlp gets "Sign in to
-confirm you're not a bot"; lives and post-live DVR recordings are served as a local HLS playlist from
-the same session (see "Lives"). yt-dlp stays the fallback.
+files with Range support. It replaced yt-dlp (which got "Sign in to confirm you're not a bot" on this
+IP; removed 2026-11-06) and is Sofa's only way to YouTube; lives and post-live DVR recordings are
+served as a local HLS playlist from the same session (see "Lives").
 
 ## Layout
 
@@ -19,8 +19,8 @@ the same session (see "Lives"). yt-dlp stays the fallback.
 | `res/sofa-yt/lib/sabrpump.ts` | one googlevideo `SabrStream` run, segments with their byte position |
 | `res/sofa-yt/lib/youtube.ts` | Innertube session, player requests, decipher, per-video cache, budget |
 | `res/sofa-yt/lib/webpo.ts` | in-process BotGuard (bgutils-js + jsdom) WebPO minter |
-| `res/sofa-yt/lib/formats.ts` | video/audio/subtitle choice (same rules as `res/ytresolver.py`) |
-| `res/sofa-yt/lib/breaker.ts` | bot-check circuit breaker, file shared with ytresolver.py |
+| `res/sofa-yt/lib/formats.ts` | video/audio/subtitle choice (original audio first, best video up to the height asked) |
+| `res/sofa-yt/lib/breaker.ts` | bot-check circuit breaker, file shared with Sofa (`SFYTBreaker`) |
 | `res/sofa-yt/lib/subs.ts` | captions -> WebVTT |
 | `res/sofa-yt/lib/ytraw.ts` | types of the raw Innertube player response we read + its one narrowing boundary (`asPlayerResponse`) |
 | `res/sofa-yt/lib/json.ts`, `errors.ts` | narrowing helpers for untrusted JSON / caught values |
@@ -64,14 +64,14 @@ lines, and the bundled node stays the only runtime. Consequences:
 ## Running
 
 ```
-node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <yt-dlp-cache>/youtube-block.json
+node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <Sofa caches>/youtube-block.json
 ```
 
 | Option | Default | |
 |---|---|---|
 | `--port N` | 0 | 0 = ephemeral; the port is reported in the ready line |
 | `--state DIR` | required | persistent: `identity.json` (Chrome major, weekly), `cookies.json` (YouTube's cookies, 0600, never logged), `visitor.json` (visitorData), `ytjs-cache/` (player.js; no session cache: each session is made fresh from `sw.js_data` like a page load), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
-| `--block-file PATH` | `<state>/youtube-block.json` | bot-check breaker, same file + format as ytresolver.py: `{"until": epoch, "backoff": secs}` |
+| `--block-file PATH` | `<state>/youtube-block.json` | bot-check breaker, the file `SFYTBreaker` reads: `{"until": epoch, "backoff": secs}` |
 | `--ahead-low S` / `--ahead-high S` | 30 / 90 | pacing window in seconds of media ahead of the reader |
 | `--max-player-requests N`, `--budget-window S`, `--budget-file P` | 60 / 3600 / state | hard cap on player requests (safety net against loops; persisted) |
 | `--no-warm` (or env `SOFA_NO_WARMUP`) | | skip the startup warm-up (Innertube session + BotGuard; no player request either way) |
@@ -107,7 +107,7 @@ must not rely on keep-alive (libcurl/NSURLSession handle `Connection: close` tra
   ignores it: the original track always wins.
 - `start`: resume position; with `prefetch=1` (default for `bg=0`) SABR starts pulling there right away.
 
-Success (keys of ytresolver's `dash` dict + metadata; all URLs local):
+Success (the chosen tracks + metadata; all URLs local):
 ```json
 {"id":"OzCYsIrrRyw","sid":"04ed25455bf7fa40","title":"...","duration":2134,"live":false,
  "expires":1793879547,"formats":30,
@@ -136,7 +136,7 @@ Live / post-live DVR success (no `video`/`audio`: one muxed HLS stream):
 ```
 Post-live DVR (an ended broadcast YouTube still serves from its live chunks): `live:false`,
 `postLiveDvr:true`, `duration` = the recording's length, seekable like a VOD. `bg=1` opens of either
-answer `{"error":"live"|"post-live","live":true}` (downloads stay with yt-dlp).
+answer `{"error":"live"|"post-live","live":true}` (lives are not downloaded).
 
 Failure (HTTP 200):
 ```json
@@ -145,12 +145,12 @@ Failure (HTTP 200):
 {"id":"...","error":"player request failed: fetch failed","bot":false,"unanswered":true,"blocked_until":0}
 ```
 `unanswered:true`: YouTube did not answer at all (network, timeout, session or PO token unavailable) -
-the app shows an error / retries the download later and does **not** ask yt-dlp instead (a second
-client asking for the same video is exactly what a bot looks like).
+the app shows an error / retries the download later (a second client asking for the same video is
+exactly what a bot looks like - the reason the yt-dlp fallback was removed).
 `error` texts: YouTube's playability reason (e.g. `Video unavailable`), `upcoming` (scheduled live or
 premiere; `startTime` epoch seconds or `null`; the answer is reused for 60 s without a request),
 `offline` (`LIVE_STREAM_OFFLINE` without a schedule), other errors with `live:true` (no HLS manifest,
-`HLS manifest unavailable: ...`, decipher failed: fall back to yt-dlp), `... (paused, no request sent)` (bg while blocked),
+`HLS manifest unavailable: ...`, decipher failed), `... (paused, no request sent)` (bg while blocked),
 `player-request budget exhausted ...`, `PO token unavailable: ...`, `YouTube session unavailable: ...`,
 `no usable video/audio format`, `invalid video ID` (HTTP 400).
 
@@ -186,14 +186,6 @@ for a bot check - with `bg=1` nothing is sent while the breaker is open -, 502 f
 ### `GET /suggest?q=<text>`
 Search box suggestions (`suggestqueries-clients6.youtube.com`, `client=youtube`, `hl=de`/`gl=AT`) with
 the identity's headers; the answer passes through unchanged. 400 without `q`.
-
-### `GET /pot?binding=<content binding>`
-PO token for the yt-dlp fallback: `{"poToken": "..."}` minted by this process's BotGuard (the same
-minter as the sidecar's own player requests), so both YouTube paths are one web identity. Called by
-Sofa's yt-dlp provider plugin (`res/yt-dlp-plugins/.../getpot_sofa.py`, provider "Sofa"), which gets
-the sidecar's address per request (`SOFA_POT_URL`). 400 without a binding, 503 when the minter is
-unavailable (yt-dlp then goes on without a token). No YouTube request unless the minter has to be
-(re)created (integrity token, ~every 12 h).
 
 ## How it works
 
@@ -235,7 +227,7 @@ googlevideo 5.0.1) and verifies length/position. Re-check that hook when bumping
 ahead, hard caps 160 MB video / 24 MB audio. A 1080p VP9 session holds roughly 40 MB at the default
 window. Plus ~170 MB for node + jsdom/BotGuard (measured RSS after warm-up).
 
-**Breaker.** Same file and rules as ytresolver.py (5 min doubling to 1 h, reset by a success; only
+**Breaker.** One file for every instance on this IP, read by Sofa (`SFYTBreaker`) (5 min doubling to 1 h, reset by a success; only
 background requests are held back). The file is re-read on every check.
 
 ## Lives
@@ -293,7 +285,7 @@ a YouTube web player. Live SABR stays an option if YouTube ever drops HLS for WE
   (`isPostLiveDvr`) -> `liveInfo()`: `hlsManifestUrl` with the path `n` solved by the pinned player and
   `/pot/<token>` (the request's video-bound token) appended (`hls.ts prepareManifestUrl`); cached like VOD
   responses (`players/<id>.json`, until 15 min before the path `expire`). No HLS manifest / unsolved n ->
-  `live:true` error (yt-dlp fallback). `upcoming` (`isUpcoming`, or `LIVE_STREAM_OFFLINE` with a
+  `live:true` error (Sofa reports it). `upcoming` (`isUpcoming`, or `LIVE_STREAM_OFFLINE` with a
   `scheduledStartTime` in the offline slate; premieres: `liveBroadcastDetails.startTimestamp`) and
   `offline` throw before anything is cached; the answer is reused for 60 s (no request storm from
   repeated clicks), the breaker counts it as a success (it was no bot check).
@@ -318,8 +310,8 @@ Sidecar `/open` of `LuKwFajn37U`: 1 player request, 0.8 s, 1080p60 itag 301; `mp
 ## Integration notes for Sofa (ObjC)
 
 - Spawn with the bundled node, stdin = a pipe Sofa keeps open, read the first stdout line (timeout ~10 s);
-  restart on exit with backoff. Pass `--state` in Sofa's cache dir and `--block-file` = ytresolver's
-  `youtube-block.json`.
+  restart on exit with backoff. Pass `--state` in Sofa's data dir and `--block-file` = `SFYTBreaker filePath`;
+  the ready line carries the identity's user agent (Sofa uses it for its own YouTube requests).
 - `/open` cost: cached ~10 ms; uncached ~2-4 s (player request ~0.2 s + PO mint + decipher; the first
   call after start also waits for the warm-up). First video frame ~2.3 s after mpv started (live test).
 - mpv: `video` as the file, `--audio-file=<audio>`; other languages via `audio-add <url>`;
@@ -328,13 +320,14 @@ Sidecar `/open` of `LuKwFajn37U`: 1 player request, 0.8 s, 1080p60 itag 301; `mp
   pulled from YouTube. When resuming at `start`, mpv first probes the first cluster (lavf
   `probesize`/`analyzeduration`), which costs a short SABR run at 0; lowering
   `demuxer-lavf-analyzeduration` reduces that.
-- Failure modes: `/open` error JSON (fall back to yt-dlp unless `bot` and the user did not ask); media
-  URLs ending early (mpv reconnects) or `503` (session failed: reopen once, then fall back); `404` =
-  session expired (reopen: the cached player response makes this cheap). URLs die with the process.
+- Failure modes: `/open` error JSON (a message for the viewer; downloads retry later, a bot check defers
+  them); media URLs ending early (mpv reconnects) or `503` (session failed: the player reopens, as long
+  as each reopen played a minute - then a message); `404` = session expired (reopen: the cached player
+  response makes this cheap). URLs die with the process.
 - Lives (`ytlive:` resolver) and videos that turn out to be live (`yt:` resolver) go to the sidecar first:
   an `hls` answer is opened as is (`SFSetMPVSource` flags `sabr`, `hls`, `live`, `sid`; no `video`/`audio`
-  pair); bot check -> message, no yt-dlp request; `upcoming` -> "Dieser Livestream beginnt ..." (with the
-  start time), `offline` -> message, both without yt-dlp; any other error -> yt-dlp (`live:YES`).
+  pair); bot check -> message; `upcoming` -> "Dieser Livestream beginnt ..." (with the start time),
+  `offline` -> message; any other error -> message.
 - mpv reaching the end of a live playlist: SFPlayerScreen asks `/s/<sid>/status`; `ended` -> normal end,
-  otherwise the SABR failure path (reopen once via the sidecar, then yt-dlp). The stall watchdog and the
+  otherwise the SABR failure path (reopen via the sidecar). The stall watchdog and the
   sidecar-exit notification apply to lives like to VODs.

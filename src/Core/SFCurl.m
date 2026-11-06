@@ -55,7 +55,7 @@ void SFCurlGlobalInit(void) {
 
 // Without TLS certificate verification (user decision 2026-11-04): an outdated CA bundle on the
 // frozen 10.9 must never break anything. Code authenticity is ensured by signatures (SFUpdater:
-// Sofa DMG, SFYTResolver: yt-dlp), not TLS.
+// Sofa DMG), not TLS.
 void *SFCurlNew(void) {
     CURL *c = curl_easy_init();
     if (c) {

@@ -1,5 +1,0 @@
-# yt-dlp base install in the app bundle (tools/fetch-ytdlp). Afterwards Sofa keeps yt-dlp up to date
-# itself (signed releases, SFYTResolver). PO tokens come from Sofa's own plugin (res/yt-dlp-plugins).
-# Authenticity via SHA2-256SUMS.sig (key res/yt-dlp-public.key,
-# fingerprint AC0CBBE6848D6A873464AF4E57CF65933B5A7581).
-yt-dlp 2026.10.26

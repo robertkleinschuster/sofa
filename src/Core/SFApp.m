@@ -51,7 +51,6 @@ static NSMutableDictionary *gByName, *gByPrefix;
 }
 
 + (void)startAll { for (Class<SFApp> a in gApps) if ([a respondsToSelector:@selector(start)]) [a start]; }
-+ (void)prepareAllForRelaunch { for (Class<SFApp> a in gApps) if ([a respondsToSelector:@selector(prepareForRelaunch)]) [a prepareForRelaunch]; }
 
 + (void)startRemotesWithHost:(id<SFPlayerHost>)host {
     for (Class<SFApp> a in gApps) if ([a respondsToSelector:@selector(startRemoteWithHost:)]) [a startRemoteWithHost:host];

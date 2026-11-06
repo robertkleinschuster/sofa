@@ -20,12 +20,6 @@ NSString *SFTool(NSString *name) {
     return [(rt ?: kPrefix) stringByAppendingPathComponent:[@"bin" stringByAppendingPathComponent:name]];
 }
 
-NSString *SFPythonPath(void) {
-    NSString *rt = SFRuntimeDir();
-    return rt ? [rt stringByAppendingPathComponent:@"Python.framework/Versions/3.14/bin/python3.14"]
-              : [kPrefix stringByAppendingPathComponent:@"bin/python3.14"];
-}
-
 NSString *SFCABundle(void) {
     NSString *rt = SFRuntimeDir();
     return rt ? [rt stringByAppendingPathComponent:@"etc/cert.pem"] : nil;
@@ -41,7 +35,7 @@ void SFRuntimeSetup(void) {
     // (user decision 2026-11-04; code is signed separately, see SFCurlNew)
     setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0", 1);
     if (!rt) return;
-    // CA list from the bundle for anything that does verify (Python standard library etc.)
+    // CA list from the bundle for anything that does verify (OpenSSL/curl, node)
     setenv("SSL_CERT_FILE", SFCABundle().UTF8String, 1);
     setenv("NODE_EXTRA_CA_CERTS", SFCABundle().UTF8String, 1);
     // fontconfig (librsvg/pango): system fonts, cache in the user cache

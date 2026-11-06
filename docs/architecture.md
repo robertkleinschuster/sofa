@@ -39,7 +39,7 @@ src/Player        watch later, search merge), player + engines, generic media sc
 src/Browse        (SFBrowseScreen, library pages: shows, history, downloads, Platz schaffen).
 src/Apps/<App>  Everything specific to one source: API client, JSON → SFItem mapping,
                 resolving, feeds, search, theme tokens, app-only services (YouTube: SABR
-                sidecar, yt-dlp fallback, bot breaker, phone pairing + remote commands).
+                sidecar, bot breaker, phone pairing + remote commands).
 src/Shell       The Sofa product: AppDelegate (player host, dev FIFO, update relaunch), launch
                 order, app registration (SFApps.m), home composition, settings, migration.
 ```
@@ -70,7 +70,7 @@ Required: identity (`appIdentifier`, `appName`, `appSummary`), `refPrefixes`,
 Optional capabilities (absent = feature hidden, never a stub) – see docs/new-app.md for the
 full table: search, resolve, shows/feeds, downloads/availability, player hooks, focus
 preload, stored-item refresh, remote control, home sections, dev commands, lifecycle
-(`start`, `prepareForRelaunch`).
+(`start`).
 
 ## Player hooks
 
@@ -167,7 +167,7 @@ directory is decided once at launch (`SFSetDevInstance`) - `~/Library/Applicatio
 Support/Sofa-dev/NAME` (database, sidecar state, downloads under `Downloads/`), or
 `$SOFA_DATA_DIR`. Every test suite runs with a fresh temporary `SOFA_DATA_DIR`, so tests start
 from an empty database, leave nothing behind and can run side by side. Caches
-(`SFCacheDir`: images, the updater's work dir, yt-dlp's cache) live in `<data dir>/Caches`, and
+(`SFCacheDir`: images, the updater's work dir) live in `<data dir>/Caches`, and
 settings in the defaults domain `de.sofa.dev.<instance>`. Shared on purpose
 (`SFSharedCacheDir`, `~/Library/Caches/Sofa`): only the YouTube bot-check pause (one IP for every
 instance) and the dev control pipes `dev-<instance>.fifo`.

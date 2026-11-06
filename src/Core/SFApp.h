@@ -59,7 +59,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 //     app's resolver attached to the opened URL (SFMPVSourceFor). The generic fallback chain
 //     (engine switch, DASH->HLS, alternates) stays in the player. ---
 + (BOOL)playbackIsSession:(NSDictionary *)source;   // stream served by an app session (local service) whose loss needs recovery
-+ (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item retried:(BOOL)retried reason:(NSString *)why;   // before the player restarts the item
++ (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why;   // before the player reopens the item (recover the app's side, e.g. a fresh session)
 + (NSString *)playbackSessionLostNotification;      // posted when the service behind session streams died
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)
 + (BOOL)playbackPrepareReResolve:(SFItem *)item;    // all streams rejected: drop caches, YES = resolving afresh can help
@@ -85,7 +85,6 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)updateStoredItem:(SFItem *)item;   // read back from storage (history, continue watching): refresh derived fields, e.g. picture URLs; a local picture stays
 + (SFPageLoader)listLoader:(NSString *)ref title:(NSString *)title;   // a playable list (playlist): first shelf = the videos in order
 + (void)preloadOnFocus:(SFItem *)item;   // focus rests on a (not downloaded) video while online: start resolving early
-+ (void)prepareForRelaunch;              // Sofa restarts for an update in a moment: persist caches
 // --- remote control: a phone app as remote (YouTube "Mit TV verbinden"). The app owns pairing,
 //     protocol and its settings; the shell starts it with a host and shows its status. ---
 + (void)startRemoteWithHost:(id<SFPlayerHost>)host;
@@ -107,7 +106,6 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (Class)appForRef:(NSString *)ref;        // by the namespace before ':'
 + (Class)appForItem:(SFItem *)item;        // by item.source, else by its ref/identifier namespace
 + (void)startAll;
-+ (void)prepareAllForRelaunch;
 // remote control services of all apps
 + (void)startRemotesWithHost:(id<SFPlayerHost>)host;
 + (void)stopRemotes;

@@ -35,6 +35,7 @@ if [ -d "$APP/Contents/Runtime" ]; then
   NEW="$SRC/build/Sofa-release.app"
   rm -rf "$NEW"; cp -R "$SRC/build/Sofa.app" "$NEW"
   cp -R "$APP/Contents/Runtime" "$APP/Contents/Frameworks" "$NEW/Contents/"
+  rm -rf "$NEW/Contents/Runtime/Python.framework"   # no longer shipped (yt-dlp removed 2026-11-06, make-release)
   /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" "$NEW/Contents/MacOS" "$NEW/Contents/Frameworks" >/dev/null
   echo "release bundle: runtime taken over, programs relinked"
 fi

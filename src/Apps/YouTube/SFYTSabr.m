@@ -8,7 +8,7 @@
 #import "SFUserAgent.h"
 #import <signal.h>
 
-// Opens wait at most this long for the sidecar to become ready (then the caller falls back to yt-dlp)
+// Opens wait at most this long for the sidecar to become ready (then the caller reports it)
 static const NSTimeInterval kReadyTimeout = 15;
 // /open: ~10 ms with a cached player response, 2-4 s otherwise, longer on the very first call
 // (Innertube session + BotGuard warm-up)
@@ -25,7 +25,6 @@ NSString *const SFYTSabrDidExitNotification = @"SFYTSabrDidExit";
     NSDate *_launchedAt;
     NSTimeInterval _nextStartAt; // backoff: no start before this (epoch)
     NSMutableArray *_queued;    // blocks waiting for readiness: ^(NSInteger port)
-    NSMutableSet *_failed;      // video IDs whose SABR playback failed this run
     NSURLSession *_session;
     NSMutableArray *_preloads;  // times of recent focus preloads (budget)
 }
@@ -45,7 +44,6 @@ static const NSTimeInterval kPreloadWindow = 600;
 - (instancetype)init {
     if ((self = [super init])) {
         _queued = [NSMutableArray new];
-        _failed = [NSMutableSet new];
         NSURLSessionConfiguration *c = [NSURLSessionConfiguration ephemeralSessionConfiguration];
         c.connectionProxyDictionary = @{};          // local only, never through a proxy
         c.timeoutIntervalForRequest = kOpenTimeout;
@@ -62,16 +60,10 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
     return [fm fileExistsAtPath:SabrMain()] && [fm isExecutableFileAtPath:SFTool(@"node")];
 }
 
-- (void)markFailed:(NSString *)vid { if (vid) { [_failed addObject:vid]; SFCount(@"yt.sabr.marked-failed"); } }
-
-- (NSString *)baseURL { return _port ? [NSString stringWithFormat:@"http://127.0.0.1:%ld", (long)_port] : nil; }
-
-- (BOOL)usableFor:(NSString *)vid {
-    return self.available && SFMPVAvailable() && !SFPreferAVFoundation() && ![self failedFor:vid];
-}
 
 - (BOOL)preloadOnFocus:(NSString *)vid {
-    if (!vid.length || ![self usableFor:vid] || [SFYTBreaker shared].blockedUntil) return NO;
+    // only what this device plays via SABR (VOD needs mpv), never during a bot-check pause
+    if (!vid.length || !self.available || !SFMPVAvailable() || SFPreferAVFoundation() || [SFYTBreaker shared].blockedUntil) return NO;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970;
     if (!_preloads) _preloads = [NSMutableArray array];
     while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
@@ -88,7 +80,6 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
     NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/close?sid=%@", (long)_port, sid];
     [[_session dataTaskWithURL:[NSURL URLWithString:u]] resume];
 }
-- (BOOL)failedFor:(NSString *)vid { return vid && [_failed containsObject:vid]; }
 
 - (void)sessionStatus:(NSString *)sid done:(void (^)(NSDictionary *))done {
     if (!sid.length || !_port) { done(nil); return; }
@@ -113,12 +104,10 @@ static const NSTimeInterval kHealthyRun = 300;
     if ([NSDate date].timeIntervalSince1970 < _nextStartAt) return;   // backing off after crashes
     signal(SIGPIPE, SIG_IGN);
     NSString *state = [SFAppSupportDir() stringByAppendingPathComponent:@"sofa-yt"];   // dev instances: their own (SFSetDevInstance)
-    NSString *cache = [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"];
     [[NSFileManager defaultManager] createDirectoryAtPath:state withIntermediateDirectories:YES attributes:nil error:nil];
-    [[NSFileManager defaultManager] createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:nil];
     NSTask *t = [NSTask new];
     t.launchPath = SFTool(@"node");
-    // the breaker file is ytresolver.py's: one bot-check state for both paths (same IP)
+    // the breaker file is shared by every instance (one IP, one bot-check state)
     t.arguments = @[SabrMain(), @"--port", @"0", @"--state", state,
                     @"--block-file", [SFYTBreaker filePath]];
     t.currentDirectoryPath = [SabrMain() stringByDeletingLastPathComponent];
@@ -170,8 +159,8 @@ static const NSTimeInterval kHealthyRun = 300;
     ((NSPipe *)t.standardOutput).fileHandleForReading.readabilityHandler = nil;
     ((NSPipe *)t.standardError).fileHandleForReading.readabilityHandler = nil;
     _task = nil; _in = nil; _port = 0;
-    // backoff first: 5 s, 10 s, 20 s ... up to 10 min for runs that died early; opens meanwhile go to
-    // yt-dlp. Set BEFORE anyone hears of the exit - the player's observer reopens at once and would
+    // backoff first: 5 s, 10 s, 20 s ... up to 10 min for runs that died early; opens meanwhile get
+    // "not ready". Set BEFORE anyone hears of the exit - the player's observer reopens at once and would
     // otherwise start a new sidecar right away, bypassing the backoff (review 2026-11-05).
     BOOL healthy = _launchedAt && -[_launchedAt timeIntervalSinceNow] > kHealthyRun;
     _crashes = healthy ? 0 : _crashes + 1;

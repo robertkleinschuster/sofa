@@ -1,8 +1,8 @@
-// Bot-check circuit breaker, shared with res/ytresolver.py through the same file
+// Bot-check circuit breaker in a file shared with Sofa (SFYTBreaker) and every instance on this IP
 // ({"until": epoch_seconds, "backoff": seconds}). After "Sign in to confirm you're not a bot" the
 // background (preload, downloads) sends no player request until `until`: 5 min, doubling up to 1 h,
 // reset by the first success. Playback the user starts still tries. The file is re-read on every
-// check because the resolver process updates it too.
+// check because another instance (another sidecar) may update it too.
 import fs from 'node:fs';
 import { parseJson, record } from './json.ts';
 import { errorMessage } from './errors.ts';
