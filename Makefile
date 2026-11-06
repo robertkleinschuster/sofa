@@ -6,6 +6,8 @@
 # (make sets CC=cc), hence := and passing it on the command line (make CC=...).
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
+# python for the build helpers (compile_commands.json); the port passes PYTHON=${prefix}/bin/python3.14
+PYTHON  ?= python3
 CC      := $(MP)/bin/clang
 PREFIX  ?= /Applications
 DESTDIR ?=
@@ -54,7 +56,7 @@ all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(
 # source directories, so adding a file or a new src/Apps/<App> regenerates it.
 UNITSRC := $(wildcard tests/units/*.m)
 compile_commands.json: Makefile tools/gen-compile-commands $(SRCDIRS) $(wildcard helper/ tests/units/)
-	@tools/gen-compile-commands $@ "$(CC)" "$(CFLAGS)" $(SRC) $(HSRC) $(UNITSRC)
+	@$(PYTHON) tools/gen-compile-commands $@ "$(CC)" "$(CFLAGS)" $(SRC) $(HSRC) $(UNITSRC)
 
 $(APP)/Contents/Resources/CHANGELOG.md $(DEVAPP)/Contents/Resources/CHANGELOG.md: CHANGELOG.md
 	@mkdir -p $(dir $@)
