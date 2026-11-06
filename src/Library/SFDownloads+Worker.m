@@ -239,21 +239,29 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
     }
     if (r && !ok && [r[@"path"] length] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) {
         // a repair download failed: keep the existing file instead of losing it, and remember the
-        // repair (error prefix kRepairPrefix, persisted) so retryDueRepairs tries again with backoff -
-        // YouTube's bot check often blocks for hours, a single attempt would leave the file broken
+        // repair (retryAt, persisted) so retryDueRepairs tries again with backoff - YouTube's bot
+        // check often blocks for hours, a single attempt would leave the file broken
         NSInteger n = [r[@"tries"] integerValue] + 1;
         r[@"state"] = @(SFDLDone); r[@"progress"] = @1.0;
-        r[@"tries"] = @(n); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970);
-        r[@"error"] = [kRepairPrefix stringByAppendingString:error ?: @""];
+        r[@"tries"] = @(n); r[@"error"] = error ?: @"Fehler";
+        if (n < kSubMaxTries) r[@"retryAt"] = @([NSDate date].timeIntervalSince1970 + SFRetryDelay(n));
+        else [r removeObjectForKey:@"retryAt"];
         [self save:r];
         SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file, %@", ident, error,
               n < kSubMaxTries ? [NSString stringWithFormat:@"retry in %.0f min", SFRetryDelay(n) / 60] : @"giving up");
         dispatch_async(dispatch_get_main_queue(), ^{ [self retryDueRepairs]; });   // schedules the retry
     } else if (r) {
-        r[@"state"] = @(ok ? SFDLDone : SFDLFailed);
         r[@"progress"] = @(ok ? 1.0 : 0.0);
-        if (ok) { [r removeObjectForKey:@"error"]; r[@"tries"] = @0; }
-        if (!ok) { r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @([r[@"tries"] integerValue] + 1); r[@"failedAt"] = @([NSDate date].timeIntervalSince1970); }
+        if (ok) { r[@"state"] = @(SFDLDone); [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"]; r[@"tries"] = @0; }
+        else {
+            // the next attempt's time is kept for every failure under the limit (a subscription may find
+            // a manual one later); only a subscription episode is retried by Sofa itself
+            NSInteger n = [r[@"tries"] integerValue] + 1;
+            r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @(n);
+            if (n < kSubMaxTries) r[@"retryAt"] = @([NSDate date].timeIntervalSince1970 + SFRetryDelay(n));
+            else [r removeObjectForKey:@"retryAt"];
+            r[@"state"] = @(r[@"sub"] && n < kSubMaxTries ? SFDLRetrying : SFDLFailed);
+        }
         [self save:r];
         SFLog(@"downloads: %@ %@%@", ok ? @"done" : @"FAILED", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);
     }

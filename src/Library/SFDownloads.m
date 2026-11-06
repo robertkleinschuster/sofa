@@ -58,11 +58,11 @@ static NSString *ffmpegPath(void) {
 - (NSArray *)write:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,failedAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,retryAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
              @[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
                r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
                r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
-               r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"failedAt"] ?: [NSNull null],
+               r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"retryAt"] ?: [NSNull null],
                r[@"keep"] ?: @0, r[@"online"] ?: [NSNull null], r[@"onlineAt"] ?: [NSNull null]]];
 }
 
@@ -75,14 +75,12 @@ static NSString *ffmpegPath(void) {
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, next = 0;
     NSMutableArray *writes = [NSMutableArray new];
     for (NSMutableDictionary *r in _recs.allValues) {
-        if ([r[@"state"] integerValue] != SFDLDone || ![r[@"error"] hasPrefix:kRepairPrefix]) continue;
-        NSInteger n = [r[@"tries"] integerValue];
-        if (n >= kSubMaxTries) continue;
-        NSTimeInterval due = [r[@"failedAt"] doubleValue] + SFRetryDelay(n);
+        if ([r[@"state"] integerValue] != SFDLDone || !r[@"retryAt"]) continue;   // no repair pending
+        NSTimeInterval due = [r[@"retryAt"] doubleValue];
         if (due > now) { next = next ? MIN(next, due) : due; continue; }
         if (![[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) continue;
-        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)n + 1);
-        [r removeObjectForKey:@"error"];
+        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)[r[@"tries"] integerValue] + 1);
+        [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"];
         r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
         [writes addObject:[self write:r]]; [self changed:r[@"id"]];
     }
@@ -97,12 +95,12 @@ static NSString *ffmpegPath(void) {
 }
 
 - (void)expireRepairBackoffForTesting {
-    for (NSMutableDictionary *r in _recs.allValues) if ([r[@"error"] hasPrefix:kRepairPrefix]) r[@"failedAt"] = @0;
+    for (NSMutableDictionary *r in _recs.allValues) if ([r[@"state"] integerValue] == SFDLDone && r[@"retryAt"]) r[@"retryAt"] = @0;
 }
 
 - (BOOL)willRetry:(NSString *)identifier {
     NSDictionary *r = _recs[identifier];
-    return r[@"sub"] && [r[@"state"] integerValue] == SFDLFailed && [r[@"tries"] integerValue] < kSubMaxTries;
+    return [r[@"state"] integerValue] == SFDLRetrying;
 }
 
 - (void)storageChangedSoon {
@@ -253,10 +251,9 @@ static NSString *gb(unsigned long long b) {
     SFDLState st = r ? [r[@"state"] integerValue] : SFDLNone;
     if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
     if (subID && r && st == SFDLDismissed) return NO;
-    if (subID && r && st == SFDLFailed) {
-        NSInteger n = [r[@"tries"] integerValue];
-        if (n >= kSubMaxTries) return NO;
-        if ([NSDate date].timeIntervalSince1970 - [r[@"failedAt"] doubleValue] < SFRetryDelay(n)) return NO;   // keep waiting
+    if (subID && r && (st == SFDLFailed || st == SFDLRetrying)) {
+        if ([r[@"tries"] integerValue] >= kSubMaxTries) return NO;                                 // given up
+        if ([NSDate date].timeIntervalSince1970 < [r[@"retryAt"] doubleValue]) return NO;          // keep waiting
     }
     if (subID && r && !r[@"sub"]) subID = nil;   // downloaded manually once = manual (no retention)
     // subscription episodes belong to the subscription's show (ZDF/ARD often name the series differently)
@@ -273,7 +270,7 @@ static NSString *gb(unsigned long long b) {
     if (item.date) r[@"published"] = @([item.date timeIntervalSince1970]);
     if (subID) r[@"sub"] = subID; else [r removeObjectForKey:@"sub"];   // manual = never delete automatically
     if (!subID) r[@"tries"] = @0;
-    [r removeObjectForKey:@"error"];
+    [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"];
     _recs[item.identifier] = r;
     [self save:r];
     [self changed:item.identifier];

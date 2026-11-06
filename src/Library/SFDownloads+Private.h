@@ -48,8 +48,6 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     return base * (1 << MAX(0, MIN(tries, 10) - 1));
 }
 
-// Marks a finished file whose repair download failed and is to be retried (error column).
-static NSString *const kRepairPrefix = @"repair: ";
 
 @interface SFDownloads () {
     NSMutableDictionary *_recs;      // id -> NSMutableDictionary (columns of the downloads table)

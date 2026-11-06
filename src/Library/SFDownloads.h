@@ -16,9 +16,13 @@ typedef NS_ENUM(NSInteger, SFDLState) {
     SFDLQueued = 0,
     SFDLRunning = 1,
     SFDLDone = 2,
-    SFDLFailed = 3,
+    SFDLFailed = 3,        // gave up (manual download, or a subscription episode after kSubMaxTries)
     SFDLDismissed = 4,     // deleted by the user -> the subscription does not download it again
+    SFDLRetrying = 5,      // a subscription episode failed; Sofa tries again by itself at retryAt
 };
+// retryAt (record field / column): the earliest next attempt - of the download (Retrying, also a
+// manual Failed one a subscription finds later) or of the repair of a finished file (Done + retryAt
+// = a repair is pending, the old file stays playable). No retryAt = nothing pending.
 
 // Feeds (newest episodes of a show/channel, newest first) come from the owning app (SFApp feed:).
 typedef void (^SFFeedDone)(NSArray *items, NSError *e);

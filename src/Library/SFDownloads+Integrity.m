@@ -191,7 +191,7 @@ static double SFParseDuration(NSString *s) {
                 // Keep the old file until a verified replacement exists: the verifier could be wrong, and
                 // Mediathek items may have expired upstream (finish:ok:NO then keeps the old file).
                 SFLog(@"downloads: %@ is broken (%@) - downloading it again", ident, problem);
-                [rr removeObjectForKey:@"error"];
+                [rr removeObjectForKey:@"error"]; [rr removeObjectForKey:@"retryAt"];
                 rr[@"state"] = @(SFDLQueued); rr[@"progress"] = @0; rr[@"tries"] = @0;
                 [self save:rr]; [self changed:ident];
                 b++;

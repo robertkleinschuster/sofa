@@ -9,6 +9,7 @@
 #   9  subscriptions keep only their own fields (title/picture/source are the follow's); one
 #      without a follow becomes one
 #  10  the response cache moves to its own file (entries kept), settings of removed code deleted
+#  11  download states explicit: Retrying (5) and retryAt instead of failedAt + error prefix
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
@@ -45,13 +46,18 @@ Q <<SQL
 CREATE TABLE progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT);
 CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE jcache (k TEXT PRIMARY KEY, t REAL, v BLOB);
-CREATE TABLE downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0);
+CREATE TABLE downloads (id TEXT PRIMARY KEY, source TEXT, channel TEXT, item TEXT, path TEXT, thumb TEXT, state INTEGER, progress REAL, bytes INTEGER, added REAL, published REAL, sub TEXT, error TEXT, tries INTEGER DEFAULT 0, failedAt REAL);
 CREATE TABLE subscriptions (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, keepDays INTEGER, since REAL, added REAL, lastCheck REAL);
 CREATE TABLE follows (id TEXT PRIMARY KEY, source TEXT, title TEXT, image TEXT, added REAL);
 CREATE TABLE follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY KEY(follow, id));
 CREATE TABLE dev_progress (id TEXT);
 INSERT INTO progress VALUES ('example:1', 30, 60, 0, $NOW, 'example', '{"id":"example:1","kind":0,"title":"Eins","source":"example"}');
 INSERT INTO downloads (id, source, state) VALUES ('example:2', 'example', 2);
+-- step 11: a subscription episode waiting for its 3rd attempt, a finished file with a pending
+-- repair (1 failed attempt), a subscription episode that gave up (6 attempts)
+INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('example:5', 'example', 3, 'exampleshow:a', 2, $NOW, 'HTTP 403');
+INSERT INTO downloads (id, source, state, tries, failedAt, error) VALUES ('example:6', 'example', 2, 1, $NOW, 'repair: timeout');
+INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('example:7', 'example', 3, 'exampleshow:a', 6, $NOW, 'HTTP 404');
 INSERT INTO subscriptions VALUES ('exampleshow:a', 'example', 'Show A (stale copy)', NULL, 90, 5, $NOW, $NOW);
 -- a subscription whose follow is missing (the old in-code adoption never ran): step 9 makes the follow
 INSERT INTO subscriptions VALUES ('exampleshow:b', 'example', 'Show B', 'https://img.example/b.jpg', 30, 7, $NOW, $NOW);
@@ -71,14 +77,14 @@ ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 10
+check "schema version" "$(Q 'pragma user_version')" 11
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
 check "3: cache age index (in the cache file)" "$(QC "select count(*) from sqlite_master where name='jcache_t'")" 1
 check "3: expired cache entry trimmed" "$(QC "select count(*) from jcache where k like 'GET https://old%'")" 0
 check "4: dev settings deleted, others kept" "$(Q "select group_concat(k) from settings where k like '%lounge%' or k like 'dev.%'")" "lounge.token"
-check "1: downloads columns added" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('failedAt','keep','online','onlineAt')")" 4
+check "1: downloads columns added" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('keep','online','onlineAt')")" 3
 check "5: no feed left in the response cache" "$(QC "select count(*) from jcache where k like 'yt.feed.%'")" 0
 check "5: follow_items in written order" "$(Q "select group_concat(id, ' ') from (select id from follow_items order by follow, pos)")" "example:3 example:2 example:1"
 check "5: follow_items columns" "$(Q "select group_concat(name) from pragma_table_info('follow_items')")" "follow,id,pos,item"
@@ -95,7 +101,11 @@ check "9: old adoption marker gone" "$(Q "select count(*) from settings where k=
 check "10: no cache table in the user database" "$(Q "select count(*) from sqlite_master where name like 'jcache%'")" 0
 check "10: cache entry moved along" "$(QC "select CAST(v AS TEXT) from jcache where k='GET https://fresh.example/'")" '{"a":1}'
 check "10: settings of removed code gone, others kept" "$(Q "select group_concat(k) from (select k from settings where k in ('kodi.imported','yt.feeds.v2','welcome.shown') order by k)")" "welcome.shown"
-check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1122"
+check "11: retrying, next attempt after 2 failures (30 min)" "$(Q "select state || ' ' || (retryAt - $NOW) from downloads where id='example:5'")" "5 1800.0"
+check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "select state || ' ' || error || ' ' || (retryAt - $NOW) from downloads where id='example:6'")" "2 timeout 900.0"
+check "11: gave up: failed, nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "3 -"
+check "11: failedAt gone" "$(Q "select count(*) from pragma_table_info('downloads') where name='failedAt'")" 0
+check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1422"
 
 echo "==> restart (no step runs twice)"
 run
@@ -106,7 +116,7 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 10
+check "schema version" "$(Q 'pragma user_version')" 11
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
   "downloads follow_items follows progress recent_searches settings stats subscriptions watch_later"

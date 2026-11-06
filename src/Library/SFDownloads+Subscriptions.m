@@ -83,7 +83,11 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM subscriptions WHERE id=?", @[fid]]];
     // already downloaded episodes stay, but are no longer deleted automatically
     for (NSMutableDictionary *r in _recs.allValues)
-        if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) { [r removeObjectForKey:@"sub"]; [writes addObject:[self write:r]]; }
+        if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) {
+            [r removeObjectForKey:@"sub"];
+            if ([r[@"state"] integerValue] == SFDLRetrying) r[@"state"] = @(SFDLFailed);   // nobody retries it now
+            [writes addObject:[self write:r]];
+        }
     [self changed:fid];
     return writes;
 }

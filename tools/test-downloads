@@ -163,16 +163,28 @@ cmd dlretry
 for i in $(seq 1 60); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
 grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in 30 min" "$LOG" && ok "retried with a longer backoff" || bad "not retried: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
-st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||substr(error,1,7) from downloads where id='$BADREF';")
-[ "$st" = "2 2 repair:" ] && ok "marker persisted (state done, 2 tries)" || bad "unexpected record: $st"
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||(retryAt > strftime('%s','now')) from downloads where id='$BADREF';")
+[ "$st" = "2 2 1" ] && ok "repair pending persisted (state done, 2 tries, next attempt in the future)" || bad "unexpected record: $st"
 
 # without a manual trigger: the next retry is scheduled for exactly when it is due (it used to wait for
 # the next app start or the 3-hourly subscription check). Base delay 3 s instead of 15 min.
-/opt/local/bin/sqlite3 "$DEVDB" "update downloads set tries=1, failedAt=strftime('%s','now') where id='$BADREF';"
+/opt/local/bin/sqlite3 "$DEVDB" "update downloads set tries=1, retryAt=strftime('%s','now') + 3 where id='$BADREF';"
 SOFA_RETRY_BASE=3 start
 for i in $(seq 1 120); do grep -q "retrying the repair of $BADREF" "$LOG" && break; sleep 0.5; done
 grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && ok "retry ran on its own when due" || bad "no scheduled retry: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
+
+echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
+  insert into downloads (id,source,channel,item,state,progress,added,sub) values
+    ('example:8','example','Dev','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}',0,0,strftime('%s','now'),'exampleshow:demo'),
+    ('example:9','example','Dev','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}',0,0,strftime('%s','now'),NULL);"
+start
+for i in $(seq 1 80); do [ "$(grep -c 'downloads: FAILED example:[89]' "$LOG")" -ge 2 ] && break; sleep 0.5; done
+quit
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||(retryAt > strftime('%s','now')), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
+[ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
 
 echo "==> 5. YouTube download during a bot-check pause"
 start
