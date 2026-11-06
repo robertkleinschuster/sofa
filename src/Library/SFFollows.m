@@ -44,7 +44,7 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
         for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
-        for (NSDictionary *r in [st rows:@"SELECT follow, item FROM follow_items ORDER BY follow, pos" args:nil]) {
+        for (NSDictionary *r in [st rows:@"SELECT f.follow, i.json AS item FROM follow_items f JOIN items i ON i.id = f.id ORDER BY f.follow, f.pos" args:nil]) {
             NSDictionary *d = SFJSONParse(r[@"item"]);
             if (![d isKindOfClass:[NSDictionary class]]) continue;
             NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
@@ -207,10 +207,15 @@ static BOOL usable(NSString *img) {
 
 // A follow's items without what changes on every refresh (view counts): "nothing new" must not
 // mean a rewrite. Stored counts update with the next real change; memory always has fresh ones.
-static NSArray *stable(NSArray *dicts) {
-    NSMutableArray *a = [NSMutableArray new];
-    for (NSDictionary *d in dicts) { NSMutableDictionary *m = [d mutableCopy]; [m removeObjectForKey:@"views"]; [a addObject:m]; }
-    return a;
+// Whether a fresh list (same items, same order) brings new values (a renamed episode, a new
+// picture). Only its own fields count: the stored items can hold more than a list gives (a
+// description from the details page, an exact date from a download) - that is no change. View
+// counts change all the time and are no change either.
+static BOOL bringsValues(NSArray *fresh, NSArray *stored) {
+    for (NSUInteger n = 0; n < fresh.count; n++)
+        for (NSString *k in fresh[n])
+            if (![k isEqualToString:@"views"] && ![stored[n][k] isEqual:fresh[n][k]]) return YES;
+    return NO;
 }
 
 static BOOL hasCounts(NSArray *dicts) {
@@ -238,22 +243,27 @@ static BOOL hasCounts(NSArray *dicts) {
                 }
                 NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
                 NSArray *before = [self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"];
-                BOOL same = [stable(dicts) isEqualToArray:stable(before)];
+                BOOL news = ![[dicts valueForKey:@"id"] isEqualToArray:[before valueForKey:@"id"]];   // new episodes/videos
+                BOOL updated = !news && bringsValues(dicts, before);
                 // counts first known (stored before the source had them): written once, so they
                 // survive a restart; later count changes alone are not a change
                 BOOL gainedCounts = !hasCounts(before) && hasCounts(dicts);
                 self->_items[f[@"id"]] = keep;
-                if (same && !gainedCounts) { finish(); return; }   // most refreshes: nothing new, nothing to write
+                if (!news && !updated && !gainedCounts) { finish(); return; }   // most refreshes: nothing new, nothing to write
                 NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
                 [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
-                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos,item) VALUES (?,?,?,?)",
-                                        @[f[@"id"], c.identifier, @(n), SFJSONString(dicts[n]) ?: @"{}"]]];
+                    NSArray *iw = [[SFStore shared] itemWrite:c];
+                    if (!iw) return;
+                    [writes addObject:iw];
+                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos) VALUES (?,?,?)", @[f[@"id"], c.identifier, @(n)]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
-                if (same) { finish(); return; }   // only the counts were stored
-                SFLog(@"follows: %@ has news", f[@"title"]);
+                if (!news && !updated) { finish(); return; }   // only the counts were stored
                 [self changed];
-                [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f[@"id"]];
+                if (news) {
+                    SFLog(@"follows: %@ has news", f[@"title"]);
+                    [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f[@"id"]];
+                } else SFLog(@"follows: %@ updated", f[@"title"]);
             }
             finish();
         });

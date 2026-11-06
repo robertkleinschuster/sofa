@@ -6,8 +6,8 @@
 #pragma mark Schema
 // The whole schema, in one place and versioned (PRAGMA user_version): each step runs once, in
 // order, inside one transaction with its version bump. Never change a step that has shipped - add one.
-// Tables hold Sofa's own data; items are stored as their JSON (SFItem dictionaryRepresentation)
-// and loaded into memory at launch, so besides the primary keys only the queries that page or
+// Tables hold Sofa's own data; an item's metadata is stored once, as its JSON (SFItem
+// dictionaryRepresentation) in items, which the others reference by id; loaded into memory at launch, so besides the primary keys only the queries that page or
 // sort on disk need an index (progress by updated; the response cache, in its own file, by age).
 
 - (NSArray *)migrations {
@@ -106,6 +106,26 @@
             [self exec:@"UPDATE downloads SET state = 5 WHERE state = 3 AND sub IS NOT NULL AND tries < 6"];
             [self exec:@"UPDATE downloads SET error = substr(error, 9) WHERE state = 2 AND error LIKE 'repair: %'"];
             [self exec:@"ALTER TABLE downloads DROP COLUMN failedAt"];
+        },
+        // 12: an item's metadata once (items) instead of a copy in every table that knows it - the
+        // copies disagreed (2026-11-06: 47 titles, 24 pictures of 293 items kept twice). Merged
+        // oldest snapshot first, so the newest value of each field wins and no field gets lost;
+        // a download's local file and thumbnail stay with the download.
+        ^{
+            [self exec:@"CREATE TABLE items (id TEXT PRIMARY KEY, json TEXT NOT NULL)"];
+            [self exec:@"INSERT INTO items (id, json) "
+                        "SELECT id, json_remove(item, '$.localPath', "
+                        "  CASE WHEN json_extract(item, '$.url') LIKE 'file:%' OR json_extract(item, '$.url') LIKE '/%' THEN '$.url' ELSE '$.localPath' END, "
+                        "  CASE WHEN json_extract(item, '$.image') LIKE '/%' THEN '$.image' ELSE '$.localPath' END, "
+                        "  CASE WHEN json_extract(item, '$.backdrop') LIKE '/%' THEN '$.backdrop' ELSE '$.localPath' END) "
+                        "FROM (SELECT f.id, f.item, coalesce(s.checked, s.added, 0) AS t FROM follow_items f LEFT JOIN follows s ON s.id = f.follow "
+                        "      UNION ALL SELECT id, item, coalesce(added, 0) FROM downloads "
+                        "      UNION ALL SELECT id, item, coalesce(added, 0) FROM watch_later "
+                        "      UNION ALL SELECT id, item, coalesce(updated, 0) FROM progress) "
+                        "WHERE json_valid(item) AND json_type(item) = 'object' ORDER BY t "
+                        "ON CONFLICT(id) DO UPDATE SET json = json_patch(json, excluded.json)"];
+            for (NSString *t in @[@"progress", @"downloads", @"watch_later", @"follow_items"])
+                [self exec:[NSString stringWithFormat:@"ALTER TABLE %@ DROP COLUMN item", t]];
         },
     ];
 }

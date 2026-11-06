@@ -24,6 +24,12 @@
 // several writes as one transaction (asynchronous): @[@[sql, args], ...] - all or nothing visible
 - (void)runAll:(NSArray *)statements;
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args;          // synchronous, array of dictionaries
+// Items: one row of metadata per item (title, picture, date, ...), shared by progress, downloads,
+// Watch Later and follows - they keep only their own facts and reference it by id. A write merges
+// field by field (newer values win, fields this snapshot lacks stay); where an item lies on this
+// disk (a download's file or thumbnail) belongs to that download and is left out.
+- (NSArray *)itemWrite:(SFItem *)item;    // the statement, for runAll: (nil without id)
+- (NSString *)saveItem:(SFItem *)item;    // asynchronous; returns the JSON written
 // Re-key progress/history to a new ID (migration local:… -> yt:…); only if the target is free
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // migration: replace id + item
 @end

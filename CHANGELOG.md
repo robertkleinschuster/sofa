@@ -10,6 +10,9 @@ Einstellungen → „Update installieren“.
   Playlist an Sofa, lädt Sofa die Infos jetzt nur für das laufende und das nächste Video – vorher
   für die ganze Liste auf einmal (bei 100 Videos 100 Abrufe in einer Minute), was YouTube als
   Bot-Verhalten werten kann.
+- **Titel und Bilder überall gleich.** Ein Video ist jetzt nur noch einmal gespeichert. Ändert ein
+  Kanal einen Titel, zeigen Verlauf, Downloads und „Später ansehen“ ihn ab dem nächsten Start auch – vorher
+  behielt jede Liste ihren alten Stand.
 
 ## 0.3.10
 

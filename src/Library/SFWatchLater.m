@@ -17,7 +17,7 @@
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
         _entries = [NSMutableArray new];
-        for (NSDictionary *r in [st rows:@"SELECT * FROM watch_later ORDER BY added DESC" args:nil]) {
+        for (NSDictionary *r in [st rows:@"SELECT w.source, w.added, i.json AS item FROM watch_later w JOIN items i ON i.id = w.id ORDER BY added DESC" args:nil]) {
             NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
             SFItem *it = [d isKindOfClass:[NSDictionary class]] ? [SFItem itemWithDictionary:d] : nil;
             if (!it.identifier.length) continue;
@@ -41,10 +41,10 @@
     if (!item.identifier.length || [self contains:item.identifier]) return NO;
     SFItem *c = [item copy];
     c.style = SFTileStyleLandscape;   // uniform in the shelf, wherever it was saved from
-    NSString *js = SFJSONString([c dictionaryRepresentation]);
-    if (!js) return NO;
+    NSArray *iw = [[SFStore shared] itemWrite:c];
+    if (!iw) return NO;
     NSString *src = c.source ?: @"";
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO watch_later (id, source, item, added) VALUES (?, ?, ?, ?)" args:@[c.identifier, src, js, @(added)]];
+    [[SFStore shared] runAll:@[iw, @[@"INSERT OR REPLACE INTO watch_later (id, source, added) VALUES (?, ?, ?)", @[c.identifier, src, @(added)]]]];
     NSDictionary *e = @{@"id": c.identifier, @"source": src, @"item": c, @"added": @(added)};
     NSUInteger at = 0;
     while (at < _entries.count && [_entries[at][@"added"] doubleValue] > added) at++;

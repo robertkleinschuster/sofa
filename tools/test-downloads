@@ -169,7 +169,8 @@ echo "==> 4. a failed repair keeps the file and is retried"
 # nothing else in the dev queue may run first (dev database only)
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
 mkdir -p "$ROOT/dev/Dev"; cp "$T/good.mp4" "$ROOT/dev/Dev/repair.mp4"
-/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('$BADREF','dev','Dev','{\"id\":\"$BADREF\",\"kind\":0,\"title\":\"Repair\",\"ref\":\"$BADREF\",\"source\":\"dev\"}','$ROOT/dev/Dev/repair.mp4',0,0,strftime('%s','now'));"
+/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('$BADREF','{\"id\":\"$BADREF\",\"kind\":0,\"title\":\"Repair\",\"ref\":\"$BADREF\",\"source\":\"dev\"}');
+  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('$BADREF','dev','Dev','$ROOT/dev/Dev/repair.mp4',0,0,strftime('%s','now'));"
 start
 for i in $(seq 1 60); do grep -q "repair of $BADREF failed" "$LOG" && break; sleep 0.5; done
 grep -q "repair of $BADREF failed.*retry in 15 min" "$LOG" && ok "failed repair scheduled for a retry" || bad "no retry scheduled: $(grep "$BADREF" "$LOG" | tail -2)"
@@ -192,9 +193,12 @@ quit
 
 echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
-  insert into downloads (id,source,channel,item,state,progress,added,sub) values
-    ('example:8','example','Dev','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}',0,0,strftime('%s','now'),'exampleshow:demo'),
-    ('example:9','example','Dev','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}',0,0,strftime('%s','now'),NULL);"
+  insert or replace into items (id,json) values
+    ('example:8','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}'),
+    ('example:9','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}');
+  insert into downloads (id,source,channel,state,progress,added,sub) values
+    ('example:8','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
+    ('example:9','example','Dev',0,0,strftime('%s','now'),NULL);"
 start
 for i in $(seq 1 80); do [ "$(grep -c 'downloads: FAILED example:[89]' "$LOG")" -ge 2 ] && break; sleep 0.5; done
 quit
@@ -254,8 +258,9 @@ for v in online gone kept; do cp "$T/good.mp4" "$ROOT/dev/Room/$v.mp4"; done
 now=$(date +%s)
 for v in online:1:0 gone:0:0 kept:1:1; do
   IFS=: read name on keep <<< "$v"
-  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,bytes,added,keep,online,onlineAt) values ('room:$name','dev','Room','{\"id\":\"room:$name\",\"kind\":0,\"title\":\"Room $name\",\"ref\":\"room:$name\",\"source\":\"dev\",\"channel\":\"Room\"}','$ROOT/dev/Room/$name.mp4',2,1,$(stat -f %z "$T/good.mp4"),$now,$keep,$on,$now);"
-  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into progress (id,pos,dur,watched,updated,source,item) values ('room:$name',60,60,1,$now,'dev','{}');"
+  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('room:$name','{\"id\":\"room:$name\",\"kind\":0,\"title\":\"Room $name\",\"ref\":\"room:$name\",\"source\":\"dev\",\"channel\":\"Room\"}');
+    insert or replace into downloads (id,source,channel,path,state,progress,bytes,added,keep,online,onlineAt) values ('room:$name','dev','Room','$ROOT/dev/Room/$name.mp4',2,1,$(stat -f %z "$T/good.mp4"),$now,$keep,$on,$now);"
+  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into progress (id,pos,dur,watched,updated,source) values ('room:$name',60,60,1,$now,'dev');"
 done
 start
 cmd "open room"; sleep 2

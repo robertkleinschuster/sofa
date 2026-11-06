@@ -78,8 +78,9 @@ static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
     }
 }
 
-- (void)trimCache {   // on _q
+- (void)trimCache {   // on _q - with the other housekeeping
     [self trimCacheNow];
+    [self pruneItemsNow];
     [self exec:@"PRAGMA main.incremental_vacuum"];
     [self exec:@"PRAGMA cache.incremental_vacuum"];
     [self exec:@"PRAGMA wal_checkpoint(TRUNCATE)"];   // every attached database
@@ -133,29 +134,14 @@ static void bindText(sqlite3_stmt *st, int idx, NSString *s) {
     @synchronized (_progressCache) { return [_progressCache[i][2] boolValue]; }
 }
 
-- (NSString *)json:(SFItem *)item {
-    return SFJSONString([item dictionaryRepresentation]);
-}
-
 - (void)write:(SFItem *)item pos:(double)pos dur:(double)dur watched:(BOOL)w {
     if (!item.identifier) return;
     @synchronized (_progressCache) { _progressCache[item.identifier] = @[@(pos), @(dur), @(w)]; }
-    NSString *js = [self json:item];
-    NSString *ident = item.identifier, *src = item.source;
-    double now = [NSDate date].timeIntervalSince1970;
+    NSArray *iw = [self itemWrite:item];
+    NSArray *args = @[item.identifier, @(pos), @(dur), @(w), @([NSDate date].timeIntervalSince1970), item.source ?: [NSNull null]];
     dispatch_async(_q, ^{
-        sqlite3_stmt *st;
-        const char *sql = @"INSERT OR REPLACE INTO progress (id,pos,dur,watched,updated,source,item) VALUES (?,?,?,?,?,?,?)".UTF8String;
-        if (sqlite3_prepare_v2(self->_db, sql, -1, &st, NULL) != SQLITE_OK) return;
-        bindText(st, 1, ident);
-        sqlite3_bind_double(st, 2, pos);
-        sqlite3_bind_double(st, 3, dur);
-        sqlite3_bind_int(st, 4, w);
-        sqlite3_bind_double(st, 5, now);
-        bindText(st, 6, src);
-        bindText(st, 7, js);
-        sqlite3_step(st);
-        sqlite3_finalize(st);
+        if (iw) [self runNow:iw[0] args:iw[1]];
+        [self runNow:@"INSERT OR REPLACE INTO progress (id,pos,dur,watched,updated,source) VALUES (?,?,?,?,?,?)" args:args];
     });
 }
 
@@ -187,7 +173,7 @@ static SFItem *playableItem(id json) {
 
 // rows read on the queue, decoded here (JSON, file checks) - not while holding the database
 - (NSArray *)query:(NSString *)where limit:(NSInteger)limit source:(NSString *)source {
-    NSString *sql = [NSString stringWithFormat:@"SELECT item FROM progress WHERE %@ %@ ORDER BY updated DESC LIMIT %ld",
+    NSString *sql = [NSString stringWithFormat:@"SELECT i.json AS item FROM progress p JOIN items i ON i.id = p.id WHERE %@ %@ ORDER BY updated DESC LIMIT %ld",
                      where, source ? @"AND source=?" : @"", (long)limit];
     NSMutableArray *out = [NSMutableArray new];
     for (NSDictionary *r in [self rows:sql args:source ? @[source] : nil]) { SFItem *i = playableItem(r[@"item"]); if (i) [out addObject:i]; }
@@ -207,7 +193,7 @@ static SFItem *playableItem(id json) {
 // History: recently played content with timestamp (@{item, updated, watched, pos})
 - (NSArray *)history:(NSInteger)limit {
     NSMutableArray *out = [NSMutableArray new];
-    NSString *sql = [NSString stringWithFormat:@"SELECT item,updated,watched,pos FROM progress ORDER BY updated DESC LIMIT %ld", (long)limit];
+    NSString *sql = [NSString stringWithFormat:@"SELECT i.json AS item,updated,watched,pos FROM progress p JOIN items i ON i.id = p.id ORDER BY updated DESC LIMIT %ld", (long)limit];
     for (NSDictionary *r in [self rows:sql args:nil]) {
         SFItem *i = playableItem(r[@"item"]);
         if (i) [out addObject:@{@"item": i, @"updated": r[@"updated"] ?: @0, @"watched": r[@"watched"] ?: @0, @"pos": r[@"pos"] ?: @0}];
@@ -352,6 +338,35 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
 }
 
 // Migration: put progress under a new identity (incl. the stored item, "updated" stays)
+#pragma mark Items
+
+// What the items table keeps of an item: its metadata as the source gives it
+static NSString *sharedJSON(SFItem *item) {
+    NSMutableDictionary *d = [[item dictionaryRepresentation] mutableCopy];
+    [d removeObjectForKey:@"localPath"];
+    for (NSString *k in @[@"url", @"image", @"backdrop"])
+        if ([d[k] hasPrefix:@"/"] || [d[k] hasPrefix:@"file:"]) [d removeObjectForKey:k];
+    return SFJSONString(d);
+}
+
+- (NSArray *)itemWrite:(SFItem *)item {
+    NSString *js = item.identifier ? sharedJSON(item) : nil;
+    if (!js) return nil;
+    return @[@"INSERT INTO items (id, json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET json = json_patch(json, excluded.json)", @[item.identifier, js]];
+}
+
+- (NSString *)saveItem:(SFItem *)item {
+    NSArray *w = [self itemWrite:item];
+    if (w) [self run:w[0] args:w[1]];
+    return w[1][1];
+}
+
+// items nothing references any more (left a follow's list, removed from the history, ...)
+- (void)pruneItemsNow {
+    [self runNow:@"DELETE FROM items WHERE id NOT IN (SELECT id FROM progress UNION ALL SELECT id FROM downloads "
+                  "UNION ALL SELECT id FROM watch_later UNION ALL SELECT id FROM follow_items)" args:nil];
+}
+
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item {
     NSString *to = item.identifier;
     if (!from || !to || [from isEqualToString:to]) return NO;
@@ -361,9 +376,12 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
         _progressCache[to] = a;
         [_progressCache removeObjectForKey:from];
     }
-    NSString *js = [self json:item];
+    NSArray *iw = [self itemWrite:item];
     NSString *src = item.source ?: @"";
-    dispatch_async(_q, ^{ [self runNow:@"UPDATE OR IGNORE progress SET id=?, item=?, source=? WHERE id=?" args:@[to, js ?: @"{}", src, from]]; });
+    dispatch_async(_q, ^{
+        if (iw) [self runNow:iw[0] args:iw[1]];
+        [self runNow:@"UPDATE OR IGNORE progress SET id=?, source=? WHERE id=?" args:@[to, src, from]];
+    });
     return YES;
 }
 @end

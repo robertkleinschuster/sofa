@@ -57,7 +57,7 @@
             if (published) {   // exact time from the source replaces a list's approximation ("vor 2 Wochen")
                 item.date = published;
                 r[@"published"] = @([published timeIntervalSince1970]);
-                r[@"item"] = [self itemJSON:item];
+                [self setItem:item ofRec:r];
                 [self save:r];
             }
             [self runFFmpeg:ff url:url audio:audio rec:r item:item];

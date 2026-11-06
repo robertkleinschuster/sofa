@@ -79,7 +79,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 - (void)retryDueRepairs;
 - (void)expireRepairBackoffForTesting;   // dev command dlretry
 - (SFItem *)itemFromRec:(NSDictionary *)r;
-- (NSString *)itemJSON:(SFItem *)item;
+- (void)setItem:(SFItem *)item ofRec:(NSMutableDictionary *)r;   // item JSON in the record + the items table
 + (NSString *)ffmpegToolPath;
 + (NSString *)root;
 @end

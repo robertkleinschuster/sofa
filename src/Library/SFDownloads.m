@@ -35,7 +35,7 @@ static NSString *ffmpegPath(void) {
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];
-        for (NSDictionary *r in [st rows:@"SELECT * FROM downloads" args:nil]) _recs[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *r in [st rows:@"SELECT d.*, i.json AS item FROM downloads d LEFT JOIN items i ON i.id = d.id" args:nil]) _recs[r[@"id"]] = [r mutableCopy];
         for (NSDictionary *r in [st rows:@"SELECT * FROM subscriptions" args:nil]) _subs[r[@"id"]] = [r mutableCopy];
         // re-queue runs interrupted last time
         for (NSMutableDictionary *r in _recs.allValues)
@@ -58,8 +58,8 @@ static NSString *ffmpegPath(void) {
 - (NSArray *)write:(NSDictionary *)r {
     [_itemCache removeObjectForKey:r[@"id"]];
     _generation++;
-    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,item,path,thumb,state,progress,bytes,added,published,sub,error,tries,retryAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-             @[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null], r[@"item"] ?: [NSNull null],
+    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,path,thumb,state,progress,bytes,added,published,sub,error,tries,retryAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+             @[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null],
                r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
                r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
                r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"retryAt"] ?: [NSNull null],
@@ -116,10 +116,10 @@ static NSString *ffmpegPath(void) {
     SFMain(^{ [[NSNotificationCenter defaultCenter] postNotificationName:SFDownloadsDidChangeNotification object:identifier]; });
 }
 
-- (NSString *)itemJSON:(SFItem *)item {
-    NSMutableDictionary *d = [[item dictionaryRepresentation] mutableCopy];
-    [d removeObjectForKey:@"localPath"];
-    return SFJSONString(d);
+// The record's item: its metadata goes to the shared items table, the record keeps the JSON for
+// parseRec (until the next launch reads it back from there)
+- (void)setItem:(SFItem *)item ofRec:(NSMutableDictionary *)r {
+    r[@"item"] = [[SFStore shared] saveItem:item];
 }
 
 #pragma mark Queries
@@ -156,7 +156,10 @@ static NSString *ffmpegPath(void) {
         i.playURL = [NSURL fileURLWithPath:r[@"path"]];
     }
     if (r[@"thumb"] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"thumb"]]) { i.image = r[@"thumb"]; i.backdrop = i.backdrop ?: r[@"thumb"]; }
-    if (!i.date && [r[@"published"] doubleValue] > 0) i.date = [NSDate dateWithTimeIntervalSince1970:[r[@"published"] doubleValue]];
+    // the download's own facts: its show's name, the publication time it learned (exact when the
+    // source gave one - a list's "vor 2 Wochen" written to the item later must not replace it)
+    if ([r[@"channel"] length]) i.channel = r[@"channel"];
+    if ([r[@"published"] doubleValue] > 0) i.date = [NSDate dateWithTimeIntervalSince1970:[r[@"published"] doubleValue]];
     i.style = SFTileStyleLandscape;
     i.inDownloadsList = YES;
     return i;
@@ -257,13 +260,13 @@ static NSString *gb(unsigned long long b) {
     }
     if (subID && r && !r[@"sub"]) subID = nil;   // downloaded manually once = manual (no retention)
     // subscription episodes belong to the subscription's show (ZDF/ARD often name the series differently)
+    // (the download's channel - the item itself keeps its source's)
     NSString *subTitle = subID ? [[SFFollows shared] recordOf:subID][@"title"] : nil;
-    if (subTitle.length) { item = [item copy]; item.channel = subTitle; }
     r = r ?: [NSMutableDictionary new];
     r[@"id"] = item.identifier;
     r[@"source"] = item.source ?: @"";
-    r[@"channel"] = item.channel ?: @"";
-    r[@"item"] = [self itemJSON:item];
+    r[@"channel"] = subTitle.length ? subTitle : item.channel ?: @"";
+    [self setItem:item ofRec:r];
     r[@"state"] = @(SFDLQueued);
     r[@"progress"] = @0;
     r[@"added"] = @([[NSDate date] timeIntervalSince1970]);
@@ -367,7 +370,7 @@ static NSString *gb(unsigned long long b) {
     NSMutableDictionary *r = [@{@"id": item.identifier, @"source": item.source ?: @"", @"channel": item.channel ?: @"",
                                 @"state": @(SFDLDone), @"progress": @1.0,
                                 @"added": @([[NSDate date] timeIntervalSince1970])} mutableCopy];
-    r[@"item"] = [self itemJSON:item];
+    [self setItem:item ofRec:r];
     if (item.date) r[@"published"] = @([item.date timeIntervalSince1970]);
     if (subID) r[@"sub"] = subID;
     NSString *target = [self targetPathFor:r item:item];

@@ -31,6 +31,7 @@ export SOFA_DATA_DIR="$T/data"   # fresh state per run: no region findings or ro
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
 
 make -C "$SRC" >/dev/null || exit 1
 APP=
@@ -92,7 +93,8 @@ grep -q "home features: live" "$LOG" && bad "refreshed although offline" || ok "
 echo "==> 4. follow picture gone"
 quit
 /opt/local/bin/sqlite3 "$SOFA_DATA_DIR/sofa.db" "INSERT INTO follows (id, source, title, image, added) VALUES ('exampleshow:demo', 'example', 'Beispielsendung', '$T/gone/poster.jpg', 0);
-  INSERT INTO follow_items (follow, id, pos, item) VALUES ('exampleshow:demo', 'example:1', 0, '{\"id\":\"example:1\",\"kind\":0,\"title\":\"Eins\",\"image\":\"https://example.invalid/1.jpg\"}')"
+  INSERT INTO items (id, json) VALUES ('example:1', '{\"id\":\"example:1\",\"kind\":0,\"title\":\"Eins\",\"image\":\"https://example.invalid/1.jpg\"}');
+  INSERT INTO follow_items (follow, id, pos) VALUES ('exampleshow:demo', 'example:1', 0)"
 start SOFA_OFFLINE=1
 cmd follows; waitlog "dev: follows end"
 F=$(grep "dev: follows exampleshow:demo" "$LOG" | tail -1)
@@ -111,11 +113,25 @@ grep -q "example: feed exampleshow:demo" "$LOG" && ok "checked after the pause" 
 # the same list stored without counts (as before the source had them): only the counts are new
 quit
 DB="$SOFA_DATA_DIR/sofa.db"
-/opt/local/bin/sqlite3 "$DB" "UPDATE follow_items SET item=json_remove(item,'$.views') WHERE follow='exampleshow:demo'; UPDATE follows SET checked=NULL WHERE id='exampleshow:demo'"
+/opt/local/bin/sqlite3 "$DB" "UPDATE items SET json=json_remove(json,'$.views') WHERE id IN (SELECT id FROM follow_items WHERE follow='exampleshow:demo'); UPDATE follows SET checked=NULL WHERE id='exampleshow:demo'"
 start SOFA_FOLLOW_GAP=0.5
 for i in $(seq 1 60); do grep -q "example: feed exampleshow:demo" "$LOG" && break; sleep 0.1; done; sleep 0.5
-/opt/local/bin/sqlite3 "$DB" "SELECT item FROM follow_items WHERE follow='exampleshow:demo'" | grep -q '"views"' && ok "view counts stored once known" || bad "view counts not stored"
+/opt/local/bin/sqlite3 "$DB" "SELECT i.json FROM follow_items f JOIN items i ON i.id = f.id WHERE f.follow='exampleshow:demo'" | grep -q '"views"' && ok "view counts stored once known" || bad "view counts not stored"
 grep -q "follows: Beispielsendung has news" "$LOG" && bad "counts alone announced as news" || ok "counts alone are no news"
+# the stored items know more than the list (a field the list does not give) and one has an
+# outdated title: the title is written, the extra field stays, neither is news
+quit
+/opt/local/bin/sqlite3 "$DB" "UPDATE items SET json=json_set(json,'$.geo','AT') WHERE id IN (SELECT id FROM follow_items WHERE follow='exampleshow:demo');
+  UPDATE items SET json=json_set(json,'$.title','Alter Titel') WHERE id IN (SELECT id FROM follow_items WHERE follow='exampleshow:demo' AND pos=0);
+  UPDATE follows SET checked=NULL WHERE id='exampleshow:demo'"
+start SOFA_FOLLOW_GAP=0.5
+for i in $(seq 1 60); do grep -q "follows: Beispielsendung updated" "$LOG" && break; sleep 0.1; done
+grep -q "follows: Beispielsendung updated" "$LOG" && ok "renamed episode written" || bad "rename not written: $(grep 'follows:' "$LOG" | tail -2)"
+grep -q "follows: Beispielsendung has news" "$LOG" && bad "a rename or a stored description announced as news" || ok "no news"
+sleep 0.3
+check "description kept, title from the list" \
+  "$(/opt/local/bin/sqlite3 "$DB" "SELECT json_extract(i.json,'$.geo') || '|' || (json_extract(i.json,'$.title') != 'Alter Titel') FROM follow_items f JOIN items i ON i.id = f.id WHERE f.follow='exampleshow:demo' AND f.pos=0")" \
+  "AT|1"
 
 echo "==> 6. Home refresh only while the screen is awake"
 quit

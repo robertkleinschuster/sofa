@@ -136,7 +136,8 @@ shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.p
 stop
 
 echo "==> 5. download -> online stream at the same position (via the info panel)"
-sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('$ORF','orf','ORF','{\"id\":\"$ORF\",\"kind\":0,\"title\":\"Playtest\",\"ref\":\"$ORF\",\"source\":\"orf\"}','$T/local.mp4',2,1,strftime('%s','now'));"
+sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('$ORF','{\"id\":\"$ORF\",\"kind\":0,\"title\":\"Playtest\",\"ref\":\"$ORF\",\"source\":\"orf\"}');
+  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('$ORF','orf','ORF','$T/local.mp4',2,1,strftime('%s','now'));"
 start
 m=$(mark); cmd "play $ORF"; waitlog $m 'player: play local.mp4'
 grep -q 'player: play local.mp4' "$LOG" && ok "download preferred when present" || bad "download not used"
@@ -196,7 +197,8 @@ echo "==> 8. YouTube end screen (fake data, offline)"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i smptehdbars=size=640x360 -frames:v 1 "$T/es2.png"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "cellauto=size=300x300:rule=110" -frames:v 1 "$T/esav.png"
 cp "$T/local.mp4" "$T/endvid.mp4"
-sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}','$T/endvid.mp4',2,1,strftime('%s','now'));"
+sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('yt:esTestVid01','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}');
+  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','$T/endvid.mp4',2,1,strftime('%s','now'));"
 ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es1.png"},'\
 '{"kind":"video","ref":"yt:esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es2.png"},'\
 '{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":2500,"endMs":0,"image":"'$T'/esav.png"}]'

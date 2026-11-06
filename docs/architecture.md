@@ -151,9 +151,16 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
 - Tables: `progress` (positions, history), `settings`,
   `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
   picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
-  (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`. Items are
-  stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
-  indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
+  (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`.
+- `items`: an item's metadata **once** - its JSON (`SFItem dictionaryRepresentation`), referenced by
+  id from `progress`, `downloads`, `watch_later` and `follow_items`, which keep only their own facts
+  (position, file, state, list position, when added). Written through `-[SFStore itemWrite:]` /
+  `saveItem:` only: merged field by field (`json_patch` - newer values win, fields a snapshot lacks
+  stay), local paths (a download's file and thumbnail) left out - they are the download's. A
+  download's show name (`channel`) and publication time (`published`) are its own columns and win
+  over the item's. Rows nothing references go with the daily housekeeping.
+- Loaded into memory at launch; indexes exist only where a query pages or sorts on disk
+  (`progress(updated)`, `jcache(t)`).
 - The response cache (`jcache`: SFNet's raw answers, apps' derived data) is not user data: its own
   file `cache.db` in the caches folder (`SFCacheDir`), attached to the same connection as schema
   `cache` (`-[SFStore attachCache]`). Losing it costs requests, nothing else.
@@ -162,7 +169,8 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
 - `settings` holds preferences and small state only (`setSetting:nil` removes a key). Raw
   answers go to `jcache` (trimmed); data a module derives and must keep goes to its own table.
 - Several writes that belong together go through `runAll:` (one transaction); write only what
-  changed (follows compare the new list with the loaded one).
+  changed (follows compare the new list with the loaded one: new items are news, new field values
+  are written quietly; fields the stored item has beyond the list are no change).
 
 ## Dev instances
 
