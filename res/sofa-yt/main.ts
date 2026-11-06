@@ -124,7 +124,8 @@ const startPump: AppStartPump = (info, formats, opts) => {
       launch(token);
     });
   }
-  return { abort() { aborted = true; handle?.abort(); } };
+  // diag: what SABR's server last said (stall reports); the wrapper must pass it on
+  return { abort() { aborted = true; handle?.abort(); }, diag: () => handle?.diag?.() ?? '[waiting for the PO token]' };
 };
 
 // pacing window (seconds of media buffered ahead of the reader): resume below low, pause above high
