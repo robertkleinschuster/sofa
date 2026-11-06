@@ -14,14 +14,14 @@ export interface Entry {
   end: number;
   startMs: number;
   endMs: number;
-  buf: Buffer;
+  buf: Uint8Array;
   init: boolean;
 }
 
 /** A segment as a SABR pump delivers it. */
 export interface Segment {
   start: number;
-  buf: Buffer;
+  buf: Uint8Array;
   startMs?: number;
   durationMs?: number;
   init?: boolean;
@@ -156,7 +156,7 @@ export class VirtualFile {
   }
 
   /** Copy-free view of [s, e) restricted to the entry that contains s. */
-  sliceAt(s: number, e: number): Buffer | null {
+  sliceAt(s: number, e: number): Uint8Array | null {
     const en = this.entryAt(s);
     if (!en) return null;
     return en.buf.subarray(s - en.start, Math.min(e, en.end) - en.start);

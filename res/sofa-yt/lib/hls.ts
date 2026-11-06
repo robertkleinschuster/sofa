@@ -15,7 +15,7 @@
 // rejects it, and the session fails after MAX_FAILURES consecutive failed fetches (Sofa then
 // reopens it; one that fails again right away ends in a message). #EXT-X-ENDLIST from upstream = the broadcast ended
 // (`ended` in /status: a real end, not an error).
-import crypto from 'node:crypto';
+import { randomHex } from './bytes.ts';
 import { errorMessage } from './errors.ts';
 import { log, debug } from './log.ts';
 import type { SubtitleTrack } from './formats.ts';
@@ -218,7 +218,7 @@ export class LiveSession {
 
   constructor({ info, maxHeight, refresh, fetchFn = fetch, headers = () => ({}), subs = [], cfg = {} }: LiveSessionOptions) {
     this.kind = 'hls';
-    this.sid = crypto.randomBytes(8).toString('hex');
+    this.sid = randomHex(8);
     this.info = info;
     this.maxHeight = maxHeight;
     this.lang = null;

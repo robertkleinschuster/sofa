@@ -2,6 +2,7 @@
 // The SABR init segment of a track covers [0, indexRange.end] of the original file, i.e. it contains
 // the WebM Cues (webm) or the sidx box (mp4). Each returns a sorted array of {off, ms} entries,
 // one per cluster / subsegment, where `off` is the absolute byte offset in the file.
+import { latin1 } from './bytes.ts';
 
 /** One index entry: media time `ms` starts at absolute byte offset `off`. */
 export interface IndexEntry {
@@ -27,7 +28,7 @@ interface EbmlElement {
 }
 
 /** Read an EBML variable-length integer (element ID keeps its marker bit, size strips it). */
-function readVint(buf: Buffer, pos: number, keepMarker: boolean): Vint | null {
+function readVint(buf: Uint8Array, pos: number, keepMarker: boolean): Vint | null {
   if (pos >= buf.length) return null;
   const first = buf[pos]!;
   let len = 1;
@@ -43,7 +44,7 @@ function readVint(buf: Buffer, pos: number, keepMarker: boolean): Vint | null {
   return { value, len, unknown: !keepMarker && allOnes };
 }
 
-function readUint(buf: Buffer, pos: number, len: number): number {
+function readUint(buf: Uint8Array, pos: number, len: number): number {
   let v = 0;
   for (let i = 0; i < len; i++) v = v * 256 + buf[pos + i]!;
   return v;
@@ -60,7 +61,7 @@ const EBML_CUECLUSTERPOS = 0xf1;
 const EBML_CLUSTER = 0x1f43b675;
 
 /** Iterate child elements of [start, end). Yields {id, dataStart, dataEnd}. Stops on truncation. */
-function* ebmlChildren(buf: Buffer, start: number, end: number): Generator<EbmlElement> {
+function* ebmlChildren(buf: Uint8Array, start: number, end: number): Generator<EbmlElement> {
   let pos = start;
   while (pos < end) {
     const id = readVint(buf, pos, true);
@@ -77,7 +78,7 @@ function* ebmlChildren(buf: Buffer, start: number, end: number): Generator<EbmlE
 }
 
 /** WebM: parse Segment > Info(TimecodeScale) + Cues from the file prefix `buf`. */
-export function parseWebmIndex(buf: Buffer): MediaIndex | null {
+export function parseWebmIndex(buf: Uint8Array): MediaIndex | null {
   let segment: EbmlElement | null = null;
   for (const el of ebmlChildren(buf, 0, buf.length)) {
     if (el.id === EBML_SEGMENT) { segment = el; break; }
@@ -118,11 +119,11 @@ export function parseWebmIndex(buf: Buffer): MediaIndex | null {
 }
 
 /** MP4: find the top-level sidx box in the file prefix `buf` and expand its references. */
-export function parseMp4Index(buf: Buffer): MediaIndex | null {
+export function parseMp4Index(buf: Uint8Array): MediaIndex | null {
   let pos = 0;
   while (pos + 8 <= buf.length) {
     let size = readUint(buf, pos, 4);
-    const type = buf.toString('latin1', pos + 4, pos + 8);
+    const type = latin1(buf, pos + 4, pos + 8);
     let header = 8;
     if (size === 1) { if (pos + 16 > buf.length) return null; size = readUint(buf, pos + 8, 8); header = 16; }
     if (size < header) return null;
@@ -136,7 +137,7 @@ export function parseMp4Index(buf: Buffer): MediaIndex | null {
   return null;
 }
 
-function parseSidx(buf: Buffer, boxStart: number, header: number, boxSize: number): MediaIndex | null {
+function parseSidx(buf: Uint8Array, boxStart: number, header: number, boxSize: number): MediaIndex | null {
   let p = boxStart + header;
   const version = buf[p]; p += 4; // version + flags
   p += 4; // reference_ID
@@ -169,7 +170,7 @@ function normalize(entries: IndexEntry[]): MediaIndex | null {
 }
 
 /** Parse whichever index the init segment carries (by MIME type). */
-export function parseIndex(initBuf: Buffer, mimeType: string | undefined): MediaIndex | null {
+export function parseIndex(initBuf: Uint8Array, mimeType: string | undefined): MediaIndex | null {
   try {
     return (mimeType || '').includes('webm') ? parseWebmIndex(initBuf) : parseMp4Index(initBuf);
   } catch {

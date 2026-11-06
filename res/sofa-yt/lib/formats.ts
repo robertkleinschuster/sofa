@@ -5,6 +5,7 @@ import { buildSabrFormat } from 'googlevideo/utils';
 import { FormatXTags } from 'googlevideo/protos';
 import type { SabrFormat } from 'googlevideo/shared-types';
 import { rawText } from './ytraw.ts';
+import { fromBase64 } from './bytes.ts';
 import type { RawCaptionTrack, RawCaptions, RawFormat } from './ytraw.ts';
 
 export const DEFAULT_MAX_HEIGHT = 1080;
@@ -57,7 +58,7 @@ export interface SubtitleTrack {
 function decodeXtags(xtags: string | undefined): Record<string, string> {
   if (!xtags) return {};
   try {
-    const bytes = Buffer.from(decodeURIComponent(xtags).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const bytes = fromBase64(decodeURIComponent(xtags));
     const out: Record<string, string> = {};
     for (const kv of FormatXTags.decode(new Uint8Array(bytes)).xtags || []) if (kv.key !== undefined) out[kv.key] = kv.value ?? '';
     return out;

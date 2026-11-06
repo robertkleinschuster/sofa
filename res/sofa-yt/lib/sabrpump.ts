@@ -133,7 +133,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
         const { value, done } = await reader.read();
         if (done) break;
         const h = fifo[kind].shift();
-        const buf = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+        const buf = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
         if (!h || (h.length && h.length !== buf.length) || !Number.isFinite(h.start)) {
           throw new Error(`segment bookkeeping mismatch on ${kind}: header=${JSON.stringify(h)} bytes=${buf.length}`);
         }

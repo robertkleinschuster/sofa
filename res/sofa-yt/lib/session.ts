@@ -13,7 +13,7 @@
 // Video pumps carry the audio track read most recently (SABR has no video-only mode); other audio
 // tracks (language switch) get audio-only pumps. Memory: media more than KEEP_BEHIND_MS behind every
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
-import crypto from 'node:crypto';
+import { randomHex } from './bytes.ts';
 import { VirtualFile } from './vfile.ts';
 import type { Segment } from './vfile.ts';
 import { errorMessage, toError } from './errors.ts';
@@ -88,7 +88,7 @@ export interface Satisfied {
 
 /** The part of a node http.ServerResponse serve() uses (tests pass a fake). */
 export interface ServeTarget {
-  write(chunk: Buffer): boolean;
+  write(chunk: Uint8Array): boolean;
   on(event: 'close' | 'drain', listener: () => void): unknown;
   off(event: 'close' | 'drain', listener: () => void): unknown;
 }
@@ -295,7 +295,7 @@ export class PlaybackSession {
 
   constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }: PlaybackSessionOptions) {
     this.kind = 'sabr';
-    this.sid = crypto.randomBytes(8).toString('hex');
+    this.sid = randomHex(8);
     this.info = info;
     this.formats = formats;
     this.cfg = { ...DEFAULTS, ...cfg };
@@ -574,7 +574,7 @@ export class PlaybackSession {
           }
           continue;
         }
-        piece = Buffer.from(piece); // copy: the entry may be evicted while the socket holds it
+        piece = new Uint8Array(piece); // copy: the entry may be evicted while the socket holds it
         reader.pos += piece.length;
         written += piece.length;
         t.lastPos = reader.pos;
