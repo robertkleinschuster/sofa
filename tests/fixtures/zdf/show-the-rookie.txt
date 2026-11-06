@@ -1,0 +1,7 @@
+season Staffel 7
+season Staffel 5
+season Staffel 4
+season Staffel 3
+season Staffel 2
+season Staffel 1
+item backdrop=https://www.zdf.de/assets/der-kuss-hero-100~1280x720?cb=1788963575121 | channel=The Rookie | date=2026-07-09T19:05:00Z | duration=2481 | geo=DE | id=zdf:der-kuss-116 | image=https://www.zdf.de/assets/der-kuss-hero-100~768x432?cb=1788963575121 | kind=0 | plot=Ein Anschlag erschüttert das LAPD: James und Kylie werden schwer verletzt. Während der Verfolgung des Täters geraten weitere Ermittlungen ins Stocken – denn Hinweise führen in James' Umfeld. | ref=zdf:der-kuss-116 | showRef=zdfshow:the-rookie-100 | source=zdf | subtitle=The Rookie · <date> | title=Der Kuss

@@ -1,0 +1,22 @@
+season Staffel 26
+season Staffel 26
+season Staffel 23
+season Staffel 22
+season Staffel 21
+season Staffel 20
+season Staffel 19
+season Staffel 18
+season Staffel 17
+season Staffel 16
+season Staffel 15
+season Staffel 14
+season Staffel 13
+season Staffel 12
+season Staffel 11
+season Staffel 10
+item backdrop=https://epg-image.zdf.de/fotobase-webdelivery/images/4752deaf-40bf-43a3-be5b-3e6b0f7957b0?layout=1280x720 | channel=Die Rosenheim-Cops | date=2026-11-03T09:00:00Z | duration=2608 | id=zdf:ein-ritter-fuer-stockl-100 | image=https://epg-image.zdf.de/fotobase-webdelivery/images/4752deaf-40bf-43a3-be5b-3e6b0f7957b0?layout=768x432 | kind=0 | plot=Der Architekt Robert Wöbke wird am Morgen leblos auf der Terrasse seines Hauses gefunden. Die Hauptkommissare Anton Stadler und Julia Beck nehmen die Ermittlungen auf. | ref=zdf:ein-ritter-fuer-stockl-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Ein Ritter für Stockl
+item backdrop=https://epg-image.zdf.de/fotobase-webdelivery/images/8ceb4663-3504-495b-80a0-643ce0fb9034?layout=1280x720 | channel=Die Rosenheim-Cops | date=2026-10-27T09:00:00Z | duration=2592 | id=zdf:ein-toter-auf-dem-friedhof-100 | image=https://epg-image.zdf.de/fotobase-webdelivery/images/8ceb4663-3504-495b-80a0-643ce0fb9034?layout=768x432 | kind=0 | plot=Der ehrenamtliche Kreuzträger Hans Kastenmüller liegt tot in der Trauerhalle des St. Agnes Friedhofs. Die Kommissare Stadler und Beck nehmen umgehend die Ermittlungen auf. | ref=zdf:ein-toter-auf-dem-friedhof-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Ein Toter auf dem Friedhof
+item backdrop=https://epg-image.zdf.de/fotobase-webdelivery/images/aa02afc9-31a1-4651-a00b-51d317b4318f?layout=1280x720 | channel=Die Rosenheim-Cops | date=2026-10-20T08:00:00Z | duration=2583 | id=zdf:der-letzte-ton-100 | image=https://epg-image.zdf.de/fotobase-webdelivery/images/aa02afc9-31a1-4651-a00b-51d317b4318f?layout=768x432 | kind=0 | plot=Musikproduzent Leo Wagner wird von seinen Kollegen tot in der Aufnahmekabine seines Tonstudios Soundwave aufgefunden. Die Hauptkommissare Stadler und Beck übernehmen die Ermittlungen. | ref=zdf:der-letzte-ton-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Der letzte Ton
+item backdrop=https://epg-image.zdf.de/fotobase-webdelivery/images/027578d1-affb-436e-939b-2e45df8231fc?layout=1280x720 | channel=Die Rosenheim-Cops | date=2026-10-13T08:00:00Z | duration=2604 | id=zdf:mord-und-andere-ordnungswidrigkeiten-100 | image=https://epg-image.zdf.de/fotobase-webdelivery/images/027578d1-affb-436e-939b-2e45df8231fc?layout=768x432 | kind=0 | plot=Edmund Pichler, Inhaber des Wirtshauses "Zum Edelweiss", wird erschlagen von der Kellnerin Sylvie Geissler aufgefunden. Die Kommissare Stadler und Beck nehmen die Ermittlungen auf. | ref=zdf:mord-und-andere-ordnungswidrigkeiten-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Mord und andere Ordnungswidrigkeiten
+item backdrop=https://epg-image.zdf.de/fotobase-webdelivery/images/8cc4d136-466d-4a3e-905e-27afe32ca11a?layout=1280x720 | channel=Die Rosenheim-Cops | date=2026-10-06T08:00:00Z | duration=2594 | id=zdf:ufos-und-umzugsplaene-100 | image=https://epg-image.zdf.de/fotobase-webdelivery/images/8cc4d136-466d-4a3e-905e-27afe32ca11a?layout=768x432 | kind=0 | plot=Die Kommissare Stadler und Beck ermitteln im Mordfall des Autors Herbert Schröckenfuchs, der auf dem Ufologen-Kongress in Kolbermoor an seinem Bücherstand vergiftet wurde. | ref=zdf:ufos-und-umzugsplaene-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Ufos und Umzugspläne
+item backdrop=https://www.zdf.de/assets/tod-im-tiny-house-hero-100~1280x720?cb=1793023290377 | channel=Die Rosenheim-Cops | date=2026-09-29T08:00:00Z | duration=2599 | id=zdf:tod-im-tiny-house-100 | image=https://www.zdf.de/assets/tod-im-tiny-house-hero-100~768x432?cb=1793023290377 | kind=0 | plot=Tiny-House-Besitzer Ben Gruber liegt nach einem Einbruch erstochen in seinem kleinen Holzhaus, der Safe wurde ausgeräumt. Die Kommissare Hansen und Kaya nehmen die Ermittlungen auf. | ref=zdf:tod-im-tiny-house-100 | showRef=zdfshow:die-rosenheim-cops-104 | source=zdf | subtitle=Die Rosenheim-Cops · <date> | title=Tod im Tiny House

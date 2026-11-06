@@ -1,0 +1,946 @@
+item backdrop=https://static.media.ccc.de/media/events/dhcp/2026/126-7ba7fe67-078b-5e87-975d-c145408bc577_preview.jpg | channel=Die Heilbronner Chaos Party 2026 | date=2026-10-31T16:15:00Z | duration=1319 | id=ccc:7ba7fe67-078b-5e87-975d-c145408bc577 | image=https://static.media.ccc.de/media/events/dhcp/2026/126-7ba7fe67-078b-5e87-975d-c145408bc577_preview.jpg | kind=0 | plot=I wanted a root shell on an Telekom router, and along the way, I have found many more things
+
+One day I was bored. And so, I decided to dump the firmware of my Speedport Smart 3, and what I saw, has surprised: The firmware is an modified version of OpenWRT.
+We will talk about, how you can dump the firmware yourself, what you can do with it, and what is so special about it
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:7ba7fe67-078b-5e87-975d-c145408bc577 | source=ccc | subtitle=ArrØw | title=Taking Apart A Telekom Router
+item backdrop=https://static.media.ccc.de/media/events/dhcp/2026/104-eb6e7c40-db2b-5a0a-b55d-4a3480e62b35_preview.jpg | channel=Die Heilbronner Chaos Party 2026 | date=2026-10-31T15:00:00Z | duration=3233 | id=ccc:eb6e7c40-db2b-5a0a-b55d-4a3480e62b35 | image=https://static.media.ccc.de/media/events/dhcp/2026/104-eb6e7c40-db2b-5a0a-b55d-4a3480e62b35_preview.jpg | kind=0 | plot="Guten Tag mein Name ist Tanja Wawuschel. Ich rufe an im Auftrag [diverse Auftraggeber möglich]. Um die aktuelle politische Stimmung im Land abzubilden würde ich Ihnen gerne ein paar Fragen stellen."
+
+So oder ähnlich klingen Anrufe von Wahlforschungsinstituten. 
+
+In diesem Talk erkläre ich Euch
+- was es mit der Sonntagsfrage auf sich hat 
+- wie diese Anrufe zustande kommen 
+- und statistisch ausgewertet werden, 
+- wie zuverlässig die so entstandenen Projektionen aus meiner Sicht sind 
+- wie die 18 Uhr Prognosen zustande kommen 
+- Und wie die Hochrechnungen am Wahlabend entstehen 
+- ob (und welche) - technischen -Auffälligkeiten und Besonderheiten es gibt 
+- und einiges mehr.
+
+Ich arbeite in der politischen Meinungsforschung - zwar "nur" als Telefoninterviewerin, aber wer mich kennt, weiß, dass ich mich über alles mögliche in diesem Job und dieser Branche informiert habe und ich mich tief reingegraben habe in die technischen und wissenschaftlichen Hintergründe und ich gerne darüber erzähle.
+
+Ich verrate Euch, wie die Rahmenbedingungen in meinem Job sind und warum er für mich (erwerbsunfähig, nur eingeschränkt arbeitsfähig) gerade richtig ist... 
+
+Ich plane auch, Euch zu verraten, wie Ihr schon am Telefon seriöse politische Meinungsforschung von Marktforschung und Scam (!) unterscheiden könnt.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:eb6e7c40-db2b-5a0a-b55d-4a3480e62b35 | source=ccc | subtitle=Tanja Wawuschel | title=Traut Euch... die Sonntagsfrage zu hinterfragen.
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/64-3884383c-b84f-5119-9a07-16c1483f1f9a_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T15:30:00Z | duration=3103 | id=ccc:3884383c-b84f-5119-9a07-16c1483f1f9a | image=https://static.media.ccc.de/media/events/godotfest/2026/64-3884383c-b84f-5119-9a07-16c1483f1f9a_preview.jpg | kind=0 | plot=Shaders can be scary, but shaders make many things possible.
+During the talk I'll show various shaders used in production games. 
+I'll show how to write from scratch your own effects.
+Static VFX, shader based animation, and even gameplay mechanics.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:3884383c-b84f-5119-9a07-16c1483f1f9a | source=ccc | subtitle=Leszek Nowak | title=You want to add Shaders to your game? Here is how you start.
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/25-dd04ab21-d00c-58ec-9ca8-13788054e459_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T11:30:00Z | duration=1541 | id=ccc:dd04ab21-d00c-58ec-9ca8-13788054e459 | image=https://static.media.ccc.de/media/events/godotfest/2026/25-dd04ab21-d00c-58ec-9ca8-13788054e459_preview.jpg | kind=0 | plot=Audio accessibility is often treated as an afterthought - or even reduced to a lonely volume slider -while sound design plays a crucial role in gameplay legibility, inclusion and immersion. 
+The good news? Some of the most impactful audio accessibility features in Godot take no time to build and cost little to no CPU overhead. So let's hear what they are!
+
+In this talk, sound designer and gameplay audio programmer Max de Kroon presents a fast-paced practical approach to building accessible audio systems in Godot. We will move from upgrading our basic single-slider settings to actionable techniques like dynamic bus routing, low-overhead EQ profiles, contrast-complete UI feedback and sound customization for the sensitive ears.
+
+Grounded in real-world production learnings, this session provides a practical checklist of built-in engine features and an open boilerplate that you can immediately implement in your next project to make it playable, audible and enjoyable for everyone.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:dd04ab21-d00c-58ec-9ca8-13788054e459 | source=ccc | subtitle=Max de Kroon | title=Let's Hear It! Enabling True Audio Accessibility in Godot
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/70-01074ffd-90a6-5763-9559-ae84663b38e7_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T13:30:00Z | duration=2618 | id=ccc:01074ffd-90a6-5763-9559-ae84663b38e7 | image=https://static.media.ccc.de/media/events/godotfest/2026/70-01074ffd-90a6-5763-9559-ae84663b38e7_preview.jpg | kind=0 | plot=Our dialogue tool, Yarn Spinner for Godot, has been built on C#, and we love it. Godot's C# support is fantastic. But we wanted every Godot developer to have great dialogue, so we rebuilt the whole runtime in pure GDScript too. Now the same Yarn script runs identically in both. This talk is a joyful tour of how we did it, what it taught us about GDScript, and everything else we learned along the way.
+
+Much of the GDScript tutorials, documentation, and advice comes from gameplay code. But we got to take it somewhere new: a bytecode virtual machine, protobut, a stack, a variable store and a localisation system. And it was a blast!
+
+In this talk we'll cover
+- Bringing a C# runtime across to GDScript, and the surprising places each language shines.
+- Making GDScript appropriately fast for a job it isn't usually asked to do.
+- How typed GDScript shaped the design for the better.
+- Plugging straight into Godot's TranslationServer for localisation.
+- Parity testing: how we keep two runtimes in lockstep from shared test scripts.
+- Why supporting both Godot languages is worth it, and how to do it for your own plugins.
+- And more secrets and tips on using Godot for narrative, and building narrative engines!
+
+You'll leave with practical patterns for performance sensitive GDScript, a testing approach you can use on any project with two implementations, and hopefully some excitement about what both of Godot's languages can do.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:01074ffd-90a6-5763-9559-ae84663b38e7 | source=ccc | subtitle=Paris Buttfield-Addison, Dr. Tim Nugent | title=Waiting for GDScript: Rebuilding a Dialogue Engine Without C#
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/45-a1ce5263-b625-5da5-a1a9-56e970d54f31_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T14:30:00Z | duration=2219 | id=ccc:a1ce5263-b625-5da5-a1a9-56e970d54f31 | image=https://static.media.ccc.de/media/events/godotfest/2026/45-a1ce5263-b625-5da5-a1a9-56e970d54f31_preview.jpg | kind=0 | plot=In this talk, we will dive into our experiences switching from Unity to Godot when you have customers where Security, IP, and Continuity are critical priorities. 
+
+Our product is a multiplayer shooting simulator developed on Unity and Photon. We will share our experiences finding and evaluating replacement products for all elements, and offer good advice on how to work with large corporate and government IT and procurement organizations to get such a fundamental technical switch approved and successfully implemented.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:a1ce5263-b625-5da5-a1a9-56e970d54f31 | source=ccc | subtitle=Kristian Too Andreasen | title=Using Godot for defence simulators
+item backdrop=https://static.media.ccc.de/media/events/dhcp/2026/130-3cb4ace9-e612-5351-b0a4-bd5a422796e5_preview.jpg | channel=Die Heilbronner Chaos Party 2026 | date=2026-11-01T12:00:00Z | duration=1623 | id=ccc:3cb4ace9-e612-5351-b0a4-bd5a422796e5 | image=https://static.media.ccc.de/media/events/dhcp/2026/130-3cb4ace9-e612-5351-b0a4-bd5a422796e5_preview.jpg | kind=0 | plot=Ich habe mit [makebackups](https://makebackups.swagspace.org) einen Service gebaut, der euch Backup-Storage zur Verfügung stellt, damit ihr euch nicht mehr drum kümmern müsst. Ich werde das Projekt vorstellen und ein wenig dadrüber reden, was einem so alles passiert, wenn man Dienste daheim hostet.
+
+Viele Leute prokrastinieren beim Thema Backups, weil Mensch möchte das ja richtig machen, auf eigener Hardware, nicht bei $Cloud, sauber automatisiert, oder was auch immer die aktuellen Gründe sind. Oftmals liegt es ja nicht mal am persönlichen Skillset, sondern einfach nur am machen.
+
+Ich habe mit Hardware, die gerade eh rumlag einfach einen Dienst gebaut, in dem ihr euch einfach selbst ein Backup-Repo (in dem Fall mit [BorgBackup](https://www.borgbackup.org/)) klicken könnt und euch nur noch damit befassen müsst, was ihr sichern wollt.
+
+In diesem Vortrag will ich das Projekt vorstellen und euch zeigen, wie ihr schnell eure Backups einrichten könnt. Da der Service jetzt 6 Monate läuft kann ich auch ein kleines Infrastruktur-Review machen und darüber reden, was alles auf einen zukommt, wenn man Dienste für die Welt daheim hostet.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:3cb4ace9-e612-5351-b0a4-bd5a422796e5 | source=ccc | subtitle=jo | title=MakeBackups - Ein Backupprojekt für alle, die mal Backups einrichten sollten - 6-Monats-Review
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110843-1d3d98e3-0f8e-4557-b677-246d8de57b59_preview.jpg | channel=ChaosSeminar Ulm | date=2006-02-13T19:00:00Z | duration=4411 | id=ccc:1d3d98e3-0f8e-4557-b677-246d8de57b59 | image=https://static.media.ccc.de/media/contributors/ulm/110843-1d3d98e3-0f8e-4557-b677-246d8de57b59_preview.jpg | kind=0 | plot=Der dritte Vortrag unserer beliebten Reihe beschäftigt sich wie die Vorgänger mit ausgefallenen Programmiersprachen und Programmen.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_02_Weird_Programming_III">https://ulm.ccc.de/ccc/chaosseminar/2006_02_Weird_Programming_III</a> | ref=ccc:1d3d98e3-0f8e-4557-b677-246d8de57b59 | source=ccc | subtitle=Giselbert Hinkelmann | title=Weird Programming III
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110832-419eb156-18ed-4bbb-a639-beae47720491_preview.jpg | channel=ChaosSeminar Ulm | date=2005-01-10T19:00:00Z | duration=7176 | id=ccc:419eb156-18ed-4bbb-a639-beae47720491 | image=https://static.media.ccc.de/media/contributors/ulm/110832-419eb156-18ed-4bbb-a639-beae47720491_preview.jpg | kind=0 | plot=Personal Firewalls? Virenscanner? Internet-Security-Paket?
+
+Das Aufrüsten der Abwehr auf dem PC zuhause geht weiter. Ein Milliardenmarkt entsteht. Aber: sind diese Maßnahmen eigentlich sinnvoll? Stellt sich für den Heimanwender nicht eher die Frage:
+"Ich möchte doch nur E-Mails verschicken und surfen. Muss ich jetzt meinen PC zur Festung aufrüsten?"
+
+Dieser Vortrag zeigt einfache Möglichkeiten auf, wie man seinen Heimarbeitsplatz auch als Laie vor vielen Gefährdungen mit einfachen Mitteln schützen kann, ohne gleich ein Arsenal von Abwehrsoftware zu installieren.
+
+Danke an <a href="http://www.cidres-security.de/vortrag.html">Cidres Security</a> für die Folien :-)
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_01_">https://ulm.ccc.de/ccc/chaosseminar/2005_01_</a>(Un)Sicheres_Windows_am_Heim-PC | ref=ccc:419eb156-18ed-4bbb-a639-beae47720491 | source=ccc | subtitle=Volker Birk | title=(Un)Sicheres Windows am Heim-PC
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/50-c5435ed9-bd93-5957-b53f-4957b4d1abb0_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T16:30:00Z | duration=1798 | id=ccc:c5435ed9-bd93-5957-b53f-4957b4d1abb0 | image=https://static.media.ccc.de/media/events/godotfest/2026/50-c5435ed9-bd93-5957-b53f-4957b4d1abb0_preview.jpg | kind=0 | plot=How to compose a balanced and strong image is a skill that is relevant for any gamedev, not just artists. I will go over some tool that we use in Illustration, so that your Storefront graphics, Video Thumbnails, Cutscenes, Ui and Leveldesign visuals will improve :)
+
+We will go over examples of strong compositions and then look at individual "tools" that will help you create clearer and better images: Visual hirachy, Colors & Contrast, Shape language, Text and Spacing.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:c5435ed9-bd93-5957-b53f-4957b4d1abb0 | source=ccc | subtitle=Simone Mändl | title=The basics of Image Composition
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/39-78324792-ae01-5578-affd-e0d9d40bf5e3_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T09:00:00Z | duration=2642 | id=ccc:78324792-ae01-5578-affd-e0d9d40bf5e3 | image=https://static.media.ccc.de/media/events/godotfest/2026/39-78324792-ae01-5578-affd-e0d9d40bf5e3_preview.jpg | kind=0 | plot=Large companies use automation to reduce repetitive work, improve reliability, and help teams move faster. Many of the same ideas can be just as valuable for solo developers and small indie teams—without bringing along the complexity and bureaucracy of a large organization.
+
+This talk explores how automated builds, reusable development environments, continuous integration, testing, packaging, and versioned releases can increase development velocity and make ambitious projects more sustainable.
+
+Using the multiple open-source Godot projects I maintain as a real-world case study, I will show how automation makes it possible for one developer to support several platforms, dependencies, and release workflows at a scale that would be unrealistic to manage manually.
+
+This session looks at how solo developers and small teams can adapt proven engineering practices from large companies to gain more leverage from limited time and resources.
+
+The talk will cover practical techniques such as automated cross-platform builds, reusable dependency environments, continuous integration, testing, packaging, and versioned releases. It will also explore how tools such as godot-package can download specific versions of GitHub release artifacts, making dependencies explicit and helping projects reproduce known working configurations without unexpectedly breaking users.
+
+Drawing from my experience building and maintaining large, complex systems in professional software environments, I will show how I applied the same underlying ideas to the growing collection of open-source Godot extensions I maintain. Without automation, supporting these projects across multiple platforms and releases would be impractical for a solo developer.
+
+The focus will be on creating simple, repeatable systems that reduce manual work, prevent regressions, and make an otherwise unsustainable workload manageable.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:78324792-ae01-5578-affd-e0d9d40bf5e3 | source=ccc | subtitle=Werner Mendizabal | title=Small Team, Big Leverage: Using Automation to Build Games Faster
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110841-551dd0f4-a7cc-43ad-963f-d9d62a710007_preview.jpg | channel=ChaosSeminar Ulm | date=2005-12-12T20:07:00Z | duration=6728 | id=ccc:551dd0f4-a7cc-43ad-963f-d9d62a710007 | image=https://static.media.ccc.de/media/contributors/ulm/110841-551dd0f4-a7cc-43ad-963f-d9d62a710007_preview.jpg | kind=0 | plot=Fast alle aktuellen Betriebssystem-Distributionen kommen als CDs oder
+DVDs mit Binärpaketen und häufig begleitet von vielen Seiten
+Dokumentation heraus. Das aus einem HOWTO hervorgegangene Projekt Linux
+From Scratch dagegen liefert Benutzern, die ein Betriebssystem
+installieren möchten, nur das Handbuch, das Schritt für Schritt erklärt,
+wie Systemkern und Basisprogramme ausgehend vom Quellcode selbst
+kompiliert und installiert werden.
+
+Der Vortrag gibt einen Überblick über die Geschichte und die
+Build-Methoden von Linux From Scratch seit seiner ersten Version im Jahr
+1999. Es wird gezeigt, wie trotz zirkulärer Paketabhängigkeiten eine
+funktionierende Toolchain als Herzstück eines LFS-Systems konstruiert
+wird. Technische Details kommen beim Blick unter die Haube der
+Nicht-Distribution mit dem Slogan „Your distro. Your rules.“ und dem
+Ziel, zu lehren, was im Inneren eines Linux-Systems vorgeht, nicht zu
+kurz.
+
+<h3>Weblinks</h3>
+
+- <a href="http://www.linuxfromscratch.org/mirrors.html">Website von Linux From Scratch</a>
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_12_Linux_From_Scratch">https://ulm.ccc.de/ccc/chaosseminar/2005_12_Linux_From_Scratch</a> | ref=ccc:551dd0f4-a7cc-43ad-963f-d9d62a710007 | source=ccc | subtitle=Nico Roeser | title=Linux From Scratch
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110829-13ddef02-b8ce-491a-ba8a-24615b59b12e_preview.jpg | channel=ChaosSeminar Ulm | date=2004-02-09T19:00:00Z | duration=3602 | id=ccc:13ddef02-b8ce-491a-ba8a-24615b59b12e | image=https://static.media.ccc.de/media/contributors/ulm/110829-13ddef02-b8ce-491a-ba8a-24615b59b12e_preview.jpg | kind=0 | plot=Unterlagen: <a href="http://dontpanic.ulm.ccc.de/~schabi/svg/">http://dontpanic.ulm.ccc.de/~schabi/svg/</a>
+
+SVG soll nach der Meinung des W3C der zukünftige Standard für Vektor-Grafiken und Multimedia-Inhalte sein. Dieser Vortrag gibt eine Übersicht der Features dieses Web-Grafik-Formates, und stellt einige Beispiele der verfügbaren Software vor.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2004_02_Scalable_Vector_Graphics">https://ulm.ccc.de/ccc/chaosseminar/2004_02_Scalable_Vector_Graphics</a> | ref=ccc:13ddef02-b8ce-491a-ba8a-24615b59b12e | source=ccc | subtitle=Markus Schaber | title=Scalable Vector Graphics
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110837-a4d1a038-0c14-4933-86ba-6dc4ab79defa_preview.jpg | channel=ChaosSeminar Ulm | date=2005-07-11T19:00:00Z | duration=7923 | id=ccc:a4d1a038-0c14-4933-86ba-6dc4ab79defa | image=https://static.media.ccc.de/media/contributors/ulm/110837-a4d1a038-0c14-4933-86ba-6dc4ab79defa_preview.jpg | kind=0 | plot=Bei wohl keiner Programmiersprache ist der Unterschied zwischen Kennen und Können so groß wie bei C++. Als "C with classes" angefangen, hat es sich mittlerweile zu einer der komplexesten in der Praxis eingesetzten Sprachen entwickelt.
+Die Sprache stellt dem Entwickler mächtige Abstraktionswerkzeuge zur Verfügung, deren Kosten zur Laufzeit extrem gering sind - vorausgesetzt der Compiler ist gut. Somit eignet sich C++ für performance- oder resourcenkritische Applikationen, die man objektorientiert modellieren möchte.
+Es gibt aber auch hässliche Elemente der Sprache, von denen einige auf die Verwandtschaft zu C und andere auf Performance- oder Praktikabilitätsgründe zurückzuführen sind. C++ ist einfach ein pragmatischer Kompromiss.
+Der Vortrag bietet eine Übersicht über die wichtigsten Konzepte der Sprache. Auf Grund des engen Zeitrahmens müssen ein paar Dinge für das Verständnis vorausgesetzt werden. Dazu gehört Wissen über das Programmierpardigma der Objektorientierung und Kenntnis der C-Syntax.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_07_C++">https://ulm.ccc.de/ccc/chaosseminar/2005_07_C++</a> | ref=ccc:a4d1a038-0c14-4933-86ba-6dc4ab79defa | source=ccc | subtitle=Alexander Bernauer | title=C++
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/21-2ba2bd94-54d3-54bc-9649-e3aa21707b5d_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T10:00:00Z | duration=3020 | id=ccc:2ba2bd94-54d3-54bc-9649-e3aa21707b5d | image=https://static.media.ccc.de/media/events/godotfest/2026/21-2ba2bd94-54d3-54bc-9649-e3aa21707b5d_preview.jpg | kind=0 | plot=Game jams are exciting, but they're also chaotic. Many participants lose valuable time, over-scope their ideas, or spend days polishing features that players never experience.
+
+Over the past five years, I've completed more than a dozen game jams and developed a simple five-phase framework that brings structure to the entire process, from choosing an idea to publishing the final build.
+
+This talk walks through each phase of the framework, covering planning, execution, polishing, submission, and post-jam visibility.
+Rather than focusing on specific tools or engine features, the framework is built around habits and decision-making that work regardless of experience level.
+
+Whether you're entering your first game jam or your fifteenth, you'll leave with a repeatable process that helps you finish stronger games with less stress.
+
+Every game jam begins with ambitious ideas, but finishing a polished game requires a lot of decisions under intense time pressure. This session breaks those decisions down into a practical five-phase framework that attendees can immediately apply in their next jam.
+
+**Phase 1 - Planning:** Turn the jam theme into a unique, achievable game idea, brainstorm effectively, control the scope, and use a one-page "Mini GDD" to organise ideas before opening the engine. 
+
+**Phase 2 - Execution:** Learn how to stay productive under pressure by following a clear plan, prioritising the core gameplay loop, keeping mechanics simple, choosing technology that fits the deadline, and knowing when "good enough" is the right decision.
+
+**Phase 3 - Polishing:** Learn how to make a game feel finished by adding impactful feedback, creating intuitive tutorials, and using game juice to make every player interaction feel satisfying.
+
+**Phase 4 - Finalising:** Avoid last-minute disasters by testing exported builds, planning around the deadline instead of racing it, and learning why I treat uploading several hours early as a non-negotiable rule.
+
+**Phase 5 - Post-Jam:** Giv | ref=ccc:2ba2bd94-54d3-54bc-9649-e3aa21707b5d | source=ccc | subtitle=Ahmed Alfiki | title=The 5-Phase Game Jam Framework: Bringing Structure to Chaos
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/65-5c54f552-363c-5544-92ed-95b7721f18f0_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T16:00:00Z | duration=1536 | id=ccc:5c54f552-363c-5544-92ed-95b7721f18f0 | image=https://static.media.ccc.de/media/events/godotfest/2026/65-5c54f552-363c-5544-92ed-95b7721f18f0_preview.jpg | kind=0 | plot=How do you ship a 3D educational game for Web, Desktop, and Mobile in Godot 4 on a tight budget? In this postmortem of "The Masked Particle," I will share my survival strategies as a solo dev. Drawing from 1.5 years of building hypercasual mobile prototypes in 2-week sprints, I will show how that "need for speed" helped me build momentum in the crucial early stages of this Godot project. You will learn how to manage a mixed asset pipeline without in-house artists, build pragmatic responsive UIs, and discover a massive performance hack: simulating a complex 3D particle detector using lightweight 2D line draw calls for smooth web and mobile exports.
+
+This session is aimed at indie developers, freelancers, and solo devs who want to build and release cross-platform projects in Godot 4 without burning out or breaking the bank.
+
+**Talk Outline:**
+
+- The Setup & Prototyping Mindset: Introducing "The Masked Particle" and the constraints of targeting Web/Desktop/Mobile. I will briefly touch on how my background in 2-week hypercasual sprints helped me scope the project and gain speed during the crucial early prototyping phase.
+
+- The Pragmatic Pipeline: How to build a 3D game without a 3D artist. A look at mixing store assets, outsourcing work, and AI backgrounds to stay on budget.
+
+- Good Enough UI: Utilizing Godot's Control nodes to build a single UI that works on big desktops as well as small smartphones, prioritizing shipping readiness over perfection.
+
+- The "Fake 3D" Hero Hack: A deep dive into web and mobile performance optimization. I will show how I avoided melting GPUs by simulating a complex 3D view into a particle detector using performance-friendly 2D line draw calls.
+
+- Q&A
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:5c54f552-363c-5544-92ed-95b7721f18f0 | source=ccc | subtitle=Dr. Johannes Mattmann | title=Shipping 3D Cross-Platform on a Shoestring Budget: A Solo Dev's Postmortem
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110845-3a5367dc-a412-4129-b8e6-006531f6723c_preview.jpg | channel=ChaosSeminar Ulm | date=2006-04-24T19:00:00Z | duration=4434 | id=ccc:3a5367dc-a412-4129-b8e6-006531f6723c | image=https://static.media.ccc.de/media/contributors/ulm/110845-3a5367dc-a412-4129-b8e6-006531f6723c_preview.jpg | kind=0 | plot=2006 ist das "Jahr der Informatik". Doch in der Bevölkerung wird Informatik selten als Wissenschaft wahrgenommen. Informatiker sind meistens die Jungs, die einem beim Installieren oder Reparieren des eigenen Windows PCs helfen. Der Vortrag soll klarstellen, was Informatik als Wissenschaftsdisziplin wirklich ist, welche Themengebiete sie abdeckt, was die Informatik in der Vergangenheit geleistet hat, wo Informatik das alltägliche Leben berührt und welchen Herausforderungen sich die Informatik in der Zukunft noch stellen muss. Außerdem soll eine Diskussion angestoßen werden, welchen Stellenwert Informatik in Schule und Gesellschaft hat, ob dieser adäquat ist und wie man gegebenenfalls etwas daran ändern kann.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_04_Informatik_und_Gesellschaft">https://ulm.ccc.de/ccc/chaosseminar/2006_04_Informatik_und_Gesellschaft</a> | ref=ccc:3a5367dc-a412-4129-b8e6-006531f6723c | source=ccc | subtitle=Frank Kargl | title=Informatik und Gesellschaft
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110846-8aa6cbf8-221d-45f5-833c-06b071ca4ad4_preview.jpg | channel=ChaosSeminar Ulm | date=2006-05-08T19:00:00Z | duration=5165 | id=ccc:8aa6cbf8-221d-45f5-833c-06b071ca4ad4 | image=https://static.media.ccc.de/media/contributors/ulm/110846-8aa6cbf8-221d-45f5-833c-06b071ca4ad4_preview.jpg | kind=0 | plot=Folien und Beispiele: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_05_The_Internet_Communication_Engine/ice.tar.bz2">ice.tar.bz2</a>
+
+Die Internet Communcation Engine ist eine Middleware für verteilte Objekte. Entwickelt wird sie von der Firma <a href="http://www.zeroc.com">ZeroC</a>, die sie unter der GPL und bei Bedarf unter kommerzieller Lizenz vertreibt. Sie hat viele Ähnlichkeiten mit CORBA, soll aber einiges besser machen. Dieser Vortrag bietet eine kurze Einführung in Architekturen für verteilte Objekte und geht anschließend im Detail auf die ICE Middleware ein. Obwohl ICE viele Vorteile hat, wird der Vortrag mit einem <strong>fundierten</strong> Bashing abgeschlossen. Denn manche Dinge sind einfach nur #$%#@#$!! <em>carrier lost...</em>
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_05_The_Internet_Communication_Engine">https://ulm.ccc.de/ccc/chaosseminar/2006_05_The_Internet_Communication_Engine</a> | ref=ccc:8aa6cbf8-221d-45f5-833c-06b071ca4ad4 | source=ccc | subtitle=Alexander Bernauer | title=The Internet Communication Engine
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110839-dcbe1320-aa0c-43e7-84f6-c8e4caf60e45_preview.jpg | channel=ChaosSeminar Ulm | date=2005-10-10T19:00:00Z | duration=7268 | id=ccc:dcbe1320-aa0c-43e7-84f6-c8e4caf60e45 | image=https://static.media.ccc.de/media/contributors/ulm/110839-dcbe1320-aa0c-43e7-84f6-c8e4caf60e45_preview.jpg | kind=0 | plot=Unterlagen: <a href="http://dontpanic.ulm.ccc.de/~schabi/javaevo/index.html">http://dontpanic.ulm.ccc.de/~schabi/javaevo/index.html</a>
+
+Während Java 1.1 in den Sprachmitteln extrem minimalistisch designt war, wurden in den darauffolgenden Releases immer mehr Erweiterungen eingebaut. Beispiele dafür sind anonyme und innere Klassen, Assertions, Enumerations und Generics.
+Dieser Vortrag will die historische Entwicklung der Sprache von "zu minimalistisch" bis hin zu "durchaus brauchbar" illustrieren und gleichzeitig Umsteigern und Aufsteigern einen Überblick über die neuen Features geben, und deren Vor- und Nachteile aufzeigen.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_10_Java_-_Evolution_einer_Sprache">https://ulm.ccc.de/ccc/chaosseminar/2005_10_Java_-_Evolution_einer_Sprache</a> | ref=ccc:dcbe1320-aa0c-43e7-84f6-c8e4caf60e45 | source=ccc | subtitle=Markus Schaber | title=Java - Evolution einer Sprache
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/41-be9997ee-dbb4-52df-9860-14d1d4042ab5_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T13:30:00Z | duration=3115 | id=ccc:be9997ee-dbb4-52df-9860-14d1d4042ab5 | image=https://static.media.ccc.de/media/events/godotfest/2026/41-be9997ee-dbb4-52df-9860-14d1d4042ab5_preview.jpg | kind=0 | plot=Traditionally, indie studios and small teams developed for a single console first before porting to PC—a tradition that has since flipped to "Steam first." This talk challenges that modern default. By exploring the technical advantages of a single hardware spec, the business benefits of dedicated console audiences, and the artistic merit of crafting a canonical, intended experience, we will examine why developing for console first might be the smartest strategic decision for your studio.
+
+In this 50-minute session, we will dive deep into the strategic advantages of developing and releasing your game on a console first. Drawing from my history working on early XBLA titles, PlayStation Strategic Content, and Dreams, this talk unpacks why the "PC-first" mentality became the default and why shifting your focus back to console can elevate your game.
+We will break this down into three core pillars: Technical, Business and Artistic.
+
+The biggest barrier is often simply knowing you can. In a world of distraction and slop you can always grow and expand in the future. Why not FOCUS, make interesting technical decisions, different business choice and strong artistic choice in developing for one console first.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:be9997ee-dbb4-52df-9860-14d1d4042ab5 | source=ccc | subtitle=Claire Blackshaw | title=Why You Should Develop and Release on Console First
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110848-20f3f5aa-14ed-4e57-9fef-acf7b03874cb_preview.jpg | channel=ChaosSeminar Ulm | date=2006-07-17T19:00:00Z | duration=7022 | id=ccc:20f3f5aa-14ed-4e57-9fef-acf7b03874cb | image=https://static.media.ccc.de/media/contributors/ulm/110848-20f3f5aa-14ed-4e57-9fef-acf7b03874cb_preview.jpg | kind=0 | plot=Ubiquitous Computing - die Vision immer kleinerer Computer, die den Benutzer unaufdringlich bei seinen Tätigkeiten unterstützen - ist nach wie vor ein populäres Thema in der Forschung. Nach der anfänglichen Euphorie über die Chancen und Möglichkeiten häufen sich in jüngster Zeit die Fragen nach der Sicherheit und den Auswirkungen auf die Privatsphäre des Benutzers.
+
+Dieser Vortrag stellt kurz die Ideen des Ubiquitious Computings vor, und was davon bereits heute Realität ist. Anschließend zeigt er verschiedene Probleme in Bezug auf die Privatsphäre auf: Hier gibt es viele Berührpunkte mit dem <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_06_Personentracking">vorigen Vortrag</a>, denn auch hier ist Tracking und Tracing ein heikles Thema.
+
+Achtung - neuer Termin! Wegen des Polizeieinsatzes an der Uni verschiebt sich der Vortrag um eine Woche. Er findet dann im Hörsaal H22 statt.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_07_UbicompPrivacy">https://ulm.ccc.de/ccc/chaosseminar/2006_07_UbicompPrivacy</a> | ref=ccc:20f3f5aa-14ed-4e57-9fef-acf7b03874cb | source=ccc | subtitle=Stefan Schlott | title=Sicherheit und Privatsphäre im Ubiquitous Computing
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110830-88befb4c-f883-4237-b410-8bc3bfb274dd_preview.jpg | channel=ChaosSeminar Ulm | date=2004-11-04T19:00:00Z | duration=1826 | id=ccc:88befb4c-f883-4237-b410-8bc3bfb274dd | image=https://static.media.ccc.de/media/contributors/ulm/110830-88befb4c-f883-4237-b410-8bc3bfb274dd_preview.jpg | kind=0 | plot=Poster: <a href="https://ulm.ccc.de/ccc/chaosseminar/2004_11_Gefahren_der_Softwarepatente/stallman-plakat-de.pdf">stallman-plakat-de.pdf</a>
+
+**englischsprachige Ankündigung:**
+
+Forced by the US, Europe is just about to adopt a new form of patents that were illegal up to now: Patents on Software. Whereas most big companies support the idea of software patents, most small and medium sized businesses as well as most open source developers see them as a serious threat to their profession.
+
+Richard Stallman will explain how software patents obstruct software development. Software patents are patents that cover software ideas. They restrict the development of software, so that every design decision brings a risk of getting sued. Patents in other fields restrict factories, but software patents restrict every computer user. Economic research shows that they even retard progress.
+
+About the lecturer:
+Richard Stallman is the founder of the GNU Project, launched in 1984 to develop the free software operating system GNU. He is the principal author of the GNU Compiler Collection (gcc), the GNU symbolic debugger (gdb), GNU Emacs, and various other programs for the GNU operating system.
+
+<a href="http://stallman.org/">Stallman</a> graduated from Harvard in 1974 with a BA in physics. During his college years, he also worked as a staff hacker at the MIT Artificial Intelligence Lab, learning operating system development by doing it. In January 1984 he resigned from MIT to start the GNU project. Today he is one of the leaders of the free software movement and president of the Free Software Foundation (FSF).
+
+**deutschsprachige Ankündigung:**
+
+Auf Drängen der USA hin arbeitet die Europäische Union zur Zeit an der Einführung einer neuen Patentform, die so bisher nicht rechtmäßig war: Patente auf Software und Logik. Während vor allem Großkonzerne Softwarepatente befürworten, sehen viele kleine und mittelständische Softwareunternehmen und Open Source Entwickler darin eine Bedrohung ihrer | ref=ccc:88befb4c-f883-4237-b410-8bc3bfb274dd | source=ccc | subtitle=Richard Stallman | title=The Danger of Software Patents / Gefahren der Softwarepatente
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110833-8de2e436-b46b-4e08-89f2-0df103949df2_preview.jpg | channel=ChaosSeminar Ulm | date=2005-02-14T19:00:00Z | duration=4860 | id=ccc:8de2e436-b46b-4e08-89f2-0df103949df2 | image=https://static.media.ccc.de/media/contributors/ulm/110833-8de2e436-b46b-4e08-89f2-0df103949df2_preview.jpg | kind=0 | plot=Nach der "Web-Revolution" basteln Berners-Lee und seine Mitstreiter im W3C längst an einem Nachfolger, dem Semantic Web. Ziel ist die Entwicklung von Technologien, mit welchen sich selbsterklärende Dokumente erstellen lassen. Suchmaschinen sollen beispielsweise erkennen können, dass der Begriff "Kuchen" auf einer Seite über die schwäbische Alb sich auf einen Ort bezieht, während er auf anderen Seiten vielleicht ein stark zuckerhaltiges Lebensmittel beschreibt. Und auch dass das Konzept des Kuchens auf einer deutschsprachigen Seite identisch ist zu "Cake" auf englischen Seiten. Wichtige Standards wie RDF oder OWL werden im Vortrag ausführlich vorgestellt.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_02_SemanticWeb">https://ulm.ccc.de/ccc/chaosseminar/2005_02_SemanticWeb</a> | ref=ccc:8de2e436-b46b-4e08-89f2-0df103949df2 | source=ccc | subtitle=Frank Kargl | title=SemanticWeb
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110835-8e32f051-c3a4-4f9e-859a-a952c1e09e85_preview.jpg | channel=ChaosSeminar Ulm | date=2005-04-11T19:00:00Z | duration=5034 | id=ccc:8e32f051-c3a4-4f9e-859a-a952c1e09e85 | image=https://static.media.ccc.de/media/contributors/ulm/110835-8e32f051-c3a4-4f9e-859a-a952c1e09e85_preview.jpg | kind=0 | plot=Als kurzfristige Alternative zum ausgefallenen ChaosSeminar zur TkÜV gibt es einen Kurzvortrag mit anschließender Diskussionsmöglichkeit über die "biometrischen Pässe" und deren Sicherheitsfeatures. Der Vortrag versucht, die Inhalte des Beitrags eines BSI-Mitarbeiters zusammenzufassen, den dieser auf der "Conference on Security in Pervasive Computing" hielt.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_04_Biometrische_Pässe">https://ulm.ccc.de/ccc/chaosseminar/2005_04_Biometrische_Pässe</a> | ref=ccc:8e32f051-c3a4-4f9e-859a-a952c1e09e85 | source=ccc | subtitle=Frank Kargl, Stefan Schlott | title=Biometrische Pässe
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110834-da720391-fd0f-4782-bc1c-6aa7fe6ae387_preview.jpg | channel=ChaosSeminar Ulm | date=2005-03-14T19:00:00Z | duration=5778 | id=ccc:da720391-fd0f-4782-bc1c-6aa7fe6ae387 | image=https://static.media.ccc.de/media/contributors/ulm/110834-da720391-fd0f-4782-bc1c-6aa7fe6ae387_preview.jpg | kind=0 | plot=Aus Frust über die bestehenden Instant Messenger Systeme wird seit 1999 das offene IM-Protokoll "Jabber" entwickelt, das inzwischen unter dem Namen XMPP RFC-Standard ist.
+Inzwischen existieren alle möglichen Anwendungen für Jabber, von vernetzten Rollenspielen und Cobrowsing bis hin zu Telefonie-Signalisierung und E-Mail-Protokollen. Nach einer kurzen Einleitung für Jabber-Einsteiger soll dieser Vortrag einen groben Abriss über aktuellen Zustand und Möglichkeiten von Jabber geben.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_03_Jabber">https://ulm.ccc.de/ccc/chaosseminar/2005_03_Jabber</a> | ref=ccc:da720391-fd0f-4782-bc1c-6aa7fe6ae387 | source=ccc | subtitle=Florian Holzhauer | title=Jabber
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110847-90ee726e-4164-45f1-a29c-f271a1ddfb73_preview.jpg | channel=ChaosSeminar Ulm | date=2006-06-12T19:00:00Z | duration=7082 | id=ccc:90ee726e-4164-45f1-a29c-f271a1ddfb73 | image=https://static.media.ccc.de/media/contributors/ulm/110847-90ee726e-4164-45f1-a29c-f271a1ddfb73_preview.jpg | kind=0 | plot=Folien: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_06_Personentracking/tgtp-chaos-seminar.odp">tgtp-chaos-seminar.odp</a>
+
+Es folgt der Call for Paper des 22C3. Ich hatte keine Lust zum Übersetzen. Der Vortrag ist aber auf deutsch.
+
+<h3>Title</h3>
+
+Tracking goods and tracing people - localization in the pizza man's universe
+
+<h3>Subtitle</h3>
+
+Technical methods and social components of localization services for items
+and people
+
+<h3>Abstract</h3>
+
+This speech shows an overview and details about different technologies for
+tracking & tracing systems. It categorizes and displays, how such tracking
+systems work today, and where they're already running. The security aspects
+of different tracking systems are reconsidered in detail.
+
+Seeing, what's goin'on, the social consequences are enlightened. Those
+consequences are as well commercial issues like results in changing market
+power, as consequences for "consumers", people who should know what is
+done with there data, but usually don't.
+
+Having those tracking systems in business, a second look goes to tracing
+systems of the states, and what are the dangers of abusing them.
+
+A discussion follows, what should be demanded from a society, which moves
+straitforward closer and closer to Orwell's nightmare.
+
+<h3>Description</h3>
+
+This speech shows an overview and details about different technologies for
+tracking & tracing systems, systems to localize items or persons.
+
+The tracking systems showed include tracking goods and containers in
+warehouses, tracking goods containers and vehicles in the transportation
+market, and tracking vehicles, items and people for security purposes
+and law enforcement.
+
+It categorizes and displays, how such tracking systems work today,
+and where they're already running. The security aspects of different
+tracking systems are reconsidered in detail.
+
+This includes localization technologies like GPS, cell info, and
+gatewaying as well as the communications aspect using wired and
+wireless networks.  | ref=ccc:90ee726e-4164-45f1-a29c-f271a1ddfb73 | source=ccc | subtitle=Volker Birk | title=Personentracking
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110844-3f56f70f-7012-4a10-977d-72a978dd2868_preview.jpg | channel=ChaosSeminar Ulm | date=2006-03-13T19:00:00Z | duration=7179 | id=ccc:3f56f70f-7012-4a10-977d-72a978dd2868 | image=https://static.media.ccc.de/media/contributors/ulm/110844-3f56f70f-7012-4a10-977d-72a978dd2868_preview.jpg | kind=0 | plot=Polizei und Verfassungsschutz sammeln eifrig Daten und speichern sie. Die Realität zwischen technischer Inkompetenz, Überwachungswahn
+und politischen Stunts ist dabei weit entfernt von Szenarien Marke 1984.  Und doch gibt es Gründe genug, den Behörden auf die Finger zu
+schauen. Der Vortrag beschäftigt sich mit diesen Gründen und wird auch Möglichkeiten zur Selbsthilfe diskutieren.
+Siehe auch <a href="http://www.datenschmutz.de">http://www.datenschmutz.de</a>
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_03_Polizeidatenbanken">https://ulm.ccc.de/ccc/chaosseminar/2006_03_Polizeidatenbanken</a> | ref=ccc:3f56f70f-7012-4a10-977d-72a978dd2868 | source=ccc | subtitle=Anonym | title=Polizeidatenbanken
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110836-4d112db3-fbdc-4c09-9942-55089fd1c177_preview.jpg | channel=ChaosSeminar Ulm | date=2005-06-13T19:00:00Z | duration=8954 | id=ccc:4d112db3-fbdc-4c09-9942-55089fd1c177 | image=https://static.media.ccc.de/media/contributors/ulm/110836-4d112db3-fbdc-4c09-9942-55089fd1c177_preview.jpg | kind=0 | plot=Immer mehr Sicherheitsvorfälle in IT-Systemen gehen auf das Konto von unsicheren Web-Servern oder -Clients. Seien es Buffer-Overflows in der Software, fehlerhafte Web-Anwendungen oder überforderte Benutzer, Angriffsmöglichkeiten gibt es zu Hauf. Der Vortrag zeigt Schwachstellen und mögliche Angriffe, geht aber auch darauf ein, wie Benutzer und Softwareentwickler das World Wide Web etwas sicherer machen können.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_06_WebSecurity">https://ulm.ccc.de/ccc/chaosseminar/2005_06_WebSecurity</a> | ref=ccc:4d112db3-fbdc-4c09-9942-55089fd1c177 | source=ccc | subtitle=Frank Kargl, Stefan Schlott | title=WebSecurity
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/37-2e2ad4a8-1aca-5a82-a6cc-21a6b9338fa4_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T14:00:00Z | duration=1299 | id=ccc:2e2ad4a8-1aca-5a82-a6cc-21a6b9338fa4 | image=https://static.media.ccc.de/media/events/godotfest/2026/37-2e2ad4a8-1aca-5a82-a6cc-21a6b9338fa4_preview.jpg | kind=0 | plot=The LSU distillation columns is an advanced structure that gives opportunity for students to operate and experience commercial chemical equipment that follows specialized design standards. With the scale and complexity of the LSU distillation columns, creating a digital replication of the towers with a multiplayer system transforms learning, for both professors and students are able to analyze and study the facility without physical attendance. The multiplayer network facilitates real-time collaboration in a 3D digital environment through virtual reality (VR) and augmented reality (AR). To create a collaborative experience, the development between a multiplayer network, digital twin technology, and VR/AR environment enables an interface connecting data, systems, and people. The system will allow multiple people to thoroughly immerse, communicate effectively, and collect information simultaneously through a multitude of devices. Using digital twins in academics is an extension of learning and a different study method before firsthand operations. This presentation aims to share the challenges that arise within a shared virtual reality and multiplayer systems interactions. In addition, it demonstrates how accessible and scalable it is to implement across diverse platforms with open-source software, making it compatible for applications in education, research, and industry.
+
+This project focuses on creating and implementing digital twins of the LSU distillation columns through open-source software. Open-source software is important because it allows more flexibility to modify and improve designs over time as well as be transparent and accessible. We found that open-source software is highly capable and accessible in our workflow when creating interactive digital twins.
+
+Using data from lidar or photogrammetry, a point cloud is generated from an application like CloudCompare for accurate measurement, scale, and location of the environment. This point cloud served as a pr | ref=ccc:2e2ad4a8-1aca-5a82-a6cc-21a6b9338fa4 | source=ccc | subtitle=Tina Nguyen, Darrius Anthony | title=Building A Multiplayer Network for Digital Twins in VR/AR
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110831-4798732b-cfc2-4289-baf2-1ebf0d9c51b9_preview.jpg | channel=ChaosSeminar Ulm | date=2004-12-13T19:00:00Z | duration=5358 | id=ccc:4798732b-cfc2-4289-baf2-1ebf0d9c51b9 | image=https://static.media.ccc.de/media/contributors/ulm/110831-4798732b-cfc2-4289-baf2-1ebf0d9c51b9_preview.jpg | kind=0 | plot=Firewalls gelten als Inbegriff der Computersicherheit. Deshalb haben sich clevere Marketingstrategen gedacht man könnte doch für jeden Rechner eine verkaufen.
+
+Dabei werden die Benutzer bezüglich der Funktionalität getäuscht. Es wird eine Sicherheit versprochen, die eine Personal Firewall prinzipbedingt nicht bringen kann. Statt dessen ermöglichen sich durch das Vorhandensein einer Personal Firewall ganz neue Angriffsmöglichkeiten auf ein System.
+
+Im Vortrag wird erklärt, wie Personal Firewalls funktionieren. An Hand von ein paar Beispielen wird anschließend gezeigt, wie man eine Personal Firewall umgehen oder angreifen kann.
+
+Links:
+
+- Google Video: <a href="http://video.google.de/videoplay?docid=-9179940514495321914">http://video.google.de/videoplay?docid=-9179940514495321914</a>
+- Seite zum Vortag: <a href="http://blog.copton.net/articles/pfw-versagen/">http://blog.copton.net/articles/pfw-versagen/</a>
+- Windowsdienste abschalten: <a href="http://www.dingens.org">http://www.dingens.org</a>
+- Mehr zum Thema <a href="http://ulm.ccc.de/PersonalFirewalls">PersonalFirewalls</a>
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2004_12_Personal_Firewalls">https://ulm.ccc.de/ccc/chaosseminar/2004_12_Personal_Firewalls</a> | ref=ccc:4798732b-cfc2-4289-baf2-1ebf0d9c51b9 | source=ccc | subtitle=Alexander Bernauer, Ansgar Wiechers, [Jonathan Häberle](http://dreampulse.de) | title=Personal Firewalls
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110842-0243ec8f-0b36-48c1-89e0-679955c6ac19_preview.jpg | channel=ChaosSeminar Ulm | date=2006-01-09T20:07:00Z | duration=8138 | id=ccc:0243ec8f-0b36-48c1-89e0-679955c6ac19 | image=https://static.media.ccc.de/media/contributors/ulm/110842-0243ec8f-0b36-48c1-89e0-679955c6ac19_preview.jpg | kind=0 | plot=Welche Linuxdistribution ist die beste? Oder soll ich doch lieber Opendarwin benutzen?
+Windows ist's! Oder doch nicht? Die Frage nach dem richtigen Betriebssystem lässt sich nicht so einfach objektiv beantworten und schon gar nicht pauschal. Eigentlich ist es schon eher eine Glaubensfrage. Heute kommen die Priester zu Wort und werden anschliessend vom Publikum auf dem Scheiterhaufen verbrannt. ;-)
+
+Da es sehr schwer war genug Priester zu finden, unterstützt uns diesmal die <a href="http://www.lugulm.de">lugu</a> tatkräftig. Wir suchen allerdings noch Vertreter u.a. für SuSE, Gentoo, *BSD oder beliebig anderen Alternativen. Wenn es dir also am Herzen liegt, die Vorteile deines OS anderen näher zu bringen, komm einfach vorbei.
+
+Zunächst werden einige Systeme vorgestellt in je einem Kurzvortrag, dann gehen wir zur Diskussion über.
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2006_01_Distrobashing">https://ulm.ccc.de/ccc/chaosseminar/2006_01_Distrobashing</a> | ref=ccc:0243ec8f-0b36-48c1-89e0-679955c6ac19 | source=ccc | subtitle=Holger, Jürgen, Uli, Alex, ... | title=Distrobashing
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/11-c2cc82eb-fe69-59d5-92f5-72974191137d_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T16:30:00Z | duration=1406 | id=ccc:c2cc82eb-fe69-59d5-92f5-72974191137d | image=https://static.media.ccc.de/media/events/godotfest/2026/11-c2cc82eb-fe69-59d5-92f5-72974191137d_preview.jpg | kind=0 | plot=Our open-source version control plugin, [Backstitch](https://backstitch.dev/), enables fast collaboration for dev teams, game jams, and classrooms!
+
+Are you an artist who struggles with Git merge conflicts, and broken Godot scenes?
+
+Or perhaps you're a programmer who keeps handling your team's Git problems, instead of writing code?
+
+Maybe you teach Godot to students, and half your time is spent fixing Git mistakes?
+
+Game development includes a diversity of roles, and not everyone can be expected to learn or teach Git. Its learning curve is way too steep, and less-technical participants can end up locked out of Godot entirely. Plus, Git was built for code -- games are a lot more than code!
+
+Enter [Backstitch](https://backstitch.dev). Our open-source Godot plugin allows for real-time collaboration, similar to a Google Doc. You can...
+
+- See a history of changes, including visual diffs
+- Revert to previous versions
+- Create and merge branches
+
+... all without leaving the editor. Most importantly, you're *never* stuck with a broken scene. Everyone's changes are intelligently merged together, automatically.
+
+Backstitch is great for game jams, or remote, asynchronous work. It is also excellent for classrooms! The plugin grew out of a collaboration with the Endless Foundation, who teach game development with Godot, and needed a better solution for students than Git.
+
+In this talk, we'll cover the challenges of version control in game development, what we've learned from students, and what collaboration can look like when everyone on the team can work together. Everyone deserves equal access to version control!
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:c2cc82eb-fe69-59d5-92f5-72974191137d | source=ccc | subtitle=Lilith Duncan | title=Backstitch: Real-Time Version Control for Godot
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110840-fe074661-42e3-48fe-a875-6e00ce1ab390_preview.jpg | channel=ChaosSeminar Ulm | date=2005-11-14T19:00:00Z | duration=6899 | id=ccc:fe074661-42e3-48fe-a875-6e00ce1ab390 | image=https://static.media.ccc.de/media/contributors/ulm/110840-fe074661-42e3-48fe-a875-6e00ce1ab390_preview.jpg | kind=0 | plot=Für das Problem, Informationen über einen gestörten Kanal zu übertragen, lieferte Claude E. Shannon 1948 mit seinem Aufsatz "A Mathematical Theory of Communication" ein mathematisches Modell, dessen Mächtigkeit und Tragweite der Wissenschaft erst mit der Zeit klar wurde.
+
+Heute ist unumstritten, dass Shannon eine neue Wissenschaft begründet hat, denn seine Arbeit ist die Grundlage für die gesamte Telekommunikation. Das betrifft Themen wie z.B. die Datenkompression, die Kodierung, die Informationsübertragung und nicht zuletzt die Kryptographie.
+
+Der Vortrag gibt eine kleine Einführung in die Informationstheorie, ohne allzu mathematisch zu werden und erläutert anschaulich die wichtigsten Begriffe und Zusammenhänge.
+
+<h3>Weblinks</h3>
+
+- Shannons Aufsatz: <a href="http://cm.bell-labs.com/cm/ms/what/shannonday/paper.html">http://cm.bell-labs.com/cm/ms/what/shannonday/paper.html</a>
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_11_Informationstheorie">https://ulm.ccc.de/ccc/chaosseminar/2005_11_Informationstheorie</a> | ref=ccc:fe074661-42e3-48fe-a875-6e00ce1ab390 | source=ccc | subtitle=Alexander Bernauer, Stephanie Wist | title=Informationstheorie
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110828-13e97f34-7cc3-4f9f-ac7e-9ff8c1cd6931_preview.jpg | channel=ChaosSeminar Ulm | date=2003-05-12T19:00:00Z | duration=3598 | id=ccc:13e97f34-7cc3-4f9f-ac7e-9ff8c1cd6931 | image=https://static.media.ccc.de/media/contributors/ulm/110828-13e97f34-7cc3-4f9f-ac7e-9ff8c1cd6931_preview.jpg | kind=0 | plot=Kurzvorträge Folien(siehe Fahrplan Link):
+
+- Markus Schaber: not Available
+- Ulrich Dangel:<a href="https://ulm.ccc.de/ccc/chaosseminar/2003_05_Installation_von_Debian_Linux_auf_IBM_pSeries/debian-pseries_schula.pdf">debian-pseries_schula.pdf</a>
+- Volker Birk: [HP-Materialien zum Vergleich mit Itanium 2](https://ulm.ccc.de/ccc/chaosseminar/2003_05_Installation_von_Debian_Linux_auf_IBM_pSeries/itanium2.pdf),
+[IBM-Materialien zur p630](https://ulm.ccc.de/ccc/chaosseminar/2003_05_Installation_von_Debian_Linux_auf_IBM_pSeries/p630.pdf)
+
+IBM macht zwar groß Werbung für Linux, aber auf den etwas *größeren Eisen* sieht es mit der Umsetzung etwas dürftiger aus als im Marketing. Offiziell unterstützt gerade mal der Suse Linux Enterprise Server 7 die IBM PSeries Rechner, und der kostet knapp 3000 EUR. Das Hauptproblem dabei sind die 64-bittigen Power4-Prozessoren, auf denen ein *normaler* LinuxPPC-Kern nicht startet.
+
+*Macht aber nix*, dachten sich Uli, Volker und Markus, und kneteten einfach ein Debian Linux lange genug durch, bis es doch auf der Maschine lief. Was ihnen dabei so alles lustiges passierte, erzählen sie euch im Vortrag.
+
+Mehr Infos: https://ulm.ccc.de/ccc/chaosseminar/2003_05_Installation_von_Debian_Linux_auf_IBM_pSeries | ref=ccc:13e97f34-7cc3-4f9f-ac7e-9ff8c1cd6931 | source=ccc | subtitle=Markus Schaber, Uli Dangel, Volker Birk | title=Installation von Debian Linux auf IBM pSeries
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/69-03408f63-6950-5a78-bac2-15b89d25dde1_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T14:30:00Z | duration=2759 | id=ccc:03408f63-6950-5a78-bac2-15b89d25dde1 | image=https://static.media.ccc.de/media/events/godotfest/2026/69-03408f63-6950-5a78-bac2-15b89d25dde1_preview.jpg | kind=0 | plot=This talk runs through setting up a Discord server to help game developers as they build and grow their games. It talks about how to set up moderation, create channels, create roles, get feedback, run events, and interact with the community. It steps through how these things change as a dev's game goes from prototype to beta to release.
+
+Your Discord server isn't just a community, it's a development tool. This talk walks through building a server that works for you at every stage of your game's development. We'll talk about channels, roles, events, moderation, and how to bring players straight from your game into your community and keep them engaged.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:03408f63-6950-5a78-bac2-15b89d25dde1 | source=ccc | subtitle=Anthony Tešija | title=Building Your Discord Server Through Every Stage of Game Development
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110838-15deed72-1861-4f24-b143-cdc170aeda16_preview.jpg | channel=ChaosSeminar Ulm | date=2005-09-12T19:00:00Z | duration=6743 | id=ccc:15deed72-1861-4f24-b143-cdc170aeda16 | image=https://static.media.ccc.de/media/contributors/ulm/110838-15deed72-1861-4f24-b143-cdc170aeda16_preview.jpg | kind=0 | plot=Mac OS X erfreut sich auch in Hackerzirkeln einer gewissen Beliebtheit. Dementsprechend wollen wir uns einige spaßigere Aktivitäten anschauen, die auch unter Mac OS X für Erheiterung sorgen.
+
+Subthemen:  
+FireWire DMA, Cocoa ohne ObjC, Krypto- und Securityservices, Packagemanager, MACH Injections, Angriffsvektoren für Würmer, Highlight aus den letzten Security Updates, Clustering, Forensics und Hardening, Buffer Overflows, OpenFirmware, ...
+
+Mehr Infos: <a href="https://ulm.ccc.de/ccc/chaosseminar/2005_09_Mac_OS_X_Hacks">https://ulm.ccc.de/ccc/chaosseminar/2005_09_Mac_OS_X_Hacks</a> | ref=ccc:15deed72-1861-4f24-b143-cdc170aeda16 | source=ccc | subtitle=Michael Feri | title=Mac OS X Hacks
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/27-860ce165-6272-5167-bb2f-31fe8a362697_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T14:30:00Z | duration=1540 | id=ccc:860ce165-6272-5167-bb2f-31fe8a362697 | image=https://static.media.ccc.de/media/events/godotfest/2026/27-860ce165-6272-5167-bb2f-31fe8a362697_preview.jpg | kind=0 | plot=A Godot game is rarely written in just one language. You've got GDScript for gameplay, more and more C#/.NET for the heavier systems, and native C++ through GDExtension underneath. Then you export the whole thing to Windows, Linux, macOS, Android, iOS, the Web, SteamOS/Proton, and - for some of us - consoles.
+
+Every one of those languages fails differently. Every one of those platforms reports and symbolicates crashes differently. So when a player hits a bug you can't reproduce, the problem is collapsing that entire grid of languages and platforms into one readable issue, no matter what threw it or where it died.
+
+This talk walks through that problem end-to-end, using Sentry's Godot SDK - recently expanded with first-class .NET support - as the example. We'll look at how a GDScript error, a C# exception, and a native crash differ; how the same crash has to survive Android tombstones, WASM in the browser, and the Proton translation layer on SteamOS; and how you can still get all of it back as a single, grouped, source-mapped issue. It's a talk about the messy reality of shipping a Godot game everywhere at once - and how to stay sane while doing it.
+
+**You write in three languages and ship to eight platforms. A crash can come from any cell in that grid. You need to turn that grid back into one clear answer.**
+
+Most crash-reporting talks assume one language and one platform. Godot oftenbreaks both assumptions at the same time, which is exactly what makes it relevant for all Godot developers,whether they're all-in on GDScript, betting on C#, or dropping into native code for performance.
+
+## Axis 1 - The languages: three ways a game can fail
+Under one engine, "an error" means three different things:
+* **GDScript** - Errors come from the engine's own script VM. You want the script, the line, and the game state around it, captured live as the game runs.
+* **C#/.NET - The newest and fastest-growing surface.** These are managed-runtime exceptions with their own stack shape,  | ref=ccc:860ce165-6272-5167-bb2f-31fe8a362697 | source=ccc | subtitle=Amir Mujacic | title=Crashes Don't Care What Language You Wrote Your Game In
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/8-19e2028c-0122-51e5-b791-af0600148df1_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T10:00:00Z | duration=3327 | id=ccc:19e2028c-0122-51e5-b791-af0600148df1 | image=https://static.media.ccc.de/media/events/godotfest/2026/8-19e2028c-0122-51e5-b791-af0600148df1_preview.jpg | kind=0 | plot=At GodotCon Amsterdam 2026, "Game Programming Patterns for Godot" started with a tiny Reddit find, a cached getter and grew into a tour of underexplored patterns for real Godot projects. Then the video went online, and the comment section did what comment sections do: it argued, it questioned, and it asked for more.
+
+This sequel answers back. We'll address the most common (and most spicy) objections from the community head-on, with code, and then go further: new patterns that didn't fit in the first talk, each demonstrated in a real, shipping Godot project.
+
+The talk has three acts:
+
+Act I: A New Hope, Recapped. A fast, visual recap of the first talk's core idea.
+
+Act II: The Comments Strike Back. The top community objections and questions from the YouTube release, each answered with working code
+
+Act III: Return of the Patterns. Three patterns that didn't make the first talk, each shown in the context of my own released game, Tiny Drift:
+
+- State machines beyond the basics: pushdown automata for input and UI flows that plain enum-based FSMs handle poorly.
+- MVVM for game UI: separating game state from UI scenes using observable custom Resources; why this is underexplored in Godot and what it buys you in practice.
+- The Repository pattern with custom Resources:  abstracting save data and content databases behind a data-source interface, and where the classic IRepository approach breaks down in GDScript.
+
+At GodotCon Amsterdam 2026, "Game Programming Patterns for Godot" started with a tiny Reddit find, a cached getter, and grew into a tour of underexplored patterns for real Godot projects. Then the video went online, and the comment section did what comment sections do: it argued, it questioned, and it asked for more.
+
+This sequel answers back. We'll address the most common (and most spicy) objections from the community head-on, with code, and then go further: new patterns that didn't fit in the first talk, each demonstrated in a real, shipped Godot project.
+
+License | ref=ccc:19e2028c-0122-51e5-b791-af0600148df1 | source=ccc | subtitle=Inacio Schweller | title=The Return of Game Programming Patterns for Godot
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/22-fd55bed6-ce06-5c6c-8b47-c4d6d414c988_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T11:00:00Z | duration=3001 | id=ccc:fd55bed6-ce06-5c6c-8b47-c4d6d414c988 | image=https://static.media.ccc.de/media/events/godotfest/2026/22-fd55bed6-ce06-5c6c-8b47-c4d6d414c988_preview.jpg | kind=0 | plot=Amnios is a free narrative game about pregnancy, childbirth, and early motherhood during migration, built in Godot and co-created with migrant women, hospital clinicians, and the ICRC. This talk walks through how a research-creation methodology shaped the game's narrative, art direction, and puzzle mechanics — and what it actually takes, technically and ethically, to turn lived testimony into a playable experience.
+
+Most "games for good" struggle with the same tension: how do you build something emotionally honest without turning real suffering into spectacle, and without the production collapsing under its own good intentions? This talk uses Amnios — a hand-drawn 2D narrative game developed in Godot — as a concrete case study for navigating that tension from a technical and production standpoint.
+Amnios follows three women navigating pregnancy, childbirth, and early motherhood across three different displacement contexts (the Darién Gap, the DRC–Uganda border, and Geneva). It was developed by a small interdisciplinary team (HEAD – Genève, HEdS, HUG, ICRC) on an eight-month seed grant, using real testimonies and a co-creation workshop with twelve migrant women as source material rather than research statistics.
+
+I'll cover:
+- Why Godot was the right engine for a small, cross-disciplinary team mixing artists, clinicians, and researchers with no prior game-dev experience
+- Building a hybrid comic/side-scrolling structure — combining illustrated panel sequences with forced-scroll 2D levels to represent involuntary displacement
+- "Bubble Puzzles": a symbolic dialogue mechanic (conversation, thought, and violence bubbles) used as both a narrative device and a literal gameplay system, and how we implemented it in Godot's node/signal architecture
+- Translating testimony into mechanics — the practical pipeline from workshop transcripts and field interviews to level design and environmental storytelling, without reproducing individual stories directly
+- Production reality on | ref=ccc:fd55bed6-ce06-5c6c-8b47-c4d6d414c988 | source=ccc | subtitle=Aida Navarro, Claire Delhomme | title=Developing a humanitarian video game in Godot
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/66-aa67c44b-6459-5c9b-bc6c-7b063af45c03_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T09:00:00Z | duration=3336 | id=ccc:aa67c44b-6459-5c9b-bc6c-7b063af45c03 | image=https://static.media.ccc.de/media/events/godotfest/2026/66-aa67c44b-6459-5c9b-bc6c-7b063af45c03_preview.jpg | kind=0 | plot=Even after years of making games, I can’t reliably tell if one is "good" while we’re building it. Intuition, playtests, retention and wishlists all help - but every signal can mislead you in a different way. It is also hard to judge if the game is just "not good yet" or can actually never be good.
+In this talk, I’ll show how we deal with that at Bippinbits, using examples from both our successful games and the ones we chose to cancel.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:aa67c44b-6459-5c9b-bc6c-7b063af45c03 | source=ccc | subtitle=René Habermann | title=I Don't Know If This Game Is Good
+item backdrop=https://static.media.ccc.de/media/contributors/ulm/110827-07bb1312-1907-477d-bcaa-5f64778e0254_preview.jpg | channel=ChaosSeminar Ulm | date=2003-09-08T19:00:00Z | duration=5597 | id=ccc:07bb1312-1907-477d-bcaa-5f64778e0254 | image=https://static.media.ccc.de/media/contributors/ulm/110827-07bb1312-1907-477d-bcaa-5f64778e0254_preview.jpg | kind=0 | plot=Verteiltes Rechnen im Internet ist seit SETI@Home einer großen Öffentlichkeit
+    bekannt. Das erste große Projekt dieser Art war jedoch distributed.net, welches
+    sich statt mit der Suche nach Aliens mit kryptografischen und mathematischen Projekten
+    beschäftigt. Ihr bekommt einen kleinen Überblick über Geschichte und Motivation
+    solch großer Projekte und einen Einblick un die Infrastruktur von distributed.net.
+    Außerdem gibt's speziell zu OGR (Optimale Golomb Ruler) Hintergrundinfos vom Kern--Developer
+
+Mehr Infos: https://ulm.ccc.de/ccc/chaosseminar/2003_09_distributed_net | ref=ccc:07bb1312-1907-477d-bcaa-5f64778e0254 | source=ccc | subtitle=Michael Feiri | title=distributed net
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/35-2f6282ee-19ed-5585-8034-f9a818bce8d9_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T15:30:00Z | duration=1642 | id=ccc:2f6282ee-19ed-5585-8034-f9a818bce8d9 | image=https://static.media.ccc.de/media/events/godotfest/2026/35-2f6282ee-19ed-5585-8034-f9a818bce8d9_preview.jpg | kind=0 | plot=Discover the essentials of accessibility in games and learn how to make your great work enjoyable for so many more users - using incredibly simple methods!
+
+We might not realize it at first, but accessibility plays a role in virtually **_every_** aspect of our life - whether by wearing glasses or hearing aids, living with physical limitations or sustaining sensory overloads. Even the brightness level of the screen on which you are currently reading this text can be considered an accessibility or quality-of-life feature!
+
+**In this short talk, I focus on the topic of general accessibility in games, including:**
+- An explanation of what accessibility actually is and why it is so important.
+- How small and simple (UI) optimizations can make a **_huge positive difference_** for many users.
+- An overview of tools available to (indie) developers.
+- Why forcing accessibility is a bad idea and why it is (sadly) impossible to optimize games for every single individual.
+
+So, join me on this little journey through virtual realms of boundless freedom, and let’s discover new ways of making games as accessible as possible - after all, it enhances **everyone's** enjoyment of your fantastic works! ♥
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:2f6282ee-19ed-5585-8034-f9a818bce8d9 | source=ccc | subtitle=Thomas Mayer | title=Godot & Accessibility - Creating the Utmost Freedom
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/43-9d812a23-9bb6-5fa3-98e9-14c75cba3fec_preview.jpg | channel=GodotFest 2026 | date=2026-11-04T11:00:00Z | duration=1493 | id=ccc:9d812a23-9bb6-5fa3-98e9-14c75cba3fec | image=https://static.media.ccc.de/media/events/godotfest/2026/43-9d812a23-9bb6-5fa3-98e9-14c75cba3fec_preview.jpg | kind=0 | plot=Mobile games are often associated with aggressive monetization, dark patterns, and disposable experiences. But does mobile really have to be that way?
+
+I’m Leon, creator of LOOTFALL, a retro-inspired RPG that has grown into a Top 50 iOS RPG in multiple countries, with thousands of daily players and a community that genuinely loves the game.
+
+In this talk, I want to share what I’ve learned building and monetizing a mobile game in Godot without relying on the practices mobile games are often criticized for. I’ll also dive into the technical side of building a fairly complex mobile game with Godot, including the tools, systems, and performance challenges involved in using an engine that isn’t always designed with mobile-first development in mind.
+
+The talk combines three areas: game design, business, and technology.
+
+I’ll use LOOTFALL as a real-world case study to discuss how meaningful progression, long-term systems, and player-friendly monetization can coexist with a sustainable mobile business.
+
+On the technical side, I’ll cover how I built and shipped LOOTFALL with Godot, including mobile performance optimization, memory and loading considerations, handling large amounts of UI and game data, and some of the challenges of using Godot for a relatively complex mobile game when many parts of the engine and workflow are not specifically mobile-first.
+
+The talk is aimed at developers interested in mobile development, Godot, sustainable (and fair) monetization, and building games that players want to keep playing (live service).
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:9d812a23-9bb6-5fa3-98e9-14c75cba3fec | source=ccc | subtitle=Leon Klostermann | title=Mobile Games Without the Slop
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/67-537e259a-e510-5a00-85b2-b320e4a22f0d_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T15:00:00Z | duration=1389 | id=ccc:537e259a-e510-5a00-85b2-b320e4a22f0d | image=https://static.media.ccc.de/media/events/godotfest/2026/67-537e259a-e510-5a00-85b2-b320e4a22f0d_preview.jpg | kind=0 | plot=Your game works perfectly until other players show up with their own version of reality. This is a light, fast tour of the classic multiplayer bugs: why they happen, how to fix them, and how to fix the fix.
+
+Networking breaks your game in ways that are hard to explain, easy to laugh at, and even easier to misdiagnose. Players will call all of it lag. You will blame the server. It is usually neither. This talk walks through the common ways multiplayer goes wrong: why each one happens, what the usual fix is, and what that fix quietly breaks in return. No code or netcode background needed. If you are adding multiplayer to your game, or already shipped it and are now reading the reviews, this one is for you.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:537e259a-e510-5a00-85b2-b320e4a22f0d | source=ccc | subtitle=Jiří Starý, Erick Passos | title=Multiplayer Bloopers: Common networking pitfalls explained with painful examples
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/49-95a1f9a7-83ba-5dd2-ad10-441bdafbcb6f_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T15:30:00Z | duration=2492 | id=ccc:95a1f9a7-83ba-5dd2-ad10-441bdafbcb6f | image=https://static.media.ccc.de/media/events/godotfest/2026/49-95a1f9a7-83ba-5dd2-ad10-441bdafbcb6f_preview.jpg | kind=0 | plot=Building an MMORPG as Indie Devs: workflows, scope management, lessons learned and leveraging the power of SpacetimeDB with Godot.
+
+Building an MMORPG comes with big challenges across content production, large-world tooling, rendering many entities, connection management, latency, netcode and networked physics. This talk explores how we’re combining Godot, SpacetimeDB, and Blender to approach these problems while building Ichor Online. We’ll share our architecture, workflows, lessons learned, and practical trade-offs.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:95a1f9a7-83ba-5dd2-ad10-441bdafbcb6f | source=ccc | subtitle=Leonardo Rocha, Francesco Piacenti (FR3NKD) | title=Ichor Online: Building a Massive Multiplayer Online RPG in Godot
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/6-c58482c8-2cdc-5fae-94c1-c89746532042_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T10:00:00Z | duration=1474 | id=ccc:c58482c8-2cdc-5fae-94c1-c89746532042 | image=https://static.media.ccc.de/media/events/godotfest/2026/6-c58482c8-2cdc-5fae-94c1-c89746532042_preview.jpg | kind=0 | plot=Come on a journey where we explore what's possible with Godot 4.7, 4.8, and .NET 10 / 11.
+
+I'll share findings, fascinations, and funny bits about my love for Godot with .NET; the things many developers long for, and how **Godot** and the **Godot community** helps us find them.
+
+### Live Demo: [2dog.dev](https://2dog.dev)
+We'll go through the motions of porting a real C# Godot game to HTML5 and WebAssembly for publishing on [itch.io](https://itch.io) ... live on stage. 
+
+**Woof, or oof?** Don't worry, it's really just about as easy as typing:
+```
+dnx 2dog add
+dotnet publish
+``` 
+Voilà!
+
+### Treats 🦴
+In version 4.6, `libgodot` became an official part of Godot. Now Godot 4.8 brings .NET 10, but what does that really _mean for us_ developers?
+
+Both Godot and 2dog (which really _is still Godot,_ just a little backwards) have much more in store, with the brand new `godot-dotnet` and C# bindings on the horizon. Let's peek at some advancements coming from the .NET ecosystem with .NET 10 and 11.
+
+## Who is this talk for?
+
+Developers using C# with Godot, for anything from applications, game jams, prototypes, and entire games ready to ship on Steam tomorrow.
+
+## What to expect?
+
+An overview of where Godot and C# is in actual use, in games and application development.
+
+See **2dog**, a concrete, free, and easy to apply use case of `libgodot`. It turns out it can do *a whole lot of very useful things* for game developers on every level.
+
+- Publish Godot C# games to WebAssembly for the browser
+- Run xUnit, GdUnit, or NUnit tests from your IDE, the CLI, or CI
+- Import resources through MSBuild tasks
+- Add another layer of .NET code around an existing game
+
+## But why?
+In late 2025, I went on a journey to learn the innards of Godot and find a way to write my own importers and unit test runners. I was also still waiting for Godot and the promised C# web exports since version 4.1 ... then I met some amazing folks from the community at GodotCon Berl | ref=ccc:c58482c8-2cdc-5fae-94c1-c89746532042 | source=ccc | subtitle=Moritz Voss | title=LOVE,DOGS+ROBOTS  .NET, C#, and Godot everywhere!
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/53-72164531-50e5-52de-a526-f1079b4af543_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T11:00:00Z | duration=2160 | id=ccc:72164531-50e5-52de-a526-f1079b4af543 | image=https://static.media.ccc.de/media/events/godotfest/2026/53-72164531-50e5-52de-a526-f1079b4af543_preview.jpg | kind=0 | plot=Practical overview of using Apple’s TestFlight to playtest and distribute Godot games. Learn how to set up staged rollout channels to test updates with targeted user groups, configure feedback channels, and structure "What to Test" prompts that yield useful player insights. We'll showcase onboarding new playtesters and gathering their feedback in real time. The talk also covers navigating platform constraints, clarifying what TestFlight can measure vs where you must implement custom telemetry, promoting validated builds directly to the App Store, and using the ShipGodot editor plugin for easy cross-platform deployment.
+
+This talk provides a practical guide to playtesting and releasing Godot games on Apple platforms. No prior Apple developer experience is required.
+
+**Topics covered:**
+
+- TestFlight Overview
+- Creating staged rollout channels to test updates with targeted user groups.
+- A live demo showing how easy it is to onboard new playtesters and receive their feedback.
+- Setting up the feedback channel and structuring "What to Test" prompts to get honest, and useful insights from playtesters.
+- Handling TestFlight constraints, what can be measured with it and where you need to implement your own telemetry
+- Promoting validated builds directly to the AppStore
+- Using ShipGodot editor plugin for easy cross-platform deployment
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:72164531-50e5-52de-a526-f1079b4af543 | source=ccc | subtitle=Michał Myczkowski, Aleksandra Dulska | title=TestFlight for Godot Developers: Playtesting Games on Apple Platforms
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/47-0a1ee82a-a2f9-5222-8283-6df596b7df2a_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T09:30:00Z | duration=2909 | id=ccc:0a1ee82a-a2f9-5222-8283-6df596b7df2a | image=https://static.media.ccc.de/media/events/godotfest/2026/47-0a1ee82a-a2f9-5222-8283-6df596b7df2a_preview.jpg | kind=0 | plot=In this talk I will break down how Godot's Forward+ renderer works starting from where it fits within the overall game frame to individual choices for major features.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:0a1ee82a-a2f9-5222-8283-6df596b7df2a | source=ccc | subtitle=Clay John | title=From Alpha to Z-Test: A trip through Godot's renderer
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/58-f23b6577-c1c4-5eaf-ac6b-2eb66d490551_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T09:30:00Z | duration=1421 | id=ccc:f23b6577-c1c4-5eaf-ac6b-2eb66d490551 | image=https://static.media.ccc.de/media/events/godotfest/2026/58-f23b6577-c1c4-5eaf-ac6b-2eb66d490551_preview.jpg | kind=0 | plot=Take an example GDScript class and port it to C++ with me! We'll compare the benefits and tradeoffs of multiple approaches. Finally, I'll show my preferred method which allows for moving code to C++ incrementally and safely.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:f23b6577-c1c4-5eaf-ac6b-2eb66d490551 | source=ccc | subtitle=Carter Hinkle | title=No Big Rewrites! Incrementally Porting GDScript to C++ with GDExtension
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/19-196fae1f-1337-564a-8940-594b6a68ab75_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T11:30:00Z | duration=1510 | id=ccc:196fae1f-1337-564a-8940-594b6a68ab75 | image=https://static.media.ccc.de/media/events/godotfest/2026/19-196fae1f-1337-564a-8940-594b6a68ab75_preview.jpg | kind=0 | plot=We migrated a team from Unity to Godot - not as beginners, but as experts whose Unity instincts actively worked against us. The habits that made us fast in Unity quietly produced brittle, un-idiomatic Godot code, and the bill came due within weeks.
+
+This is the honest post-mortem of our first month: the mental models that collided, the muscle memory that backfired, and the day source control broke. For each, we'll show what we assumed, what actually happened, and the convention that fixed it - so your first month is shorter and less painful than ours.
+
+Most "switching to Godot" talks target newcomers. This one is for teams who already know how to ship - because migrating experienced engineers is a different, harder problem. Your expertise doesn't transfer cleanly; it misleads you. Godot looks enough like Unity that you reach for familiar patterns, and those patterns are exactly what produce fragile code.
+
+We'll walk through the specific collisions our team hit, in three buckets:
+
+**Mental models that don't map 1:1**: 
+
+- GameObjects-and-Components vs. nodes-and-scenes 
+- Prefabs and variants vs. PackedScenes and scene inheritance (where instancing and overrides genuinely differ)
+- ScriptableObjects as Data Containers vs. Resources 
+- `Update()` vs. `_process`/`_physics_process`.
+
+**Muscle memory that backfired**: 
+
+- Porting Unity's singleton/manager soup straight onto autoloads
+- The `GetComponent<>()` reflex becoming `get_node()` coupling
+- And the big one, "we already know C#, so we'll just use C#". The honest team tradeoff between GDScript and C# _(iteration speed, export pipeline, community examples)_.
+
+**The day git broke**:
+- Scene and resource files are text now: diffable, but conflict-prone. 
+- How we kept scenes small and reviewable
+- what to commit vs. ignore
+
+We're just one team, one project into Godot - so this is what worked for *us*, not a definitive playbook. But if sharing our wrong turns spares you a little of the trouble  | ref=ccc:196fae1f-1337-564a-8940-594b6a68ab75 | source=ccc | subtitle=Owen Magri | title=What Our Unity Team Got Wrong (So You Don't Have To)
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/71-9ff14e37-f433-51ba-a672-6366739d9305_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T09:00:00Z | duration=1941 | id=ccc:9ff14e37-f433-51ba-a672-6366739d9305 | image=https://static.media.ccc.de/media/events/godotfest/2026/71-9ff14e37-f433-51ba-a672-6366739d9305_preview.jpg | kind=0 | plot=Every generation of game developers has seen its tools change, from custom in-house engines to open-source editors like Godot. AI is the newest change, and it is already part of many professional workflows. It also raises real questions about credit, quality and creative ownership, and those questions deserve careful answers rather than quick verdicts. This keynote reflects on where making games is heading, what AI can and can't do for developers, and why the Godot community is well placed to help shape it. Tools will keep changing; the craft remains. Our shared task is to make sure the tools keep serving the craft.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:9ff14e37-f433-51ba-a672-6366739d9305 | source=ccc | subtitle=Johannes Ebner | title=Keynote: Tools Change, Craft Remains - Reflections on Godot, AI and the Future of Making Games
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/36-e1b91577-3ab9-5f61-afc5-eefd42445902_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T10:30:00Z | duration=2616 | id=ccc:e1b91577-3ab9-5f61-afc5-eefd42445902 | image=https://static.media.ccc.de/media/events/godotfest/2026/36-e1b91577-3ab9-5f61-afc5-eefd42445902_preview.jpg | kind=0 | plot=Bringing a Godot game to consoles involves much more than getting the engine to run on the hardware.
+
+In this talk, I'll walk through what it actually takes to bring a Godot game to PlayStation, Xbox, and Nintendo Switch, from becoming an approved console developer and getting access to development hardware, to choosing a Godot console port, preparing your game, and getting through certification.
+
+We'll look at practical lessons for building a console-ready Godot project, including platform-independent architecture, input and controller handling, save games, performance, loading times, platform services, and certification requirements.
+
+I'll also share real-world experience from console development with Godot, including case studies such as The Dark Queen of Mortholme and Astra Bestiary, and look at other Godot games making their way onto consoles.
+
+The goal is to give you a practical understanding of the entire journey, from having a Godot game on PC to actually shipping it on a console.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:e1b91577-3ab9-5f61-afc5-eefd42445902 | source=ccc | subtitle=André Ewald | title=Console Development Unlocked: Bringing Your Godot Game to PS5, Xbox & Switch
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/9-58c50f7c-3ca0-562b-b0c4-4beb3aabea03_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T13:30:00Z | duration=1534 | id=ccc:58c50f7c-3ca0-562b-b0c4-4beb3aabea03 | image=https://static.media.ccc.de/media/events/godotfest/2026/9-58c50f7c-3ca0-562b-b0c4-4beb3aabea03_preview.jpg | kind=0 | plot=Using **gettext** and a continuous translation platform like **Weblate** allows translators to use a **simple web view** to translate and gives developers a simple way to **pull the changes through git**. This talk will cover the basic setup and some tricks I learned while developing 99Managers Futsal Edition with over **60 translation contributors and 16 languages** (and counting...).
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:58c50f7c-3ca0-562b-b0c4-4beb3aabea03 | source=ccc | subtitle=Simon Dalvai | title=Continuous community driven translations with gettext and Weblate
+item backdrop=https://static.media.ccc.de/media/events/godotfest/2026/46-e0a775c4-342b-5934-8518-e9f064e7ae83_preview.jpg | channel=GodotFest 2026 | date=2026-11-03T10:30:00Z | duration=1531 | id=ccc:e0a775c4-342b-5934-8518-e9f064e7ae83 | image=https://static.media.ccc.de/media/events/godotfest/2026/46-e0a775c4-342b-5934-8518-e9f064e7ae83_preview.jpg | kind=0 | plot=Preproduction should be the space where you experiment with mechanics and figure out what game you're actually building. But if you never stop throwing out new ideas, you can get stuck exploring forever without ever locking anything down. However, finishing it with a lot of "we'll figure out later," and not measuring the impact of changing mechanics or levels during production, can be risky.
+ This talk breaks down what rushing preproduction actually cost Vultures - Scavengers of Death.
+
+Vultures - Scavengers of Death started as a text based roguelike prototype, then a small 3D vertical slice built in Godot 3. That vertical slice became our demo, and it did its job, it proved the core mechanic worked, turn based tactics that played like Resident Evil. 
+
+We got funded and started working on the game without being aware of how much everything else would actually cost: story, levels, enemy design, even the bosses. We cut preproduction short under the pressure of hitting our release commitments with the publisher. That decision followed us through the rest of production, and it showed up exactly where we couldn't afford it, the final weeks before launch.
+
+This talk covers three years of prototyping, pitching, and producing Vultures, told through the real production timeline of a two person studio shipping a commercial game in Godot..
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:e0a775c4-342b-5934-8518-e9f064e7ae83 | source=ccc | subtitle=Giovanni Beltran | title=The Price of Rushing Preproduction - Vultures: A "Turn-Based Resident Evil" Postmortem
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/76-8a1cae78-41c3-5c04-969c-023c4c3f2490_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T14:45:00Z | duration=4282 | id=ccc:8a1cae78-41c3-5c04-969c-023c4c3f2490 | image=https://static.media.ccc.de/media/events/fiffkon/2026/76-8a1cae78-41c3-5c04-969c-023c4c3f2490_preview.jpg | kind=0 | plot=Verleihung Weizenbaum-Studienpreise
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:8a1cae78-41c3-5c04-969c-023c4c3f2490 | source=ccc | subtitle=Stefan Hügel | title=Verleihung Weizenbaum-Studienpreise
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/105-53cf9f67-61fb-56f3-b9de-a478788ad78e_preview.jpg | channel=FIfFKon 2026 | date=2026-11-01T10:30:00Z | duration=1112 | id=ccc:53cf9f67-61fb-56f3-b9de-a478788ad78e | image=https://static.media.ccc.de/media/events/fiffkon/2026/105-53cf9f67-61fb-56f3-b9de-a478788ad78e_preview.jpg | kind=0 | plot=Flammender Aufbruch
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:53cf9f67-61fb-56f3-b9de-a478788ad78e | source=ccc | subtitle=Rike Hildebrandt | title=Flammender Aufbruch
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/78-dd6d1547-0934-5903-a362-37cab129b14b_preview.jpg | channel=FIfFKon 2026 | date=2026-11-01T09:45:00Z | duration=2501 | id=ccc:dd6d1547-0934-5903-a362-37cab129b14b | image=https://static.media.ccc.de/media/events/fiffkon/2026/78-dd6d1547-0934-5903-a362-37cab129b14b_preview.jpg | kind=0 | plot=Zivile Verteidigung ist eine gesamtstaatliche, aber kommunal umgesetzte Aufgabe – und hängt an der oft übersehenen digitalen Handlungsfähigkeit der Verwaltung, ohne die keines der vier Felder ziviler Verteidigung funktioniert. Aktuelle Zahlen zu Schwachstellen, Cybercrime und Ransomware-Angriffen belegen die Dringlichkeit, ohne dass daraus bislang systematisch Konsequenzen abgeleitet werden. Der Vortrag schlägt dafür ein partizipatives, dreiphasiges Dialogformat vor (Lagefeststellung, Risikobewertung, prototypische Umsetzung), das auf den Prinzipien Resilienz, Vigilanz und Bottom-up-Innovation beruht und Wissenschaft, Wirtschaft, Staat und Zivilgesellschaft systematisch zusammenbringt. Die zugrunde liegende Haltung: Resilienz ist keine Ausnahmeaufgabe, sondern gelebte Daseinsvorsorge, die nur durch geübte Praxis, Evidenzbasierung, Subsidiarität und strukturelle Lernfähigkeit trägt – Vorbereitung statt Improvisation als Maßstab staatlicher Handlungsfähigkeit. Daraus resultieren Forderungen an Verwaltung, Gesetzgebung sowie Wissenschaft und Praxis, solche Formate zu verstetigen und in verbindliche Standards zu überführen.
+
+Zivile Verteidigung ist keine Aufgabe der Streitkräfte, sondern eine gesamtstaatliche Aufgabe, die operativ auf kommunaler Ebene entschieden wird – an einer meist unsichtbaren Voraussetzung: der digitalen Handlungsfähigkeit der Verwaltung. Die vier Felder ziviler Verteidigung – Sicherung der Staats- und Regierungsfunktionen, Zivilschutzplanung, Versorgung der Bevölkerung, Unterstützung der Streitkräfte – sind ohne funktionierende, sichere IT-Systeme nicht erfüllbar. Diese Abhängigkeit durchdringt alle vier Felder, wird aber selten explizit benannt.
+
+Aktuelle Lagedaten zeigen die Dringlichkeit: täglich 119 neue Software-Schwachstellen (+24 % ggü. Vorjahr), über 330.000 erfasste Cybercrime-Delikte und mehr als 1.000 angezeigte Ransomware-Angriffe pro Jahr, durchschnittlich zwei betroffene Kommunen pro Monat, knapp die Hälfte der KRITIS-Betreiber ohne  | ref=ccc:dd6d1547-0934-5903-a362-37cab129b14b | source=ccc | subtitle=Sabine Griebsch / eGouvernante | title=templateZV - Partizipatives Resilienzformat für zivile Verteidigung in Kommunen
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/75-3a279e7d-1c56-5f18-93c4-7b90ee02574c_preview.jpg | channel=FIfFKon 2026 | date=2026-11-01T09:00:00Z | duration=3153 | id=ccc:3a279e7d-1c56-5f18-93c4-7b90ee02574c | image=https://static.media.ccc.de/media/events/fiffkon/2026/75-3a279e7d-1c56-5f18-93c4-7b90ee02574c_preview.jpg | kind=0 | plot=Das Erstarken vom Faschismus und der AfD stellt den Journalismus vor Herausforderungen. Zu meistern sind diese nur mit antifaschistischem Journalismus.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:3a279e7d-1c56-5f18-93c4-7b90ee02574c | source=ccc | subtitle=Nadia Zaboura | title=Wege in den wehrhaften Journalismus
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/102-f9035a28-7294-5313-b5dd-828c29a33004_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T19:30:00Z | duration=3672 | id=ccc:f9035a28-7294-5313-b5dd-828c29a33004 | image=https://static.media.ccc.de/media/events/fiffkon/2026/102-f9035a28-7294-5313-b5dd-828c29a33004_preview.jpg | kind=0 | plot=Postmoderner Chanson und Gossenbossanova, mit Anklängen an die goldenen 20er, mit Texten aus dem depressiven frühen 21. Jahrhundert, wie Brecht und Ketamin.
+
+Während die damaligen Kommilitoninnen von der Kunsthochschule bereits epochale Werke und steile Karrieren hingelegt haben, hängen Gabi und Seba auch Jahre später immer noch in Kreuzberg in Gabis Kleiner Kneipe rum und basteln an ihren Scheiterbiografien. Als Duo treten sie überall dort in Erscheinung, wo sich Großstadtmelancholie mit dem Geruch von feuchten Kellern mischt, Einheimische mit Wahlberlinern, und Wodka mit Cola -- manchmal sogar auf einer Bühne. An Mikrofon und Gitarre sind die zwei dann ehrlich bemüht, ihre Auftritte zu einem würdevollen Ende zu bringen. In ihren Liedern geht es natürlich immer um die Liebe, aber auch um die Zukunft des Individualverkehrs, ungesundes Trinkverhalten in der Provinz, die kleinen Unglücke des Alltags und die Details einer gelungenen chemischen Abendgestaltung.
+Das klingt dann wie postmoderner Chanson und Gossenbossanova, mit Anklängen an die goldenen 20er, mit Texten aus dem depressiven frühen 21. Jahrhundert, wie Brecht und Ketamin.
+https://www.gabiskleinekneipe.de/
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:f9035a28-7294-5313-b5dd-828c29a33004 | source=ccc | subtitle=Gabis kleine Kneipe | title=Live-Musik: Gabis Kleine Kneipe
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/86-acb85598-d515-5fdc-a533-99073c7b4ff1_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T09:20:00Z | duration=1239 | id=ccc:acb85598-d515-5fdc-a533-99073c7b4ff1 | image=https://static.media.ccc.de/media/events/fiffkon/2026/86-acb85598-d515-5fdc-a533-99073c7b4ff1_preview.jpg | kind=0 | plot=Der Beitrag untersucht die Bezahlkarte für Asylsuchende als digitale Zahlungsinfrastruktur und analysiert die Zusammenarbeit staatlicher Behörden mit globalen Zahlungsunternehmen. Er zeigt, wie finanzielle Infrastrukturen zu Instrumenten migrationspolitischer Kontrolle werden und erweitert Debatten über Digitalisierung und Autokratisierung um die politische Rolle globaler Zahlungsunternehmen.
+
+Debatten über digitale Macht und autoritäre Entwicklungen konzentrieren sich häufig auf Big-Tech-Unternehmen. Deutlich weniger Aufmerksamkeit erhält die Rolle globaler Zahlungsunternehmen, obwohl sie zunehmend digitale Infrastrukturen bereitstellen, über die staatliche (autoritäre) Politik umgesetzt wird. Ein Beispiel hierfür ist die 2024 eingeführte Bezahlkarte für Asylsuchende in Deutschland. Sozialleistungen werden dabei nicht mehr auf reguläre Bankkonten, sondern auf eine Prepaid-Debitkarte überwiesen. Der Großteil dieser Karten wird von Secupay verwaltet und über Visa ausgegeben; weitere Bundesländer nutzen Mastercard oder andere private Anbieter. Mit der Bezahlkarte entstand damit eine exklusive digitale Zahlungsinfrastruktur für eine klar definierte Bevölkerungsgruppe, die gleichzeitig einen neuen Markt für private Zahlungsunternehmen eröffnet.
+Der Beitrag untersucht die neuen politökonomischen Arrangements, die aus der Zusammenarbeit staatlicher Behörden und privater Zahlungsunternehmen entstehen. Er fragt, welche Folgen die Auslagerung migrationspolitischer Maßnahmen an private Zahlungsunternehmen für die Gestaltung digitaler Zahlungsinfrastrukturen hat und wie sich staatliche Kontrolle dadurch verändert. Theoretisch knüpft der Beitrag an Arbeiten zur politischen Ökonomie von Zahlungsinfrastrukturen, zu Financial und Predatory Inclusion sowie zum Immigration Industrial Complex an. Ich argumentiere, dass globale Zahlungsunternehmen eine bislang wenig beachtete Erweiterung dieses Komplexes darstellen. Migration wird dadurch nicht nur zum Gegenstand staatlicher Kontrolle | ref=ccc:acb85598-d515-5fdc-a533-99073c7b4ff1 | source=ccc | subtitle=Alexandra Keiner | title=Digitale Zahlungsinfrastrukturen und die politische Ökonomie der Bezahlkarte für Asylsuchende in Deutschland
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/84-e51085cb-462a-5ace-aba2-73dbb3ae64a4_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T17:30:00Z | duration=3293 | id=ccc:e51085cb-462a-5ace-aba2-73dbb3ae64a4 | image=https://static.media.ccc.de/media/events/fiffkon/2026/84-e51085cb-462a-5ace-aba2-73dbb3ae64a4_preview.jpg | kind=0 | plot=In einem Vortrag (25 min) wollen wir unsere Erfahrungen mit analoger und digitaler anarchistischer Organisierung aus 35 Jahren anhand ausgewählter Beispiele reflektieren und damit die zugrundeliegenden Konzepte hinsichtlich ihrer Praxistauglichkeit einordnen. Anschließend wollen wir darüber auch in den Austausch kommen und Ansätze für Weiterentwicklungen diskutieren (20 min). Dabei möchten wir den Fokus unter Anderem darauf legen, wie sich analoge Organisierung mit der digitalen Entwicklung verändert hat und was sich daraus für den weiteren Digitalisierungprozess lernen lässt.
+
+Anarchistische Organisierung verknüpft eine große Vielfalt von Ansätzen und Methoden. Dabei ist insbesondere das konstruktive Wechselspiel von Theorie und Praxis von großer Bedeutung. Aus theoretischen Konzepten werden mehr oder weniger stringent praktische Methoden abgeleitet und diese dann rekursiv weiterentwickelt. Dafür ist es oft sinnvoll, anfangs keine allzu konkrete Zielvorstellung zu haben, um in der Praxis möglichst umfassende Mittel-Zweck-Kongruenz realisieren zu können.
+
+Unserer Meinung nach ist darüber auch ein enormes transformatives Potential vorhanden, da beobachtet werden kann, dass viele Menschen in bestimmten Situationen bzw. Kontexten im Widerspruch zur vorherrschenden Politik anarchistisch denken. Wie kann der momentane Kenntnisstand für eine umfangreichere Anarchisierung genutzt werden und wie können mit diesem Bewusstsein kollektiv resiliente Strukturen manifestiert werden, um nachhaltig ein gutes Leben in der Polykrise zu ermöglichen? Welche praktischen Organisierungskonzepte lassen sich - und wenn ja, wie - allgemeiner verbreiten? Wie schaffen wir es dem derzeitigen gesellschaftlichen Diskurs eine gut verständliche und plausible positive Zukunftserzählung entgegenzusetzen, die auf solidarischem Miteinander aufbaut und Unterschiede als Chance begreift?
+
+Welche gesellschaftlichen Entwicklungen sind im fortschreitenden Kollaps zu erwarten und welchen Einfluß haben diese a | ref=ccc:e51085cb-462a-5ace-aba2-73dbb3ae64a4 | source=ccc | subtitle=Ulrike Menne, Jens Hunger | title=Autonomie, Autarkie, Ataraxie, Antipolitik - Anarchistische Organisierung im Wandel der Zeit - Erfahrungen, Analyse, Konzepte
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/99-94538204-20dc-513f-8045-4ece97dff786_preview.jpg | channel=FIfFKon 2026 | date=2026-10-30T17:15:00Z | duration=1512 | id=ccc:94538204-20dc-513f-8045-4ece97dff786 | image=https://static.media.ccc.de/media/events/fiffkon/2026/99-94538204-20dc-513f-8045-4ece97dff786_preview.jpg | kind=0 | plot=Willkommen im Delphi
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:94538204-20dc-513f-8045-4ece97dff786 | source=ccc | subtitle=Stefan Hügel | title=Begrüßungsworte
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/80-da6d904c-d25b-5aa6-b2a2-eb179c5e31c3_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T10:00:00Z | duration=2854 | id=ccc:da6d904c-d25b-5aa6-b2a2-eb179c5e31c3 | image=https://static.media.ccc.de/media/events/fiffkon/2026/80-da6d904c-d25b-5aa6-b2a2-eb179c5e31c3_preview.jpg | kind=0 | plot=Rechenzentren (RZ) sind das physische Rückgrat vieler digitaler Anwendungen. Sie stehen an der Schnittstelle von Digitalisierung, Energieversorgung, Klimawandel, globalen Lieferketten und Sicherheitspolitik (Edwards et al., 2024). An Rechenzentren werden die Dynamiken der Polykrise besonders deutlich: Energieengpässe verteuern den energieintensiven Betrieb und erschweren gleichzeitig Klimaschutzmaßnahmen. Steigende Temperaturen und zunehmende Hitzeperioden erhöhen den Kühlbedarf von Servern und damit auch den Strom- und Wasserverbrauch. Zudem konkurrieren große RZ mit ihrem hohen Energie- und Wasserbedarf direkt mit den Bedürfnissen lokaler Akteur:innen und der Zivilgesellschaft. Störungen globaler Lieferketten und Handelseinschränkungen durch geopolitische Konflikte wirken sich auf die Verfügbarkeit von Hardware und Ersatzteilen sowie auf Cyberrisiken aus. 
+RZ sind Orte, an denen sich die Machtkonzentration einiger weniger Big-Tech-Unternehmen materialisiert (Brodie, 2023). Sie kontrollieren große Teile der digitalen Wertschöpfungskette, von Daten über Algorithmen und Plattformen bis hin zur Recheninfrastruktur. Technologien und damit verbundene konventionelle Infrastrukturansätze von Big-Tech-Unternehmen tragen zur Rationalisierung und Verfestigung bestehender Herrschaftsstrukturen bei (Weizenbaum, 1978). Dabei sind die gesellschaftlichen Kosten und Nutzen von RZ weitestgehend ungleich verteilt. Lokale Gemeinden und Bürger:innen tragen häufig die direkten Umweltfolgen (Rehak, 2024), während die finanziellen Gewinne bei den Unternehmen und steuerlich anderswo anfallen. 
+International formieren sich zunehmend Proteste gegen den Ausbau großer RZ. Allein in den USA beteiligen sich mittlerweile fast eine halbe Million Menschen an Protesten gegen RZ. Aber auch andernorts wie beispielsweise in Marseille, Dublin, Aragón und Ceará organisieren sich Bürger:innen (Dachwitz und Vorkul 2026). Auch in Deutschland nimmt der Widerstand gegen geplante Rechenzentren zu. Der Fall Ma | ref=ccc:da6d904c-d25b-5aa6-b2a2-eb179c5e31c3 | source=ccc | subtitle=Oliver Meurer, Tara Merk, André Ullrich | title=Common Ground, Common Cloud – Community Data Center als Antwort auf Machtasymmetrien und Polykrise
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/100-9a73fb6b-469b-535f-bfc6-722ce301dfc1_preview.jpg | channel=FIfFKon 2026 | date=2026-10-30T18:00:00Z | duration=1528 | id=ccc:9a73fb6b-469b-535f-bfc6-722ce301dfc1 | image=https://static.media.ccc.de/media/events/fiffkon/2026/100-9a73fb6b-469b-535f-bfc6-722ce301dfc1_preview.jpg | kind=0 | plot=Während alle noch über die Tech-Bros und ihre Super-Intelligenzen reden und sich ansonsten die Wunden der letzten Krise lecken, ist eine ziemlich geräuschlose digitale Aufrüstungsrunde bei deutschen Polizeien und Geheimdiensten im Gange, die ihresgleichen sucht. Die Bundesländer verordneten ihren Polizeien die Erlaubnis für automatisierte Datenanalysen, Verhaltensscanner, biometrische Fernidentifizierung und natürlich noch mehr Staatstrojaner. Ein erstaunlicher Ausbau der Geheimdienste des Bundes steht an, und der Hackback ist auch fast schon beschlossene Sache. Darüber müssen wir reden.
+
+Constanze Kurz ist im Beirat des FIfF.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:9a73fb6b-469b-535f-bfc6-722ce301dfc1 | source=ccc | subtitle=Constanze Kurz | title=Keynote: Jetzt einsatzbereit – Was sich an digitaler Dauerbeobachtung zusammenbraut
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/70-36b58d3d-7473-5e04-a8aa-3a7bcf807c5c_preview.jpg | channel=FIfFKon 2026 | date=2026-10-30T19:00:00Z | duration=3540 | id=ccc:36b58d3d-7473-5e04-a8aa-3a7bcf807c5c | image=https://static.media.ccc.de/media/events/fiffkon/2026/70-36b58d3d-7473-5e04-a8aa-3a7bcf807c5c_preview.jpg | kind=0 | plot=Cyberpeace ist die Gegenposition zu Cyberkrieg und zur Digitalisierung des Kriegs überhaupt, Verschiedene Aspekte der Problematik werden im einstündigen Cyberpeace-Slam beleuchtet, der aus 3 Kurzvorträgen von je 7 Minuten besteht plus Diskussion.
+
+Cyberpeace ist im engeren Sinne die Gegenposition zu allem, was unter Cyberkrieg subsumiert wird: Spionage, Sabotage, Propaganda, Desinformation, Destabilisierung und Terror mit den Mitteln der Digitalisierung und seit Neuestem der Künstlichen Intelligenz. Einzelne Cyberattacken können schon große Schäden anrichten. Im großen Maßstab und im Verbund mit Killerdrohnen oder selbst auch mit traditionellen Waffensystemen bilden sie eine besonders perfide Art der Kriegsführung. Die Forderung dagegen lautet kein Cyberkrieg, keine Digitalisierung des Kriegs, kein Krieg, sondern eine friedliche und für alle Menschen lebenswerte Welt. Cyberpeace umfasst deshalb auch den Weg zum Frieden im Zeichen der fortschreitenden Digitalisierung. Verschiedene Aspekte der Problematik werden im einstündigen Cyberpeace-Slam beleuchtet, der aus drei zugespitzten, unterhaltsam gestalteten und gern auch provokativen Kurzvorträgen von je 7 Minuten besteht plus etwa 30 Minuten Zeit für Diskussion.
+
+## Die Protagonist:innen und Vorträge ##
+
+**Jennifer Menninger – Killerroboter stoppen. Zum Stand der Regulierung von autonomen Waffen**
+     Die internationale Gemeinschaft steht vor der Chance, in diesem Jahr Verhandlungen über einen rechtlich verbindlichen Vertrag zu autonomen Waffensystemen zu beginnen. Wo steht dieser Prozess aktuell? Welche Positionen blockieren Fortschritte, und wie können wir politischen Druck aufbauen, um eine internationale Regulierung zu erreichen?
+
+**Marieke Petersen und Wiebke Dönnebrink – Hackt kaputt, was euch kaputt macht?**
+     Stell dir vor, du findest eine Software-Schwachstelle, meldest sie und eine Woche später steht die Polizei vor der Tür. Laptop, Telefon, smarter Kühlschrank und Raspberry Pi: beschlagnahmt. Willkommen | ref=ccc:36b58d3d-7473-5e04-a8aa-3a7bcf807c5c | source=ccc | subtitle=Hans-Jörg Kreowski, Jennifer Menninger, Rainer Rehak, Wiebke Dönnebrink, Marieke Petersen, Margita Zallmann | title=Cyberpeace-Slam
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/73-241ed7cb-4c5e-5f2f-aeb6-a0d562a4a208_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T09:00:00Z | duration=1511 | id=ccc:241ed7cb-4c5e-5f2f-aeb6-a0d562a4a208 | image=https://static.media.ccc.de/media/events/fiffkon/2026/73-241ed7cb-4c5e-5f2f-aeb6-a0d562a4a208_preview.jpg | kind=0 | plot=Das Kernproblem von IT-Systemen und damit auch KI ist Größe bzw. Komplexität, aber es geht ja auch anders.
+
+In diesem Beitrag wird „Small AI“ als Denk- und Designansatz vorgestellt, mit dem wir dem aktuellen fatalen „Bigger is better“-Trend bei der Entwicklung (generativer) KI entgegenwirken können. Wir stellen verschiedene Dimensionen von „Small AI“ vor: zunächst im Hinblick auf die Größe der Modelle, da kleinere Modelle sowohl für das Training als auch für die Inferenz weniger Rechenressourcen benötigen und somit einen geringeren ökologischen Fußabdruck hinterlassen. Wir erweitern die Bedeutung von „Kleinheit“ jedoch so, dass sie auch auf politische, epistemische und kulturelle Bereiche Anwendung findet. In diesem Sinne stellt „Small AI“ einen alternativen Leitgedanken für konviviale und postwachstumskompatible IT-Entwicklung dar, die sich auf low-tech und „small is beautiful“ (E. F. Schumacher) stützt. Der Beitrag möchte diejenigen, die mit bzw. für KI gestalten inspirieren und stellt „Small AI“ als einen reflektierten Technikpfad hin zu einer pluralen und lebenswerten Welt vor.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:241ed7cb-4c5e-5f2f-aeb6-a0d562a4a208 | source=ccc | subtitle=Rainer Rehak | title=Small AI – Über die Vorteile kleiner IT-Systeme
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/77-d3006acd-f539-59c0-8323-5d0b1ab30ddb_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T15:30:00Z | duration=1800 | id=ccc:d3006acd-f539-59c0-8323-5d0b1ab30ddb | image=https://static.media.ccc.de/media/events/fiffkon/2026/77-d3006acd-f539-59c0-8323-5d0b1ab30ddb_preview.jpg | kind=0 | plot=FIfF-Jahresrückblick 2026
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:d3006acd-f539-59c0-8323-5d0b1ab30ddb | source=ccc | subtitle=Stefan Hügel, Rainer Rehak | title=FIfF-Jahresrückblick 2026
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/68-cdc08eb6-6610-55ff-8767-4400ab7d0d0f_preview.jpg | channel=FIfFKon 2026 | date=2026-10-31T13:30:00Z | duration=3011 | id=ccc:cdc08eb6-6610-55ff-8767-4400ab7d0d0f | image=https://static.media.ccc.de/media/events/fiffkon/2026/68-cdc08eb6-6610-55ff-8767-4400ab7d0d0f_preview.jpg | kind=0 | plot=Jedes Smartphone, jedes Rechenzentrum, jede KI-Anwendung hat eine Kehrseite: Rohstoffe, Energie, Elektroschrott. Während „digitale Resilienz" meist als Frage von mehr Technologie verhandelt wird, schauen wir auf die Materialität und fragen, welche  Infrastruktur es braucht, um da rauszukommen und danach, was Nachbarschaften in der Polykrise tatsächlich widerstandsfähig macht. Unsere These: kooperativ getragene, dezentrale Infrastrukturen der Reparatur, Wiederverwendung, Kreislaufwirtschaft als Grundversorgung, gerne rechtlich und kommunal dauerhaft verankert. Reparatur ist kein Nischenthema, sondern handfeste IT- und Ressourcenpolitik.
+
+Der Beitrag verbindet Forschung und Praxis: das RIFS Discussion Paper „Dare to Design for Disaster" (Mieulet/Jerchel 2026) und den Betrieb eines Reparatur- und Leihladens (Kreisler e.V.) in der Berliner Gropiusstadt. Reparatur, Wiederverwendung und Kreislaufwirtschaft begreifen wir dabei nicht als Nischenthema, sondern als netz- und ressourcenpolitisches Handlungsfeld der Daseinsvorsorge.
+Im Zentrum steht die Frage, wie Multistakeholder-Arrangements – Public-Civic-Partnerships – Reparaturinfrastruktur tragfähig machen. Der Vergleich Frankreich/Deutschland zeigt, wie weit derselbe EU-Rechtsrahmen in der Umsetzung auseinanderlaufen kann: Frankreich verschränkt Herstellerverantwortung, öffentliche Hand und lokale Trägerstrukturen so, dass Reparatur tatsächlich in die Fläche kommt – getragen von vielen Schultern statt von einzelnen Initiativen. Genau hier liegt der Hebel: Wo Public-Civic-Partnerships die Verantwortung verteilen und dauerhafte Finanzierung ermöglichen, wird resiliente Low-Tech-Infrastruktur vor Ort verankert, gemeinsam getragen und andernorts replizierbar – als konkreter Weg in eine Circular Society.
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:cdc08eb6-6610-55ff-8767-4400ab7d0d0f | source=ccc | subtitle=Cléo Mieulet, Paul Jerchel | title=Die materielle Kehrseite der Digitalisierung – und wie wir sie reparieren und vor Ort Reparaturinfrastruktur für alle und alles aufbauen
+item backdrop=https://static.media.ccc.de/media/events/fiffkon/2026/89-ac601df9-1365-5238-9a1d-57bbbaf9c915_preview.jpg | channel=FIfFKon 2026 | date=2026-10-30T17:20:00Z | duration=2011 | id=ccc:ac601df9-1365-5238-9a1d-57bbbaf9c915 | image=https://static.media.ccc.de/media/events/fiffkon/2026/89-ac601df9-1365-5238-9a1d-57bbbaf9c915_preview.jpg | kind=0 | plot=Wege finden in der Polykrise
+Dieser Vortrag versteht sich als Einladung und Ermutigung, sich zu engagieren und je nach fachlichem Blickwinkel Beiträge zu leisten, die in der Gesamtheit zu einer stimmigen Vision für die Zukunft führen und sich als Grundlage für weitere Aktionen eignen.
+
+Die Lage ist widersprüchlich: Immer mehr Einzelpersonen sind fasziniert von den bewundernswerten Leistungen von Künstlicher Intelligenz, Institutionen jeglicher Art stellen sich auf den Einsatz von Künstlicher Intelligenz um. Zugleich häufen sich erschreckende Nachrichten – von den Konsequenzen für menschliche Kompetenz und Kreativität, von der Unterminierung von menschlichen Entscheidungsprozessen und Verantwortung, von neuartigen, durch KI ermöglichten Herrschaftsformen, vom unerhörten Ressourcenverbrauch der Technologie und von der allgemeinen Bedrohung durch quasi-autonome KI-Systeme. Die Geschwindigkeit der KI-Entwicklung, die ungeheure Präsenz von Geld und Macht sowie die Uneinsichtigkeit von Teilen der Politik führen bei vielen zu einem Gefühl von Ohnmacht und Resignation.
+
+In dieser Lage sind alle Professionellen im Umfeld der Informationstechnik dringend aufgerufen, sich in der Diskussion um KI zu engagieren, die Technnologie für Außenstehende verständlich zu machen und Kriterien für ihren Einsatz zu entwickeln. Dabei muss klar sein: KI ist nicht gleich KI. Die Eigenschaften von herkömmlichen „kleinen“ KI-Systemen unterscheiden sich wesentlich von den aktuellen _Large Language Models (LLMs)_, die hier im Fokus stehen.
+
+_Menschenzentrierte Künstliche Intelligenz_ (human centric AI) steht für die Hoffnung, die Belange der Menschheit in den Mittelpunkt zu stellen. Dem liegt ein Menschenbild zugrunde, bei dem der Mensch nicht isoliert betrachtet wird, sondern integriert in seiner Umwelt mit allen Lebewesen. KI-Systeme sollen dazu dienen, unsere Lebensgrundlagen zu erhalten und unsere Lebensmöglichkeiten zu entfalten. Das betrifft Technikentwicklung und -nutzung. Die Frage i | ref=ccc:ac601df9-1365-5238-9a1d-57bbbaf9c915 | source=ccc | subtitle=Christiane Floyd | title=Keynote: Wohin, Künstliche Intelligenz?
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102447-ef3bbaf3-a5ea-5bbe-b633-cd9f75050d90_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T15:33:00Z | duration=442 | id=ccc:ef3bbaf3-a5ea-5bbe-b633-cd9f75050d90 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102447-ef3bbaf3-a5ea-5bbe-b633-cd9f75050d90_preview.jpg | kind=0 | plot=Gua is an experimental Matrix-based messenger built around a deliberately provocative question: can a federated, end-to-end encrypted network feel as simple as WhatsApp, and what do you have to "centralize" to get there?
+
+The project is an experiment built around the Matrix ecosystem. It builds on Element clients for iOS, Android, and Web, Synapse, and Matrix Authentication Service, with targeted Gua-specific forks where the user experience requires it. The goal is to keep the robustness of Matrix federation while hiding the complexity that usually scares off everyday users: homeserver choice, full Matrix IDs, server-specific login details, and federation topology.
+
+Gua is an early-stage architecture and product-design case study about making Matrix federation usable for people who would otherwise never adopt a federated messenger.
+
+Matrix gives us federation, interoperability, end-to-end encryption, and the possibility of communication networks that are not controlled by a single vendor. But the average user does not want to think about homeservers, server names, Matrix IDs, login methods, federation topology, or trust boundaries. In many countries, messaging products such as WhatsApp became dominant partly because onboarding is extremely simple: enter a phone number, receive a code, and start talking.
+
+Gua explores whether a Matrix-based messenger can offer that kind of simplicity without giving up the federated architecture underneath.
+
+The prototype uses Element-based clients, a Gua identity service, a fork of Matrix Authentication Service, and a new component called "Gua Resolver". The Resolver identifies where an account is hosted or selects a homeserver for registration. Authentication uses OpenID Connect, while messaging continues through the standard Matrix APIs and federation. Synapse itself remains unmodified.
+A brief demonstration introduces the user experience, followed by an architectural walkthrough showing how account routing and authentication work  | ref=ccc:ef3bbaf3-a5ea-5bbe-b633-cd9f75050d90 | source=ccc | subtitle=Sarah L. Silva | title=Making Matrix Feel Like WhatsApp Without Centralizing It
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/93688-cb7ae4c1-476c-5c96-ab35-28ba33f22a96_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:15:00Z | duration=1533 | id=ccc:cb7ae4c1-476c-5c96-ab35-28ba33f22a96 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/93688-cb7ae4c1-476c-5c96-ab35-28ba33f22a96_preview.jpg | kind=0 | plot=When you operate communication infrastructure for one of Europe's largest defense organizations, "good enough" is never good enough.
+At BWI, we do not just run Matrix. We trust in the idea behind it: that secure, open communication should be a public good.
+
+When we introduced Matrix into the Bundeswehr, we made a deliberate decision: everything, always, end-to-end encrypted. No exceptions, no fallbacks. That single switch revealed the hard problems. Olm and Megolm, built on the Signal Protocol, are the gold standard of modern encryption, but they were not designed for large rooms with thousands of participants at government scale. Those cracks are what brought us to MLS, the IETF standard built for exactly those harder problems: scalable group key management, stronger forward secrecy, post-compromise security. MLS does not just change how keys are managed. It changes how little the server needs to know. And that is not a side effect. It is a design goal. The less the server knows, the less it can leak, and required by VS-AP0024, the BSI guidance we operate under.
+
+That settled the what. Rust settles the how. Not as a language choice, but as the foundation that makes formal verification of the functional core possible, and memory safety everywhere else a given.
+
+We wrote MSC2546 ourselves, defining how MLS integrates into the Matrix protocol at the spec level. Now we are ready to share what happened next.
+
+In this talk, Timm and David from BWI will show you what it takes to bring MLS into a real production stack: what changes in the SDK, what it means for backend modules, and how Rust becomes the common thread that holds it all together. Expect no polished success story. Expect honest engineering: what was built, where it broke, and what it cost. And at the end, the first thing they shipped with it. A new way to have a conversation that leaves no trace. Come find out when to change the locks.
+
+Join our journey.
+
+Licensed to the public under https://creativecommons.or | ref=ccc:cb7ae4c1-476c-5c96-ab35-28ba33f22a96 | source=ccc | subtitle=Bjoern Reiners, Timm Behner, David Lassig | title=When to Change the Locks in Your Matrix
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102369-ce0d29c3-ab5c-5b38-9881-2b23c1193be9_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T09:15:00Z | duration=740 | id=ccc:ce0d29c3-ab5c-5b38-9881-2b23c1193be9 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102369-ce0d29c3-ab5c-5b38-9881-2b23c1193be9_preview.jpg | kind=0 | plot=In 2026, Element's Integrations team set out to make Matrix the productivity layer for sovereign workplaces, the place where your files, documents, projects, and calendar don't just link out, but live alongside your conversations. We'll walk through what we built, how we approached the hard problems, and what it means for organisations already running open-source workplace stacks. We'll also look at where this is headed and what it'll take for the wider Matrix ecosystem to build it together.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:ce0d29c3-ab5c-5b38-9881-2b23c1193be9 | source=ccc | subtitle=David Langley, Half-Shot | title=Integrations at Work: Bringing Workplace Apps into Element
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/93687-37fceacb-bf28-5085-9d6d-764a48817480_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T10:45:00Z | duration=1607 | id=ccc:37fceacb-bf28-5085-9d6d-764a48817480 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/93687-37fceacb-bf28-5085-9d6d-764a48817480_preview.jpg | kind=0 | plot=When you operate communication infrastructure for one of Europe's largest defense organizations, "good enough" is never good enough.
+At BWI, we do not just run Matrix. We trust in the idea behind it: that secure, open communication should be a public good.
+
+This talk traces that journey. It begins with our decision to adopt Matrix as the sovereign communication backbone for the German armed forces, and the architectural ambition that drives our work: a communication stack where the functional core is formally verifiable, and memory safety is a given everywhere else. An engineering target we are actively working toward.
+
+As a first step toward that goal, working with Element, we brought a Rust-based cryptographic SDK into existence, the Matrix Rust SDK, a unified crypto platform shared across all our client applications, born from our security requirements and built to last. Rust was not an aesthetic choice. It was a deliberate decision rooted in memory safety, auditability, and the practical requirements of formal verification tooling.
+
+Our work did not stop with the SDK. The same questions that shaped our cryptographic foundation led us to ask **harder** ones about the **backend**: what would a homeserver look like if security and formal verifiability were first-class requirements from day one, not afterthoughts? We have been exploring that question, and in this talk we want to share what we have learned so far, the decisions we faced, and where those explorations have taken us.
+
+Join our journey.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:37fceacb-bf28-5085-9d6d-764a48817480 | source=ccc | subtitle=Bjoern Reiners, Nico, David Lassig | title=Why Is There Rust in our Matrix?
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101303-2c75abbd-b032-5de3-bd03-dda3eb9f72d9_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T15:24:00Z | duration=325 | id=ccc:2c75abbd-b032-5de3-bd03-dda3eb9f72d9 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101303-2c75abbd-b032-5de3-bd03-dda3eb9f72d9_preview.jpg | kind=0 | plot=BreakFree is an app blocker with a texting layer built on Matrix, it block Instagram's Reels and feed, keep your DMs. Most blockers make you nuke the whole app and lose messaging too. BreakFree routes DMs through mautrix-meta / mautrix-instagram so texting survives.
+This talk is about what broke when a puppeting bridge went under thousands of non-technical users: unfamiliar-login flags, ban warnings from Instagram. Tead-receipt and reliability quirks, media storage, proxies, and the changes I made to the bridge and my Matrix setup to keep it standing. Plus the trust and privacy tradeoffs, and whether consumer-facing bridges can hold up as real infrastructure.
+
+The problem: why a focus app needs to keep messaging at all, and why "just open Instagram" defeats the purpose.
+Why Matrix: choosing puppeting bridges over alternatives, and how the app sits on top of mautrix-instagram / mautrix-meta.
+What broke: the collision with Meta's anti-abuse systems: unfamiliar-login flags, ban warnings reaching real users, read receipts, proxy and session-handling changes, and reliability under active pushback, scaling issues.
+trust and privacy tradeoffs of routing user sessions through a bridge, and what shipping to thousands of non-technical users revealed about whether consumer-facing bridges are durable.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:2c75abbd-b032-5de3-bd03-dda3eb9f72d9 | source=ccc | subtitle=Roshan Kattil | title=When the Bridge Looks Like an Attacker: Building a Focus App on Matrix Instagram Bridges
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100950-0ff54735-248d-5b41-83dc-ca4bd4328eef_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T14:45:00Z | duration=1438 | id=ccc:0ff54735-248d-5b41-83dc-ca4bd4328eef | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100950-0ff54735-248d-5b41-83dc-ca4bd4328eef_preview.jpg | kind=0 | plot=At FOSDEM 2026, we presented our plan to move Element Web to be powered by the Rust SDK by rewriting incrementally into reusable components. In this talk, we'll share our progress and insights so far, showcasing our prototype version of the client based on the Matrix Rust SDK along with improvements this has allowed us to bring to the web and desktop version we all know.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:0ff54735-248d-5b41-83dc-ca4bd4328eef | source=ccc | subtitle=Dave Baker, Florian Duros | title=A faster, rustier Element Web
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/105092-418ae87e-b572-5f06-8cbf-a129670b4c6c_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:45:00Z | duration=1513 | id=ccc:418ae87e-b572-5f06-8cbf-a129670b4c6c | image=https://static.media.ccc.de/media/events/matrix-conf/2026/105092-418ae87e-b572-5f06-8cbf-a129670b4c6c_preview.jpg | kind=0 | plot=Digital Sovereignty is on every lips, however whilst the tech is here, we have yet to find a financially sustainable solution to it. The tragedy of the commons of open source is not new, but we’ve got to the point of needing to solve it if we really want organisations to be sovereign and resilient whilst use secure and polished products. 
+
+We all know (or will know by the end of the conference!) that Matrix is the ideal answer for any organisation looking to break free from vendor lock-in for their communications, not only because of its intrinsic properties of decentralisation and end-to-end encryption, but because it is an open standard. An open standard brings neutrality and an ecosystem which allows multiple vendors to thrive, creating a healthy competition to raise the bar of product quality and target specific markets.
+
+This makes Matrix the perfect microcosm to get concrete examples on how digital sovereignty can be preserved in a financially sustainable manner in order to build products which can compete with the vendor-locked incumbents: from the governance of the standard to the various vendors via the open source community, this talk will use concrete examples to highlight the best and most efficient practices to contribute back for everyone’s benefit.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:418ae87e-b572-5f06-8cbf-a129670b4c6c | source=ccc | subtitle=Amandine Le Pape | title=Sustainable Digital Sovereignty
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100422-9182f4fe-2150-56f1-a315-e617826cc05d_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T10:45:00Z | duration=1555 | id=ccc:9182f4fe-2150-56f1-a315-e617826cc05d | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100422-9182f4fe-2150-56f1-a315-e617826cc05d_preview.jpg | kind=0 | plot=At Element, we've been thinking about how you can be sure you are chatting to the right person, not an intruder, without reading out numbers or emoji over a video call.
+
+One approach we've been experimenting with is the use of X.509 certificates issued by a trusted certificate authority. I'll be talking about how this helps (and when it doesn't), as well as covering some technical details of the implementation.
+
+This talk is aimed at people interested in how we can improve the user experience of encryption of Matrix. I'll assume familiarity with concepts around encryption in Matrix such as user identities, but you won't need detailed cryptographic knowledge!
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:9182f4fe-2150-56f1-a315-e617826cc05d | source=ccc | subtitle=Richard van der Hoff | title=New phone who dis: User verification using X.509 certificates
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101195-29410ac7-21c3-575d-b2fb-56734174b156_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:15:00Z | duration=1541 | id=ccc:29410ac7-21c3-575d-b2fb-56734174b156 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101195-29410ac7-21c3-575d-b2fb-56734174b156_preview.jpg | kind=0 | plot=Convincing users to move to NI2CE messenger and move away from the tools they are used to working with remains an issue. I would like to share my thoughts and discuss how other organisations where the use of Matrix messengers is optional deal with this.
+
+NI2CE is a messenger solution that we deployed for NATO users to provide a safer and more private alternative for the widespread use of Whatsapp and Signal. The use of NI2CE is optional as users need to install it on a personal device for mobile use.
+
+I had hoped that reaching a critical mass of users would increase adoption and lead to a quick growth of users. This has not materialized unfortunately. 
+
+In this talk, I would like to show how we tried to convince users to migrate and would like to get the points of view of other organisations that might deal with this.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:29410ac7-21c3-575d-b2fb-56734174b156 | source=ccc | subtitle=Jeroen Franssen | title=NI2CE network effects in a voluntary adoption paradigm
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102429-7d83e185-162a-56d1-a497-00e462e08dc9_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:45:00Z | duration=1635 | id=ccc:7d83e185-162a-56d1-a497-00e462e08dc9 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102429-7d83e185-162a-56d1-a497-00e462e08dc9_preview.jpg | kind=0 | plot=This presentation outlines the development experience of a post-quantum cryptography (PQC) extension for the vodozemac library, tailored for its use in MSG GOV, a Matrix-powered E2EE messenger for the Brazilian federal government. Our hybrid design is adapted to support multiple PQC algorithms, including ML-KEM and Brazil's state-mandated cryptography. The talk details the practical software engineering challenges associated with the hybrid integration of flexible PQC features into the Matrix protocol, extending both the key agreement and the Double Ratchet algorithm while preserving compatibility.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:7d83e185-162a-56d1-a497-00e462e08dc9 | source=ccc | subtitle=Paulo A L Rego, Rodrigo Pacheco | title=Towards a Post-Quantum Matrix Protocol: A Hybrid Design Adapted to the Brazilian Scenario
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/98326-71cf36bd-4ac9-5c28-90c9-6923cbda1acd_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T09:45:00Z | duration=1450 | id=ccc:71cf36bd-4ac9-5c28-90c9-6923cbda1acd | image=https://static.media.ccc.de/media/events/matrix-conf/2026/98326-71cf36bd-4ac9-5c28-90c9-6923cbda1acd_preview.jpg | kind=0 | plot=The hardest part of modernizing healthcare communication is not building a new platform. It is preserving decades of existing integrations while enabling an entirely new communication model.
+Germany's healthcare sector currently relies on two communication systems with very different characteristics.
+KIM is the widely adopted communication backbone of the healthcare system. It enables critical workflows such as electronic certificates of incapacity for work and is deeply integrated into healthcare information systems. However, its architecture is based on traditional email technologies and on infrastructure that will have to evolve significantly in the coming years.
+The TI-Messenger, based on Matrix, provides a modern communication architecture that already aligns with many design principles of Germany's future health infrastructure. It enables secure communication between healthcare professionals and also includes insured persons as participants in the communication ecosystem. Nevertheless, adoption has not yet reached the level required to achieve strong network effects.
+Instead of operating two independent communication ecosystems, we are pursuing a convergence strategy: a unified communication platform that preserves existing integrations and workflows while modernizing the backend infrastructure and enabling interoperability across user groups.
+This talk presents the architectural challenges, migration strategy and interoperability concepts for transforming a nationwide, mission critical healthcare communication ecosystem towards a Matrix based future.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:71cf36bd-4ac9-5c28-90c9-6923cbda1acd | source=ccc | subtitle=Jan Kohnert | title=Preserving Integration, Rebuilding the Core: Matrix for Healthcare Communication
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/103858-ed12a551-2d2b-5d3d-a85f-62d3eef91d5c_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T08:30:00Z | duration=1392 | id=ccc:ed12a551-2d2b-5d3d-a85f-62d3eef91d5c | image=https://static.media.ccc.de/media/events/matrix-conf/2026/103858-ed12a551-2d2b-5d3d-a85f-62d3eef91d5c_preview.jpg | kind=0 | plot=Last year we started the endeavour of bringing Matrix and MLS together. The work on this subject led to some pretty exciting developments. Here you will be the first to learn about them!
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:ed12a551-2d2b-5d3d-a85f-62d3eef91d5c | source=ccc | subtitle=Niklas Zender, Timm Behner, David Lassig | title=Matrix and MLS - The next step of the evolution
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101286-38f22ba1-aa09-5ab7-867c-df1f60554a47_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T13:15:00Z | duration=1365 | id=ccc:38f22ba1-aa09-5ab7-867c-df1f60554a47 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101286-38f22ba1-aa09-5ab7-867c-df1f60554a47_preview.jpg | kind=0 | plot=A vanilla matrix deployment already offers a lot options and is part of many digital sovereign communication solutions (and for good reasons). It can solve some of its tech dependency issues and can be a great alternative to Teams, Slack, WhatsApp etc.
+
+However, some organizational requirements still require more careful thought and planning than one might expect at first glance.
+
+This talk summarizes some of our experiences with often overlooked challenges, decisions with potentially far-reaching consequences and possible solutions/approaches when trying to implement a Matrix-Deployment for bigger organizations like schools, universities or other public organizations and similar projects. We take a quick look at the law, matrixID, administration and moderation, clients, videocall and possible useful extensions/widgets as well as what we did when the vanilla matrix wasnt enough.
+
+Among others things, we will take a (somewhat quick) look at:
+
+Users, Identity, Auth: 
+ - the MatrixID and its pitfalls (UUID vs human-readable)
+ - IDP (OIDC), auth, SSO
+ - when pre-populating users is needed
+ - mapping of the organizational structures into matrix (spaces, rooms, using LDAP for room/member sync/provisioning)
+
+Law: GDPR and Friends
+- relevant GPDR articles (17,16,5,25,12/13) and its relevant homeserver configs
+- (Public) Federation or closed, archiving
+
+Administration and Moderation
+- retention/purge job settings
+- Useful admin tools (ketesa, synadm, matrix-wrench)
+- E2EE default settings and docs
+- room permissions and deopping (or missing room admins)
+- moderation (draupnir, community policy lists, antispam, actions)
+
+Infrastructure
+- Deployment mode (k8s, VM with ansible, ..)
+- synapse worker loadbalancing, scaling
+
+
+
+Clients, Video, Extensions
+- Requirements inform client choices (Videocalls? Extensions? Latex? etc..)
+- Videocalls requirements
+potentially useful extensions/widgets: 
+- collaborative whiteboard (Neoboard), meetings organizer (NeoDateFix)
+- bots, integratio | ref=ccc:38f22ba1-aa09-5ab7-867c-df1f60554a47 | source=ccc | subtitle=Jan Krammer (Janonym), Philipp Monz | title=Common challenges for organizations when deploying [matrix]
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101046-26f7f122-c12b-5efa-b947-400b0916c079_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T14:15:00Z | duration=1332 | id=ccc:26f7f122-c12b-5efa-b947-400b0916c079 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101046-26f7f122-c12b-5efa-b947-400b0916c079_preview.jpg | kind=0 | plot=A notification seems simple: a message arrives, and the phone vibrates. But in the Matrix ecosystem, a single "ping" triggers a complex chain of events involving E2EE decryption, push rule evaluation, and state synchronization. This talk dives into the architectural challenges of implementing a robust, privacy-respecting, and energy-efficient notification engine in Trixnity.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:26f7f122-c12b-5efa-b947-400b0916c079 | source=ccc | subtitle=Benedict Benken | title=The Engineering Behind Matrix Notifications
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101087-a34d0da6-2525-5cd9-be15-98bce06caefd_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T13:15:00Z | duration=1485 | id=ccc:a34d0da6-2525-5cd9-be15-98bce06caefd | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101087-a34d0da6-2525-5cd9-be15-98bce06caefd_preview.jpg | kind=0 | plot=This talk is about how feature asymmetries between interoperable messaging apps may disrupt users' online self-presentation, that is, how they choose what features to use with different groups of people to control the impression they form of them.
+Most users of messaging apps have their strategies to uphold some specific “persona”, if it is sending GIFs to add a humorous tone to the conversation, intentionally using dots at the end of messages to seem more intelligent or professional in front of their boss, or how they resonate when choosing a Snapchat avatar versus their profile picture for Teams. However, in interoperable messaging, some features are sometimes presented in different ways across clients. For example, one app may offer the sender to react to messages with an emoji, so they can reply to messages fast and with low effort, but the receiver app may attach animations to these reactions, bringing a more effortful and playful tone to the conversation. So how do these asymmetries affect users' self-presentation, when may they experience a conversation differently to how the receiver sees it? In this talk, I present a research study on how feature asymmetries across different protocols and clients may affect self-presentation and what this means for interoperability as a means for mitigating network effects.
+
+The study was done together with the _mInt research lab on user-centered messaging interoperability_ at Aalborg University.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:a34d0da6-2525-5cd9-be15-98bce06caefd | source=ccc | subtitle=Stina Olsson | title=Feature asymmetry in interoperable messaging - a barrier for mitigating network effects?
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/98869-5fa26c5a-cd2c-54e3-8aca-456ce1e52fe8_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T09:45:00Z | duration=3001 | id=ccc:5fa26c5a-cd2c-54e3-8aca-456ce1e52fe8 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/98869-5fa26c5a-cd2c-54e3-8aca-456ce1e52fe8_preview.jpg | kind=0 | plot=Intended for people who don't know much about encryption or Matrix, this session will give an overview of how your messages are kept safe, using end-to-end encryption.
+
+We'll very briefly review what we are trying to do: be sure who we're talking to, and be sure no-one else can read our messages. Then we'll discuss how Matrix does this: devices talk to each other with something called Olm, and messages in rooms use Megolm.
+
+By the end of this session you should be confident talking about how Matrix keeps your data safe, and you should know enough that you are able to dig deeper when you need to.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:5fa26c5a-cd2c-54e3-8aca-456ce1e52fe8 | source=ccc | subtitle=Andy Balaam | title=How Encryption works in Matrix
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101036-540788a0-1cfd-58c0-b531-f2e626dd43b7_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T15:15:00Z | duration=418 | id=ccc:540788a0-1cfd-58c0-b531-f2e626dd43b7 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101036-540788a0-1cfd-58c0-b531-f2e626dd43b7_preview.jpg | kind=0 | plot=Have you ever wanted to use Matrix as a backend for privately shared notes, workout tracking, expense management, task lists, or local LLM memory storage?
+
+Matrix is a surprisingly strong fit for these use cases. It offers end-to-end encryption, solid SDK support, multiple homeserver implementations, and effortless redundant storage — simply join a room with two accounts on different homeservers.
+
+All of this makes Matrix an ideal backend for apps that store personal data with owner-controlled collaboration and sharing. In this talk, I will present what requirements Matrix needs to fulfil to be the perfect container for this use case, where it currently falls short, and why the path forward is bright — requiring only minimal changes to the spec.
+
+This talk grew out of discussions at the Matrix Conference 2025. At the Matrix Community Summit 2026, those topics were revisited and iterated across multiple widget and integration workshops.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:540788a0-1cfd-58c0-b531-f2e626dd43b7 | source=ccc | subtitle=Timo Kandra | title=Matrix as an App Backend: The perfect container for private structured Data
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102356-10546b52-6900-5f31-bc66-2165bc0a9c44_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T10:15:00Z | duration=1529 | id=ccc:10546b52-6900-5f31-bc66-2165bc0a9c44 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102356-10546b52-6900-5f31-bc66-2165bc0a9c44_preview.jpg | kind=0 | plot=Famedly talks about the developments in the Austrian healthcare market and the adoption of matrix as the messenger protocol of choice. Leaning into the similarities and differences between Germany and Austria.
+
+On January 1, 2025, Austria officially discontinued the use of fax machines for exchanging patient data. While a necessary digital milestone, this abrupt shift initially led to a highly fragmented landscape of disconnected replacement solutions. Recognizing the looming interoperability crisis as early as 2024, state and federal institutions began searching for a unified, scalable alternative. Drawing inspiration from Germany, the TI Messenger was quickly identified as a highly promising blueprint for a nationwide fix.
+
+This catalyzed a wave of regional innovation. In Salzburg, an informal pilot successfully connected the state hospital holding company (Salzburger Landeskliniken) with regional doctors' offices. This was achieved through a collaboration between industry partners Famedly and x-tention, alongside "Medspeak," a grassroots Matrix server initiative hosted by two local physicians.
+
+Simultaneously, Austria's national regulatory authority (Elga GmbH) began drafting a standardized specification for adopting the Matrix protocol in healthcare communication nationwide. Famedly was awarded the contract to consult on the foundational version of this specification. Currently, the State of Vienna is conducting a major pilot to validate this standard, working closely with industry partners such as Famedly, x-tention, and Cloudflight.
+
+This talk explores the evolution of Austria's transition toward a unified, Matrix-based healthcare communication infrastructure, offering unique insights and lessons learned from Famedly’s perspective as a driving industry partner.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:10546b52-6900-5f31-bc66-2165bc0a9c44 | source=ccc | subtitle=Phillipp Kurtz | title=TI-Messenger goes Europe: Austrian healthcare adopts matrix protocol
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101713-53de98a1-ff8f-5ed8-b851-d7f1b4271ef0_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T14:15:00Z | duration=1464 | id=ccc:53de98a1-ff8f-5ed8-b851-d7f1b4271ef0 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101713-53de98a1-ff8f-5ed8-b851-d7f1b4271ef0_preview.jpg | kind=0 | plot=How do you start a sovereign, secure chat project in the public sector? Together with the Dutch Ministry of Defence, we are launching a Matrix-based solution to enable interoperable, archivable, and decentralized communication.
+In this talk, we share our early experiences, including the challenges of compliance, archiving, and adoption, as well as the lessons learned so far. 
+Join us to explore how Matrix can support sovereign, future-proof communication for government organizations.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:53de98a1-ff8f-5ed8-b851-d7f1b4271ef0 | source=ccc | subtitle=Manfred Zielinski, Gideon Bleumink | title=Starting a Sovereign Chat Project in the Dutch Government: Early Lessons
+item backdrop=https://static.media.ccc.de/media/events/jugendhackt/2026/81-c3c0cc18-0bd1-5da4-a065-e8c8f50c129e_preview.jpg | channel=Jugend hackt Congress 2026 | date=2026-10-18T12:00:00Z | duration=3267 | id=ccc:c3c0cc18-0bd1-5da4-a065-e8c8f50c129e | image=https://static.media.ccc.de/media/events/jugendhackt/2026/81-c3c0cc18-0bd1-5da4-a065-e8c8f50c129e_preview.jpg | kind=0 | plot=Zum Abschluss des Wochenendes gibts ne Lasershow und ein Jugend hackt-Projekt, was in den Weltraum geflogen ist!
+
+Musik:
+* "Möbius Surface" by | e s c p | (https://escp-music.bandcamp.com/), Licensed under Creative Commons: By Attribution 4.0 License (http://creativecommons.org/licenses/by/4.0/)
+* "Dream Catcher" by Kevin MacLeod (incompetech.com), Licensed under Creative Commons: By Attribution 4.0 License (http://creativecommons.org/licenses/by/4.0/)
+* "Twinkletoes (San Francisco Mix)" by Marc Burt v Dave Kent (https://www.toucanmusic.com), Licensed under Creative Commons: By Attribution 4.0 License (http://creativecommons.org/licenses/by/4.0/)
+* "the one who stole christmas" by Voide (https://freemusicarchive.org), Licensed under Creative Commons: By Attribution 4.0 License (http://creativecommons.org/licenses/by/4.0/)
+* "Panda (radio edit)" by Delta 78 (https://freemusicarchive.org), Licensed under Creative Commons: By Attribution 4.0 License (http://creativecommons.org/licenses/by/4.0/)
+
+Licensed to the public under https://creativecommons.org/licenses/by/4.0/ | ref=ccc:c3c0cc18-0bd1-5da4-a065-e8c8f50c129e | source=ccc | subtitle=<date> | title=Jugend hackt Congress: Closing Ceremony
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101043-b904a052-17cc-5321-8054-109baa765a02_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T14:45:00Z | duration=1563 | id=ccc:b904a052-17cc-5321-8054-109baa765a02 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101043-b904a052-17cc-5321-8054-109baa765a02_preview.jpg | kind=0 | plot=Matrix Widgets have been part of the Matrix universe for years — But:
+What is a Widget? What is its definition, taxonomy and specification? 
+Why Widgets makes sense in times of AI? 
+Why Widgets make sense while matrix is getting more complicated on the client side?
+The newly founded Matrix Widgets Working Group of the Foundation is tackling this: aligning on definitions, mapping use cases, and building the foundation for a flourishing widget and app ecosystem across all Matrix clients. 
+In this talk we share the Working Group's goals, current status, and latest results — and invite anybody to get involved.
+
+Matrix Widgets have long been an underutilised part of the ecosystem — powerful in theory, but held back by fragmented definitions, limited discoverability, and inconsistent client support. At Matrix Summit 2026, a group of community members came together to change that.
+The newly founded Matrix Widgets Working Group of the Matrix Foundation is taking on the challenge: establishing a shared taxonomy for what a "Widget" actually is, mapping user needs and use cases, and laying the groundwork for a thriving app ecosystem — including a widget catalogue or App Store that makes widgets accessible and trustworthy for all Matrix clients and users.
+In this talk, we will share:
+
+- Why we founded the WG and what problem we are solving
+- Our working definition of Matrix Widgets and how it differs from what exists today
+- The key topics the WG is working on: Discovery & Distribution, Developer Experience, Mobile Support, and more
+Current results, open questions, and how you can get involved
+
+Whether you are a client developer, a widget builder, or simply curious about the future of apps in Matrix — this talk is for you.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:b904a052-17cc-5321-8054-109baa765a02 | source=ccc | subtitle=Hato Nordeck, Yan Minagawa | title=Widgets Working Group
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100595-2f3234ce-61ff-508f-acbc-48b6bf17bc3c_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T10:45:00Z | duration=1380 | id=ccc:2f3234ce-61ff-508f-acbc-48b6bf17bc3c | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100595-2f3234ce-61ff-508f-acbc-48b6bf17bc3c_preview.jpg | kind=0 | plot=Side effects of modern healthcare communication: data breaches, €1.2 billion in GDPR fines last year, and a group chat with 47 nurses. The treatment is a messaging app. The one you're thinking of isn't it.
+
+Walk into any ward, GP surgery, home care team, or therapy practice in Europe and you'll find the same thing: clinicians on WhatsApp. Not because they don't know better — because it works, it's fast, and the secure alternative breaks the workflow. This talk is a frank look at why Europe's most-used clinical tool isn't a clinical tool.
+
+The answer cuts across the entire care continuum: from large hospital trusts wrestling with security friction to mobile nurses no IT policy ever quite reaches. GDPR enforcement is tightening. AI may be the first thing that genuinely tips the balance between convenience and compliance. This talk takes a European perspective and asks what it will genuinely take to move healthcare off WhatsApp: better products, smarter regulation, open standards, or all three.
+
+The side door works. The fortress doesn't.
+
+This is a talk about three people.
+
+Amira is a home care nurse. Her "ward" is eleven living rooms and a car. Nobody from IT has ever been in any of them. Mateo is a hospital nurse on night shift — issued a phone, a pager, and a login that expires every 8 hours. Dr. Chen is a doctor. Always reachable, never has time.
+
+Three people, three employers, three different IT policies. Same behaviour: they all use WhatsApp. Not because they don't know better. Because the secure alternative is slower, harder, and breaks the workflow that actually keeps patients safe.
+
+This talk walks through the data. What the research says about clinician use of consumer messaging apps. What regulators have actually done about it (€1.2B in GDPR fines last year, healthcare enforcement up 26%). And why dedicated solutions built on open standards like Matrix — including the CGM Messenger and CGM TI-Messenger shipping into European healthcare — are still sitting at | ref=ccc:2f3234ce-61ff-508f-acbc-48b6bf17bc3c | source=ccc | subtitle=Patrice Zoe Brend'amour | title=Side Effects Include: Data Breaches, GDPR Fines, and a Group Chat With 47 Nurses
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102423-2d34bdcf-3fef-503a-add2-62b085fb454a_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T09:45:00Z | duration=1146 | id=ccc:2d34bdcf-3fef-503a-add2-62b085fb454a | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102423-2d34bdcf-3fef-503a-add2-62b085fb454a_preview.jpg | kind=0 | plot=Matrix was designed around strong end-to-end encryption and user-controlled trust. While this model is ideal for private communication, large public-sector and critical infrastructure deployments face additional requirements that go beyond traditional E2EE.
+
+This talk explores the challenges of operating Matrix within one of Europe's largest sovereign and security-critical IT infrastructures, where legal archiving obligations, compliance requirements, incident handling, automation and long-term information governance must coexist with modern encrypted communication.
+
+We discuss why classic end-to-end encryption is not always sufficient in enterprise environments and examine the concept of End-to-Organization Encryption (E2OE) as a potential architectural approach. Rather than focusing solely on technical implementation, the session evaluates the trade-offs between confidentiality, organizational trust, operational resilience and regulatory compliance.
+
+Topics include message archiving, eDiscovery, compliance scanning, bot integration, fall handling, key recovery, device loss, and organizational access models. We will also discuss how these requirements influence Matrix client architecture, headless clients, encryption key management and federation.
+
+The presentation is intended for Matrix developers, infrastructure architects, security professionals and public-sector operators interested in deploying Matrix at national scale while balancing sovereignty, usability and compliance.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:2d34bdcf-3fef-503a-add2-62b085fb454a | source=ccc | subtitle=Richard Schlögl | title=Challenges of Matrix within Europe's most sovereign, most secure and largest IT Infrastructure
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/101395-9f09543c-9326-583f-977b-86f942397fe8_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T15:45:00Z | duration=1493 | id=ccc:9f09543c-9326-583f-977b-86f942397fe8 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/101395-9f09543c-9326-583f-977b-86f942397fe8_preview.jpg | kind=0 | plot=Review and outlook
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:9f09543c-9326-583f-977b-86f942397fe8 | source=ccc | subtitle=Andy Piper, Kim Brose | title=Closing
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/92092-0d98e3c5-9b4d-5200-ba6a-53442b043d13_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:15:00Z | duration=1461 | id=ccc:0d98e3c5-9b4d-5200-ba6a-53442b043d13 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/92092-0d98e3c5-9b4d-5200-ba6a-53442b043d13_preview.jpg | kind=0 | plot=Are you operating a large server, bridge or bot? Are you managing lots of spaces or rooms?
+Do you sometimes need to modify rooms outside of your regular account?
+Try Matrix Wrench. It's is a powerful, open-source web app to view and edit room states. It works with access tokens from users and AppServices.
+
+In my time at the Matrix.org bridges team, I had worked on a few of the largest bridges operated at the time. Routine tasks included supporting the community leaders, e.g. when room admins had made mistakes or became inactive.
+With the administrator role of the bridge bot, we we're able to modify the room state, revoke rights and promote new community leaders to administrators.
+
+What started as a lot of manual, error-prone work in the terminal with curl became a web app written for the job. It allowed us as operators and community managers to tweak the rooms easier and faster.
+Wrong permissions? View them. Fix them.
+Wrong room visibility? Easy fix.
+Lots of unwanted accounts? Kick them at once.
+Migrate a community to a new room? Copy the state and members you want.
+
+Matrix Wrench is closely built around the Matrix API endpoint. Most buttons only fire one network request. Many actions have simple forms, so you don't need to look up the Matrix Spec in a hurry. And if you want to replicate any of the actions in Matrix Wrench, e.g. for an automated script, you can have a look at its Network Manager which shows a curl command for all performed requests.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:0d98e3c5-9b4d-5200-ba6a-53442b043d13 | source=ccc | subtitle=Christian Paul | title=Matrix Wrench - an admin tool for operators and community managers
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100912-cfeaea5d-f8b0-5ade-a86e-0f16497df302_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T12:45:00Z | duration=1493 | id=ccc:cfeaea5d-f8b0-5ade-a86e-0f16497df302 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100912-cfeaea5d-f8b0-5ade-a86e-0f16497df302_preview.jpg | kind=0 | plot=The Matrix Rust SDK has grown from an experimental client SDK into the
+foundation that powers Element X and other Matrix applications. Along the way,
+it has gained support for major Matrix features while tackling some interesting
+engineering challenges.
+
+In this talk, we'll explore recent additions to the SDK, including threads,
+spaces, QR code login, shared encrypted history, migration from Element Classic
+to Element X, and the centralized redecryption mechanism. We'll look at the
+problems these features were designed to solve, the architectural decisions
+behind them, and some of the lessons learned along the way.
+
+This talk is aimed at Matrix developers and contributors who are interested in
+the evolution of the Matrix Rust SDK. The focus will be on the design and
+implementation behind several major features that have recently landed in the
+SDK.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:cfeaea5d-f8b0-5ade-a86e-0f16497df302 | source=ccc | subtitle=Damir Jelić | title=What's New in the Matrix Rust SDK
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100236-b9c1a267-e12f-5bd1-ad8f-9a9f1e154b0e_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T08:00:00Z | duration=1515 | id=ccc:b9c1a267-e12f-5bd1-ad8f-9a9f1e154b0e | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100236-b9c1a267-e12f-5bd1-ad8f-9a9f1e154b0e_preview.jpg | kind=0 | plot=The Matrix.org Foundation is the key to Matrix' independence from any commercial vendor. It exists to protect the neutrality of the Matrix protocol, promote Matrix as an open standard, give a voice to the members of the ecosystem and ensure trust and safety within the open network. This keynote will give an overview of the latest about the Foundation and will include a presentation from the Governing Board on the activities led by the various Committees and Working Groups.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:b9c1a267-e12f-5bd1-ad8f-9a9f1e154b0e | source=ccc | subtitle=Amandine Le Pape, Nico, Neil Johnson, Richard van der Hoff | title=Foundation & Governing Board update
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/100919-2c7282aa-2178-591f-a1c4-d902479d5b08_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T13:15:00Z | duration=1328 | id=ccc:2c7282aa-2178-591f-a1c4-d902479d5b08 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/100919-2c7282aa-2178-591f-a1c4-d902479d5b08_preview.jpg | kind=0 | plot=The Matrix Rust SDK is one of the most complete, mature, and performant SDK in the world. To illustrate our point, we will show off how to develop a Matrix CLI client from scratch with the Rust SDK live on stage, step by step, up to having a fully functional client, with a room list, a timeline, the ability to send and to receive messages, along with full end-to-end encryption support.
+
+The Matrix Rust SDK is one of the most complete SDK in the world. It's becoming really mature: more and more clients are relying on it due to its great features, stability, and performance. Maybe you want to give it a try for your own great client? To illustrate our point, we demonstrate how to develop a Matrix CLI client from scratch with the Rust SDK, step by step, up to having a fully functional client, with a room list, a timeline, the ability to send and to receive messages, along with full end-to-end encryption support. We will use the following components: `SyncService`, `RoomListService`, `Timeline`, `SendQueue`, `EventCache` and so on.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:2c7282aa-2178-591f-a1c4-d902479d5b08 | source=ccc | subtitle=Ivan Enderlin | title=Speedrun Client with the Matrix Rust SDK
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/98015-c1f47b54-bc32-51c6-b634-4ab1ac4fd18f_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T14:15:00Z | duration=1571 | id=ccc:c1f47b54-bc32-51c6-b634-4ab1ac4fd18f | image=https://static.media.ccc.de/media/events/matrix-conf/2026/98015-c1f47b54-bc32-51c6-b634-4ab1ac4fd18f_preview.jpg | kind=0 | plot=Matrix was created with the idea of federation at the core, but nowadays there is matrix.org which contains a majority of the users of the wider matrix network, nullifying the benefits of it. This has since also started generating significant cost for The Matrix Foundation and lead to shutdown of some previously offered bridges. The Homeserver Decentralisation Working Group aims to improve the situation.
+
+One of the co-chairs of the Homeserver Decentralisation Working Group go on a little journey through the history of the WG, how it formed, what challenges it tries to master and what lies ahead.
+
+After a little introduction, you'll hear
+- about the events that lead to the creation of the Working Group,
+- how the initial members met,
+- what problems The Matrix Foundation was already facing,
+- what goals we have,
+- what challenges lie ahead of us,
+- our produced documents, governance proposals, tooling and general milestones achieved
+- offering a look into the future, on what we aim to do in the near future and what we hope the far future will look like.
+
+This talk is intended for Matrix contributors, homeserver administrators, community organizers, client developers and anyone interested in the governance and long-term sustainability of the Matrix ecosystem but also bigger organizations, that want to learn about the real benefits of federation and consider opening up their instance.
+
+_In case you don't know about the Working Group, you can find all our information [here](https://github.com/cleverer/matrix-wg-promote-alternative-homeservers) or ask in our [matrix room](https://matrix.to/#/%23homeserver-decentralisation:matrix.org)._
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:c1f47b54-bc32-51c6-b634-4ab1ac4fd18f | source=ccc | subtitle=Nicolas Da Mutten | title=Homeserver Decentralisation Working Group Report
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/102431-b16b99a3-8511-5685-ba4c-6c25498144c5_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T10:15:00Z | duration=1466 | id=ccc:b16b99a3-8511-5685-ba4c-6c25498144c5 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/102431-b16b99a3-8511-5685-ba4c-6c25498144c5_preview.jpg | kind=0 | plot=Governments increasingly need messaging that is secure, federated, and independent from foreign proprietary platforms, but turning an open protocol into a deployable government tool raises hard questions about sovereignty, infrastructure, and identity. This talk presents MSG GOV, a Matrix-based messaging platform for the Brazilian federal government. Today, it targets a defined set of public servants rather than the entire population or every government employee — a deliberate, controlled scope as the platform matures. We plan to share the factors that drove the need for a sovereign messaging app in the first place and to dig into how MSG GOV is built and run. The solution is designed to operate on SERPRO's sovereign cloud, the Brazilian government's own cloud infrastructure, with all the operational and trust implications that entail. At the center of the talk is identity: how MSG GOV integrates with gov.br, Brazil's national single-sign-on system, through a dedicated user management module we developed to bridge gov.br authentication with Matrix accounts.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:b16b99a3-8511-5685-ba4c-6c25498144c5 | source=ccc | subtitle=Diego Serpa, Jose Macedo | title=MSG GOV: Building Brazil's Sovereign Government Messaging Platform on Matrix
+item backdrop=https://static.media.ccc.de/media/events/matrix-conf/2026/99063-36bf899d-51ff-51b4-b735-e71c5d6e079e_preview.jpg | channel=The Matrix Conference 2026 | date=2026-10-22T09:29:00Z | duration=527 | id=ccc:36bf899d-51ff-51b4-b735-e71c5d6e079e | image=https://static.media.ccc.de/media/events/matrix-conf/2026/99063-36bf899d-51ff-51b4-b735-e71c5d6e079e_preview.jpg | kind=0 | plot=In April 2025, a new homeserver burst onto the scene. Soon enough, hundreds of servers were running this mysterious new software - and the momentum didn't drop. Today, more than one and a half thousand servers on the public federation run [Continuwuity](https://continuwuity.org/). 
+
+That leads to some questions. Where did it come from? What happened? Where is it going? Well, We've got anwers for all of that. Right here. Exclusively. This is a breakdown from the team behind the ~~mystery~~ well-regarded open source project, going over all of that and more. You know you're interested.
+
+Licensed to the public under https://creativecommons.org/licenses/by-sa/4.0/ | ref=ccc:36bf899d-51ff-51b4-b735-e71c5d6e079e | source=ccc | subtitle=Jade, Nex, Ginger | title=A Year (and a half) of Continuwuity

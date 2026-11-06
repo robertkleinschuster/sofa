@@ -87,6 +87,11 @@ Tested result: 25 modules, for example `StaticHorizontalCluster "Top-Serien zum 
 #### Categories / Rubriken
 - The list of categories is the `"Kategorien"` cluster on the start page (`MetaCollection` canonicals such as `pub-form-10004` Filme,
   `pub-form-10003` Dokus, `pub-form-10010` Serien, `genre-10290` Sport). Content owners work the same way (`content-owner-3sat`, `content-owner-kika`).
+- Sofa recognises that cluster by its items (all `MetaCollection`), not by its title, and takes each tile's `id` for
+  `metaCollectionContent` (request `id` in the `MetaCollection` fragment). The id is a UUID for brand pages and equal to the canonical
+  for `pub-form-*` (seen 2026-11-06) - never infer one from the other; only a bare canonical asks `metaCollectionByCanonical { id }`.
+- Live: `currentMedia.nodes[].__typename == "LiveMedia"` (not the canonical); the channel is `LiveMedia.tvService`
+  (`ZDF`, `ZDFneo`, `ZDFinfo`, `3sat`, `phoenix`, `arte`, `KI.KA`), Sofa's station id = its lowercase letters and digits (`kika`, as ARD's EPG).
 - Content of a category:
 ```graphql
 query SofaCategory($collectionId: String!, $input: MetaCollectionContentInput!) {

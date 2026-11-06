@@ -341,7 +341,12 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
         }
     if (!byCrid.count) { done(); return; }
     static NSDateFormatter *df;
-    if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd"; df.timeZone = [NSTimeZone timeZoneWithName:@"Europe/Berlin"]; }
+    if (!df) {   // the API's day: Gregorian digits in German time, whatever the system's calendar/locale
+        df = [NSDateFormatter new];
+        df.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        df.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
+        df.dateFormat = @"yyyy-MM-dd"; df.timeZone = [NSTimeZone timeZoneWithName:@"Europe/Berlin"];
+    }
     NSString *day = [df stringFromDate:[NSDate dateWithTimeIntervalSinceNow:-(5 * 3600 + 30 * 60)]];   // TV day starts 05:30
     NSString *u = [NSString stringWithFormat:@"https://programm-api.ard.de/program/api/program?day=%@&mode=channel", day];
     [SFNet getJSON:u headers:nil cacheAge:3 * 3600 done:^(id j, NSError *e) {

@@ -1,0 +1,469 @@
+item date=2019-12-01T00:00:00Z | id=cccconf:35C3-oio | image=https://static.media.ccc.de/media/congress/35C3-oio/logo.png | kind=2 | source=ccc | subtitle=<date> | title=35C3: Open Infrastructure Orbit
+item date=2021-06-19T22:00:00Z | id=cccconf:osc21 | image=https://static.media.ccc.de/media/events/osc/2021/osc21.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2021
+item date=2026-10-15T22:00:00Z | id=cccconf:emf2026 | image=https://static.media.ccc.de/media/events/emf/2026/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2026
+item date=2015-04-09T00:00:00Z | id=cccconf:eh15 | image=https://static.media.ccc.de/media/conferences/eh2015/eh15v4.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2015
+item date=2024-02-25T23:00:00Z | id=cccconf:nook23 | image=https://static.media.ccc.de/media/events/nook/2023/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Nook 2023
+congress date=2014-01-13T00:00:00Z | id=cccconf:30c3 | image=https://static.media.ccc.de/media/congress/2013/folder-30c3.png | kind=2 | source=ccc | subtitle=<date> | title=30C3
+item date=2026-07-18T22:00:00Z | id=cccconf:hackover2026 | image=https://static.media.ccc.de/media/events/hackover/2026/hackover2026-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Hackover 2026
+item date=2024-05-10T22:00:00Z | id=cccconf:dgwk2024 | image=https://static.media.ccc.de/media/conferences/dgwk/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2024
+item date=2026-04-25T22:00:00Z | id=cccconf:lgm2026 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Libre Graphics Meeting 2026
+item date=2020-03-16T23:00:00Z | id=cccconf:ctreffos-chaostalks | image=https://static.media.ccc.de/media/regional/ctreffos/chaostalk/ctreffos-logo.png | kind=2 | source=ccc | subtitle=<date> | title=CTreffOS chaOStalks
+item date=2021-04-15T22:00:00Z | id=cccconf:divoc_r2r | image=https://static.media.ccc.de/media/conferences/divoc/r2r/R2R_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Reboot to Respawn
+item date=2023-03-17T23:00:00Z | id=cccconf:fossgis2023 | image=https://static.media.ccc.de/media/events/fossgis/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2023
+item date=2026-04-20T22:00:00Z | id=cccconf:fossgis2011 | image=https://static.media.ccc.de/media/events/fossgis/2011/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2011
+item date=2022-10-08T22:00:00Z | id=cccconf:vcfb22 | image=https://static.media.ccc.de/media/events/vcfb/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2022
+item date=2026-08-11T22:00:00Z | id=cccconf:inselchaos2025 | image=https://static.media.ccc.de/media/events/inselchaos/2025/inselchaos2025.png | kind=2 | source=ccc | subtitle=<date> | title=InselChaos 2025
+item date=2024-03-21T23:00:00Z | id=cccconf:fossgis2024 | image=https://static.media.ccc.de/media/events/fossgis/2024/logo-fossgis2024.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2024
+item date=2025-11-11T23:00:00Z | id=cccconf:godotfest2025 | image=https://static.media.ccc.de/media/events/godotfest/2025/logo_blue.svg | kind=2 | source=ccc | subtitle=<date> | title=GodotFest 2025
+item date=2020-09-06T22:00:00Z | id=cccconf:froscon2020 | image=https://static.media.ccc.de/media/events/froscon/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2020 Cloud-Edition
+item date=2011-10-28T00:00:00Z | id=cccconf:froscon2011 | image=https://static.media.ccc.de/media/conferences/froscon/2011/folder-froscon-2010.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2011
+item date=2026-04-05T22:00:00Z | id=cccconf:eh23 | image=https://static.media.ccc.de/media/conferences/eh2026/eh23_logo.svg | kind=2 | source=ccc | subtitle=<date> | title=EasterHegg 2026: The Bunny Is A Lie
+item date=2025-07-04T22:00:00Z | id=cccconf:gpn23 | image=https://static.media.ccc.de/media/events/gpn/gpn23/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 23
+item date=2025-03-16T23:00:00Z | id=cccconf:dgwk2025 | image=https://static.media.ccc.de/media/conferences/dgwk/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2025
+item date=2026-05-18T22:00:00Z | id=cccconf:bobkonf2026 | image=https://static.media.ccc.de/media/events/bobkonf/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2026
+item date=2023-12-18T23:00:00Z | id=cccconf:camp2023 | image=https://static.media.ccc.de/media/conferences/camp2023/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2023
+item date=2017-08-09T00:00:00Z | id=cccconf:fcmc17 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=FC⚡MC
+item date=2026-10-17T22:00:00Z | id=cccconf:vcfb26 | image=https://static.media.ccc.de/media/events/vcfb/2026/../2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2026
+item date=2024-04-03T22:00:00Z | id=cccconf:chaos-inkl | image=https://static.media.ccc.de/media/regional/kaiserslautern/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos inKL.
+item date=2016-10-16T00:00:00Z | id=cccconf:c5 | image=https://static.media.ccc.de/media/regional/c4/c5/c5-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Computer Club Cologne Café
+item date=2018-06-10T00:00:00Z | id=cccconf:nopolgnrw | image=https://static.media.ccc.de/media/events/nopolgnrw/nopolgnrw.png | kind=2 | source=ccc | subtitle=<date> | title=NoPolGNRW
+item date=2017-07-13T00:00:00Z | id=cccconf:gpn11 | image=https://static.media.ccc.de/media/events/gpn/gpn11/GPN11-Logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 11
+item date=2017-05-23T00:00:00Z | id=cccconf:biometrie | image=https://static.media.ccc.de/media/regional/berlin/biometrie/vdl2.jpg | kind=2 | source=ccc | subtitle=<date> | title=Biometrie
+item date=2015-11-10T00:00:00Z | id=cccconf:denog7 | image=https://static.media.ccc.de/media/events/denog/denog7/denog7.jpg | kind=2 | source=ccc | subtitle=<date> | title=DENOG7
+item date=2017-07-13T00:00:00Z | id=cccconf:froscon2008 | image=https://static.media.ccc.de/media/events/froscon/2008/froscon.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2008
+item date=2009-09-28T00:00:00Z | id=cccconf:mrmcd111b | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd111b/folder-mrmcd-2008.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 111b
+item date=2022-08-01T22:00:00Z | id=cccconf:gpw2022 | image=https://static.media.ccc.de/media/conferences/gpw/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Deutscher Perl/Raku Workshop 2022
+item date=2021-03-08T23:00:00Z | id=cccconf:jh18 | image=https://static.media.ccc.de/media/events/jugendhackt/2018/jh_18.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2018
+item date=2017-01-28T00:00:00Z | id=cccconf:denog8 | image=https://static.media.ccc.de/media/events/denog/denog8/denog8-logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=DENOG8
+item date=2019-01-18T00:00:00Z | id=cccconf:emf2018 | image=https://static.media.ccc.de/media/events/emf/2018/../logo-mark-white.png | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2018
+item date=2023-04-15T22:00:00Z | id=cccconf:glt23 | image=https://static.media.ccc.de/media/events/glt/2023/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2023
+item date=2018-04-28T00:00:00Z | id=cccconf:eh18 | image=https://static.media.ccc.de/media/conferences/eh2018/eh18_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2018
+item date=2016-07-28T00:00:00Z | id=cccconf:fusion16 | image=https://static.media.ccc.de/media/events/fusion/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2016
+item date=2016-02-22T00:00:00Z | id=cccconf:routingdays16 | image=https://static.media.ccc.de/media/events/routingdays/routingdays16/routingdays16.png | kind=2 | source=ccc | subtitle=<date> | title=Freifunk Rheinland RoutingDays 2016
+item date=2017-07-15T00:00:00Z | id=cccconf:froscon2007 | image=https://static.media.ccc.de/media/events/froscon/2007/froscon.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2007
+congress date=2025-03-16T23:00:00Z | id=cccconf:38c3 | image=https://static.media.ccc.de/media/congress/2024/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=38C3: Illegal Instructions
+item date=2024-04-01T22:00:00Z | id=cccconf:clt24 | image=https://static.media.ccc.de/media/events/clt/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chemnitzer Linux-Tage 2024
+congress date=2021-01-25T23:00:00Z | id=cccconf:36c3 | image=https://static.media.ccc.de/media/congress/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=36C3: Resource Exhaustion
+item date=2019-03-16T00:00:00Z | id=cccconf:fossgis2019 | image=https://static.media.ccc.de/media/events/fossgis/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2019
+item date=2021-05-12T22:00:00Z | id=cccconf:entropia | image=https://static.media.ccc.de/media/regional/karlsruhe/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Entropia
+item date=2026-10-04T22:00:00Z | id=cccconf:mrmcd26 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2026 - Grenzen Überwinden
+item date=2019-01-28T00:00:00Z | id=cccconf:linuxtag14 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2014
+item date=2024-03-09T23:00:00Z | id=cccconf:basel | image=https://static.media.ccc.de/media/contributors/basel/basel-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Computer Club Basel
+item date=2024-06-05T22:00:00Z | id=cccconf:gpn22 | image=https://static.media.ccc.de/media/events/gpn/gpn22/gpn22-logo-square.svg | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 22
+item date=2021-06-19T22:00:00Z | id=cccconf:fossgis2021 | image=https://static.media.ccc.de/media/events/fossgis/2021/FOSSGIS_Konferenz_Logo_2021_BGw.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2021
+item date=2019-10-27T00:00:00Z | id=cccconf:wikidatacon2019 | image=https://static.media.ccc.de/media/events/wikidatacon/2019/WikidataCon_2019_logo_bg-white.png | kind=2 | source=ccc | subtitle=<date> | title=WikidataCon 2019
+item date=2023-08-05T22:00:00Z | id=cccconf:froscon2023 | image=https://static.media.ccc.de/media/events/froscon/2023/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2023
+item date=2022-09-01T22:00:00Z | id=cccconf:diwo22 | image=https://static.media.ccc.de/media/events/diwo/2022/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=DIWO 2022
+item date=2026-05-10T22:00:00Z | id=cccconf:fossgis2014 | image=https://static.media.ccc.de/media/events/fossgis/2014/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2014
+item date=2024-03-29T23:00:00Z | id=cccconf:37c3-meta | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=37C3: Lightning Talks & Clips
+item date=2026-06-25T22:00:00Z | id=cccconf:sotm2025 | image=https://static.media.ccc.de/media/events/sotm/2025/sotm2025.png | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2025
+item date=2016-10-03T00:00:00Z | id=cccconf:vcfb2016 | image=https://static.media.ccc.de/media/events/vcfb/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2016
+item date=2025-03-03T23:00:00Z | id=cccconf:nook24 | image=https://static.media.ccc.de/media/events/nook/2024/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=NooK 2024
+item date=2026-05-13T22:00:00Z | id=cccconf:fossgis2015 | image=https://static.media.ccc.de/media/events/fossgis/2015/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2015
+item date=2017-08-20T00:00:00Z | id=cccconf:SHA2017 | image=https://static.media.ccc.de/media/events/SHA2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=SHA2017: Still Hacking Anyway
+item date=2018-07-11T00:00:00Z | id=cccconf:cosin2018 | image=https://static.media.ccc.de/media/events/cosin/2018/cosin_2018.png | kind=2 | source=ccc | subtitle=<date> | title=Cosin 2018
+congress date=2008-02-06T00:00:00Z | id=cccconf:19c3 | image=https://static.media.ccc.de/media/congress/2002/folder-19c3.png | kind=2 | source=ccc | subtitle=<date> | title=19C3: Out Of Order
+item date=2024-08-16T22:00:00Z | id=cccconf:osc24 | image=https://static.media.ccc.de/media/events/osc/2024/osc24logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2024
+item date=2017-06-22T00:00:00Z | id=cccconf:linuxtag11 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2011
+item date=2014-07-30T00:00:00Z | id=cccconf:hnp2 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Hack'n'Play #2
+item date=2019-01-01T00:00:00Z | id=cccconf:gpn18 | image=https://static.media.ccc.de/media/events/gpn/gpn18/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 18
+item date=2022-12-22T23:00:00Z | id=cccconf:hackwerk-aalen-geekend22 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Hackwerk Aalen Geekend 2022
+item date=2024-08-27T22:00:00Z | id=cccconf:eh21 | image=https://static.media.ccc.de/media/conferences/eh2024/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2024: Rabbit Prototyping
+item date=2026-09-26T22:00:00Z | id=cccconf:quellc0d3 | image=https://static.media.ccc.de/media/conferences/quellcode/2026/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=QueIIc0d3
+item date=2017-07-27T00:00:00Z | id=cccconf:cosin2017 | image=https://static.media.ccc.de/media/events/cosin/2017/cosin2017.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Singularity 2017
+congress date=2016-01-12T00:00:00Z | id=cccconf:32c3 | image=https://static.media.ccc.de/media/congress/2015/32c3_logo.png | kind=2 | source=ccc | subtitle=<date> | title=32C3: gated communities
+item date=2019-09-21T00:00:00Z | id=cccconf:asg2019 | image=https://static.media.ccc.de/media/events/all_systems_go/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2019
+item date=2021-03-14T23:00:00Z | id=cccconf:divoc | image=https://static.media.ccc.de/media/conferences/divoc/2020/rocket.svg | kind=2 | source=ccc | subtitle=<date> | title=Hidden Service
+item date=2026-09-21T22:00:00Z | id=cccconf:dgna | image=https://static.media.ccc.de/media/events/dgna/dgna-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Netzpolitischer Abend
+item date=2017-07-27T00:00:00Z | id=cccconf:desinformation | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=DESINFORMATION
+item date=2022-02-11T23:00:00Z | id=cccconf:fossgis2017 | image=https://static.media.ccc.de/media/events/fossgis/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2017
+item date=2016-11-27T00:00:00Z | id=cccconf:fiffkon16 | image=https://static.media.ccc.de/media/conferences/fiffkon/2016/fiffkon16-logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2016
+item date=2017-09-06T00:00:00Z | id=cccconf:13np | image=https://static.media.ccc.de/media/events/netzpolitik/13np/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Das ist Netzpolitik! #13np
+item date=2009-09-28T00:00:00Z | id=cccconf:mrmcd0x8 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd0x8/folder-mrmcd-2009.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 0x8
+item date=2010-06-11T00:00:00Z | id=cccconf:GPN10 | image=https://static.media.ccc.de/media/events/gpn10/95px-GPN10-TShirt.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 10
+item date=2019-06-02T00:00:00Z | id=cccconf:gpn19 | image=https://static.media.ccc.de/media/events/gpn/gpn19/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 19
+item date=2017-08-20T00:00:00Z | id=cccconf:froscon2017 | image=https://static.media.ccc.de/media/events/froscon/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2017
+item date=2024-01-13T23:00:00Z | id=cccconf:fireshonks | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=FireShonks
+item date=2020-08-28T22:00:00Z | id=cccconf:sotm2020 | image=https://static.media.ccc.de/media/events/sotm/2020/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2020
+item date=2025-11-01T23:00:00Z | id=cccconf:chaosdorf | image=https://static.media.ccc.de/media/regional/duesseldorf/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaosdorf Düsseldorf
+item date=2025-11-03T23:00:00Z | id=cccconf:dhcp25 | image=https://static.media.ccc.de/media/events/dhcp/2025/dhcp25.png | kind=2 | source=ccc | subtitle=<date> | title=Die Heilbronner Chaos Party 2025
+item date=2026-09-24T22:00:00Z | id=cccconf:god2026 | image=https://static.media.ccc.de/media/events/god/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=German OWASP Day 2026
+congress date=2026-02-02T23:00:00Z | id=cccconf:39c3 | image=https://static.media.ccc.de/media/congress/2025/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=39C3: Power Cycles
+item date=2018-12-29T00:00:00Z | id=cccconf:AllCreaturesWelcome | image=https://static.media.ccc.de/media/documentation/AllCreaturesWelcome/acw_logo_quad.png | kind=2 | source=ccc | subtitle=<date> | title=All Creatures Welcome
+item date=2026-06-20T22:00:00Z | id=cccconf:dobyte2026 | image=https://static.media.ccc.de/media/events/dobyte/2026/DO_BYTE_LOGO_Normal.png | kind=2 | source=ccc | subtitle=<date> | title=DO_BYTE 2026
+item date=2019-11-12T00:00:00Z | id=cccconf:denog11 | image=https://static.media.ccc.de/media/events/denog/denog11/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG11
+item date=2018-09-23T00:00:00Z | id=cccconf:syskon | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Systemkonform
+item date=2019-11-14T00:00:00Z | id=cccconf:lwh00 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linux Weekend Herbst 2000
+item date=2025-08-22T22:00:00Z | id=cccconf:tdf2025 | image=https://static.media.ccc.de/media/events/tdf/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=4. Tübinger Tage der digitalen Freiheit
+item date=2026-09-19T22:00:00Z | id=cccconf:kde2026 | image=https://static.media.ccc.de/media/events/kde/kde2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=KDE Akademy 2026
+item date=2024-07-13T22:00:00Z | id=cccconf:bobkonf2024 | image=https://static.media.ccc.de/media/events/bobkonf/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2024
+item date=2026-05-06T22:00:00Z | id=cccconf:fossgis2013 | image=https://static.media.ccc.de/media/events/fossgis/2013/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2013
+item date=2026-07-06T22:00:00Z | id=cccconf:ds2010 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2010
+item date=2025-04-28T22:00:00Z | id=cccconf:bobkonf2025 | image=https://static.media.ccc.de/media/events/bobkonf/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2025
+item date=2020-04-05T22:00:00Z | id=cccconf:fiffkon19 | image=https://static.media.ccc.de/media/conferences/fiffkon/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2019
+item date=2025-10-19T22:00:00Z | id=cccconf:sps25 | image=https://static.media.ccc.de/media/conferences/sps25/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Swiss Python Summit 2025
+item date=2025-08-06T22:00:00Z | id=cccconf:cosin2025 | image=https://static.media.ccc.de/media/events/cosin/2025/cosin.png | kind=2 | source=ccc | subtitle=<date> | title=Cosin 2025
+item date=2016-08-26T00:00:00Z | id=cccconf:froscon2016 | image=https://static.media.ccc.de/media/events/froscon/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2016
+congress date=2008-01-13T00:00:00Z | id=cccconf:22c3 | image=https://static.media.ccc.de/media/congress/2005/folder-22c3.png | kind=2 | source=ccc | subtitle=<date> | title=22C3: Private Investigations
+item date=2026-05-09T22:00:00Z | id=cccconf:fsck2026 | image=https://static.media.ccc.de/media/events/fsck/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FSCK 2026
+item date=2008-01-13T00:00:00Z | id=cccconf:blinkenlights | image=https://static.media.ccc.de/media/blinkenlights/folder-blinkenlights.png | kind=2 | source=ccc | subtitle=<date> | title=Blinkenlights
+item date=2026-07-25T22:00:00Z | id=cccconf:voxconf2026 | image=https://static.media.ccc.de/media/events/voxconf/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=VoxConf 2026
+item date=2026-10-21T22:00:00Z | id=cccconf:matrix-conf-2026 | image=https://static.media.ccc.de/media/events/matrix-conf/2026/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=The Matrix Conference 2026
+item date=2023-09-13T22:00:00Z | id=cccconf:asg2023 | image=https://static.media.ccc.de/media/events/all_systems_go/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2023
+item date=2026-05-17T22:00:00Z | id=cccconf:fossgis2016 | image=https://static.media.ccc.de/media/events/fossgis/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2016
+item date=2026-10-18T22:00:00Z | id=cccconf:noname_ev | image=https://static.media.ccc.de/media/contributors/noname_ev/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Chaostreff Heidelberg
+item date=2026-07-06T22:00:00Z | id=cccconf:ds2009 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2009
+item date=2018-03-22T00:00:00Z | id=cccconf:afu-tm18 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Münchner Amateurfunktagung 2018
+item date=2025-07-06T22:00:00Z | id=cccconf:hackover2025 | image=https://static.media.ccc.de/media/events/hackover/2025/hackover2025-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Hackover 2025
+item date=2025-09-09T22:00:00Z | id=cccconf:jhch | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt Schweiz
+item date=2021-09-18T22:00:00Z | id=cccconf:DS2021 | image=https://static.media.ccc.de/media/events/datenspuren/2021/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2021
+item date=2024-10-19T22:00:00Z | id=cccconf:sonoj2024 | image=https://static.media.ccc.de/media/events/sonoj/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Sonoj 2024
+item date=2018-03-18T00:00:00Z | id=cccconf:kolo | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Koloniales Erbe
+item date=2024-10-11T22:00:00Z | id=cccconf:bba24 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=BigBrotherAwards 2024
+item date=2015-08-23T00:00:00Z | id=cccconf:froscon2015 | image=https://static.media.ccc.de/media/conferences/froscon/2015/froscon2015.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2015
+item date=2017-10-28T00:00:00Z | id=cccconf:asg2017 | image=https://static.media.ccc.de/media/events/all_systems_go/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2017
+item date=2025-10-05T22:00:00Z | id=cccconf:otp2025 | image=https://static.media.ccc.de/media/events/otp/2025/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Worldwide OTP Summit 2025 Helsinki
+item date=2023-09-09T22:00:00Z | id=cccconf:jev22 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Dezentrale Jahresendveranstaltungen
+item date=2017-11-05T00:00:00Z | id=cccconf:sonoj2017 | image=https://static.media.ccc.de/media/events/sonoj/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Sonoj 2017
+item date=2026-10-31T23:00:00Z | id=cccconf:fiffkon26 | image=https://static.media.ccc.de/media/events/fiffkon/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2026
+item date=2026-07-26T22:00:00Z | id=cccconf:muccc | image=https://static.media.ccc.de/media/regional/muenchen/hackfriday/logo.png | kind=2 | source=ccc | subtitle=<date> | title=muCCC Hack!Friday
+item date=2022-07-01T22:00:00Z | id=cccconf:hacc-ad | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=atmospheric:discharge
+item date=2024-04-04T22:00:00Z | id=cccconf:podcast-muc | image=https://static.media.ccc.de/media/events/podcast-muc/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=Podcasterei DACH
+item date=2015-10-16T00:00:00Z | id=cccconf:wie_werden_kriege_gemacht-koeln_2015 | image=https://static.media.ccc.de/media/events/wie_werden_kriege_gemacht-koeln_2015/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Wie werden Kriege „gemacht“?
+item date=2009-09-28T00:00:00Z | id=cccconf:Panoptische _Prinzip | image=https://static.media.ccc.de/media/events/Panoptische_Prinzip/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Das Panoptische Prinzip (2007)
+item date=2020-09-19T22:00:00Z | id=cccconf:DS2020 | image=https://static.media.ccc.de/media/events/datenspuren/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2020
+item date=2025-09-19T22:00:00Z | id=cccconf:nixcon2025 | image=https://static.media.ccc.de/media/events/nixcon/2025/nixcon2025_icon.png | kind=2 | source=ccc | subtitle=<date> | title=NixCon 2025
+item date=2017-05-28T00:00:00Z | id=cccconf:osc17 | image=https://static.media.ccc.de/media/events/osc/2017/osc17_logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2017
+item date=2021-09-22T22:00:00Z | id=cccconf:xdc2021 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=X Developers Conference 2021
+item date=2019-11-13T00:00:00Z | id=cccconf:sonoj2019 | image=https://static.media.ccc.de/media/events/sonoj/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Sonoj 2019
+item date=2025-06-27T22:00:00Z | id=cccconf:osc25 | image=https://static.media.ccc.de/media/events/osc/2025/osc25logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2025
+item date=2026-05-24T22:00:00Z | id=cccconf:asm | image=https://static.media.ccc.de/media/regional/muenchen/asm/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Aktiv Symposium München
+item date=2023-06-12T22:00:00Z | id=cccconf:fsck2023 | image=https://static.media.ccc.de/media/events/fsck/fsck2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FSCK 2023
+item date=2025-10-08T22:00:00Z | id=cccconf:mrmcd25 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd25/mrmcd25-logo.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2025 - Volle Transparenz
+item date=2024-10-30T23:00:00Z | id=cccconf:sps24 | image=https://static.media.ccc.de/media/conferences/sps24/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Swiss Python Summit 2024
+item date=2015-11-15T00:00:00Z | id=cccconf:nixcon2015 | image=https://static.media.ccc.de/media/events/nixcon/2015/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Nixcon 2015
+item date=2020-01-04T00:00:00Z | id=cccconf:froscon2009 | image=https://static.media.ccc.de/media/events/froscon/2009/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2009
+item date=2026-06-27T22:00:00Z | id=cccconf:fusion26 | image=https://static.media.ccc.de/media/events/fusion/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2026
+congress date=2024-03-21T23:00:00Z | id=cccconf:37c3 | image=https://static.media.ccc.de/media/congress/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=37C3: Unlocked
+item date=2022-09-05T22:00:00Z | id=cccconf:bobkonf2022 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2022
+item date=2025-03-27T23:00:00Z | id=cccconf:fossgis2025 | image=https://static.media.ccc.de/media/events/fossgis/2025/logo-fossgis2025.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2025
+item date=2026-11-04T23:00:00Z | id=cccconf:godotfest2026 | image=https://static.media.ccc.de/media/events/godotfest/2026/../2025/logo_blue.svg | kind=2 | source=ccc | subtitle=<date> | title=GodotFest 2026
+item date=2026-04-02T22:00:00Z | id=cccconf:clt26 | image=https://static.media.ccc.de/media/events/clt/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chemnitzer Linux-Tage 2026
+item date=2025-10-10T22:00:00Z | id=cccconf:hackover2024 | image=https://static.media.ccc.de/media/events/hackover/2024/hackover24.png | kind=2 | source=ccc | subtitle=<date> | title=Hackover 2024
+item date=2024-10-09T22:00:00Z | id=cccconf:rc3 | image=https://static.media.ccc.de/media/events/rc3/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Remote Chaos Experience
+item date=2014-10-26T00:00:00Z | id=cccconf:hackover2014 | image=https://static.media.ccc.de/media/events/hackover/2014/hackover-2014.png | kind=2 | source=ccc | subtitle=<date> | title=Hackover 2014
+item date=2026-08-15T22:00:00Z | id=cccconf:froscon2026 | image=https://static.media.ccc.de/media/events/froscon/2026/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2026
+item date=2026-04-18T22:00:00Z | id=cccconf:lixcon2026 | image=https://static.media.ccc.de/media/events/lixcon/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=LixCon 2026
+item date=2026-01-14T23:00:00Z | id=cccconf:nook25 | image=https://static.media.ccc.de/media/events/nook/2025/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=NooK 2025
+item date=2009-09-29T00:00:00Z | id=cccconf:camp2007 | image=https://static.media.ccc.de/media/conferences/camp2007/folder-camp-2007.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2007
+item date=2021-12-10T23:00:00Z | id=cccconf:vcfb21 | image=https://static.media.ccc.de/media/events/vcfb/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2021
+item date=2026-03-08T23:00:00Z | id=cccconf:uplink2026 | image=https://static.media.ccc.de/media/conferences/uplink/2026/uplink2026.jpg | kind=2 | source=ccc | subtitle=<date> | title=Uplink 2026
+item date=2021-04-05T22:00:00Z | id=cccconf:dgwk2021 | image=https://static.media.ccc.de/media/conferences/dgwk/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2021
+item date=2026-04-26T22:00:00Z | id=cccconf:fossgis2012 | image=https://static.media.ccc.de/media/events/fossgis/2012/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2012
+item date=2026-03-02T23:00:00Z | id=cccconf:dgwk2026 | image=https://static.media.ccc.de/media/conferences/dgwk/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2026
+item date=2017-01-09T00:00:00Z | id=cccconf:33c3-sendezentrum | image=https://static.media.ccc.de/media/congress/33c3-sendezentrum/logo.png | kind=2 | source=ccc | subtitle=<date> | title=33C3 Sendezentrum
+item date=2017-04-21T00:00:00Z | id=cccconf:osmocon17 | image=https://static.media.ccc.de/media/conferences/osmocon/2017/OsmoCon.png | kind=2 | source=ccc | subtitle=<date> | title=OsmoCon 2017
+congress date=2019-01-25T00:00:00Z | id=cccconf:35c3 | image=https://static.media.ccc.de/media/congress/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=35C3: Refreshing Memories
+item date=2026-07-02T22:00:00Z | id=cccconf:ds2013 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2013
+item date=2018-05-25T00:00:00Z | id=cccconf:metanook-2017 | image=https://static.media.ccc.de/media/events/metanook/metanook-2017/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=MetaNook 2017
+item date=2021-11-13T23:00:00Z | id=cccconf:fiffkon21 | image=https://static.media.ccc.de/media/conferences/fiffkon/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2021
+item date=2019-05-03T00:00:00Z | id=cccconf:dgwk2019 | image=https://static.media.ccc.de/media/conferences/dgwk/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2019
+item date=2017-05-29T00:00:00Z | id=cccconf:gpn17 | image=https://static.media.ccc.de/media/events/gpn/gpn17/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 17
+item date=2023-05-02T22:00:00Z | id=cccconf:iger-2022 | image=https://static.media.ccc.de/media/events/iger/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Intergalaktische Erfahrungsreise 2022
+item date=2018-09-07T00:00:00Z | id=cccconf:froscon2018 | image=https://static.media.ccc.de/media/events/froscon/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2018
+item date=2024-09-25T22:00:00Z | id=cccconf:DS2024 | image=https://static.media.ccc.de/media/events/datenspuren/2024/ds2024-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2024
+item date=2025-07-09T22:00:00Z | id=cccconf:soliprep2025 | image=https://static.media.ccc.de/media/regional/cadus/soliprep2025/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=Soliprepping 2025
+item date=2024-04-05T22:00:00Z | id=cccconf:glt24 | image=https://static.media.ccc.de/media/events/glt/2024/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2024
+item date=2017-04-28T00:00:00Z | id=cccconf:datensummit17 | image=https://static.media.ccc.de/media/conferences/datensummit/2017/datensummit17.png | kind=2 | source=ccc | subtitle=<date> | title=Datensummit 2017
+item date=2026-01-29T23:00:00Z | id=cccconf:eth0_2025 | image=https://static.media.ccc.de/media/events/eth0/2025/Eth0-2025-banner.png | kind=2 | source=ccc | subtitle=<date> | title=eth0:2025 Autumn 
+item date=2024-06-29T22:00:00Z | id=cccconf:fusion24 | image=https://static.media.ccc.de/media/events/fusion/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2024
+item date=2020-01-04T00:00:00Z | id=cccconf:pw18 | image=https://static.media.ccc.de/media/events/privacyweek/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=PrivacyWeek 2018
+item date=2017-04-17T00:00:00Z | id=cccconf:eh17 | image=https://static.media.ccc.de/media/conferences/eh2017/eh17_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2017
+item date=2026-09-19T22:00:00Z | id=cccconf:DS2026 | image=https://static.media.ccc.de/media/events/datenspuren/2026/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2026
+item date=2022-02-14T23:00:00Z | id=cccconf:c4-extras | image=https://static.media.ccc.de/media/regional/c4/extras/c4-logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Chaos Computer Club Cologne Extras
+item date=2018-01-19T00:00:00Z | id=cccconf:cccda | image=https://static.media.ccc.de/media/regional/cccda/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Computer Club Darmstadt
+item date=2019-05-09T00:00:00Z | id=cccconf:fusionpk | image=https://static.media.ccc.de/media/events/fusion/2019-pk/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion Pressekonferenz
+item date=2025-06-28T22:00:00Z | id=cccconf:fusion25 | image=https://static.media.ccc.de/media/events/fusion/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2025
+item date=2021-05-14T22:00:00Z | id=cccconf:lpd2021 | image=https://static.media.ccc.de/media/events/lpd/2021_1/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Linux Presentation Day 2021
+item date=2026-08-18T22:00:00Z | id=cccconf:osc26 | image=https://static.media.ccc.de/media/events/osc/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2026
+item date=2023-11-04T23:00:00Z | id=cccconf:fiffkon23 | image=https://static.media.ccc.de/media/conferences/fiffkon/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2023
+item date=2026-03-21T23:00:00Z | id=cccconf:realraum | image=https://static.media.ccc.de/media/contributors/realraum/realraum-logo-red.svg | kind=2 | source=ccc | subtitle=<date> | title=realraum
+item date=2020-02-17T23:00:00Z | id=cccconf:metanook19 | image=https://static.media.ccc.de/media/events/metanook/metanook-2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=MetaNook 2019
+item date=2018-11-25T00:00:00Z | id=cccconf:rustfest18rome | image=https://static.media.ccc.de/media/conferences/rustfest/2018-2/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Rustfest 2018 Rome
+item date=2025-09-14T22:00:00Z | id=cccconf:clt25 | image=https://static.media.ccc.de/media/events/clt/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chemnitzer Linux-Tage 2025
+item date=2023-10-15T22:00:00Z | id=cccconf:anarchy23 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Anarchy 2023
+item date=2026-03-26T23:00:00Z | id=cccconf:fossgis2026 | image=https://static.media.ccc.de/media/events/fossgis/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2026
+item date=2019-04-22T00:00:00Z | id=cccconf:eh19 | image=https://static.media.ccc.de/media/conferences/eh2019/eh19-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2019
+item date=2024-09-03T22:00:00Z | id=cccconf:froscon2024 | image=https://static.media.ccc.de/media/events/froscon/2024/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2024
+item date=2025-09-27T22:00:00Z | id=cccconf:quellcode25 | image=https://static.media.ccc.de/media/conferences/quellcode/quellcode25/image.png | kind=2 | source=ccc | subtitle=<date> | title=QueIIcode 2025
+item date=2014-01-01T00:00:00Z | id=cccconf:camp2003 | image=https://static.media.ccc.de/media/conferences/camp2003/folder-camp-2003.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2003
+item date=2021-01-12T23:00:00Z | id=cccconf:denog12 | image=https://static.media.ccc.de/media/events/denog/denog12/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG12
+item date=2024-06-08T22:00:00Z | id=cccconf:iger-2024 | image=https://static.media.ccc.de/media/events/iger/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Intergalaktische Erfahrungsreise 2024
+item date=2015-05-23T00:00:00Z | id=cccconf:camp1999 | image=https://static.media.ccc.de/media/conferences/camp1999/camprocket.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 1999
+item date=2019-04-29T00:00:00Z | id=cccconf:osmodevcon2019 | image=https://static.media.ccc.de/media/conferences/osmodevcon/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=OsmoDevCon 2019
+item date=2025-02-15T23:00:00Z | id=cccconf:hackerhotel2025 | image=https://static.media.ccc.de/media/events/hackerhotel/2025/HackerHotel2025.png | kind=2 | source=ccc | subtitle=<date> | title=HackerHotel 2025
+item date=2011-09-18T00:00:00Z | id=cccconf:sigint10 | image=https://static.media.ccc.de/media/conferences/sigint10/folder-sigint-2010.png | kind=2 | source=ccc | subtitle=<date> | title=SIGINT10
+congress date=2008-01-01T00:00:00Z | id=cccconf:23c3 | image=https://static.media.ccc.de/media/congress/2006/folder-23c3.png | kind=2 | source=ccc | subtitle=<date> | title=23C3: Who can you trust?
+item date=2025-05-30T22:00:00Z | id=cccconf:lgm2025 | image=https://static.media.ccc.de/media/events/lgm/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Libre Graphics Meeting 2025 
+congress date=2011-01-04T00:00:00Z | id=cccconf:27c3 | image=https://static.media.ccc.de/media/congress/2010/folder-27c3.png | kind=2 | source=ccc | subtitle=<date> | title=27C3: We Come In Peace
+item date=2018-02-01T00:00:00Z | id=cccconf:pw17 | image=https://static.media.ccc.de/media/conferences/pw17/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Privacy Week 2017
+item date=2020-02-14T23:00:00Z | id=cccconf:oscal19 | image=https://static.media.ccc.de/media/events/oscal/2019/oscal-19.png | kind=2 | source=ccc | subtitle=<date> | title=Open Source Conference Albania 2019
+item date=2021-10-23T22:00:00Z | id=cccconf:jh21 | image=https://static.media.ccc.de/media/events/jugendhackt/2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2021
+item date=2019-06-26T00:00:00Z | id=cccconf:cpu19 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Party Ulm 2019
+item date=2016-07-25T00:00:00Z | id=cccconf:swucgn | image=https://static.media.ccc.de/media/events/swucgn/swucgn_logo.png | kind=2 | source=ccc | subtitle=<date> | title=#StopWatchingUs Köln Vortragsabend
+item date=2024-12-28T23:00:00Z | id=cccconf:38c3-meta | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=38C3: Clips & Co
+item date=2020-04-05T22:00:00Z | id=cccconf:dgwk2020 | image=https://static.media.ccc.de/media/conferences/dgwk/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2020
+item date=2014-08-20T00:00:00Z | id=cccconf:hackover13 | image=https://static.media.ccc.de/media/events/hackover/2013/hackover-2013.png | kind=2 | source=ccc | subtitle=<date> | title=Hackover 2013
+item date=2023-09-04T22:00:00Z | id=cccconf:nook22 | image=https://static.media.ccc.de/media/events/nook/2022/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Nook 2022
+item date=2023-11-18T23:00:00Z | id=cccconf:jh23 | image=https://static.media.ccc.de/media/events/jugendhackt/2023/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2023
+item date=2025-10-17T22:00:00Z | id=cccconf:matrix-conf-2025 | image=https://static.media.ccc.de/media/events/matrix-conf/2025/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=The Matrix Conference 2025
+item date=2026-06-14T22:00:00Z | id=cccconf:tdf2026 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=5. Tübinger Tage der digitalen Freiheit
+item date=2019-06-30T00:00:00Z | id=cccconf:cosin2019 | image=https://static.media.ccc.de/media/events/cosin/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Cosin 2019
+item date=2020-11-15T23:00:00Z | id=cccconf:pw20 | image=https://static.media.ccc.de/media/events/privacyweek/2020/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=PrivacyWeek 2020
+item date=2018-10-24T00:00:00Z | id=cccconf:osmocon2018 | image=https://static.media.ccc.de/media/events/osmocon/2018/OsmoCon.png | kind=2 | source=ccc | subtitle=<date> | title=OsmoCon 2018
+item date=2024-03-14T23:00:00Z | id=cccconf:openlab | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=OpenLab Augsburg
+item date=2018-12-05T00:00:00Z | id=cccconf:chaosradio | image=https://static.media.ccc.de/media/chaosradio/video/Chaosradio-Avatar_invertiert.png | kind=2 | source=ccc | subtitle=<date> | title=Chaosradio
+item date=2023-10-16T22:00:00Z | id=cccconf:vcfb23 | image=https://static.media.ccc.de/media/events/vcfb/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2023
+item date=2019-09-10T00:00:00Z | id=cccconf:froscon2019 | image=https://static.media.ccc.de/media/events/froscon/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2019
+item date=2025-10-11T22:00:00Z | id=cccconf:asg2025 | image=https://static.media.ccc.de/media/events/all_systems_go/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2025
+item date=2026-10-16T22:00:00Z | id=cccconf:jh26 | image=https://static.media.ccc.de/media/events/jugendhackt/2026/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2026
+item date=2018-11-22T00:00:00Z | id=cccconf:denog10 | image=https://static.media.ccc.de/media/events/denog/denog10/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG 10
+item date=2022-09-10T22:00:00Z | id=cccconf:bornhack2022 | image=https://static.media.ccc.de/media/conferences/bornhack/2022/bornhack-2022-logo-l.png | kind=2 | source=ccc | subtitle=<date> | title=BornHack 2022
+item date=2018-09-22T00:00:00Z | id=cccconf:14np | image=https://static.media.ccc.de/media/events/netzpolitik/14np/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Das ist Netzpolitik! #14np
+item date=2026-09-17T22:00:00Z | id=cccconf:sotm2026 | image=https://static.media.ccc.de/media/events/sotm/2026/sotm2026.png | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2026
+item date=2020-04-17T22:00:00Z | id=cccconf:makeandtell | image=https://static.media.ccc.de/media/regional/xhain/makeandtell/xhain_logo.svg | kind=2 | source=ccc | subtitle=<date> | title=xHain Make & Tell
+item date=2017-08-09T00:00:00Z | id=cccconf:zeteco2017 | image=https://static.media.ccc.de/media/events/zeteco/2017/zeteco.png | kind=2 | source=ccc | subtitle=<date> | title=ZeTeCo 2017
+item date=2026-09-30T22:00:00Z | id=cccconf:asg2026 | image=https://static.media.ccc.de/media/events/all_systems_go/2026/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2026
+item date=2026-02-28T23:00:00Z | id=cccconf:wicmp11 | image=https://static.media.ccc.de/media/events/wicmp/wicmp11/wicmp11-logo.png | kind=2 | source=ccc | subtitle=<date> | title=WICMP 11
+item date=2021-03-13T23:00:00Z | id=cccconf:divoc_ptt | image=https://static.media.ccc.de/media/conferences/divoc/ptt/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Push to Talk
+item date=2010-04-20T00:00:00Z | id=cccconf:eh2010 | image=https://static.media.ccc.de/media/conferences/eh2010/black_rabbit.svg | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2010
+item date=2014-08-24T00:00:00Z | id=cccconf:froscon2014 | image=https://static.media.ccc.de/media/conferences/froscon/2014/folder-froscon-2010.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2014
+item date=2019-04-22T00:00:00Z | id=cccconf:35C3-chaoswest | image=https://static.media.ccc.de/media/congress/35C3-chaoswest/logo.png | kind=2 | source=ccc | subtitle=<date> | title=ChaosWest @ 35c3
+item date=2008-12-06T00:00:00Z | id=cccconf:hal2001 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Hackers at Large
+item date=2018-07-17T00:00:00Z | id=cccconf:fiffkon15 | image=https://static.media.ccc.de/media/conferences/fiffkon/2015/fiffkon15-logo-bunt.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2015
+item date=2014-11-05T00:00:00Z | id=cccconf:ds2014 | image=https://static.media.ccc.de/media/events/datenspuren/2014/datenspuren2014-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2014
+item date=2024-10-19T22:00:00Z | id=cccconf:vcfb24 | image=https://static.media.ccc.de/media/events/vcfb/2024/../2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2024
+item date=2023-06-21T22:00:00Z | id=cccconf:osc22 | image=https://static.media.ccc.de/media/events/osc/2022/oSC22icon.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2022
+item date=2017-11-07T00:00:00Z | id=cccconf:afu | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=CCCB Amateurfunk
+item date=2026-07-06T22:00:00Z | id=cccconf:ds2012 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2012
+item date=2025-02-28T23:00:00Z | id=cccconf:retronetcall | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=RetroNetCall
+item date=2018-10-14T00:00:00Z | id=cccconf:vcfb18 | image=https://static.media.ccc.de/media/events/vcfb/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2018
+item date=2014-11-03T00:00:00Z | id=cccconf:vcfb2014 | image=https://static.media.ccc.de/media/events/vcfb/2014/vcfb-logo-quer.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2014
+item date=2024-06-17T22:00:00Z | id=cccconf:fsck2024 | image=https://static.media.ccc.de/media/events/fsck/fsck2024/FSCK_Logo_400_1I9oQkd.png | kind=2 | source=ccc | subtitle=<date> | title=FSCK 2024
+item date=2026-06-06T22:00:00Z | id=cccconf:gpn24 | image=https://static.media.ccc.de/media/events/gpn/gpn24/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 24
+item date=2026-08-29T22:00:00Z | id=cccconf:hackmas2026 | image=https://static.media.ccc.de/media/events/hackmas/2026/castleonly.png | kind=2 | source=ccc | subtitle=<date> | title=Hack ma's Castle 2026
+item date=2026-08-13T22:00:00Z | id=cccconf:qtcat2026 | image=https://static.media.ccc.de/media/events/qtcat/2026/logo_light.png | kind=2 | source=ccc | subtitle=<date> | title=Queer and Trans People in Category Theory 2026
+item date=2022-08-22T22:00:00Z | id=cccconf:froscon2022 | image=https://static.media.ccc.de/media/events/froscon/2022/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2022
+item date=2020-10-01T22:00:00Z | id=cccconf:freeassange | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=#FreeAssange Network
+item date=2018-09-29T00:00:00Z | id=cccconf:asg2018 | image=https://static.media.ccc.de/media/events/all_systems_go/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2018
+item date=2017-08-31T00:00:00Z | id=cccconf:esp17 | image=https://static.media.ccc.de/media/events/euroscipy/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=EuroSciPy 2017
+item date=2020-03-11T23:00:00Z | id=cccconf:fusion19 | image=https://static.media.ccc.de/media/events/fusion/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2019
+item date=2026-04-10T22:00:00Z | id=cccconf:glt26 | image=https://static.media.ccc.de/media/events/glt/2026/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2026
+item date=2025-05-28T22:00:00Z | id=cccconf:emf2024 | image=https://static.media.ccc.de/media/events/emf/2024/emf2024-logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2024
+item date=2015-05-15T00:00:00Z | id=cccconf:cc15 | image=https://static.media.ccc.de/media/events/cryptocon/2015/cc15_logo_transparent.png | kind=2 | source=ccc | subtitle=<date> | title=CryptoCon 15
+item date=2009-09-06T00:00:00Z | id=cccconf:har2009 | image=https://static.media.ccc.de/media/conferences/har2009/folder-har-2009.png | kind=2 | source=ccc | subtitle=<date> | title=Hacking at Random
+item date=2019-01-28T00:00:00Z | id=cccconf:linuxtag13 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2013
+item date=2018-05-25T00:00:00Z | id=cccconf:djangocon2018 | image=https://static.media.ccc.de/media/conferences/djangocon2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DjangoCon Europe 2018
+item date=2023-07-13T22:00:00Z | id=cccconf:osc23 | image=https://static.media.ccc.de/media/events/osc/2023/osc23ad300.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2023
+item date=2025-09-20T22:00:00Z | id=cccconf:DS2025 | image=https://static.media.ccc.de/media/events/datenspuren/2025/ds2025-logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2025
+item date=2026-11-04T23:00:00Z | id=cccconf:dhcp26 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Die Heilbronner Chaos Party 2026
+item date=2026-07-04T22:00:00Z | id=cccconf:cosin2026 | image=https://static.media.ccc.de/media/events/cosin/2026/logo.webp | kind=2 | source=ccc | subtitle=<date> | title=Cosin 2026
+item date=2018-07-19T00:00:00Z | id=cccconf:fusion18 | image=https://static.media.ccc.de/media/events/fusion/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2018
+item date=2019-02-18T00:00:00Z | id=cccconf:CCCAC | image=https://static.media.ccc.de/media/regional/cccac/vortraege/logo.png | kind=2 | source=ccc | subtitle=<date> | title=CCCAC Vorträge
+item date=2015-09-15T00:00:00Z | id=cccconf:11np | image=https://static.media.ccc.de/media/events/netzpolitik/11np/11np.png | kind=2 | source=ccc | subtitle=<date> | title=Das ist Netzpolitik! #11np
+item date=2016-10-19T00:00:00Z | id=cccconf:12np | image=https://static.media.ccc.de/media/events/netzpolitik/12np/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Das ist Netzpolitik! #12np
+item date=2015-10-19T00:00:00Z | id=cccconf:froscon2012 | image=https://static.media.ccc.de/media/conferences/froscon/2012/froscon.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2012
+item date=2018-05-16T00:00:00Z | id=cccconf:fiffkon17 | image=https://static.media.ccc.de/media/conferences/fiffkon/2017/FIfFKon17_Logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2017
+item date=2026-04-10T22:00:00Z | id=cccconf:subscribe11 | image=https://static.media.ccc.de/media/events/subscribe/11/../subscribe_logo.png | kind=2 | source=ccc | subtitle=<date> | title=SUBSCRIBE 11
+item date=2017-01-08T00:00:00Z | id=cccconf:einmalstasi | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Einmal Stasi – immer Stasi?
+item date=2016-10-26T00:00:00Z | id=cccconf:ds2016 | image=https://static.media.ccc.de/media/events/datenspuren/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2016
+item date=2022-10-29T22:00:00Z | id=cccconf:sps22 | image=https://static.media.ccc.de/media/conferences/sps22/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Swiss Python Summit 2022
+item date=2015-09-06T00:00:00Z | id=cccconf:mrmcd15 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd15/mrmcd_15.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2015 - Schneller. Höher. Weiter.
+item date=2022-07-05T22:00:00Z | id=cccconf:fusion22 | image=https://static.media.ccc.de/media/events/fusion/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2022
+item date=2019-09-15T00:00:00Z | id=cccconf:mrmcd19 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd19/logo.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2019 - Gesellschaftsspiele
+item date=2018-03-18T00:00:00Z | id=cccconf:34C3-chaoswest | image=https://static.media.ccc.de/media/congress/34c3-chaoswest/logo.png | kind=2 | source=ccc | subtitle=<date> | title=ChaosWest @ 34c3
+item date=2026-10-21T22:00:00Z | id=cccconf:jh26congress | image=https://static.media.ccc.de/media/events/jugendhackt/2026/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt Congress 2026
+item date=2019-05-26T00:00:00Z | id=cccconf:osc19 | image=https://static.media.ccc.de/media/events/osc/2019/osc19_logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2019
+item date=2025-08-17T22:00:00Z | id=cccconf:c3voc | image=https://static.media.ccc.de/media/contributors/c3voc/voctocat.svg | kind=2 | source=ccc | subtitle=<date> | title=c3voc Quality Content
+item date=2021-11-09T23:00:00Z | id=cccconf:sotm2021 | image=https://static.media.ccc.de/media/events/sotm/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2021
+item date=2021-04-13T22:00:00Z | id=cccconf:glt21 | image=https://static.media.ccc.de/media/events/glt/2021/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2021
+item date=2021-02-04T23:00:00Z | id=cccconf:denog-meetup-2021-01 | image=https://static.media.ccc.de/media/events/denog/meetup-2021-01/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG Meetup 2021-01
+item date=2023-09-16T22:00:00Z | id=cccconf:DS2023 | image=https://static.media.ccc.de/media/events/datenspuren/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2023
+item date=2024-10-05T22:00:00Z | id=cccconf:mrmcd24 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd24/mrmcd24-logo.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2024 - Land in Sicht?
+item date=2016-08-25T00:00:00Z | id=cccconf:emf16 | image=https://static.media.ccc.de/media/events/emf/2016/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2016
+congress date=2012-01-04T00:00:00Z | id=cccconf:28c3 | image=https://static.media.ccc.de/media/congress/2011/folder-28c3.png | kind=2 | source=ccc | subtitle=<date> | title=28C3: behind enemy lines
+item date=2016-07-03T00:00:00Z | id=cccconf:osc16 | image=https://static.media.ccc.de/media/events/osc/2016/osc16_logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2016
+item date=2018-11-18T00:00:00Z | id=cccconf:bub2018 | image=https://static.media.ccc.de/media/events/bitsundbaeume/2018/../logo.png | kind=2 | source=ccc | subtitle=<date> | title=Bits & Bäume 2018
+item date=2026-02-13T23:00:00Z | id=cccconf:niam2026 | image=https://static.media.ccc.de/media/events/niam/2026/niam.png | kind=2 | source=ccc | subtitle=<date> | title=News-Infographics-Analytics-Maps 2026
+item date=2019-09-11T00:00:00Z | id=cccconf:camp2019 | image=https://static.media.ccc.de/media/conferences/camp2019/camp2019_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2019
+item date=2025-02-28T23:00:00Z | id=cccconf:osmodevcall | image=https://static.media.ccc.de/media/contributors/osmodevcall/osmocom_avatar.png | kind=2 | source=ccc | subtitle=<date> | title=osmodevcall
+item date=2022-11-15T23:00:00Z | id=cccconf:denog14 | image=https://static.media.ccc.de/media/events/denog/denog14/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG14
+item date=2015-10-11T00:00:00Z | id=cccconf:vcfb15 | image=https://static.media.ccc.de/media/events/vcfb/2014/vcfb2015-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2015
+item date=2019-11-11T00:00:00Z | id=cccconf:jh19 | image=https://static.media.ccc.de/media/events/jugendhackt/2019/jh_19.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2019
+item date=2021-04-24T22:00:00Z | id=cccconf:gpw2021 | image=https://static.media.ccc.de/media/conferences/gpw/2021/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Deutscher Perl/Raku Workshop 2021
+item date=2022-09-22T22:00:00Z | id=cccconf:labortage2021 | image=https://static.media.ccc.de/media/events/labortage/2021/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Labortage 2021
+item date=2024-11-19T23:00:00Z | id=cccconf:denog16 | image=https://static.media.ccc.de/media/events/denog/denog16/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG16
+item date=2015-01-13T00:00:00Z | id=cccconf:31c3-sendezentrum | image=https://static.media.ccc.de/media/congress/31C3-sendezentrum/sendezentrum.png | kind=2 | source=ccc | subtitle=<date> | title=Sendezentrum @ 31C3
+item date=2022-04-23T22:00:00Z | id=cccconf:glt22 | image=https://static.media.ccc.de/media/events/glt/2022/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2022
+item date=2022-08-12T22:00:00Z | id=cccconf:cadusdebate | image=https://static.media.ccc.de/media/regional/cadus/debate/cadus.png | kind=2 | source=ccc | subtitle=<date> | title=CADUS Debate!
+item date=2023-11-04T23:00:00Z | id=cccconf:godotcon2023 | image=https://static.media.ccc.de/media/events/godotcon/2023/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=GodotCon 2023
+item date=2019-09-09T00:00:00Z | id=cccconf:tc19 | image=https://static.media.ccc.de/media/events/technik_camp/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Technik Camp 2019
+item date=2016-12-27T00:00:00Z | id=cccconf:33c3-trailers | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=33C3: trailers
+item date=2014-07-13T00:00:00Z | id=cccconf:mrmcd13 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd13/mrmcd2013-logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2013 - Security Advice
+item date=2022-03-20T23:00:00Z | id=cccconf:dgwk2022 | image=https://static.media.ccc.de/media/conferences/dgwk/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2022
+item date=2018-03-24T00:00:00Z | id=cccconf:fossgis2018 | image=https://static.media.ccc.de/media/events/fossgis/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2018
+item date=2019-04-27T00:00:00Z | id=cccconf:glt19 | image=https://static.media.ccc.de/media/events/glt/2019/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2019
+item date=2018-09-09T00:00:00Z | id=cccconf:mrmcd18 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd18/logo.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2018 - Ganz grosses Kino
+item date=2023-09-09T22:00:00Z | id=cccconf:nixcon2023 | image=https://static.media.ccc.de/media/events/nixcon/2023/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=NixCon 2023
+item date=2009-09-11T00:00:00Z | id=cccconf:sigint09 | image=https://static.media.ccc.de/media/conferences/sigint09/folder-sigint-2009.png | kind=2 | source=ccc | subtitle=<date> | title=SIGINT09
+item date=2020-03-12T23:00:00Z | id=cccconf:fossgis2020 | image=https://static.media.ccc.de/media/events/fossgis/2020/fossgis20-logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2020
+item date=2025-06-03T22:00:00Z | id=cccconf:datengarten | image=https://static.media.ccc.de/media/regional/berlin/datengarten/datengarten.png | kind=2 | source=ccc | subtitle=<date> | title=CCCB Datengarten
+item date=2019-03-24T00:00:00Z | id=cccconf:subscribe10 | image=https://static.media.ccc.de/media/events/subscribe/10/../subscribe_logo.png | kind=2 | source=ccc | subtitle=<date> | title=SUBSCRIBE 10
+item date=2018-12-30T00:00:00Z | id=cccconf:35c3-wikipakawg | image=https://static.media.ccc.de/media/congress/35C3-wikipakawg/logo.png | kind=2 | source=ccc | subtitle=<date> | title=35C3: wikipakawg
+item date=2011-10-25T00:00:00Z | id=cccconf:camp2011 | image=https://static.media.ccc.de/media/conferences/camp2011/folder-camp-2011.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2011
+item date=2015-08-21T00:00:00Z | id=cccconf:camp2015 | image=https://static.media.ccc.de/media/conferences/camp2015/camp15-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Communication Camp 2015
+item date=2017-09-10T00:00:00Z | id=cccconf:mrmcd17 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd17/mrmcd17.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2017 - Bundesdatenschau
+item date=2013-07-22T00:00:00Z | id=cccconf:sigint13 | image=https://static.media.ccc.de/media/conferences/sigint13/folder-sigint-2013.png | kind=2 | source=ccc | subtitle=<date> | title=sigint13
+item date=2020-10-17T22:00:00Z | id=cccconf:gvgb11 | image=https://static.media.ccc.de/media/contributors/gaengeviertel/gvgb11/logo.png | kind=2 | source=ccc | subtitle=<date> | title=11. Gängeviertelgeburtstag
+item date=2024-10-19T22:00:00Z | id=cccconf:jh24 | image=https://static.media.ccc.de/media/events/jugendhackt/2024/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2024
+item date=2024-11-03T23:00:00Z | id=cccconf:dhcp2024 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Die Heilbronner Chaos Party 2024
+item date=2025-08-16T22:00:00Z | id=cccconf:froscon2025 | image=https://static.media.ccc.de/media/events/froscon/2025/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2025
+item date=2025-12-01T23:00:00Z | id=cccconf:denog17 | image=https://static.media.ccc.de/media/events/denog/denog17/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG17
+item date=2024-07-26T22:00:00Z | id=cccconf:cosin2024 | image=https://static.media.ccc.de/media/events/cosin/2024/cosin.png | kind=2 | source=ccc | subtitle=<date> | title=Cosin 2024
+item date=2018-10-21T00:00:00Z | id=cccconf:ece-shd18 | image=https://static.media.ccc.de/media/events/ece-shd18/openHAB_appicon.png | kind=2 | source=ccc | subtitle=<date> | title=Smart Home Day 2018
+item date=2018-10-13T00:00:00Z | id=cccconf:pwb18 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Privacy Week Berlin 2018
+item date=2012-07-21T00:00:00Z | id=cccconf:sigint12 | image=https://static.media.ccc.de/media/conferences/sigint12/folder-sigint-2012.png | kind=2 | source=ccc | subtitle=<date> | title=sigint12
+item date=2016-04-11T00:00:00Z | id=cccconf:minilac16 | image=https://static.media.ccc.de/media/events/lac/minilac16/linuxaudio.png | kind=2 | source=ccc | subtitle=<date> | title=miniLAC 16
+item date=2026-11-03T23:00:00Z | id=cccconf:ulm | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=ChaosSeminar Ulm
+item date=2019-05-17T00:00:00Z | id=cccconf:geekend2018 | image=https://static.media.ccc.de/media/events/c3voc/geekend/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=C3VOC Geekend 2018
+item date=2023-12-18T23:00:00Z | id=cccconf:ein_fest_zu_ehren_von_andre | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Ein Fest zu Ehren von André
+item date=2021-08-21T22:00:00Z | id=cccconf:hackspace-marburg | image=https://static.media.ccc.de/media/regional/hackspace-marburg/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Hackspace Marburg
+item date=2017-10-08T00:00:00Z | id=cccconf:vcfb2017 | image=https://static.media.ccc.de/media/events/vcfb/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2017
+item date=2021-12-29T23:00:00Z | id=cccconf:cccs | image=https://static.media.ccc.de/media/regional/cccs/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Computer Club Stuttgart
+item date=2019-09-22T00:00:00Z | id=cccconf:DS2019 | image=https://static.media.ccc.de/media/events/datenspuren/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2019
+item date=2018-07-15T00:00:00Z | id=cccconf:lac18 | image=https://static.media.ccc.de/media/events/lac/lac18/linuxaudio.png | kind=2 | source=ccc | subtitle=<date> | title=Linux Audio Conference 2018
+item date=2023-11-20T23:00:00Z | id=cccconf:denog15 | image=https://static.media.ccc.de/media/events/denog/denog15/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG15
+item date=2022-06-25T22:00:00Z | id=cccconf:vNOG | image=https://static.media.ccc.de/media/contributors/vNOG/logo.png | kind=2 | source=ccc | subtitle=<date> | title=vNOG Meetings
+item date=2018-05-01T00:00:00Z | id=cccconf:osmodevcon2018 | image=https://static.media.ccc.de/media/events/osmodevcon2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=OsmoDevCon 2018
+item date=2023-06-15T22:00:00Z | id=cccconf:bobkonf2023 | image=https://static.media.ccc.de/media/events/bobkonf/2023/bobkonf_header_2023.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2023
+item date=2021-08-25T22:00:00Z | id=cccconf:bornhack2021 | image=https://static.media.ccc.de/media/conferences/bornhack/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Bornhack 2021
+item date=2019-12-10T00:00:00Z | id=cccconf:fsacgn | image=https://static.media.ccc.de/media/events/fsacgn/fsacgn.png | kind=2 | source=ccc | subtitle=<date> | title=Freier Software Abend Köln
+item date=2019-01-09T00:00:00Z | id=cccconf:DS2018 | image=https://static.media.ccc.de/media/events/datenspuren/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2018
+item date=2025-04-25T22:00:00Z | id=cccconf:glt25 | image=https://static.media.ccc.de/media/events/glt/2025/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2025
+item date=2019-10-13T00:00:00Z | id=cccconf:vcfb19 | image=https://static.media.ccc.de/media/events/vcfb/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2019
+item date=2014-05-02T00:00:00Z | id=cccconf:eh2014 | image=https://static.media.ccc.de/media/conferences/eh2014/logo-navbar.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2014
+item date=2014-07-11T00:00:00Z | id=cccconf:gpn14 | image=https://static.media.ccc.de/media/events/gpn/gpn14/80px-Gpn14_logo_navi.jpg.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 14
+item date=2024-02-13T23:00:00Z | id=cccconf:hackerhotel2024 | image=https://static.media.ccc.de/media/events/hackerhotel/2024/HackerHotel2024.png | kind=2 | source=ccc | subtitle=<date> | title=HackerHotel 2024
+item date=2022-05-21T22:00:00Z | id=cccconf:gpn20 | image=https://static.media.ccc.de/media/events/gpn/gpn20/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 20
+item date=2022-04-18T22:00:00Z | id=cccconf:divoc_bb3 | image=https://static.media.ccc.de/media/events/divoc/bb3/winkebunny.svg | kind=2 | source=ccc | subtitle=<date> | title=Bridging Bubbles
+item date=2009-10-04T00:00:00Z | id=cccconf:Freiheit_statt_Angst_Demo | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Freiheit statt Angst
+item date=2025-04-20T22:00:00Z | id=cccconf:eh22 | image=https://static.media.ccc.de/media/conferences/eh2025/logo_eh22.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2025: Unhandled Eggception
+item date=2019-08-30T00:00:00Z | id=cccconf:foss4g2019 | image=https://static.media.ccc.de/media/conferences/foss4g2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FOSS4G 2019
+congress date=2008-01-19T00:00:00Z | id=cccconf:21c3 | image=https://static.media.ccc.de/media/congress/2004/folder-21c3.png | kind=2 | source=ccc | subtitle=<date> | title=21C3: The Usual Suspects
+item date=2020-10-31T23:00:00Z | id=cccconf:vcfb20 | image=https://static.media.ccc.de/media/events/vcfb/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Vintage Computing Festival Berlin 2020
+item date=2023-02-19T23:00:00Z | id=cccconf:rc3-2021 | image=https://static.media.ccc.de/media/events/rc3/2021/rC3_21-logo.png | kind=2 | source=ccc | subtitle=<date> | title=rC3 NOWHERE
+item date=2022-10-09T22:00:00Z | id=cccconf:bub2022 | image=https://static.media.ccc.de/media/events/bitsundbaeume/2022/../logo.png | kind=2 | source=ccc | subtitle=<date> | title=Bits & Bäume 2022
+item date=2020-05-06T22:00:00Z | id=cccconf:bobkonf2020 | image=https://static.media.ccc.de/media/events/bobkonf/2020/bobkonf_2020.jpg | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2020
+item date=2020-10-31T23:00:00Z | id=cccconf:arch-conf-2020 | image=https://static.media.ccc.de/media/conferences/archconf/2020/archlinux-logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Arch Conf 2020
+item date=2016-07-08T00:00:00Z | id=cccconf:CCCFFM | image=https://static.media.ccc.de/media/regional/cccffm/logo.png | kind=2 | source=ccc | subtitle=<date> | title=CCCFFM Vorträge
+item date=2017-07-27T00:00:00Z | id=cccconf:froscon2013 | image=https://static.media.ccc.de/media/conferences/froscon/2013/folder-froscon-2010.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2013
+item date=2016-06-07T00:00:00Z | id=cccconf:cryptocon16 | image=https://static.media.ccc.de/media/events/cryptocon/2016/cc16_logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=CryptoCon 16
+item date=2016-10-17T00:00:00Z | id=cccconf:jh16 | image=https://static.media.ccc.de/media/events/jugendhackt/2016/jh_16.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2016
+item date=2018-04-08T00:00:00Z | id=cccconf:eh16 | image=https://static.media.ccc.de/media/conferences/eh2016/eh16_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 2016
+item date=2022-04-09T22:00:00Z | id=cccconf:fossgis2022 | image=https://static.media.ccc.de/media/events/fossgis/2022/Logo_Triangulation_rund_online_noPOI.png | kind=2 | source=ccc | subtitle=<date> | title=FOSSGIS 2022
+item date=2021-05-17T22:00:00Z | id=cccconf:fiffkon20 | image=https://static.media.ccc.de/media/conferences/fiffkon/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2020
+item date=2026-09-24T22:00:00Z | id=cccconf:oc | image=https://static.media.ccc.de/media/regional/c4/openchaos/c4-logo.svg | kind=2 | source=ccc | subtitle=<date> | title=OpenChaos
+item date=2023-02-16T23:00:00Z | id=cccconf:MCH2022 | image=https://static.media.ccc.de/media/events/MCH2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=May Contain Hackers 2022
+item date=2019-01-28T00:00:00Z | id=cccconf:linuxtag12 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2012
+item date=2016-09-04T00:00:00Z | id=cccconf:mrmcd16 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd16/mrmcd16.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2016 - Diagnose: Kritisch
+item date=2020-01-22T23:00:00Z | id=cccconf:pw19 | image=https://static.media.ccc.de/media/events/privacyweek/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=PrivacyWeek 2019
+item date=2022-09-17T22:00:00Z | id=cccconf:DS2022 | image=https://static.media.ccc.de/media/events/datenspuren/2022/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2022
+item date=2015-10-26T00:00:00Z | id=cccconf:ds2015 | image=https://static.media.ccc.de/media/events/datenspuren/2015/ds2015.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2015
+item date=2018-01-31T00:00:00Z | id=cccconf:34c3-wikipakawg | image=https://static.media.ccc.de/media/congress/34c3-wikipakawg/logo.png | kind=2 | source=ccc | subtitle=<date> | title=34c3: wikipakawg
+item date=2022-10-15T22:00:00Z | id=cccconf:sotm2022 | image=https://static.media.ccc.de/media/events/sotm/2022/sotm_2022-logo.svg | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2022
+item date=2024-11-12T23:00:00Z | id=cccconf:god2024 | image=https://static.media.ccc.de/media/events/god/2024/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=German OWASP Day 2024
+item date=2025-03-02T23:00:00Z | id=cccconf:wicmp10 | image=https://static.media.ccc.de/media/events/wicmp/wicmp10/logo.png | kind=2 | source=ccc | subtitle=<date> | title=WICMP 10
+item date=2024-06-07T22:00:00Z | id=cccconf:osmodevcon2024 | image=https://static.media.ccc.de/media/conferences/osmodevcon/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=OsmoDevCon 2024
+item date=2023-08-31T22:00:00Z | id=cccconf:gpn21 | image=https://static.media.ccc.de/media/events/gpn/gpn21/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 21
+congress date=2017-01-07T00:00:00Z | id=cccconf:33c3 | image=https://static.media.ccc.de/media/congress/2016/folder.png | kind=2 | source=ccc | subtitle=<date> | title=33C3: works for me
+item date=2020-05-16T22:00:00Z | id=cccconf:mygruni-fernsehgarten | image=https://static.media.ccc.de/media/contributors/qm_grunewald/logo.png | kind=2 | source=ccc | subtitle=<date> | title=myGruni-Fernsehgarten
+item date=2025-11-02T23:00:00Z | id=cccconf:jh25 | image=https://static.media.ccc.de/media/media/events/jugendhackt/2025/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2025
+item date=2021-06-28T22:00:00Z | id=cccconf:bobkonf2021 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=BOB Konferenz 2021
+item date=2023-04-09T22:00:00Z | id=cccconf:eh20 | image=https://static.media.ccc.de/media/conferences/eh20/eh20-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Easterhegg 20 - Back to root
+item date=2024-08-27T22:00:00Z | id=cccconf:emf2014 | image=https://static.media.ccc.de/media/events/emf/2014/../logo-mark-white.png | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2014
+item date=2018-04-28T00:00:00Z | id=cccconf:glt18 | image=https://static.media.ccc.de/media/events/glt/2018/../steirertux.png | kind=2 | source=ccc | subtitle=<date> | title=Grazer Linuxtage 2018
+item date=2021-08-30T22:00:00Z | id=cccconf:froscon2021 | image=https://static.media.ccc.de/media/events/froscon/2021/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2021 Cloud-Edition
+item date=2019-01-27T00:00:00Z | id=cccconf:linuxtag04 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2004
+item date=2024-04-04T22:00:00Z | id=cccconf:hoth2023 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Hacks on the Harbour 2023
+item date=2022-11-18T23:00:00Z | id=cccconf:fiffkon22 | image=https://static.media.ccc.de/media/conferences/fiffkon/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2022
+congress date=2010-01-21T00:00:00Z | id=cccconf:26c3 | image=https://static.media.ccc.de/media/congress/2009/folder-26c3.png | kind=2 | source=ccc | subtitle=<date> | title=26C3: Here be Dragons
+item date=2023-08-28T22:00:00Z | id=cccconf:clt23 | image=https://static.media.ccc.de/media/events/clt/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chemnitzer Linux-Tage 2023
+item date=2019-02-18T00:00:00Z | id=cccconf:linuxtag10 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2010
+item date=2016-08-16T00:00:00Z | id=cccconf:guadec2016 | image=https://static.media.ccc.de/media/events/guadec/2016/logo_guadec2016.png | kind=2 | source=ccc | subtitle=<date> | title=GUADEC 2016
+item date=2024-08-31T22:00:00Z | id=cccconf:hackmas2024 | image=https://static.media.ccc.de/media/events/hackmas/2024/hackmas2024-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Hack ma's Castle 2024
+item date=2019-07-03T00:00:00Z | id=cccconf:forumoe19 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Forum Open:Education 2019
+item date=2018-10-29T00:00:00Z | id=cccconf:sonoj2018 | image=https://static.media.ccc.de/media/events/sonoj/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Sonoj 2018
+item date=2021-11-09T23:00:00Z | id=cccconf:denog13 | image=https://static.media.ccc.de/media/events/denog/denog13/logo.png | kind=2 | source=ccc | subtitle=<date> | title=DENOG13
+item date=2014-09-25T00:00:00Z | id=cccconf:wauland | image=https://static.media.ccc.de/media/events/wauland/whs_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Wau Holland Stiftung
+item date=2009-09-28T00:00:00Z | id=cccconf:mrmcd110b | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd110b/MRMCD_2007-Logo.svg | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 110b
+congress date=2009-06-22T00:00:00Z | id=cccconf:20c3 | image=https://static.media.ccc.de/media/congress/2003/folder-20c3.png | kind=2 | source=ccc | subtitle=<date> | title=20C3: Not a Number
+item date=2016-06-01T00:00:00Z | id=cccconf:gpn16 | image=https://static.media.ccc.de/media/events/gpn/gpn16/logo_gpn16.jpg | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 16
+item date=2022-05-27T22:00:00Z | id=cccconf:ecb2022 | image=https://static.media.ccc.de/media/conferences/ecb2022/ecb-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Building a European Cultural Backbone
+item date=2024-05-23T22:00:00Z | id=cccconf:ccchh-extras | image=https://static.media.ccc.de/media/regional/ccchh/extras/csh-logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaosstudio Hamburg
+item date=2025-03-25T23:00:00Z | id=cccconf:cmc2025 | image=https://static.media.ccc.de/media/events/cmc/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Config Management Camp 2025
+item date=2018-10-07T00:00:00Z | id=cccconf:fiffkon18 | image=https://static.media.ccc.de/media/conferences/fiffkon/2018/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2018
+item date=2023-10-04T22:00:00Z | id=cccconf:sps23 | image=https://static.media.ccc.de/media/conferences/sps23/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Swiss Python Summit 2023
+item date=2009-09-28T00:00:00Z | id=cccconf:mrmcd101b | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd101b/MRMCD_2006-Logo.svg | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 101b
+item date=2019-02-17T00:00:00Z | id=cccconf:linuxtag06 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Linuxtag 2006
+item date=2015-06-07T00:00:00Z | id=cccconf:gpn15 | image=https://static.media.ccc.de/media/events/gpn/gpn15/gpn15_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Gulaschprogrammiernacht 15
+item date=2025-10-02T22:00:00Z | id=cccconf:fyneconf2025 | image=https://static.media.ccc.de/media/events/fyneconf/2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FyneConf 2025
+item date=2019-09-05T00:00:00Z | id=cccconf:metanook18 | image=https://static.media.ccc.de/media/events/metanook/metanook-2018/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=MetaNook 2018
+item date=2026-07-06T22:00:00Z | id=cccconf:ds2011 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2011
+item date=2023-09-02T22:00:00Z | id=cccconf:mrmcd23 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd23/logo.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2023 - Wem gehört die Wirklichkeit?
+item date=2020-12-23T23:00:00Z | id=cccconf:mygruni-advent | image=https://static.media.ccc.de/media/contributors/qm_grunewald/adventskalender20/logo.png | kind=2 | source=ccc | subtitle=<date> | title=MyGruni Adventskalender: Videoclips gegen Videoüberwachung
+item date=2018-06-10T00:00:00Z | id=cccconf:forumoe | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Forum Open:Education 2018
+item date=2023-07-22T22:00:00Z | id=cccconf:iger-2023 | image=https://static.media.ccc.de/media/events/iger/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Intergalaktische Erfahrungsreise 2023
+item date=2025-11-06T23:00:00Z | id=cccconf:megakc25 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Mega-Knowledgecamp 2025
+congress date=2013-01-06T00:00:00Z | id=cccconf:29c3 | image=https://static.media.ccc.de/media/congress/2012/folder-29c3.png | kind=2 | source=ccc | subtitle=<date> | title=29C3: Not my department
+congress date=2008-01-01T00:00:00Z | id=cccconf:18c3 | image=https://static.media.ccc.de/media/congress/2001/folder-18c3.png | kind=2 | source=ccc | subtitle=<date> | title=18C3: Hacking Is Not A Crime
+item date=2014-11-08T00:00:00Z | id=cccconf:fiffkon14 | image=https://static.media.ccc.de/media/conferences/fiffkon/2014/fiffkon14-logo.png | kind=2 | source=ccc | subtitle=<date> | title=FIfFKon 2014
+congress date=2009-02-07T00:00:00Z | id=cccconf:25c3 | image=https://static.media.ccc.de/media/congress/2008/folder-25c3.png | kind=2 | source=ccc | subtitle=<date> | title=25C3: nothing to hide
+item date=2025-05-22T22:00:00Z | id=cccconf:fsck2025 | image=https://static.media.ccc.de/media/events/fsck/fsck2025/logo.png | kind=2 | source=ccc | subtitle=<date> | title=FSCK 2025
+item date=2018-05-27T00:00:00Z | id=cccconf:osc18 | image=https://static.media.ccc.de/media/events/osc/2018/osc18_logo.png | kind=2 | source=ccc | subtitle=<date> | title=openSUSE Conference 2018
+item date=2020-04-07T22:00:00Z | id=cccconf:jh20 | image=https://static.media.ccc.de/media/events/jugendhackt/2020/jh_20.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2020
+item date=2017-10-01T00:00:00Z | id=cccconf:jh17 | image=https://static.media.ccc.de/media/events/jugendhackt/2017/jh_17.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2017
+item date=2020-10-12T22:00:00Z | id=cccconf:dcon2020 | image=https://static.media.ccc.de/media/conferences/dcon/2020/dcon2020.svg | kind=2 | source=ccc | subtitle=<date> | title=DefensiveCon2020
+item date=2019-11-11T00:00:00Z | id=cccconf:15np | image=https://static.media.ccc.de/media/events/netzpolitik/15np/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Das ist Netzpolitik! #15np
+item date=2023-10-21T22:00:00Z | id=cccconf:bornhack2023 | image=https://static.media.ccc.de/media/conferences/bornhack/2023/bornhack-2023.png | kind=2 | source=ccc | subtitle=<date> | title=BornHack 2023
+item date=2017-10-23T00:00:00Z | id=cccconf:DS2017 | image=https://static.media.ccc.de/media/events/datenspuren/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Datenspuren 2017
+item date=2010-09-27T00:00:00Z | id=cccconf:froscon2010 | image=https://static.media.ccc.de/media/conferences/froscon/2010/folder-froscon-2010.png | kind=2 | source=ccc | subtitle=<date> | title=FrOSCon 2010
+item date=2024-10-03T22:00:00Z | id=cccconf:chaotikum | image=https://static.media.ccc.de/media/regional/luebeck/chaotikum/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaotikum
+item date=2024-11-28T23:00:00Z | id=cccconf:sotm2024 | image=https://static.media.ccc.de/media/events/sotm/2024/sotm_2024-secondary.svg | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2024
+congress date=2018-01-10T00:00:00Z | id=cccconf:34c3 | image=https://static.media.ccc.de/media/congress/2017/media-logo.png | kind=2 | source=ccc | subtitle=<date> | title=34C3: TUWAT
+item date=2025-11-25T23:00:00Z | id=cccconf:god2025 | image=https://static.media.ccc.de/media/events/god/2025/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=German OWASP Day 2025
+item date=2023-07-12T22:00:00Z | id=cccconf:rustmcb | image=https://static.media.ccc.de/media/events/rustmcb/rustmcb_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Rust Cologne
+item date=2025-09-09T22:00:00Z | id=cccconf:WHY2025 | image=https://static.media.ccc.de/media/events/why2025/WHY2025_logo.png | kind=2 | source=ccc | subtitle=<date> | title=What Hackers Yearn 2025
+congress date=2015-01-15T00:00:00Z | id=cccconf:31c3 | image=https://static.media.ccc.de/media/congress/2014/folder-2014.png | kind=2 | source=ccc | subtitle=<date> | title=31C3: a new dawn
+item date=2023-07-02T22:00:00Z | id=cccconf:fusion23 | image=https://static.media.ccc.de/media/events/fusion/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2023
+item date=2015-05-17T00:00:00Z | id=cccconf:1c2 | image=https://static.media.ccc.de/media/conferences/chaoscologne/1c2/1c2_logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaos Cologne
+item date=2024-07-29T22:00:00Z | id=cccconf:emf2022 | image=https://static.media.ccc.de/media/events/emf/2022/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Electromagnetic Field 2022
+item date=2020-02-25T23:00:00Z | id=cccconf:hackumenta19 | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Hackumenta 2019
+item date=2019-10-03T00:00:00Z | id=cccconf:sotm2019 | image=https://static.media.ccc.de/media/events/sotm/2019/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=State of the Map 2019
+congress date=2008-01-12T00:00:00Z | id=cccconf:24c3 | image=https://static.media.ccc.de/media/congress/2007/folder-24c3.png | kind=2 | source=ccc | subtitle=<date> | title=24C3: Volldampf voraus!
+item date=2021-09-10T22:00:00Z | id=cccconf:ccc | image=https://static.media.ccc.de/media/contributors/ccc/1024px-Logo_CCC.svg.png | kind=2 | source=ccc | subtitle=<date> | title=CCC
+item date=2018-01-31T00:00:00Z | id=cccconf:34c3-ffc | image=https://static.media.ccc.de/media/congress/34c3-ffc/logo.jpg | kind=2 | source=ccc | subtitle=<date> | title=Freifunk Assembly at 34c3
+item date=2023-02-15T23:00:00Z | id=cccconf:trans-tech-tent | image=https://static.media.ccc.de/media/contributors/trans-tech-tent/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Trans Tech Tent
+item date=2023-10-10T22:00:00Z | id=cccconf:sonoj2023 | image=https://static.media.ccc.de/media/events/sonoj/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Sonoj 2023
+congress date=2008-01-01T00:00:00Z | id=cccconf:17c3 | image=https://static.media.ccc.de/media/congress/2000/realmedia/folder-17c3.png | kind=2 | source=ccc | subtitle=<date> | title=17C3: EXPLICIT LYRICS
+item date=2025-05-22T22:00:00Z | id=cccconf:grr | image=https://static.media.ccc.de/media/unknown.png | kind=2 | source=ccc | subtitle=<date> | title=Grundrechte-Report
+item date=2023-03-06T23:00:00Z | id=cccconf:kriegundki | image=https://static.media.ccc.de/media/conferences/fiffkon/KriegUndKI/Logo.png | kind=2 | source=ccc | subtitle=<date> | title=Krieg und KI
+item date=2018-05-27T00:00:00Z | id=cccconf:rustfest18 | image=https://static.media.ccc.de/media/conferences/rustfest/2018/logo.svg | kind=2 | source=ccc | subtitle=<date> | title=Rustfest 2018 Paris
+item date=2023-05-10T22:00:00Z | id=cccconf:jh22 | image=https://static.media.ccc.de/media/events/jugendhackt/2022/../2021/jh_21.png | kind=2 | source=ccc | subtitle=<date> | title=Jugend hackt 2022
+item date=2020-09-20T22:00:00Z | id=cccconf:bigbrotherawards2020 | image=https://static.media.ccc.de/media/events/BigBrotherAwards/2020/logo.png | kind=2 | source=ccc | subtitle=<date> | title=BigBrotherAwards 2020
+item date=2019-07-17T00:00:00Z | id=cccconf:fusion15 | image=https://static.media.ccc.de/media/events/fusion/2015/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Fusion ConTent 2015
+item date=2014-09-07T00:00:00Z | id=cccconf:mrmcd2014 | image=https://static.media.ccc.de/media/conferences/mrmcd/mrmcd14/mrmcd_14.png | kind=2 | source=ccc | subtitle=<date> | title=MRMCD 2014
+item date=2019-06-08T00:00:00Z | id=cccconf:bigbrotherawards2019 | image=https://static.media.ccc.de/media/events/BigBrotherAwards/2019/logo.png | kind=2 | source=ccc | subtitle=<date> | title=BigBrotherAwards 2019
+item date=2023-03-20T23:00:00Z | id=cccconf:dgwk2023 | image=https://static.media.ccc.de/media/conferences/dgwk/2023/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Winterkongress 2023
+item date=2017-11-05T00:00:00Z | id=cccconf:wikidatacon2017 | image=https://static.media.ccc.de/media/events/wikidatacon/2017/logo.png | kind=2 | source=ccc | subtitle=<date> | title=WikidataCon 2017
+item date=2024-09-25T22:00:00Z | id=cccconf:asg2024 | image=https://static.media.ccc.de/media/events/all_systems_go/2024/logo.png | kind=2 | source=ccc | subtitle=<date> | title=All Systems Go! 2024
+item date=2024-02-19T23:00:00Z | id=cccconf:petitfoo | image=https://static.media.ccc.de/media/regional/essen/petitfoo/logo.png | kind=2 | source=ccc | subtitle=<date> | title=Chaospott - Petit Foo

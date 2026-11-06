@@ -1,6 +1,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFZDFApp.h"
+#import "SFZDFParser.h"
 #import "SFBrowseScreen.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
@@ -10,12 +11,6 @@
 static NSString *const kGQL = @"https://api.zdf.de/graphql";
 static NSString *const kPlayer = @"android_native_6";
 
-
-// GraphQL fragments (free-form queries; persisted hashes break on redeploys)
-#define VIDEO_F @"canonical title editorialDate teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } smartCollection { title canonical } currentMedia { nodes { ptmdTemplate ... on VodMedia { duration geoLocation vodMediaType } ... on LiveMedia { geoLocation } } }"
-#define COLL_F  @"canonical title collectionType teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } }"
-
-static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 @implementation SFZDFApp
 
@@ -45,102 +40,31 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
 
 #pragma mark Items
 
-+ (NSString *)img:(NSDictionary *)teaser big:(BOOL)big {
-    NSDictionary *l = dict(dict(dict(teaser)[@"imageWithoutLogo"])[@"layouts"]);
-    return big ? (str(l[@"dim1280X720"]) ?: str(l[@"dim768X432"])) : (str(l[@"dim768X432"]) ?: str(l[@"dim1280X720"]));
-}
-
-+ (SFItem *)videoItem:(NSDictionary *)v {
-    NSString *can = str(v[@"canonical"]);
-    if (!can) return nil;
-    SFItem *i = [SFItem new];
-    i.kind = SFItemVideo;
-    i.identifier = [@"zdf:" stringByAppendingString:can];
-    i.resolverRef = i.identifier;
-    i.title = str(v[@"title"]);
-    i.plot = str(dict(v[@"teaser"])[@"description"]);
-    i.image = [self img:dict(v[@"teaser"]) big:NO];
-    i.backdrop = [self img:dict(v[@"teaser"]) big:YES];
-    i.channel = str(dict(v[@"smartCollection"])[@"title"]);
-    NSString *sc = str(dict(v[@"smartCollection"])[@"canonical"]);
-    if (sc.length) i.showRef = [@"zdfshow:" stringByAppendingString:sc];
-    i.date = isoDate(str(v[@"editorialDate"]));
-    i.source = @"zdf"; i.themeName = @"zdf";
-    i.style = SFTileStyleLandscape;
-    NSArray *media = arr(dict(v[@"currentMedia"])[@"nodes"]);
-    BOOL live = [can rangeOfString:@"live"].location != NSNotFound && media.count && ![dict(media.firstObject)[@"duration"] doubleValue];
-    for (NSDictionary *m in media) {
-        if (![str(m[@"vodMediaType"]) isEqualToString:@"DEFAULT"] && m[@"vodMediaType"]) continue;
-        i.duration = [nn(m[@"duration"]) doubleValue];
-        if ([str(m[@"geoLocation"]) isEqualToString:@"DE"]) { i.badge = @"DE"; i.geoRegion = @"DE"; }
-        break;
-    }
-    if (live) {
-        i.kind = SFItemLive; i.badge = @"LIVE";
-        // the channel: canonicals of channel streams are "<channel>-live-beitrag-100" ("3sat", "phoenix", "kika")
-        NSRange r = [can rangeOfString:@"-live-beitrag"];
-        if (r.location != NSNotFound && r.location > 0) i.station = [can substringToIndex:r.location];
-    }
-    NSMutableArray *sub = [NSMutableArray new];
-    if (i.channel && ![i.channel isEqualToString:i.title]) [sub addObject:i.channel];
-    if (i.date && !live) [sub addObject:SFFormatDateShort(i.date)];
-    i.subtitle = [sub componentsJoinedByString:@" · "];
+// a parsed item with the page loader of its kind of folder
++ (SFItem *)withLoader:(SFItem *)i {
+    if (i.kind != SFItemFolder) return i;
+    NSString *p = SFRefPrefix(i.identifier), *can = SFRefID(i.identifier);
+    if ([p isEqualToString:@"zdfmeta"]) i.pageLoader = [self categoryLoader:can id:i.externalID title:i.title];
+    else if ([p isEqualToString:@"zdfpage"]) i.pageLoader = [self curatedLoader:can title:i.title];
+    else i.pageLoader = [self showLoader:can title:i.title season:0];
     return i;
-}
-
-+ (SFItem *)collectionItem:(NSDictionary *)c type:(NSString *)type {
-    NSString *can = str(c[@"canonical"]);
-    if (!can) return nil;
-    SFItem *i = [SFItem new];
-    i.kind = SFItemFolder;
-    i.title = str(c[@"title"]);
-    i.plot = str(dict(c[@"teaser"])[@"description"]);
-    i.image = [self img:dict(c[@"teaser"]) big:NO];
-    i.backdrop = [self img:dict(c[@"teaser"]) big:YES];
-    i.source = @"zdf"; i.themeName = @"zdf";
-    i.style = SFTileStyleLandscape;
-    if ([type isEqualToString:@"MetaCollection"]) {
-        i.identifier = [@"zdfmeta:" stringByAppendingString:can];
-        i.pageLoader = [self categoryLoader:can title:i.title];
-    } else if ([type isEqualToString:@"CuratedCollection"]) {
-        i.identifier = [@"zdfpage:" stringByAppendingString:can];
-        i.pageLoader = [self curatedLoader:can title:i.title];
-    } else {
-        i.identifier = [@"zdfshow:" stringByAppendingString:can];
-        i.subtitle = [type hasPrefix:@"Movie"] ? @"Film" : nil;
-        i.pageLoader = [self showLoader:can title:i.title season:0];
-    }
-    return i;
-}
-
-+ (SFItem *)itemFromNode:(NSDictionary *)n {
-    NSString *t = str(n[@"__typename"]);
-    if ([t isEqualToString:@"Video"]) return [self videoItem:n];
-    if ([t hasSuffix:@"SmartCollection"] || [t isEqualToString:@"MetaCollection"] || [t isEqualToString:@"CuratedCollection"])
-        return [self collectionItem:n type:t];
-    return nil;   // ExternalLink, ZappingChannel, Catalog
 }
 
 #pragma mark Pages
 
 + (SFPageLoader)curatedLoader:(NSString *)canonical title:(NSString *)title {
     // items(first:) only allows 1...26 since 11/2026 (otherwise empty clusters + errors)
-    NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } ... on CuratedCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } } } } }", VIDEO_F, COLL_F];
+    NSString *q = [NSString stringWithFormat:@"query P($canonical: String!, $first: Int) { curatedCollectionByCanonical(canonical: $canonical) { title modules { nodes { __typename ... on StaticHorizontalCluster { title items(first: $first) { nodes { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { %@ } ... on CuratedCollection { %@ } } } } } } } }", SFZDF_VIDEO_F, SFZDF_COLL_F, SFZDF_META_F, SFZDF_COLL_F];
     return ^(SFPageDone done) {
         [self gql:q vars:@{@"canonical": canonical, @"first": @26} cache:900 done:^(id d, NSError *e) {
             NSDictionary *cc = dict(dict(d)[@"curatedCollectionByCanonical"]);
             if (!cc) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
             NSMutableArray *shelves = [NSMutableArray new];
-            for (NSDictionary *m in arr(dict(cc[@"modules"])[@"nodes"])) {
-                if (![str(m[@"__typename"]) isEqualToString:@"StaticHorizontalCluster"]) continue;
+            for (NSDictionary *c in [SFZDFParser clustersIn:cc]) {
                 NSMutableArray *items = [NSMutableArray new];
-                for (NSDictionary *n in arr(dict(m[@"items"])[@"nodes"])) { SFItem *it = [self itemFromNode:n]; if (it) [items addObject:it]; }
-                if (!items.count) continue;
-                BOOL folders = YES;
-                for (SFItem *it in items) if (it.kind != SFItemFolder) folders = NO;
-                BOOL meta = [[items.firstObject identifier] hasPrefix:@"zdfmeta:"];
-                [shelves addObject:[SFShelf shelf:str(m[@"title"]) style:meta ? SFTileStyleWide : SFTileStyleLandscape items:items]];
-                (void)folders;
+                for (SFItem *it in c[@"items"]) [items addObject:[self withLoader:it]];
+                SFItem *first = items.firstObject;
+                [shelves addObject:[SFShelf shelf:c[@"title"] style:first.style == SFTileStyleWide ? SFTileStyleWide : SFTileStyleLandscape items:items]];
             }
             done([SFPage page:title ?: str(cc[@"title"]) theme:@"zdf" shelves:shelves], nil);
         }];
@@ -148,7 +72,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
 }
 
 + (SFPageLoader)showLoader:(NSString *)canonical title:(NSString *)title season:(NSInteger)season {
-    NSString *q = [NSString stringWithFormat:@"query S($canonical: String!, $first: Int, $seasonIndex: Int) { smartCollectionByCanonical(canonical: $canonical) { __typename title collectionType teaser { description imageWithoutLogo { layouts { dim1280X720 } } } ... on ISeriesSmartCollection { countSeasons countEpisodes allSeasons: seasons(first: 60) { nodes { number title } } seasons(first: 1, offset: $seasonIndex) { nodes { number title countEpisodes episodes(first: $first, sortBy: [{field: EDITORIAL_DATE, direction: DESC}]) { nodes { %@ } } } } } ... on MovieSmartCollection { video { %@ } } } }", VIDEO_F, VIDEO_F];
+    NSString *q = [NSString stringWithFormat:@"query S($canonical: String!, $first: Int, $seasonIndex: Int) { smartCollectionByCanonical(canonical: $canonical) { __typename title collectionType teaser { description imageWithoutLogo { layouts { dim1280X720 } } } ... on ISeriesSmartCollection { countSeasons countEpisodes allSeasons: seasons(first: 60) { nodes { number title } } seasons(first: 1, offset: $seasonIndex) { nodes { number title countEpisodes episodes(first: $first, sortBy: [{field: EDITORIAL_DATE, direction: DESC}]) { nodes { %@ } } } } } ... on MovieSmartCollection { video { %@ } } } }", SFZDF_VIDEO_F, SFZDF_VIDEO_F];
     return ^(SFPageDone done) {
         [self gql:q vars:@{@"canonical": canonical, @"first": @100, @"seasonIndex": @(season)} cache:900 done:^(id d, NSError *e) {
             NSDictionary *sc = dict(dict(d)[@"smartCollectionByCanonical"]);
@@ -157,13 +81,13 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
             NSMutableArray *shelves = [NSMutableArray new];
             NSDictionary *movie = dict(sc[@"video"]);
             if (movie) {
-                SFItem *it = [self videoItem:movie];
+                SFItem *it = [SFZDFParser videoItem:movie];
                 if (it) [shelves addObject:[SFShelf shelf:@"Film" style:SFTileStyleLandscape items:@[it]]];
             }
             NSDictionary *sn = dict(arr(dict(sc[@"seasons"])[@"nodes"]).firstObject);
             if (sn) {
                 NSMutableArray *eps = [NSMutableArray new];
-                for (NSDictionary *v in arr(dict(sn[@"episodes"])[@"nodes"])) { SFItem *it = [self videoItem:v]; if (it) [eps addObject:it]; }
+                for (NSDictionary *v in arr(dict(sn[@"episodes"])[@"nodes"])) { SFItem *it = [SFZDFParser videoItem:v]; if (it) [eps addObject:it]; }
                 NSString *st = str(sn[@"title"]) ?: [NSString stringWithFormat:@"%@", nn(sn[@"number"]) ?: @""];
                 NSInteger cnt = [nn(sn[@"countEpisodes"]) integerValue];
                 NSString *head = cnt > (NSInteger)eps.count ? [NSString stringWithFormat:@"%@ · neueste %lu von %ld", st, (unsigned long)eps.count, (long)cnt]
@@ -173,19 +97,14 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
                 if (seasons > 1) {
                     NSMutableArray *other = [NSMutableArray new];
                     NSArray *named = arr(dict(sc[@"allSeasons"])[@"nodes"]);
-                    NSString *showImg = [self img:dict(sc[@"teaser"]) big:NO], *showBig = [self img:dict(sc[@"teaser"]) big:YES];
+                    NSString *showImg = [SFZDFParser image:dict(sc[@"teaser"]) big:NO], *showBig = [SFZDFParser image:dict(sc[@"teaser"]) big:YES];
                     for (NSInteger k = 0; k < seasons; k++) {
                         if (k == season) continue;
                         SFItem *f = [SFItem new];
                         f.kind = SFItemFolder; f.themeName = @"zdf"; f.source = @"zdf";
                         f.identifier = [NSString stringWithFormat:@"zdfseason:%@:%ld", canonical, (long)k];
-                        // ZDF often names seasons by year ("2026") - show the real name, image of the show
-                        NSDictionary *sn2 = k < (NSInteger)named.count ? dict(named[k]) : nil;
-                        NSString *nm = str(sn2[@"title"]);
-                        if (!nm.length && nn(sn2[@"number"])) nm = [NSString stringWithFormat:@"%@", sn2[@"number"]];
-                        BOOL isYear = nm.length == 4 && [nm rangeOfCharacterFromSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location == NSNotFound;
-                        f.title = nm.length ? (isYear || [nm.lowercaseString hasPrefix:@"staffel"] ? nm : [@"Staffel " stringByAppendingString:nm])
-                                            : [NSString stringWithFormat:@"Staffel %ld", (long)(seasons - k)];
+                        // ZDF names seasons ("2026", "Staffel 3") or only numbers them; allSeasons is in the order of seasons(offset:)
+                        f.title = [SFZDFParser seasonName:k < (NSInteger)named.count ? dict(named[k]) : nil] ?: [NSString stringWithFormat:@"Teil %ld", (long)k + 1];
                         f.image = showImg; f.backdrop = showBig;
                         f.style = SFTileStyleWide;
                         f.pageLoader = [self showLoader:canonical title:t season:k];
@@ -196,7 +115,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
                 }
             }
             SFPage *p = [SFPage page:t theme:@"zdf" shelves:shelves];
-            p.backdrop = [self img:dict(sc[@"teaser"]) big:YES];
+            p.backdrop = [SFZDFParser image:dict(sc[@"teaser"]) big:YES];
             // season picker sits at the top (like streaming services), but focus starts on the episodes
             if (shelves.count > 1 && [[shelves[0] title] isEqualToString:@"Weitere Staffeln"]) p.focusShelf = 1;
             if (!shelves.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
@@ -205,45 +124,35 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
     };
 }
 
-+ (SFPageLoader)categoryLoader:(NSString *)collectionId title:(NSString *)title {
-    NSString *q = [NSString stringWithFormat:@"query C($collectionId: String!, $input: MetaCollectionContentInput!) { metaCollectionContent(collectionId: $collectionId, input: $input) { smartCollections { %@ } } }", COLL_F];
-    NSDictionary *input = @{@"appId": @"ffw-mt-web-879d5c17", @"filters": @{@"contentOwner": @[], @"fsk": @[], @"language": @[]},
-                            @"pagination": @{@"first": @60, @"after": [NSNull null]}, @"user": @{@"abGroup": @"gruppe-d", @"userSegment": @"segment_0"},
-                            @"tabId": [NSNull null]};
+// A category or brand page (MetaCollection, e.g. "Bares für Rares"): metaCollectionContent takes its
+// id. Lists deliver it with the tile; a ref known only by canonical (dev command) asks for it once.
++ (SFPageLoader)categoryLoader:(NSString *)canonical id:(NSString *)mid title:(NSString *)title {
     return ^(SFPageDone done) {
-        // metaCollectionContent needs the internal ID (UUID); brand pages (e.g. "Bares für Rares")
-        // we only know by canonical -> resolve first, otherwise an empty list comes back.
-        BOOL isID = [collectionId rangeOfString:@"^[0-9a-f]{8}-[0-9a-f]{4}-" options:NSRegularExpressionSearch | NSCaseInsensitiveSearch].location != NSNotFound;
-        if (!isID) {
-            // Resolve once, then load content directly (without checking again: otherwise an endless loop
-            // if the ID looks different - two crashes on 2026-11-03)
-            [self gql:@"query M($c: String!) { metaCollectionByCanonical(canonical: $c) { id } }" vars:@{@"c": collectionId} cache:86400 done:^(id d, NSError *e) {
-                NSString *mid = str(dict(dict(d)[@"metaCollectionByCanonical"])[@"id"]);
-                if (!mid.length || [mid isEqualToString:collectionId]) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
-                [self categoryContent:mid title:title query:q input:input done:done];
-            }];
-            return;
-        }
-        [self categoryContent:collectionId title:title query:q input:input done:done];
+        if (mid.length) { [self categoryContent:mid title:title done:done]; return; }
+        [self gql:@"query M($c: String!) { metaCollectionByCanonical(canonical: $c) { id } }" vars:@{@"c": canonical} cache:86400 done:^(id d, NSError *e) {
+            NSString *got = str(dict(dict(d)[@"metaCollectionByCanonical"])[@"id"]);
+            if (!got.length) { done(nil, e ?: SFError(@"ZDF-Seite nicht gefunden.")); return; }
+            [self categoryContent:got title:title done:done];
+        }];
     };
 }
 
-+ (void)categoryContent:(NSString *)collectionId title:(NSString *)title query:(NSString *)q input:(NSDictionary *)input done:(SFPageDone)done {
-    {
-        [self gql:q vars:@{@"collectionId": collectionId, @"input": input} cache:1800 done:^(id d, NSError *e) {
-            NSArray *scs = arr(dict(dict(d)[@"metaCollectionContent"])[@"smartCollections"]);
-            if (!d) { done(nil, e); return; }
-            NSMutableArray *items = [NSMutableArray new];
-            for (NSDictionary *c in scs) {
-                NSString *ct = str(c[@"collectionType"]);
-                SFItem *it = [self collectionItem:c type:[ct.lowercaseString hasPrefix:@"movie"] ? @"MovieSmartCollection" : @"SmartCollection"];
-                if (it) [items addObject:it];
-            }
-            SFPage *p = [SFPage page:title theme:@"zdf" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Sendungen", (unsigned long)items.count] style:SFTileStyleLandscape items:items]]];
-            if (!items.count) p.emptyText = @"Keine Inhalte.";
-            done(p, nil);
-        }];
-    };
++ (void)categoryContent:(NSString *)mid title:(NSString *)title done:(SFPageDone)done {
+    NSString *q = [NSString stringWithFormat:@"query C($collectionId: String!, $input: MetaCollectionContentInput!) { metaCollectionContent(collectionId: $collectionId, input: $input) { smartCollections { %@ } } }", SFZDF_COLL_F];
+    NSDictionary *input = @{@"appId": @"ffw-mt-web-879d5c17", @"filters": @{@"contentOwner": @[], @"fsk": @[], @"language": @[]},
+                            @"pagination": @{@"first": @60, @"after": [NSNull null]}, @"user": @{@"abGroup": @"gruppe-d", @"userSegment": @"segment_0"},
+                            @"tabId": [NSNull null]};
+    [self gql:q vars:@{@"collectionId": mid, @"input": input} cache:1800 done:^(id d, NSError *e) {
+        if (!d) { done(nil, e); return; }
+        NSMutableArray *items = [NSMutableArray new];
+        for (NSDictionary *c in arr(dict(dict(d)[@"metaCollectionContent"])[@"smartCollections"])) {
+            SFItem *it = [self withLoader:[SFZDFParser itemFromNode:c]];
+            if (it) [items addObject:it];
+        }
+        SFPage *p = [SFPage page:title theme:@"zdf" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu Sendungen", (unsigned long)items.count] style:SFTileStyleLandscape items:items]]];
+        if (!items.count) p.emptyText = @"Keine Inhalte.";
+        done(p, nil);
+    }];
 }
 
 + (SFPageLoader)homeLoader {
@@ -254,10 +163,12 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
             NSMutableArray *sh = [p.shelves mutableCopy];
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"zdf"];
             if (cont.count) [sh insertObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont] atIndex:0];
-            // categories further up (navigation)
+            // the categories (the cluster of MetaCollections) further up: navigation
             for (NSUInteger k = 0; k < sh.count; k++) {
                 SFShelf *s = sh[k];
-                if ([s.title isEqualToString:@"Kategorien"] && k > 2) { [sh removeObjectAtIndex:k]; [sh insertObject:s atIndex:MIN((NSUInteger)2, sh.count)]; break; }
+                BOOL categories = s.items.count > 0;
+                for (SFItem *i in s.items) if (![SFRefPrefix(i.identifier) isEqualToString:@"zdfmeta"]) categories = NO;
+                if (categories && k > 2) { [sh removeObjectAtIndex:k]; [sh insertObject:s atIndex:MIN((NSUInteger)2, sh.count)]; break; }
             }
             p.shelves = sh; p.title = nil;
             done(p, nil);
@@ -269,7 +180,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
 
 // searchDocuments: TOP_RESULTS = matching shows, ALL_RESULTS_EXCLUDING_TOP_RESULTS = videos (pages of 48)
 + (SFPageLoader)searchLoader:(NSString *)query {
-    NSString *q = [NSString stringWithFormat:@"query Q($query: String!, $first: Int, $mode: SearchMode) { searchDocuments(query: $query, first: $first, mode: $mode) { results { item { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { canonical title teaser { description imageWithoutLogo { layouts { dim768X432 dim1280X720 } } } } } } } }", VIDEO_F, COLL_F];
+    NSString *q = [NSString stringWithFormat:@"query Q($query: String!, $first: Int, $mode: SearchMode) { searchDocuments(query: $query, first: $first, mode: $mode) { results { item { __typename ... on Video { %@ } ... on ISmartCollection { %@ } ... on MetaCollection { %@ } } } } }", SFZDF_VIDEO_F, SFZDF_COLL_F, SFZDF_META_F];
     return ^(SFPageDone done) {
         __block NSArray *top = nil, *all = nil;
         __block NSError *err = nil;
@@ -280,7 +191,7 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
             [self gql:q vars:@{@"query": query ?: @"", @"first": [mode hasPrefix:@"TOP"] ? @12 : @48, @"mode": mode} cache:600 done:^(id d, NSError *e) {
                 NSMutableArray *items = [NSMutableArray new];
                 for (NSDictionary *r in arr(dict(dict(d)[@"searchDocuments"])[@"results"])) {
-                    SFItem *it = [self itemFromNode:dict(dict(r)[@"item"])];
+                    SFItem *it = [self withLoader:[SFZDFParser itemFromNode:dict(dict(r)[@"item"])]];
                     if (it) [items addObject:it];
                 }
                 if ([mode hasPrefix:@"TOP"]) top = d ? items : nil; else all = d ? items : nil;
@@ -355,72 +266,75 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
     else done(nil, SFError(@"Quelle nicht verfügbar"));
 }
 
-// The stream of a video: best URL, subtitles, and whether it is limited to Germany (raw geoLocation
-// or a /de/ CDN path). No side effects - also used for the region probe of homeFeatures:.
-+ (void)stream:(NSString *)canonical done:(void (^)(NSString *url, NSArray *subs, BOOL germanyOnly, NSError *e))done {
-
-    NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", VIDEO_F];
+// The stream of a video: best URL, subtitles, and the region it is limited to (its geoLocation:
+// "DE", "DACH"; nil = everywhere). No side effects - also used for the region probe of homeFeatures:.
++ (void)stream:(NSString *)canonical done:(void (^)(NSString *url, NSArray *subs, NSString *region, NSError *e))done {
+    NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ } }", SFZDF_VIDEO_F];
     [self gql:q vars:@{@"canonical": canonical} cache:300 done:^(id d, NSError *e) {
-        NSDictionary *v = dict(dict(d)[@"videoByCanonical"]);
-        NSArray *media = arr(dict(v[@"currentMedia"])[@"nodes"]);
-        NSDictionary *m = nil;
-        for (NSDictionary *x in media) if (!str(x[@"vodMediaType"]) || [str(x[@"vodMediaType"]) isEqualToString:@"DEFAULT"]) { m = x; break; }
+        NSDictionary *m = [SFZDFParser mainMedia:dict(dict(d)[@"videoByCanonical"])];
         NSString *tpl = str(m[@"ptmdTemplate"]);
-        if (!tpl) { done(nil, nil, NO, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
+        if (!tpl) { done(nil, nil, nil, e ?: SFError(@"Dieses Video ist (noch) nicht verfügbar.")); return; }
         NSString *url = [@"https://api.zdf.de" stringByAppendingString:[tpl stringByReplacingOccurrencesOfString:@"{playerId}" withString:kPlayer]];
         [self token:^(NSString *tok) {
             [SFNet getJSON:url headers:@{@"Api-Auth": [@"Bearer " stringByAppendingString:tok ?: @""]} cacheAge:0 done:^(id p, NSError *pe) {
-                NSString *best = nil, *hls = nil; int bestScore = -1;
-                for (NSDictionary *pl in arr(dict(p)[@"priorityList"])) {
-                    for (NSDictionary *f in arr(pl[@"formitaeten"])) {
-                        NSString *mime = str(f[@"mimeType"]);
-                        for (NSDictionary *qq in arr(f[@"qualities"])) {
-                            NSString *u = nil;
-                            for (NSDictionary *t in arr(dict(qq[@"audio"])[@"tracks"]))
-                                if ([str(t[@"class"]) isEqualToString:@"main"] || !t[@"class"]) { u = str(t[@"uri"]); break; }
-                            if (!u) continue;
-                            if ([mime isEqualToString:@"application/x-mpegURL"]) { if (!hls) hls = u; continue; }
-                            if (![mime isEqualToString:@"video/mp4"]) continue;
-                            int h = [nn(qq[@"highestVerticalResolution"]) intValue];
-                            int sc = h == 720 ? 1000 : (h < 720 ? h : 700 - (h - 720) / 10);
-                            if (sc > bestScore) { bestScore = sc; best = u; }
-                        }
-                    }
-                }
-                NSString *u = best ?: hls;
-                if (!u) { done(nil, nil, NO, pe ?: SFError(@"Kein abspielbares Format.")); return; }
-                // subtitles: PTMD captions[] (class hoh = hearing impaired), WebVTT for mpv
-                NSMutableArray *subs = [NSMutableArray new];
-                for (NSDictionary *c in arr(dict(p)[@"captions"])) {
-                    if (![str(dict(c)[@"format"]) isEqualToString:@"webvtt"] || !str(c[@"uri"])) continue;
-                    [subs addObject:@{@"lang": str(c[@"language"]) ?: @"deu", @"url": str(c[@"uri"]), @"kind": @"manual"}];
-                }
-                done(u, subs, [u rangeOfString:@"/de/"].location != NSNotFound || [str(m[@"geoLocation"]) isEqualToString:@"DE"], nil);
+                NSDictionary *st = [SFZDFParser streamIn:dict(p)];
+                if (!st[@"url"]) { done(nil, nil, nil, pe ?: SFError(@"Kein abspielbares Format.")); return; }
+                done(st[@"url"], st[@"subs"], SFZDFRegion(str(m[@"geoLocation"])), nil);
             }];
         }];
     }];
 }
 
 + (void)resolve_zdf:(NSString *)canonical done:(SFURLDone)done {
-    [self stream:canonical done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *e) {
+    [self stream:canonical done:^(NSString *u, NSArray *subs, NSString *region, NSError *e) {
         if (!u) { done(nil, e); return; }
         SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});   // the chosen one is always the main track (German)
-        if (!germanyOnly) { done([NSURL URLWithString:u], nil); return; }
-        // geo: /de/ paths return 403 outside DE -> check beforehand instead of a failed start
-        [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) {
+        if (!region) { done([NSURL URLWithString:u], nil); return; }
+        // geo-limited streams answer 403 outside the region -> check beforehand instead of a failed start
+        [SFNet checkRegion:u expect:nil region:region done:^(BOOL ok) {
             if (ok) done([NSURL URLWithString:u], nil);
-            else done(nil, SFError(@"Nur in Deutschland verfügbar."));
+            else done(nil, SFError([region isEqualToString:@"DE"] ? @"Nur in Deutschland verfügbar." : [region isEqualToString:@"DACH"] ? @"Nur in Deutschland, Österreich und der Schweiz verfügbar." : @"In dieser Region nicht verfügbar."));
         }];
     }];
 }
 
 + (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host {
-    if (!([cmd isEqualToString:@"open"] && [arg hasPrefix:@"zdfmeta:"])) return NO;   // brand page (crash test)
+    if (![cmd isEqualToString:@"open"]) return NO;
     SFItem *f = [SFItem new]; f.kind = SFItemFolder; f.themeName = @"zdf";
-    f.pageLoader = [self categoryLoader:[arg substringFromIndex:8] title:@"Test"];
+    if ([arg hasPrefix:@"zdfmeta:"]) f.pageLoader = [self categoryLoader:SFRefID(arg) id:nil title:@"Test"];   // brand page (crash test)
+    else if ([arg hasPrefix:@"zdfshow:"]) f.pageLoader = [self showLoader:SFRefID(arg) title:nil season:0];
+    else return NO;
     SFOpenItem([host nav], f, nil, 0);
     return YES;
 }
+
+// tools/test-parse: the data of the GraphQL answer ({"data": ...} as recorded) by its root field -
+// curated (curatedCollectionByCanonical), show (smartCollectionByCanonical), video (videoByCanonical),
+// category (metaCollectionContent). ZDF dates are absolute.
++ (NSArray *)parseFixture:(id)j kind:(NSString *)kind {
+    NSDictionary *d = dict(dict(j)[@"data"]) ?: dict(j);
+    NSMutableArray *o = [NSMutableArray new];
+    void (^items)(NSArray *) = ^(NSArray *a) { for (SFItem *i in a) [o addObject:[@"item " stringByAppendingString:SFCanonicalItem(i, NO)]]; };
+    if ([kind isEqualToString:@"curated"]) {
+        for (NSDictionary *c in [SFZDFParser clustersIn:dict(d[@"curatedCollectionByCanonical"])]) { [o addObject:[@"cluster " stringByAppendingString:c[@"title"]]]; items(c[@"items"]); }
+    } else if ([kind isEqualToString:@"video"]) {
+        SFItem *i = [SFZDFParser videoItem:dict(d[@"videoByCanonical"])];
+        items(i ? @[i] : @[]);
+    } else if ([kind isEqualToString:@"show"]) {
+        NSDictionary *sc = dict(d[@"smartCollectionByCanonical"]);
+        for (NSDictionary *sn in arr(dict(sc[@"allSeasons"])[@"nodes"])) [o addObject:[NSString stringWithFormat:@"season %@", [SFZDFParser seasonName:dict(sn)] ?: @"-"]];
+        NSMutableArray *eps = [NSMutableArray new];
+        for (NSDictionary *v in arr(dict(dict(arr(dict(sc[@"seasons"])[@"nodes"]).firstObject)[@"episodes"])[@"nodes"])) { SFItem *i = [SFZDFParser videoItem:v]; if (i) [eps addObject:i]; }
+        SFItem *movie = [SFZDFParser videoItem:dict(sc[@"video"])];
+        items(movie ? [eps arrayByAddingObject:movie] : eps);
+    } else if ([kind isEqualToString:@"category"]) {
+        NSMutableArray *a = [NSMutableArray new];
+        for (NSDictionary *c in arr(dict(d[@"metaCollectionContent"])[@"smartCollections"])) { SFItem *i = [SFZDFParser itemFromNode:c]; if (i) [a addObject:i]; }
+        items(a);
+    } else return nil;
+    return o;
+}
+
 // Home: the curated start page (cached) - its first cluster is the editors' lead, the
 // "Livestreams" cluster carries the channels (kind live)
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
@@ -430,16 +344,22 @@ static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset
         // News: the editors' news page, its lead cluster "Aktuelle Nachrichten-Sendungen" (heute, heute journal …)
         [self curatedLoader:@"nachrichten-politik-news-100" title:nil](^(SFPage *np, NSError *ne) {
             if (np) features[SFHomeTopicNews] = SFHomeFeaturesLeadVideos(np) ?: @[];
-            // Germany-only items (ZDF itself, ZDFneo, many films) are left out of Home where they can't play:
-            // Home needs to know the region before it shows them - probe one such stream if nobody has yet
-            SFItem *probe = nil;
+            // geo-limited items (Germany only: ZDF itself, ZDFneo, many films; DACH) are left out of Home where
+            // they can't play: Home needs to know the region before it shows them - probe one stream per
+            // region nobody has checked yet
+            NSMutableDictionary *probes = [NSMutableDictionary new];   // region -> item
             for (NSArray *items in features.allValues)
-                for (SFItem *i in items) if ([i.geoRegion isEqualToString:@"DE"] && SFRefID(i.resolverRef) && !probe) probe = i;
-            if (!probe || [SFNet stateOfRegion:@"DE"] != SFRegionUnknown) { done(features); return; }
-            [self stream:SFRefID(probe.resolverRef) done:^(NSString *u, NSArray *subs, BOOL germanyOnly, NSError *se) {
-                if (!u || !germanyOnly) { done(features); return; }
-                [SFNet checkRegion:u expect:nil region:@"DE" done:^(BOOL ok) { done(features); }];
-            }];
+                for (SFItem *i in items)
+                    if (i.geoRegion && SFRefID(i.resolverRef) && !probes[i.geoRegion] && [SFNet stateOfRegion:i.geoRegion] == SFRegionUnknown) probes[i.geoRegion] = i;
+            dispatch_group_t g = dispatch_group_create();
+            for (SFItem *probe in probes.allValues) {
+                dispatch_group_enter(g);
+                [self stream:SFRefID(probe.resolverRef) done:^(NSString *u, NSArray *subs, NSString *region, NSError *se) {
+                    if (!u || !region) { dispatch_group_leave(g); return; }
+                    [SFNet checkRegion:u expect:nil region:region done:^(BOOL ok) { dispatch_group_leave(g); }];
+                }];
+            }
+            dispatch_group_notify(g, dispatch_get_main_queue(), ^{ done(features); });
         });
     });
 }

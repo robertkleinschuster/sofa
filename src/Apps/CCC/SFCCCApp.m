@@ -9,6 +9,19 @@ static NSString *const kAPI = @"https://api.media.ccc.de/public";
 
 static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
+// the current year as the API counts it (Gregorian, whatever calendar the system uses)
+static NSInteger thisYear(void) {
+    return [[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian] component:NSCalendarUnitYear fromDate:[NSDate date]];
+}
+
+// The Congress itself: media.ccc.de files it as "congress/<year>"; its side programmes
+// (congress/2023-meta, congress/35C3/oio, sendezentrum …) and other events (rc3, jh26congress) are not
+static BOOL isCongress(NSDictionary *conf) {
+    NSArray *p = [str(conf[@"slug"]) componentsSeparatedByString:@"/"];
+    return p.count == 2 && [p[0] isEqualToString:@"congress"] && [p[1] length] == 4
+        && [p[1] rangeOfCharacterFromSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location == NSNotFound;
+}
+
 
 + (SFItem *)eventItem:(NSDictionary *)e {
     SFItem *i = [SFItem new];
@@ -106,7 +119,7 @@ static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offs
             if ([nn(r[@"high_quality"]) boolValue]) sc += 4;
             NSString *lang = nn(r[@"language"]);
             if (orig && [lang isEqualToString:orig]) sc += 2;      // original audio, one language
-            else if (orig && [lang hasPrefix:orig]) sc += 1;
+            else if (orig && [[lang componentsSeparatedByString:@"-"].firstObject isEqualToString:orig]) sc += 1;   // "deu-eng": tracks, original first
             if (sc > bestScore) { bestScore = sc; best = r; }
         }
         NSString *u = nn(best[@"recording_url"]);
@@ -156,7 +169,7 @@ static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offs
     return ^(SFPageDone done) {
         dispatch_group_t g = dispatch_group_create();
         __block id recent, popular, confs;
-        NSInteger year = [[NSCalendar currentCalendar] component:NSCalendarUnitYear fromDate:[NSDate date]];
+        NSInteger year = thisYear();
         dispatch_group_enter(g);
         [SFNet getJSON:[kAPI stringByAppendingString:@"/events/recent"] headers:nil cacheAge:1800 done:^(id j, NSError *e) { recent = j; dispatch_group_leave(g); }];
         dispatch_group_enter(g);
@@ -172,26 +185,41 @@ static NSDate *parseDate(NSString *s) { return SFDateFromISO8601(s); }   // offs
             if (r.count) [shelves addObject:[SFShelf shelf:@"Neu veröffentlicht" style:SFTileStyleLandscape items:r]];
             NSArray *p = [self eventItems:dict(popular)[@"events"]];
             if (p.count) [shelves addObject:[SFShelf shelf:[NSString stringWithFormat:@"Beliebt %ld", (long)year] style:SFTileStyleLandscape items:p]];
-            NSMutableArray *cs = [NSMutableArray new];
             NSMutableArray *valid = [NSMutableArray new];
             for (id c in arr(dict(confs)[@"conferences"])) if (dict(c) && str(c[@"acronym"])) [valid addObject:c];
-            NSArray *sorted = [valid sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
-                return [str(b[@"event_last_released_at"]) ?: @"" compare:str(a[@"event_last_released_at"]) ?: @""];
+            [valid sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {   // newest release first
+                return [parseDate(str(b[@"event_last_released_at"])) ?: [NSDate distantPast] compare:parseDate(str(a[@"event_last_released_at"])) ?: [NSDate distantPast]];
             }];
-            for (NSDictionary *c in sorted) [cs addObject:[self conferenceItem:c]];
-            // highlight the Congress series
-            NSArray *congress = [cs filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SFItem *i, NSDictionary *b) {
-                return i.title && [i.identifier rangeOfString:@"c3" options:NSAnchoredSearch | NSBackwardsSearch].location != NSNotFound && [i.title rangeOfString:@"C3"].location != NSNotFound;
-            }]];
+            NSMutableArray *cs = [NSMutableArray new], *congress = [NSMutableArray new];
+            for (NSDictionary *c in valid) {
+                SFItem *i = [self conferenceItem:c];
+                [cs addObject:i];
+                if (isCongress(c)) [congress addObject:i];
+            }
             if (congress.count) [shelves addObject:[SFShelf shelf:@"Chaos Communication Congress" style:SFTileStyleWide items:congress]];
             if (cs.count) [shelves addObject:[SFShelf grid:@"Alle Konferenzen" style:SFTileStyleWide items:cs]];
             done([SFPage page:nil theme:@"ccc" shelves:shelves], nil);
         });
     };
 }
+// tools/test-parse: events (an /events/… answer), conferences (/conferences; "congress" marks the
+// Congress shelf). Dates are absolute.
++ (NSArray *)parseFixture:(id)j kind:(NSString *)kind {
+    NSMutableArray *o = [NSMutableArray new];
+    if ([kind isEqualToString:@"events"]) {
+        for (SFItem *i in [self eventItems:dict(j)[@"events"]]) [o addObject:[@"item " stringByAppendingString:SFCanonicalItem(i, NO)]];
+    } else if ([kind isEqualToString:@"conferences"]) {
+        for (NSDictionary *c in arr(dict(j)[@"conferences"])) {
+            if (!dict(c) || !str(c[@"acronym"])) continue;
+            [o addObject:[NSString stringWithFormat:@"%@ %@", isCongress(c) ? @"congress" : @"item", SFCanonicalItem([self conferenceItem:c], NO)]];
+        }
+    } else return nil;
+    return o;
+}
+
 // Home: this year's most watched talks (the API's own ranking)
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
-    NSInteger year = [[NSCalendar currentCalendar] component:NSCalendarUnitYear fromDate:[NSDate date]];
+    NSInteger year = thisYear();
     [SFNet getJSON:[NSString stringWithFormat:@"%@/events/popular?year=%ld", kAPI, (long)year] headers:nil cacheAge:6 * 3600 done:^(id j, NSError *e) {
         NSArray *items = [self eventItems:dict(j)[@"events"]];
         done(items.count ? @{SFHomeTopicHighlights: items} : nil);

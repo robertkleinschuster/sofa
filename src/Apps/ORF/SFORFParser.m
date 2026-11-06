@@ -32,6 +32,7 @@ static NSArray *listItems(id j) {
     i.image = [self image:e big:NO];
     i.backdrop = [self image:e big:YES];
     i.channel = segment ? (str(e[@"sub_headline"]) ?: str(e[@"genre_title"])) : (str(e[@"profile_title"]) ?: str(e[@"genre_title"]));
+    // the show: list entries carry no profile id field, only the HAL link ".../profile/<id>"
     NSString *ph = str(dict(dict(e[@"_links"])[@"profile"])[@"href"]);
     if (ph.length && str(e[@"profile_title"])) i.showRef = [@"orfprofile:" stringByAppendingString:ph.lastPathComponent];
     i.date = SFDateFromISO8601(str(e[@"date"])) ?: SFDateFromISO8601(str(e[@"episode_date"]));
