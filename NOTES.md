@@ -26,6 +26,28 @@ AVX2, Radeon HD 6770M, 2560x1440).
 6. Final state as a MacPorts port in the overlay (`~/backport-toolkit/ports`), follow the doctrine.
 7. Subtitles are NOT needed.
 
+## YouTube client goals (user 2026-11-06, BINDING - check every YouTube change against these)
+1. **No bot checks in the first place.** Sofa must not trigger "Melde dich an, damit wir sehen,
+   dass du kein Bot bist" at all - preventing it ranks above reacting to it (pause/backoff is
+   only the safety net). Private use; the user explicitly allows making the client
+   indistinguishable from a real browser.
+2. **One identity, one client.** Every request to YouTube/Google (player, BotGuard/PO token,
+   InnerTube pages, SABR media, captions, thumbnails as far as possible) comes from the same
+   client with the same cookies, TLS and HTTP behaviour. Mixing clients under one visitor is
+   counterproductive.
+3. **A real browser, long-term stable.** Target: a bundled headless Firefox (port
+   `firefox-x11`, 153 ESR, built and installed) is the YouTube client - youtubei.js, googlevideo
+   and BotGuard run in a youtube.com page in it; Node only bridges media to mpv and keeps the
+   session/pacing logic. Acceptable alternative only if it is equally indistinguishable from a
+   real browser without Firefox. Feasibility 2026-11-06: BiDi headless works on 10.9 (UA
+   "Intel Mac OS X 10.15; rv:153.0"), page->Node 37 MB/s.
+4. **Human cadence.** Few requests at a viewer's pace (downloads 20-30 min apart, no bursts,
+   preloads only on real focus changes); no retries into a fresh block.
+5. **Dependencies explicit** (user): every library/tool Sofa uses is declared (Makefile/port
+   depends_lib/package.json), never only reached through another package.
+6. Until the Firefox client is done, the interim measures stay: throttling, longer breaker pause,
+   Chrome-like Node transport (lib/transport.ts).
+
 ## Technology
 - Objective-C + ARC, AppKit, Core Animation (layer-hosting, redraw only on
   change), AVFoundation (hardware H.264, HLS), IOKit HID, SQLite (system libsqlite3).
@@ -152,6 +174,9 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   one-off import for us; no dependency on Firefox or similar). Firefox cookie reading, SAPISIDHASH,
   account feeds (FEsubscriptions/VLWL/FEchannels) and the cookie file removed; follows/watch list are
   Sofa's own data. yt-dlp without cookies: JS challenge with node instead of QuickJS (4 s instead of 20 s per video).
+- 2026-11-06: **Firefox becomes the YouTube client** (user; supersedes "no dependency on Firefox" of
+  2026-11-04 - that was about the sign-in/cookie import, the account stays out): all YouTube traffic
+  through a bundled headless Firefox for one real-browser identity. Goals: section "YouTube client goals".
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
