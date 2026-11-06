@@ -1,8 +1,7 @@
-// Sofa's YouTube engine in Firefox (docs/youtube-engine.md): bundled by tools/build-yt-engine into
-// build/sofa-yt-web/engine.js and injected into a hidden youtube.com tab with BiDi
-// script.addPreloadScript, whose function gets a BiDi channel and hands it to connect(). Sofa calls
-// globalThis.sofaEngine with script.callFunction; the engine talks back over the channel (ready,
-// log lines, breaker changes).
+// Sofa's YouTube engine in Firefox (docs/youtube-engine.md): the API object of one youtube.com page.
+// Loaded by the extension's page script (page-main.ts: commands from Sofa through the extension's
+// bridge) or, in offline tests, by a BiDi preload script (bidi-main.ts). connect() gets the channel
+// back to Sofa (ready, log lines, breaker changes).
 //
 // The engine core (lib/engine.ts) is the one the node sidecar serves over HTTP; here it runs on the
 // page's own environment: youtubei.js' web build with the page's context (pagesession.ts), BotGuard in
@@ -105,7 +104,8 @@ function failure(e: unknown): { ok: false; status: number; body: { error: string
   return { ok: false, status: 500, body: { error: errorMessage(e) } };
 }
 
-const engine: SofaEngine = {
+/** The engine of this page (one per document). */
+export const sofaEngine: SofaEngine = {
   health: () => ({
     libraries: [Innertube, SabrStream, BotGuardClient, WebPoMinter, createEngine, sabrPumps, YouTube, PoTokenProvider]
       .every((c) => typeof c === 'function'),
@@ -171,4 +171,3 @@ const engine: SofaEngine = {
   },
 };
 
-(globalThis as typeof globalThis & { sofaEngine?: SofaEngine }).sofaEngine = engine;

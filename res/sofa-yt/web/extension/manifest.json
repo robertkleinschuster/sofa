@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Sofa YouTube engine",
+  "version": "1.0",
+  "description": "Sofa's YouTube client in this browser profile (docs/youtube-engine.md).",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youtube-engine@sofa",
+      "strict_min_version": "128.0"
+    }
+  },
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "page.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  }
+}

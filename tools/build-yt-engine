@@ -1,6 +1,7 @@
 #!/bin/bash
 # build-yt-engine -- bundle Sofa's YouTube engine for Firefox (docs/youtube-engine.md):
-# res/sofa-yt/web/engine.ts + its npm dependencies -> build/sofa-yt-web/engine.js (one IIFE, minified).
+# res/sofa-yt/web + its npm dependencies -> build/sofa-yt-web/extension (Sofa's Firefox extension:
+# manifest, page.js, bridge.js) and build/sofa-yt-web/engine.js (offline tests). IIFEs, minified.
 # esbuild-wasm (exact pin, devDependency in res/sofa-yt/package.json): the native esbuild binary needs
 # macOS 10.15, the WebAssembly build runs in node on 10.9. Node is a build tool only here.
 set -eu
@@ -13,14 +14,23 @@ LOCK=$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)
 [ -f "$DEV/STAMP" ] && [ "$(cat "$DEV/STAMP")" = "$LOCK" ] || "$SRC/tools/fetch-sofa-yt" --dev
 mkdir -p "$OUT"
 # up to date: newer than every engine source and the lockfile (the sources it bundles from res/sofa-yt/lib
-# count too, as they move over)
-if [ -f "$OUT/engine.js" ] && [ -z "$(find "$SRC/res/sofa-yt/web" "$SRC/res/sofa-yt/lib" "$SRC/res/sofa-yt/package-lock.json" \
-     -newer "$OUT/engine.js" -type f 2>/dev/null | head -1)" ]; then
-  echo "yt engine up to date ($OUT/engine.js)"; exit 0
+# count too)
+if [ -f "$OUT/STAMP" ] && [ -z "$(find "$SRC/res/sofa-yt/web" "$SRC/res/sofa-yt/lib" "$SRC/res/sofa-yt/package-lock.json" \
+     -newer "$OUT/STAMP" -type f 2>/dev/null | head -1)" ]; then
+  echo "yt engine up to date ($OUT)"; exit 0
 fi
-# resolve the dependencies from the dev install (the sources stay free of node_modules)
-NODE_PATH="$DEV/node_modules" "$NODE" "$DEV/node_modules/esbuild-wasm/bin/esbuild" "$SRC/res/sofa-yt/web/engine.ts" \
+# three bundles (one esbuild run), dependencies resolved from the dev install (the sources stay free of
+# node_modules):
+#   extension/page.js    the engine in the youtube.com page (content script, page world)
+#   extension/bridge.js  joins the page to the extension (content script, isolated world)
+#   extension/background.js  the extension's relay to Sofa's loopback server
+#   engine.js            offline tests only: the engine as a global for a BiDi preload script
+W="$SRC/res/sofa-yt/web"
+rm -rf "$OUT.tmp" && mkdir -p "$OUT.tmp/extension"
+NODE_PATH="$DEV/node_modules" "$NODE" "$DEV/node_modules/esbuild-wasm/bin/esbuild" \
+  "extension/page=$W/page-main.ts" "extension/bridge=$W/bridge.ts" "extension/background=$W/background.ts" "engine=$W/bidi-main.ts" \
   --bundle --format=iife --platform=browser --target=firefox140 --minify --legal-comments=none \
-  --log-level=warning --outfile="$OUT/engine.js.tmp"
-mv "$OUT/engine.js.tmp" "$OUT/engine.js"
-echo "yt engine -> $OUT/engine.js ($(( $(wc -c < "$OUT/engine.js") / 1024 )) KB)"
+  --log-level=warning --outdir="$OUT.tmp"
+cp "$W/extension/manifest.json" "$OUT.tmp/extension/"
+rm -rf "$OUT" && mv "$OUT.tmp" "$OUT" && touch "$OUT/STAMP"
+echo "yt engine -> $OUT: extension/page.js $(( $(wc -c < "$OUT/extension/page.js") / 1024 )) KB, extension/bridge.js, engine.js (tests)"

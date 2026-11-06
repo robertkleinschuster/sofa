@@ -128,10 +128,34 @@ off) are visible to pages and must be reset in the engine's profile.
 
 So YouTube recognises a browser under remote control - not by `navigator.webdriver` alone, not by
 the agent's recommended prefs - and its stream protection then refuses after 60 s. Consequence for
-the design: **the engine must not be driven over WebDriver BiDi/Marionette.** Sofa talks to the page
-through a channel a normal browser has: a WebExtension in Sofa's profile (content script in the
-page's world at document_start = today's preload script; its background page reaches Sofa's
-loopback server). BiDi stays for tests only.
+the design: **the engine is not driven over WebDriver BiDi/Marionette** but through a WebExtension
+(below). BiDi stays for offline tests only.
+
+**Measured through the extension** (`live-extension.test.ts`, 2026-11-06, no remote agent, Xvfb):
+`sps=1` - stream protection accepts the engine's token; 110 s of 1080p VP9 + Opus in one SABR run,
+14 MB in 12 s, no CSP violation.
+
+## Channel: Sofa <-> engine (WebExtension, no remote control)
+
+```
+Sofa loopback server  <-- long poll / POST (token) --  background.js   (extension origin)
+                                                           |  runtime.Port (private)
+                                                       bridge.js       (content script, isolated world)
+                                                           |  MessagePort (private, handed over at document_start)
+                                                       page.js         (content script, page world: the engine)
+```
+
+- `extension/manifest.json` (MV3, id `youtube-engine@sofa`): content scripts on www.youtube.com at
+  `document_start` - `page.js` in the page's world (the engine, no global), `bridge.js` isolated;
+  `background.js` does all traffic to Sofa (host permission: no CORS, invisible to pages - a content
+  script's request would be the page's and need Sofa to allow YouTube's origin).
+- Protocol (`web/protocol.ts`): commands `{id, method, args}` from Sofa, answers `{id, value|error}`,
+  events (`ready`, `log`, `block`) as JSON strings. Sofa: `GET /engine/poll?token=` (held up to 20 s)
+  and `POST /engine/post?token=` with `{answers, events}`.
+- Profile setup (Sofa, like `tests/sofa-yt/enginehost.ts`): the extension unpacked with
+  `config.json` ({port, token}), a proxy file `extensions/youtube-engine@sofa`, the host permission
+  grant in `extension-preferences.json` (MV3 grants are the user's; recorded as an "allow"), prefs
+  `xpinstall.signatures.required=false` (ESR) and `extensions.autoDisableScopes=0`.
 
 The profile setup of the engine must answer the consent dialog once, like a user.
 

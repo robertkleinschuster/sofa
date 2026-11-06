@@ -46,7 +46,7 @@ rm -rf "$RUN"; mkdir -p "$RUN"
 ln -s "$VENDOR/node_modules" "$RUN/node_modules"
 # the browser engine bundle (docs/youtube-engine.md), loaded by unit-engine in headless Firefox
 "$SRC/tools/build-yt-engine" >/dev/null || exit 1
-export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js"
+export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js" SOFA_YT_EXTENSION="$SRC/build/sofa-yt-web/extension"
 cd "$SRC/tests/sofa-yt"
 FILES=(unit-*.test.ts)
 [ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-*.test.ts)

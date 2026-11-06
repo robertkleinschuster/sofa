@@ -96,11 +96,15 @@ export async function startXvfb({ width = 1920, height = 1080 } = {}): Promise<V
  * Start Firefox on `profile` with BiDi on a free port: headless, or on `display` (startXvfb) like a
  * browser on a screen. The screen the page sees is the TV's.
  */
-export async function launchFirefox(profile: string, { width = 1920, height = 1080, display }: { width?: number; height?: number; display?: string } = {}): Promise<RunningFirefox> {
+export async function launchFirefox(profile: string, { width = 1920, height = 1080, display, remote = true, url = 'about:blank' }:
+  { width?: number; height?: number; display?: string; remote?: boolean; url?: string } = {}): Promise<RunningFirefox> {
   const env: NodeJS.ProcessEnv = display ? { ...process.env, DISPLAY: display }
     : { ...process.env, MOZ_HEADLESS_WIDTH: String(width), MOZ_HEADLESS_HEIGHT: String(height) };
   delete env.DYLD_INSERT_LIBRARIES;
-  const args = [...(display ? [`--width=${width}`, `--height=${height}`] : ['--headless']), '--no-remote', '--profile', profile, '--remote-debugging-port', '0', 'about:blank'];
+  // remote: false = a browser as a user starts it (no remote agent; YouTube refuses one under remote
+  // control) - driven through the engine extension instead
+  const args = [...(display ? [`--width=${width}`, `--height=${height}`] : ['--headless']), '--no-remote', '--profile', profile,
+    ...(remote ? ['--remote-debugging-port', '0'] : []), url];
   const proc = spawn(FIREFOX, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   proc.stderr!.on('data', (d) => { out += d; });
@@ -111,6 +115,7 @@ export async function launchFirefox(profile: string, { width = 1920, height = 10
     await within(exited, 5000);
     if (proc.exitCode === null) proc.kill('SIGKILL');
   };
+  if (!remote) return { proc, url: '', output: () => out, stop };
   const re = /WebDriver BiDi listening on (ws:\/\/\S+)/;
   if (!await until(() => re.test(out), 30000, 100)) { await stop(); throw new Error(`Firefox: no BiDi port (${out.slice(-500)})`); }
   return { proc, url: `${re.exec(out)![1]!}/session`, output: () => out, stop };
