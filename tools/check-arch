@@ -11,7 +11,7 @@
 #
 # Also: no app identifiers / ref namespaces as string literals outside src/Apps; no source file
 # above MAX_LINES (one responsibility per module - split by responsibility, docs/architecture.md
-# "Code rules"). Files still above it are listed in SPLIT_PENDING with their size: they may only shrink.
+# "Code rules"). SPLIT_PENDING could list a file with a temporary ceiling - it is empty and should stay so.
 # Exit 1 on any violation; prints file:line and the rule.
 import os, re, sys
 
@@ -22,11 +22,7 @@ CORE_DIRS = {'Core', 'Library', 'Player', 'Browse'}
 REGISTRATION = {'src/Shell/SFApps.m'}            # the one place that names app classes
 LEGACY = {'src/Shell/SFMigration.m'}             # documented exception: one-time Kodi import (YouTube library)
 MAX_LINES = 500
-SPLIT_PENDING = {   # existing files above MAX_LINES, to be split - ceiling = their size on 2026-11-06
-    'src/Browse/SFBrowseScreen.m': 960, 'src/Player/SFPlayerScreen.m': 890, 'src/Library/SFDownloads.m': 673,
-    'src/Player/SFPlayerScreen+Endscreen.m': 661, 'src/Player/SFMPVEngine.m': 566, 'src/Apps/YouTube/SFLounge.m': 523,
-    'src/Player/SFPlayerInfoScreen.m': 521, 'src/Framework/SFKeyboardScreen.m': 513,
-}
+SPLIT_PENDING = {}   # all files are within MAX_LINES (2026-11-06); keep it that way
 LITERAL = re.compile(r'@"(youtube|zdf|ard|orf|ccc)"|@"(yt|zdf|ard|orf|ccc)[a-z]*:')
 
 def layer(rel):

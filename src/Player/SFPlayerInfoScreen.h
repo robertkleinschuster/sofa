@@ -11,10 +11,6 @@
 
 @class SFPlayerScreen;
 
-// Follow / unfollow a channel or show folder with toast feedback; unfollowing a show that also
-// downloads automatically asks first (destructive). Shared by the info panel and the end screen.
-void SFToggleFollow(SFNavigator *nav, SFItem *folder, SFTheme *theme);
-
 @interface SFPlayerInfoScreen : SFBrowseScreen
 - (instancetype)initWithPlayer:(SFPlayerScreen *)player;
 @end

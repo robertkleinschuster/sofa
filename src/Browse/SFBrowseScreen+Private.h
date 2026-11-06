@@ -1,5 +1,5 @@
-// SFBrowseScreen – private part: ivars and row model, shared by SFBrowseScreen.m
-// (layout, rows, focus, hero) and SFBrowseScreen+Context.m (context menu "hold OK").
+// SFBrowseScreen – private part: ivars and row model, shared by SFBrowseScreen.m (layout, page,
+// rows) and its parts +Header, +Focus, +Hero, +Context (context menu "hold OK").
 #import "SFBrowseScreen.h"
 #import "SFTile.h"
 #import "SFLayers.h"
@@ -62,6 +62,44 @@
     NSTimer *_clockTimer;
     BOOL _loading, _laidOut;
 }
+@end
+
+// methods shared between SFBrowseScreen.m and its parts (+Header, +Focus, +Hero, +Context)
+@interface SFBrowseScreen (Internal)
+- (void)observeDownloads;
+- (SFPage *)page;
+- (BOOL)isOpaque;
+- (void)setReloadNotification:(NSString *)name;
+- (void)layoutForSize:(CGSize)size;
+- (void)buildHeader:(CGSize)size;
+- (void)layoutStatusRow;
+- (void)schedulePrefetch;
+- (void)prefetchFocused;
+- (void)updatePhoneStatus;
+- (void)updateHint;
+- (void)updateClock;
+- (void)willAppear;
+- (void)willDisappear;
+- (void)didAppear;
+- (void)reloadSoon;
+- (NSString *)shelfTitleForRow:(SFRow *)r;
+- (void)showSpinner:(BOOL)on;
+- (void)buildRows;
+- (void)materializeRow:(SFRow *)r;
+- (CGFloat)xForCol:(NSInteger)c inRow:(SFRow *)r;
+- (CGFloat)widthForCol:(NSInteger)c inRow:(SFRow *)r;
+- (CGFloat)scrollOffsetForRow:(SFRow *)r col:(NSInteger)sc;
+- (NSInteger)scrollColForRow:(SFRow *)r col:(NSInteger)col;
+- (void)updateTilesInRow:(SFRow *)r;
+- (void)updateVisibleRows;
+- (void)focusRow:(NSInteger)row col:(NSInteger)col animated:(BOOL)anim;
+- (void)updateSearchPill:(BOOL)anim;
+- (void)focusHeaderSearch;
+- (BOOL)handleKey:(SFKey)key;
+- (void)bump:(NSInteger)dir;
+- (void)updateBackdropFor:(SFItem *)it;
+- (void)buildHero:(CGSize)size;
+- (void)updateHeroFor:(SFItem *)it;
 @end
 
 @interface SFBrowseScreen (Context)

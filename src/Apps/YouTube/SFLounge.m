@@ -4,6 +4,7 @@
 #import "SFModel.h"
 #import "SFPlayerScreen.h"
 #import "SFVolume.h"
+#import "SFLoungeMessages.h"
 #import <curl/curl.h>
 
 NSString *const SFLoungeRemotesDidChangeNotification = @"SFLoungeRemotesDidChangeNotification";
@@ -24,7 +25,6 @@ static NSString *zx(void) {
     char b[13]; for (int i = 0; i < 12; i++) b[i] = cs[arc4random_uniform(36)]; b[12] = 0;
     return @(b);
 }
-static NSString *fmtTime(double t) { return [NSString stringWithFormat:@"%.3f", (isnan(t) || t < 0) ? 0 : t]; }
 
 #pragma mark - Long poll (libcurl, own thread)
 
@@ -373,34 +373,10 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     return [p.item.source isEqualToString:@"youtube"] && v.length == 11 ? v : nil;
 }
 
-- (NSDictionary *)stateArgs:(SFPlayerScreen *)p {
-    NSString *vid = [self videoIDOf:p];
-    if (!p || !vid) return @{@"state": @"-1", @"currentTime": @"0", @"duration": @"0", @"loadedTime": @"0",
-                             @"seekableStartTime": @"0", @"seekableEndTime": @"0", @"cpn": _cpn};
-    double d = [p duration];
-    return @{@"state": [@(p.playbackState) stringValue], @"currentTime": fmtTime([p currentTime]), @"duration": fmtTime(d),
-             @"loadedTime": fmtTime(d), @"seekableStartTime": @"0", @"seekableEndTime": fmtTime(d), @"cpn": _cpn};
-}
-
-- (NSDictionary *)nowPlayingArgs:(SFPlayerScreen *)p {
-    NSString *vid = [self videoIDOf:p];
-    if (!vid) return @{};
-    NSMutableDictionary *a = [[self stateArgs:p] mutableCopy];
-    a[@"videoId"] = vid;
-    a[@"currentIndex"] = [@(p.remoteListID ? p.queueIndex : 0) stringValue];
-    if (p.remoteListID) a[@"listId"] = p.remoteListID;
-    return a;
-}
-
-// Subtitle state for the phone (like gotubecast): languageCode "" = off; vss_id ".de" = real,
-// "a.de" = automatic subtitles (YouTube's track ID, the phone marks its list by it)
-- (NSArray *)subtitlesMessage:(SFPlayerScreen *)p state:(NSDictionary *)st {
-    NSString *vid = [self videoIDOf:p];
-    NSString *lang = vid ? st[@"lang"] : nil;
-    if (!lang.length) return @[@"onSubtitlesTrackChanged", @{@"videoId": vid ?: @""}];
-    return @[@"onSubtitlesTrackChanged", @{@"videoId": vid, @"languageCode": lang,
-                                           @"vss_id": [([st[@"kind"] isEqual:@"auto"] ? @"a." : @".") stringByAppendingString:lang]}];
-}
+// the messages themselves: SFLoungeMessages (pure); here: what is shared (videoIDOf:) and this screen's cpn
+- (NSDictionary *)stateArgs:(SFPlayerScreen *)p { return [SFLoungeMessages stateOf:p video:[self videoIDOf:p] cpn:_cpn]; }
+- (NSDictionary *)nowPlayingArgs:(SFPlayerScreen *)p { return [SFLoungeMessages nowPlayingOf:p video:[self videoIDOf:p] cpn:_cpn]; }
+- (NSArray *)subtitlesMessage:(SFPlayerScreen *)p state:(NSDictionary *)st { return [SFLoungeMessages subtitles:st video:[self videoIDOf:p]]; }
 
 - (void)subtitlesChanged:(NSNotification *)n {
     SFPlayerScreen *p = n.object;
@@ -410,21 +386,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     [self send:@[m]];
 }
 
-- (NSArray *)volumeMessage {
-    int vol = (int)lroundf(MAX(0, [SFVolume volume]) * 100);
-    return @[@"onVolumeChanged", @{@"volume": [@(vol) stringValue], @"muted": [SFVolume muted] ? @"true" : @"false"}];
-}
-
-- (NSArray *)fullStateMessages {
-    SFPlayerScreen *p = [self player];
-    return @[@[@"onHasPreviousNextChanged", @{@"hasPrevious": p.hasPrevious ? @"true" : @"false", @"hasNext": p.hasNext ? @"true" : @"false"}],
-             @[@"nowPlaying", [self nowPlayingArgs:p]],
-             @[@"onStateChange", [self stateArgs:p]],
-             [self volumeMessage],
-             @[@"onAutoplayModeChanged", @{@"autoplayMode": @"UNSUPPORTED"}]];
-}
-
-- (void)greet { [self send:[self fullStateMessages]]; }
+- (void)greet { SFPlayerScreen *p = [self player]; [self send:[SFLoungeMessages fullStateOf:p video:[self videoIDOf:p] cpn:_cpn]]; }
 
 - (void)playerChanged:(NSNotification *)n {
     SFPlayerScreen *p = n.object;
@@ -493,7 +455,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]]]];
         return;
     } else if ([cmd isEqualToString:@"getVolume"]) {
-        [self send:@[[self volumeMessage]]];
+        [self send:@[[SFLoungeMessages volume]]];
         return;
     } else if ([cmd isEqualToString:@"setVolume"]) {
         if (!SFDevMode) {
@@ -501,7 +463,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
             else if (args[@"delta"]) [SFVolume setVolume:MAX(0, MIN(1, [SFVolume volume] + [args[@"delta"] floatValue] / 100.0f))];
             if (args[@"muted"]) [SFVolume setMuted:[args[@"muted"] isEqualToString:@"true"]];
         }
-        [self send:@[[self volumeMessage]]];
+        [self send:@[[SFLoungeMessages volume]]];
         return;
     } else if ([cmd isEqualToString:@"getSubtitlesTrack"]) {
         [self send:@[[self subtitlesMessage:p state:p.subtitleState]]];

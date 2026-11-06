@@ -13,7 +13,7 @@
 #import "SFPower.h"
 #import "SFMenuScreen.h"
 
-@interface SFPlayerScreen () <SFEngineDelegate> {
+@interface SFPlayerScreen () {
     SFItem *_item;
     NSArray *_queue;
     id _powerObs;
@@ -71,17 +71,67 @@
     CGRect _esVideoRect;         // where the picture is (letterboxing respected)
     NSDate *_lastVolumeAt;       // last UP/DOWN volume step (DOWN keeps adjusting the volume right after)
 }
-- (NSTimeInterval)currentTime;
-- (void)togglePause;
-- (SFItem *)nextItem;                 // what autoplay plays next (queue, playlist, episode, recommendation)
-- (void)playItem:(SFItem *)item;      // play another item in this player, like autoplay
-- (BOOL)hasExplicitQueue;             // queue from the phone: next = next queue entry
-- (void)showInfo;                     // info panel (OK hold)
-- (void)finishEnd;                    // end of the video: "up next" card or leave the player
-- (void)showOSD:(BOOL)on autoHide:(BOOL)autoHide;
-- (void)updatePauseState;
-- (void)saveProgress;
+@end
+
+// shared between SFPlayerScreen.m and its parts (+Engine, +Next, +Endscreen, +Tracks)
+@interface SFPlayerScreen (Internal)
+- (CGFloat)toastCenterFromBottom;
+- (void)layoutForSize:(CGSize)size;
 - (void)updateTitles;
+- (void)showMessage:(NSString *)msg;
+- (void)showSpinner:(BOOL)on;
+- (void)didAppear;
+- (void)willDisappear;
+- (void)startItem;
+- (void)playURL:(NSURL *)url;
+- (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url;
+- (void)playURL:(NSURL *)url forceMPV:(BOOL)forceMPV;
+- (id)engineForDiagnostics;
+- (NSTimeInterval)failurePosition;
+- (void)reopen:(NSURL *)url forceMPV:(BOOL)forceMPV after:(double)delay resetTries:(BOOL)reset;
+- (BOOL)sessionSource;
+- (void)sessionFailed:(NSString *)why;
+- (void)engineStatusChanged;
+- (void)engineRateChanged;
+- (void)engineBufferingChanged;
+- (BOOL)sessionCutShort;
+- (void)engineDidEnd;
+- (void)engineInterrupted;
+- (void)engineTick;
+- (void)teardownPlayer;
+- (void)teardown;
+- (void)setAssertion:(BOOL)on;
+- (NSTimeInterval)current;
+- (NSTimeInterval)seekOrigin;
+- (SFItem *)item;
+- (void)saveProgress;
+- (void)tick;
+- (void)updateBar;
+- (void)showOSD:(BOOL)on autoHide:(BOOL)autoHide;
+- (void)autoHide;
+- (void)postState;
+- (SFPlaybackState)playbackState;
+- (NSArray *)queue;
+- (NSUInteger)queueIndex;
+- (void)updatePauseState;
+- (void)togglePause;
+- (void)seekBy:(NSTimeInterval)delta;
+- (void)commitSeek;
+- (NSUInteger)nextQueueIndex;
+- (SFItem *)nextItem;
+- (void)didEnd:(NSNotification *)n;
+- (void)finishEnd;
+- (void)failedToEnd:(NSNotification *)n;
+- (void)showNextCard:(SFItem *)next;
+- (void)nextTick:(NSTimer *)t;
+- (void)playItem:(SFItem *)item;
+- (BOOL)hasExplicitQueue;
+- (void)showInfo;
+- (void)playNext;
+- (BOOL)handleKey:(SFKey)key;
+@end
+
+@interface SFPlayerScreen (Engine) <SFEngineDelegate>
 @end
 
 @interface SFPlayerScreen (Endscreen)

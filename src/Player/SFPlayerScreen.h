@@ -20,12 +20,15 @@ typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnd
 @property (nonatomic, copy) NSString *remoteListID;      // set when started from the phone
 @property (nonatomic, readonly) NSArray *queue;
 @property (nonatomic, readonly) NSUInteger queueIndex;
+- (void)close;                                        // leave the player, also from below an overlay (menu, info panel)
+@end
+
+@interface SFPlayerScreen (Remote)   // SFPlayerScreen+Remote.m
 - (void)remotePlay;
 - (void)remotePause;
 - (void)remoteSeekTo:(NSTimeInterval)t;
 - (void)remoteNext;                                   // like autoplay (queue or next episode)
 - (void)remotePrevious;
-- (void)close;                                        // leave the player, also from below an overlay (menu, info panel)
 - (BOOL)hasNext;
 - (BOOL)hasPrevious;
 - (void)playQueueIndex:(NSUInteger)i at:(NSTimeInterval)t;

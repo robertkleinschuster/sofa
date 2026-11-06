@@ -1,4 +1,5 @@
 #import "SFYTPages.h"
+#import "SFFollowAction.h"
 #import "SFApp.h"
 #import "SFYTInnerTube.h"
 #import "SFYTParser.h"
@@ -218,26 +219,7 @@
     fb.title = following ? @"✓  Gefolgt" : @"Folgen";
     if (!following) fb.tint = [SFTheme themeNamed:@"youtube"].accent;
     fb.backdrop = header[@"banner"]; fb.heroTitle = title; fb.heroMeta = header[@"meta"]; fb.plot = header[@"description"];
-    fb.action = ^{
-        if ([fo isFollowing:fid]) {
-            // Like YouTube ("Abo beenden?"): unfollow only with confirmation - the button has focus
-            // on opening, a reflexive OK must not silently remove the channel.
-            SFNavigator *nav = navi();
-            BOOL dlOn = [dl isSubscribed:fid];
-            SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
-            SFMenuOption *yes = [SFMenuOption option:@"Nicht mehr folgen" action:^{
-                [fo unfollow:fid];
-                [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ nicht mehr", title]];
-            }];
-            NSString *sub = dlOn ? @"Neue Videos erscheinen nicht mehr unter „Neue Folgen“ und werden nicht mehr geladen. Vorhandene Downloads bleiben."
-                                 : @"Neue Videos erscheinen dann nicht mehr unter „Neue Folgen“.";
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [nav push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ nicht mehr folgen?", title]
-                                                     subtitle:sub options:@[no, yes] theme:[SFTheme themeNamed:@"youtube"]]];
-            });
-        }
-        else { [fo follow:folder]; [navi() toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Videos erscheinen unter „Neue Folgen“", title]]; }
-    };
+    fb.action = ^{ SFToggleFollow(navi(), folder, [SFTheme themeNamed:@"youtube"], YES); };
     [buttons addObject:fb];
     if (following) {
         SFItem *db = [SFItem new];

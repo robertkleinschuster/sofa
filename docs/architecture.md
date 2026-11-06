@@ -18,9 +18,12 @@ modularity.**
 - **Pure parsers, tested on real answers.** Turning a provider's JSON into items needs no request
   and no library state; recorded answers (cookies stripped) and their expected parse are the test
   (`tools/test-parse`).
-- **One responsibility per module.** No source file above 500 lines (`tools/check-arch`; the few
-  older ones above it are listed there and may only shrink). Split by responsibility - a request
-  client, a parser, pages, the `SFApp` adapter (categories for protocol parts such as playback).
+- **One responsibility per module.** No source file above 500 lines (`tools/check-arch`, no
+  exceptions). Split by responsibility - a request client, a parser, pages, the `SFApp` adapter
+  (categories for protocol parts such as playback); a screen into parts (`SFBrowseScreen+Header`,
+  `+Focus`, `+Hero`; `SFPlayerScreen+Engine`, `+Next`, `+Remote`, `+Input`) sharing ivars through
+  its `+Private.h`, and self-contained pieces into their own module (`SFEndTile`, `SFMPVLayer`,
+  `SFLoungeMessages`, `SFKeyboardKeys`, `SFFollowAction`).
 - **Clean interfaces.** Modules talk through small headers, apps and the core only through the
   `SFApp` contract and the registry - an app never writes into a Library module directly.
 

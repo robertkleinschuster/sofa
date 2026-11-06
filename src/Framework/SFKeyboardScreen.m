@@ -2,18 +2,8 @@
 #import "SFStore.h"
 #import "SFLayers.h"
 #import "SFLogo.h"
+#import "SFKeyboardKeys.h"
 
-typedef NS_ENUM(NSInteger, SFKbKind) { SFKbChar, SFKbSpace, SFKbDelete, SFKbSubmit, SFKbLayout };
-
-@interface SFKbKey : NSObject
-@property (nonatomic) SFKbKind kind;
-@property (nonatomic, copy) NSString *label;
-@property (nonatomic) NSInteger col, span;
-@property (nonatomic, strong) CALayer *bg;
-@property (nonatomic, strong) SFLabel *text;
-@end
-@implementation SFKbKey
-@end
 
 // grid in design units (1920x1080)
 static const CGFloat kX = 96, kGridY = 330, kKeyW = 104, kKeyH = 92, kGap = 12;
@@ -61,29 +51,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
 - (NSArray *)buildKeys {
     // selectable layout (remembered): ABC (alphabetical, for the inexperienced) or QWERTZ (like the computer keyboard)
     BOOL qwertz = [[[SFStore shared] setting:@"keyboard.layout"] isEqualToString:@"qwertz"];
-    NSArray *lines = qwertz ? @[@"qwertzuiop", @"asdfghjklö", @"yxcvbnmäüß", @"1234567890"]
-                            : @[@"abcdefghij", @"klmnopqrst", @"uvwxyzäöüß", @"1234567890"];
-    NSMutableArray *rows = [NSMutableArray new];
-    for (NSString *line in lines) {
-        NSMutableArray *r = [NSMutableArray new];
-        for (NSUInteger i = 0; i < line.length; i++) {
-            SFKbKey *k = [SFKbKey new];
-            k.kind = SFKbChar; k.label = [line substringWithRange:NSMakeRange(i, 1)];
-            k.col = i; k.span = 1;
-            [r addObject:k];
-        }
-        [rows addObject:r];
-    }
-    NSMutableArray *last = [NSMutableArray new];
-    NSArray *specials = @[@[@(SFKbLayout), qwertz ? @"ABC" : @"QWERTZ", @0, @2], @[@(SFKbSpace), @"Leerzeichen", @2, @3],
-                          @[@(SFKbDelete), @"Löschen", @5, @2], @[@(SFKbSubmit), self.submitTitle ?: @"Suchen", @7, @3]];
-    for (NSArray *s in specials) {
-        SFKbKey *k = [SFKbKey new];
-        k.kind = [s[0] integerValue]; k.label = s[1]; k.col = [s[2] integerValue]; k.span = [s[3] integerValue];
-        [last addObject:k];
-    }
-    [rows addObject:last];
-    return rows;
+    return [SFKbKey rowsQwertz:qwertz submitTitle:self.submitTitle ?: @"Suchen"];
 }
 
 - (NSColor *)keyColor { return self.theme.light ? SFHex(0xffffff) : self.theme.surface; }
