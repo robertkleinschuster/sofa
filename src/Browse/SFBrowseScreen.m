@@ -916,8 +916,12 @@ static void auditImages(SFPage *page) {
         CATransition *tr = [CATransition animation];
         tr.type = kCATransitionFade; tr.duration = 0.25;
         [self->_hero addAnimation:tr forKey:@"fade"];
-        NSString *bd = (it.kind == SFItemVideo || it.kind == SFItemLive) ? (it.image ?: it.backdrop) : (it.backdrop ?: it.image);
-        [self updateBackdropFor:bd ? ({ SFItem *b = [SFItem new]; b.backdrop = bd; b; }) : nil];
+        // the big picture of the focused item (every app's backdrop is the TV-sized version of the
+        // same picture), else its tile picture; the tile picture also stands in when the big one
+        // fails to load (YouTube: old videos have no maxres version)
+        SFItem *b = nil;
+        if (it.backdrop.length || it.image.length) { b = [SFItem new]; b.backdrop = it.backdrop ?: it.image; b.image = it.image; }
+        [self updateBackdropFor:b];
     });
 }
 @end

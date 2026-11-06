@@ -162,19 +162,21 @@ static NSString *restOfID(NSString *ident) { NSRange r = [ident rangeOfString:@"
     return i;
 }
 
+// A channel avatar in TV size: its size is freely selectable (=s88-... -> =s400-...).
+static NSString *tvAvatar(NSString *avatar) {
+    NSRange r = [avatar rangeOfString:@"=s" options:NSBackwardsSearch];
+    if (r.location == NSNotFound) return avatar;
+    NSRange dash = [avatar rangeOfString:@"-" options:0 range:NSMakeRange(NSMaxRange(r), avatar.length - NSMaxRange(r))];
+    return dash.location == NSNotFound ? avatar : [avatar stringByReplacingCharactersInRange:NSMakeRange(NSMaxRange(r), dash.location - NSMaxRange(r)) withString:@"400"];
+}
+
 + (SFItem *)channelItem:(NSString *)cid title:(NSString *)title avatar:(NSString *)avatar meta:(NSString *)meta {
     if (!cid.length || !title.length) return nil;
     SFItem *f = [SFItem new];
     f.kind = SFItemFolder;
     f.identifier = [@"ytchannel:" stringByAppendingString:cid];
     f.title = title; f.subtitle = meta;
-    // avatar size freely selectable (=s88-... -> =s400-...)
-    NSRange r = [avatar rangeOfString:@"=s" options:NSBackwardsSearch];
-    if (r.location != NSNotFound) {
-        NSRange dash = [avatar rangeOfString:@"-" options:0 range:NSMakeRange(NSMaxRange(r), avatar.length - NSMaxRange(r))];
-        if (dash.location != NSNotFound) avatar = [avatar stringByReplacingCharactersInRange:NSMakeRange(NSMaxRange(r), dash.location - NSMaxRange(r)) withString:@"400"];
-    }
-    f.image = avatar;
+    f.image = tvAvatar(avatar);
     f.style = SFTileStyleCircle;
     f.source = @"youtube"; f.themeName = @"youtube";
     f.pageLoader = [self channelLoader:cid title:title];
@@ -350,6 +352,13 @@ static NSSet *skipKeys(void) {
     };
 }
 
+// The channel's avatar (largest size) from its header (browse of the channel ID).
+static NSString *channelAvatar(id header) {
+    NSDictionary *vm = dict(path(header, @"header.pageHeaderRenderer.content.pageHeaderViewModel"));
+    return tvAvatar(str(dict(arr(path(vm, @"image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources")).lastObject)[@"url"]));
+}
+static NSString *feedID(NSString *cid) { return [@"ytchannel:" stringByAppendingString:cid]; }   // follow + stored feed
+
 + (SFPageLoader)channelLoader:(NSString *)cid title:(NSString *)title {
     return ^(SFPageDone done) {
         // all uploads, newest first: playlist "UU" + channel ID without "UC"
@@ -449,7 +458,8 @@ static NSSet *skipKeys(void) {
             NSString *bu = str(dict(arr(path(vm, @"banner.imageBannerViewModel.image.sources")).lastObject)[@"url"]);
             NSRange eq = [bu rangeOfString:@"=" options:NSBackwardsSearch];
             if (eq.location != NSNotFound) banner = [[bu substringToIndex:eq.location] stringByAppendingString:@"=w1920-fcrop64=1,00000000ffffffff-k-c0xffffffff-no-nd-rj"];
-            avatar = str(dict(arr(path(vm, @"image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources")).lastObject)[@"url"]);
+            avatar = channelAvatar(j);
+            if (avatar.length) SFMain(^{ [[SFFollows shared] setImage:avatar forFollow:feedID(cid)]; });   // keeps "Meine Kanäle" current
             NSMutableArray *parts = [NSMutableArray new];
             for (NSDictionary *row in arr(path(vm, @"metadata.contentMetadataViewModel.metadataRows")))
                 for (NSDictionary *pt in arr(dict(row)[@"metadataParts"])) { NSString *t = str(path(pt, @"text.content")); if (t.length) [parts addObject:t]; }
@@ -1017,7 +1027,10 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
         NSDictionary *views = nil, *published = rssPublished(cid, &views);
         [self feed:cid published:published done:^(NSArray *items, NSError *e) {
             for (SFItem *i in items) { NSNumber *v = views[restOfID(i.identifier)]; if (v) i.viewCount = v.longLongValue; }
-            SFMain(^{ done(items, e); });   // the stored-list path answers on this background thread
+            SFMain(^{
+                done(items, e);   // the stored-list path answers on this background thread
+                if ([[SFFollows shared] needsImage:feedID(cid)]) [self fetchAvatar:cid];
+            });
         }];
     });
 }
@@ -1026,8 +1039,6 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
 // list + its RSS signature. Signature "<ids>" = the list holds every RSS video; "<ids>@<epoch>" =
 // it did not (InnerTube lagging behind RSS, a premiere not aired yet) - then reused for 2 h only,
 // so the new upload shows up soon without asking on every refresh.
-static NSString *feedID(NSString *cid) { return [@"ytchannel:" stringByAppendingString:cid]; }
-
 static NSArray *itemsFrom(NSArray *dicts) {
     NSMutableArray *a = [NSMutableArray new];
     for (NSDictionary *d in dicts)
@@ -1129,6 +1140,19 @@ static BOOL feedBudget(void) {
         [recent addObject:@(now)];
         return YES;
     }
+}
+
+// A followed channel without a usable avatar (none stored, or the artwork file of a deleted
+// download folder) gets it from the channel header - within the feed budget, so a library adopted
+// with many such channels heals over a few refresh cycles; the header is the channel page's own
+// (cached a day).
++ (void)fetchAvatar:(NSString *)cid {
+    if (!feedBudget()) return;
+    [self call:@"browse" body:@{@"browseId": cid} cache:86400 done:^(id j, NSError *e) {
+        NSString *avatar = channelAvatar(j);
+        SFLog(@"youtube: avatar of %@ %@", cid, avatar.length ? @"updated" : @"not found");
+        if (avatar.length) SFMain(^{ [[SFFollows shared] setImage:avatar forFollow:feedID(cid)]; });
+    }];
 }
 
 // the channel's long videos as online items (InnerTube browse of the UULF playlist). Not kept in

@@ -4,6 +4,15 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.10
+
+- **Scharfe Hintergrundbilder überall:** Hat ein Video den Fokus, zeigt Sofa jetzt auch auf der
+  Startseite und den Startseiten der Apps das große Bild im Hintergrund statt des kleinen
+  Kachelbilds.
+- **Kanalbilder kommen zurück:** Kanäle ohne Bild (etwa nach der Übernahme der alten
+  Bibliothek) holen ihr Kanalbild nach und nach selbst – bis dahin steht das Bild des neuesten
+  Videos auf der Kachel.
+
 ## 0.3.9
 
 - **Schärfere Hintergrundbilder:** Bei YouTube-Videos lädt Sofa das große Vorschaubild

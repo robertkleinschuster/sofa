@@ -124,6 +124,25 @@ static const NSTimeInterval kRefresh = 30 * 60;
     [self changed];
 }
 
+// A follow's picture is usable when it is a URL or an existing file - the artwork of a download
+// folder (poster.jpg, adopted from the old library) is gone once that folder was cleaned up.
+static BOOL usable(NSString *img) {
+    return img.length && (![img hasPrefix:@"/"] || [[NSFileManager defaultManager] fileExistsAtPath:img]);
+}
+
+- (BOOL)needsImage:(NSString *)identifier {
+    NSDictionary *f = identifier ? _follows[identifier] : nil;
+    return f && !usable(f[@"image"]);
+}
+
+- (void)setImage:(NSString *)url forFollow:(NSString *)identifier {
+    NSMutableDictionary *f = identifier ? _follows[identifier] : nil;
+    if (!f || !url.length || [f[@"image"] isEqualToString:url]) return;
+    f[@"image"] = url;
+    [self save:f];
+    [self changed];
+}
+
 - (NSArray *)follows:(NSString *)source {
     NSMutableArray *out = [NSMutableArray new];
     for (NSDictionary *f in _follows.allValues) {
@@ -137,7 +156,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
         i.source = f[@"source"]; i.themeName = f[@"source"];
         NSArray *latest = _items[f[@"id"]];
         SFItem *newest = latest.firstObject;
-        i.image = [f[@"image"] length] ? f[@"image"] : newest.image;
+        i.image = usable(f[@"image"]) ? f[@"image"] : newest.image;
         i.backdrop = newest.backdrop ?: newest.image ?: i.image;
         i.date = newest.date;
         i.subtitle = newest ? [NSString stringWithFormat:@"Neueste Folge: %@", SFFormatDateShort(newest.date)] : nil;
