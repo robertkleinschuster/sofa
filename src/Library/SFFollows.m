@@ -214,6 +214,11 @@ static NSArray *stable(NSArray *dicts) {
     return a;
 }
 
+static BOOL hasCounts(NSArray *dicts) {
+    for (NSDictionary *d in dicts) if ([d[@"views"] longLongValue] > 0) return YES;
+    return NO;
+}
+
 - (void)refreshOne:(NSDictionary *)f done:(dispatch_block_t)done {
     if (!SFHasFeed(f[@"id"])) { if (done) done(); return; }
     __block BOOL finished = NO;
@@ -233,15 +238,20 @@ static NSArray *stable(NSArray *dicts) {
                     if ((NSInteger)keep.count >= kPerShow) break;
                 }
                 NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
-                BOOL same = [stable(dicts) isEqualToArray:stable([self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"])];
+                NSArray *before = [self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"];
+                BOOL same = [stable(dicts) isEqualToArray:stable(before)];
+                // counts first known (stored before the source had them): written once, so they
+                // survive a restart; later count changes alone are not a change
+                BOOL gainedCounts = !hasCounts(before) && hasCounts(dicts);
                 self->_items[f[@"id"]] = keep;
-                if (same) { finish(); return; }   // most refreshes: nothing new, nothing to write
+                if (same && !gainedCounts) { finish(); return; }   // most refreshes: nothing new, nothing to write
                 NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
                 [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
                     [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos,item) VALUES (?,?,?,?)",
                                         @[f[@"id"], c.identifier, @(n), SFJSONString(dicts[n]) ?: @"{}"]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
+                if (same) { finish(); return; }   // only the counts were stored
                 SFLog(@"follows: %@ has news", f[@"title"]);
                 [self changed];
                 [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f[@"id"]];

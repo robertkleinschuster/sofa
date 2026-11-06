@@ -15,7 +15,9 @@
 #      is marked for a new one
 #   5. a follow due while its source pauses background requests (incident 2026-11-06: during a
 #      YouTube bot-check pause every follow was "checked" in turn without a request, then waited
-#      its full interval) waits for the end of the pause, then is checked
+#      its full interval) waits for the end of the pause, then is checked; the list stored without
+#      view counts gets them stored on that check (2026-11-06: counts parsed from the list text were
+#      never stored - only news counts as a change - so Home highlights were empty after a restart)
 #   6. Home is asked while the screen is awake only (incident 2026-11-06: 50-95 requests/h to the
 #      Mediathek APIs around the clock): asleep nothing, waking up asks once
 # Exit code 0 = all ok.
@@ -105,6 +107,14 @@ grep -q "example: feed" "$LOG" && bad "feed asked during the pause" || ok "nothi
 [ -z "$(/opt/local/bin/sqlite3 "$SOFA_DATA_DIR/sofa.db" "SELECT checked FROM follows WHERE id='exampleshow:demo'")" ] && ok "turn not used up" || bad "marked checked during the pause"
 for i in $(seq 1 60); do grep -q "example: feed exampleshow:demo" "$LOG" && break; sleep 0.1; done
 grep -q "example: feed exampleshow:demo" "$LOG" && ok "checked after the pause" || bad "not checked after the pause"
+# the same list stored without counts (as before the source had them): only the counts are new
+quit
+DB="$SOFA_DATA_DIR/sofa.db"
+/opt/local/bin/sqlite3 "$DB" "UPDATE follow_items SET item=json_remove(item,'$.views') WHERE follow='exampleshow:demo'; UPDATE follows SET checked=NULL WHERE id='exampleshow:demo'"
+start SOFA_FOLLOW_GAP=0.5
+for i in $(seq 1 60); do grep -q "example: feed exampleshow:demo" "$LOG" && break; sleep 0.1; done; sleep 0.5
+/opt/local/bin/sqlite3 "$DB" "SELECT item FROM follow_items WHERE follow='exampleshow:demo'" | grep -q '"views"' && ok "view counts stored once known" || bad "view counts not stored"
+grep -q "follows: Beispielsendung has news" "$LOG" && bad "counts alone announced as news" || ok "counts alone are no news"
 
 echo "==> 6. Home refresh only while the screen is awake"
 quit

@@ -16,6 +16,7 @@ static SFItem *video(NSArray *entry) {
     i.channel = @"Beispielsendung";
     i.showRef = @"exampleshow:demo";        // "Zur Sendung" + follow
     i.duration = 60;
+    i.viewCount = 1000 * [entry[0] integerValue];   // views at the source, where it has them
     i.source = [SFExampleApp appIdentifier];
     i.themeName = i.source;
     i.style = SFTileStyleLandscape;
