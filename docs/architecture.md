@@ -45,7 +45,7 @@ src/Shell       The Sofa product: AppDelegate (player host, dev FIFO, update rel
 ```
 
 Dependency rules, enforced by `tools/check-arch` (part of `tools/test-all`):
-- Framework imports only Framework + the Core foundation headers (SFCore, SFModel, SFStore,
+- Framework imports only Framework + the Core foundation headers (SFCore, SFModel, SFStore, SFUserAgent,
   SFNet, SFCurl, SFRuntime, SFVolume, SFJSON). Data it shows comes in through small
   protocols set by the core (e.g. `SFTileStatusSource`: download chip + progress on tiles).
 - Core (Core/Library/Player/Browse) never imports Apps or Shell; it reaches apps only through
@@ -125,6 +125,21 @@ an app that features region-limited items probes once if the state is unknown).
 An app's start page is framed the same way for every app (`SFHome appScreen:`): the app's
 `homeLoader` shelves + followed shows/Neue Folgen (unless `homeIncludesFollows`) + Später
 ansehen + the Suche tile and header button.
+
+## Network identity
+
+Every source should see one genuine client, used like a person uses a TV (user 2026-11-06: "nicht
+aussehen wie ein Bot"; survey of all apps in NOTES).
+- **User agent** (`SFUserAgent`): Sofa is a native Mac app whose requests go out over the system's
+  TLS or libcurl, so it says exactly that - the user agent macOS gives every native app, byte for byte
+  CFNetwork's own (`Sofa/<build> CFNetwork/673.6 Darwin/13.4.0 (x86_64) (<model>)`, checked by
+  tests/units/useragent.m) - on NSURLSession, curl, images and mpv. Until 2026-11-06 it was a Safari 17
+  string over a TLS stack no Safari has, with app credentials (ZDF, ORF) next to it. A source that
+  speaks to its service as a browser registers that browser for its domains: YouTube takes the
+  sidecar's Chrome identity (`identity.ts`, handed over in its ready line) for youtube.com, ytimg.com,
+  ggpht.com, googlevideo.com, googleusercontent.com.
+- **Cadence**: follows on their own schedule (`SFRefreshPlan`), Home rows only while the screen is
+  awake, a source's background pause (`backgroundPausedUntil`) respected by follows and downloads.
 
 ## Data
 

@@ -1,6 +1,7 @@
 #import "SFMPVEngine.h"
 #import <dlfcn.h>
 #import "SFModel.h"
+#import "SFUserAgent.h"
 
 #pragma mark mpv sources (side channel from the resolver to the player, like SFSetAlternateURLs)
 
@@ -126,6 +127,7 @@ static void onWakeup(void *ctx) {
     mpv_set_property_string(_mpv, "hr-seek", exact ? "yes" : "default");
     mpv_set_property_string(_mpv, "pause", paused ? "yes" : "no");
     mpv_set_property_string(_mpv, "mute", _muted ? "yes" : "no");
+    if (!url.isFileURL) mpv_set_property_string(_mpv, "user-agent", SFUserAgentForHost(url.host).UTF8String);   // the app's identity, not "libmpv"
     [self command:@[@"change-list", @"audio-files", @"clr", @""]];
     if (audioURL) [self command:@[@"change-list", @"audio-files", @"append", audioURL.absoluteString]];
     _voHeals = 0; _voDownTicks = 0;

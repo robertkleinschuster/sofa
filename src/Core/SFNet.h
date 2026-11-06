@@ -11,6 +11,7 @@ extern NSString *const SFNetRegionDidChangeNotification;
 
 // Session delegate without TLS certificate verification (user decision 2026-11-04: Sofa only loads data
 // unverified; code – app updates, yt-dlp – is signed separately). For every NSURLSession of the app.
+// Every request carries SFUserAgentForHost (SFUserAgent.h).
 id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 
 @interface SFNet : NSObject
@@ -20,7 +21,6 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 // with the cache key given (a local service on a changing port: the key names what is asked, not where)
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
-+ (NSString *)userAgent;
 // Percent-encoding for path/query parts (everything except A-Z a-z 0-9 - . _ ~)
 + (NSString *)escape:(NSString *)s;
 // Geo check (e.g. ARD regionCheckUrl): YES if the URL returns the expected text.

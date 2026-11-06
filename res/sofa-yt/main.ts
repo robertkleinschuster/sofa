@@ -5,7 +5,8 @@
 //                 [--max-player-requests N --budget-file <path> --budget-window <sec>]
 //   node main.ts --check             load every dependency and exit (bundle self-test)
 //
-// stdout: exactly one line {"ready":true,"port":N} once the HTTP server listens on 127.0.0.1.
+// stdout: exactly one line {"ready":true,"port":N,"userAgent":"..."} once the HTTP server listens on
+// 127.0.0.1 (userAgent: the one browser identity, which the app uses for its own YouTube requests).
 // stderr: log lines prefixed "sofa-yt:". The process exits when stdin closes (parent died).
 // Contract and design: docs/sofa-yt.md.
 import fs from 'node:fs';
@@ -153,7 +154,7 @@ server.listen(Number(opt('port', 0)), '127.0.0.1', () => {
   const addr = server.address();
   const port = addr !== null && typeof addr === 'object' ? addr.port : 0;   // always an AddressInfo for TCP
   app.setPort(port);
-  process.stdout.write(`${JSON.stringify({ ready: true, port })}\n`);
+  process.stdout.write(`${JSON.stringify({ ready: true, port, userAgent: identity.userAgent })}\n`);
   log(`listening on 127.0.0.1:${port}, state ${stateDir}`);
   // warm up the web identity (no player request): Innertube session + BotGuard minter. Not when
   // the last warm-up was recent: Sofa restarts often (deploys, updates) and each warm-up contacts

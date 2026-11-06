@@ -5,6 +5,7 @@
 #import "SFEngine.h"
 #import "SFSettings.h"
 #import "SFStats.h"
+#import "SFUserAgent.h"
 #import <signal.h>
 
 // Opens wait at most this long for the sidecar to become ready (then the caller falls back to yt-dlp)
@@ -154,6 +155,9 @@ static const NSTimeInterval kHealthyRun = 300;
         if ([j isKindOfClass:[NSDictionary class]] && [j[@"ready"] boolValue] && [j[@"port"] integerValue] > 0) {
             _port = [j[@"port"] integerValue];
             SFLog(@"sabr: ready on port %ld", (long)_port);
+            // the app's own requests to YouTube (thumbnails, avatars) come from the same browser
+            if ([j[@"userAgent"] isKindOfClass:[NSString class]])
+                SFSetUserAgentForDomains(j[@"userAgent"], @[@"youtube.com", @"ytimg.com", @"ggpht.com", @"googlevideo.com", @"googleusercontent.com"]);
             NSArray *q = [_queued copy]; [_queued removeAllObjects];
             for (void (^w)(NSInteger) in q) w(_port);
         }

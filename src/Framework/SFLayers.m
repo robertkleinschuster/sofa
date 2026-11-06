@@ -4,6 +4,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import "SFCurl.h"
 #import "SFRuntime.h"
+#import "SFUserAgent.h"
 
 #pragma mark - SFLabel
 
@@ -277,7 +278,9 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             return;
         }
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-        [[self->_session dataTaskWithURL:u completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
+        NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:u];
+        [rq setValue:SFUserAgentForHost(u.host) forHTTPHeaderField:@"User-Agent"];
+        [[self->_session dataTaskWithRequest:rq completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
             NSInteger code = [(NSHTTPURLResponse *)r statusCode];
             if (SFIsTLSError(e)) SFMarkHostNeedsCurl(u.host);   // next attempt via curl
             if (data.length && code < 400) {

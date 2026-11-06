@@ -1,5 +1,6 @@
 #import "SFCurl.h"
 #import "SFNet.h"
+#import "SFUserAgent.h"
 #import "SFModel.h"
 #import "SFRuntime.h"
 #include <curl/curl.h>
@@ -45,6 +46,8 @@ BOOL SFIsTLSError(NSError *e) {
 
 #pragma mark - Fetch
 
+static NSString *uaFor(NSString *url) { return SFUserAgentForHost([[NSURL URLWithString:url] host]); }
+
 void SFCurlGlobalInit(void) {
     static dispatch_once_t o;
     dispatch_once(&o, ^{ curl_global_init(CURL_GLOBAL_DEFAULT); });
@@ -81,7 +84,7 @@ static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers,
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_setopt(c, CURLOPT_USERAGENT, [SFNet userAgent].UTF8String);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, uaFor(url).UTF8String);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, appendData);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, (__bridge void *)out);
@@ -126,7 +129,7 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);      // < 1 KB/s for 60 s -> abort
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 60L);
     curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, [SFNet userAgent].UTF8String);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, uaFor(url).UTF8String);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, writeFile);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, f);
@@ -415,7 +418,7 @@ static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, [SFNet userAgent].UTF8String);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, uaFor(target).UTF8String);
     curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, hdrCB);
     curl_easy_setopt(c, CURLOPT_HEADERDATA, &ctx);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, bodyCB);

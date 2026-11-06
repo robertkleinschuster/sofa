@@ -2,6 +2,7 @@
 #import "SFStore.h"
 #import "SFModel.h"
 #import "SFCurl.h"
+#import "SFUserAgent.h"
 
 #import <SystemConfiguration/SystemConfiguration.h>
 #include <netinet/in.h>
@@ -66,14 +67,10 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
         c.timeoutIntervalForResource = 60;
         c.HTTPMaximumConnectionsPerHost = 4;
         c.URLCache = nil;
-        c.HTTPAdditionalHeaders = @{@"User-Agent": [self userAgent], @"Accept-Language": @"de-AT,de;q=0.9"};
+        c.HTTPAdditionalHeaders = @{@"Accept-Language": @"de-AT,de;q=0.9"};   // User-Agent: per request (SFUserAgent)
         s = [NSURLSession sessionWithConfiguration:c delegate:SFTrustAllSessionDelegate() delegateQueue:nil];
     });
     return s;
-}
-
-+ (NSString *)userAgent {
-    return @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 }
 
 + (void)request:(NSMutableURLRequest *)req cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age done:(SFJSONDone)done {
@@ -82,6 +79,7 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
         id hit = [[SFStore shared] cachedJSON:key maxAge:age];
         if (hit) { finish(hit, nil); return; }
     }
+    [req setValue:SFUserAgentForHost(req.URL.host) forHTTPHeaderField:@"User-Agent"];
     NSDate *t0 = [NSDate date];
     void (^handle)(NSData *, NSInteger, NSError *) = ^(NSData *data, NSInteger code, NSError *err) {
         if (err || code >= 400 || !data.length) {
@@ -189,6 +187,7 @@ static NSString *regionKey(NSString *region) { return [@"geo.region." stringByAp
     // without expected text: media URL -> HEAD only (don't download the whole file)
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
     if (!expect) req.HTTPMethod = @"HEAD";
+    [req setValue:SFUserAgentForHost(u.host) forHTTPHeaderField:@"User-Agent"];
     [[[self session] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
         NSInteger code = [(NSHTTPURLResponse *)r statusCode];
         NSString *body = d ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : nil;
