@@ -206,7 +206,7 @@ export function classifyPlayer(raw: RawPlayerResponse | null | undefined): Playe
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let t: NodeJS.Timeout | undefined;
+  let t: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${what} timed out`)), ms); })])
     .finally(() => clearTimeout(t));
 }

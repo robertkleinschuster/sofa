@@ -1,15 +1,10 @@
-// WebPO token minter: BotGuard runs in-process (bgutils-js + jsdom), like the real web player.
-// No player request is made here: youtube.com page (challenge), interpreter JS, GenerateIT.
-// The integrity token lives ~12 h; the minter is renewed before it expires and re-created with
-// backoff after failures. Tokens are bound to the video id (content binding) for the player
-// request and the SABR stream.
+// WebPO tokens: keeps a BotGuard minter (botguard.ts) ready - the integrity token lives ~12 h; the
+// minter is renewed before it expires, after a rejected token (renew), and re-created with backoff
+// after failures. Tokens are bound to the video id (content binding) for the player request and the
+// SABR stream. Runtime-neutral: the factory brings the environment (node: nodebotguard.ts / jsdom).
 import type { WebPoMinter } from 'bgutils-js/webpo';
-import type { WebPoSignalOutput } from 'bgutils-js/shared-types';
-import type { DOMWindow } from 'jsdom';
 import { errorMessage } from './errors.ts';
-import { isRecord, optNumber, optString, parseJson } from './json.ts';
 import { log } from './log.ts';
-import type { Identity } from './identity.ts';
 
 /** What the provider needs from a minter (a test may pass a fake factory). */
 export type Minter = Pick<WebPoMinter, 'mint' | 'mintAsWebsafeString'>;
@@ -23,80 +18,9 @@ export interface MinterSetup {
 
 export type ProviderState = 'pending' | 'ready' | 'error';
 
-/** The parts of youtube.com's BotGuard challenge (window.ytAtN(...)) used here. */
-interface PageChallenge {
-  bgChallenge?: {
-    interpreterUrl: { privateDoNotAccessOrElseTrustedResourceUrlWrappedValue: string };
-    program: string;
-    globalName: string;
-  };
-}
-
-const FETCH_TIMEOUT_MS = 15000;
 const RETRY_MIN_MS = 60 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
 const RENEW_MIN_MS = 10 * 60 * 1000;   // renew() at most this often
-
-async function createMinter(identity: Identity): Promise<MinterSetup> {
-  const { JSDOM } = await import('jsdom');
-  const { BotGuardClient } = await import('bgutils-js/botguard');
-  const { WebPoMinter } = await import('bgutils-js/webpo');
-  const { getHeaders, buildURL, parseLooseJSON } = await import('bgutils-js/utils');
-  const t0 = performance.now();
-  const sig = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
-  const dom = new JSDOM('<!DOCTYPE html><html lang="de-AT"><head><title></title></head><body></body></html>', {
-    url: 'https://www.youtube.com', referrer: 'https://www.youtube.com/', userAgent: identity.userAgent,
-  });
-  // a page load: the browser's headers come from the process-wide fetch (identity.ts)
-  const pageHtml = await (await fetch('https://www.youtube.com', {
-    headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }, signal: sig(),
-  })).text();
-  const ytConfig = pageHtml.match(/ytcfg\.set\(({.+?})\);/s)?.[1];
-  if (!ytConfig) throw new Error('webpo: ytcfg not found in page');
-  const win = dom.window as DOMWindow & { yt?: { config_: unknown } };
-  win.yt = { config_: parseJson(ytConfig) };
-  // BotGuard probes a 2d canvas; jsdom has none -> inert stub (as in the googlevideo example), only as
-  // much of a CanvasRenderingContext2D as BotGuard touches
-  (dom.window.HTMLCanvasElement.prototype as { getContext: (id: string) => object | null }).getContext = function getContext(id: string) {
-    if (id !== '2d') return null;
-    const n = (): void => {};
-    return { fillRect: n, clearRect: n, getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
-      putImageData: n, createImageData: () => [], setTransform: n, drawImage: n, save: n, fillText: n, restore: n,
-      beginPath: n, moveTo: n, lineTo: n, closePath: n, stroke: n, translate: n, scale: n, rotate: n, arc: n, fill: n,
-      measureText: () => ({ width: 0 }), transform: n, rect: n, clip: n };
-  };
-  // BotGuard's VM expects browser globals
-  Object.assign(globalThis, { yt: win.yt, window: dom.window, document: dom.window.document,
-    location: dom.window.location, origin: dom.window.origin });
-  if (!('navigator' in globalThis)) Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
-
-  const att = pageHtml.match(/window\.ytAtN\(\s*({[\s\S]*?})\s*\)/);
-  if (!att) throw new Error('webpo: challenge not found in page');
-  const loose: unknown = parseLooseJSON(att[1]!).R;
-  const challenge = isRecord(loose) ? (loose as PageChallenge) : null;   // BotGuard validates the rest
-  if (!challenge?.bgChallenge) throw new Error('webpo: no bgChallenge');
-  const interpreterUrl = challenge.bgChallenge.interpreterUrl.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue;
-  const js = await (await fetch(`https:${interpreterUrl}`, { signal: sig() })).text();
-  if (!js) throw new Error('webpo: empty interpreter');
-  new Function(js)(); // eslint-disable-line no-new-func -- BotGuard interpreter (Google's VM)
-
-  const bg = await BotGuardClient.create({ program: challenge.bgChallenge.program,
-    globalName: challenge.bgChallenge.globalName, globalObject: globalThis });
-  const webPoSignalOutput: WebPoSignalOutput = [];
-  const bgResponse = await bg.snapshot({ webPoSignalOutput });
-  const itRes = await fetch(buildURL('GenerateIT', true), { method: 'POST', headers: getHeaders(),
-    body: JSON.stringify(['O43z0dpjhgX20SCx4KAo', bgResponse]), signal: sig() });
-  if (!itRes.ok) throw new Error(`webpo: GenerateIT HTTP ${itRes.status}`);
-  const it: unknown = await itRes.json();
-  const [integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken] = Array.isArray(it) ? it : [];
-  if (typeof integrityToken !== 'string' || !integrityToken) throw new Error('webpo: no integrity token');
-  const minter = await WebPoMinter.create({ integrityToken, estimatedTtlSecs: optNumber(estimatedTtlSecs),
-    mintRefreshThreshold: optNumber(mintRefreshThreshold), websafeFallbackToken: optString(websafeFallbackToken) },
-    webPoSignalOutput);
-  log(`webpo: integrity token ttl=${estimatedTtlSecs}s, setup ${(performance.now() - t0).toFixed(0)} ms`);
-  // dispose: the renewal (every ~12 h) must not keep the old jsdom window alive (review 2026-11-05)
-  return { minter, dispose: () => { try { dom.window.close(); } catch { /* already closed */ } }, ttlMs: (Number(estimatedTtlSecs) || 3600) * 1000, refreshMs: (Number(mintRefreshThreshold) || 100) * 1000 };
-}
 
 export class PoTokenProvider {
   factory: () => Promise<MinterSetup>;
@@ -108,9 +32,9 @@ export class PoTokenProvider {
   lastError: string | null;
   lastRenew = 0;
 
-  constructor({ identity, factory }: { identity?: Identity; factory?: () => Promise<MinterSetup> } = {}) {
-    if (!factory && !identity) throw new Error('PoTokenProvider needs an identity (or a test factory)');
-    this.factory = factory ?? (() => createMinter(identity!));
+  /** factory: one attestation in this runtime (node: () => jsdomMinter(identity)) */
+  constructor({ factory }: { factory: () => Promise<MinterSetup> }) {
+    this.factory = factory;
     this.state = 'pending';
     this.current = null; // {minter, expiresAt}
     this.inflight = null;
@@ -151,7 +75,7 @@ export class PoTokenProvider {
         }
       })();
     }
-    let timer: NodeJS.Timeout | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([this.inflight, new Promise<never>((_, rej) => {
         timer = setTimeout(() => rej(new Error('PO token setup timed out')), timeoutMs);

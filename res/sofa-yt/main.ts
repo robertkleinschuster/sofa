@@ -71,6 +71,7 @@ globalThis.fetch = browserFetch(identity, new CookieJar(path.join(stateDir, 'coo
 
 const { Breaker } = await import('./lib/breaker.ts');
 const { PoTokenProvider } = await import('./lib/webpo.ts');
+const { jsdomMinter } = await import('./lib/nodebotguard.ts');
 const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
 const { FileStore } = await import('./lib/filestore.ts');
 const { nodeSessions } = await import('./lib/nodesession.ts');
@@ -78,7 +79,7 @@ const { startSabrPump } = await import('./lib/sabrpump.ts');
 const { createApp } = await import('./lib/app.ts');
 
 const breaker = new Breaker(blockFile);
-const po = new PoTokenProvider({ identity });
+const po = new PoTokenProvider({ factory: () => jsdomMinter(identity) });
 const maxReq = Number(opt('max-player-requests', 60));
 const store = new FileStore(stateDir);   // player responses, budget, visitor (lib/store.ts)
 const budget = new PlayerBudget({

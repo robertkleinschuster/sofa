@@ -14,6 +14,7 @@
 // tracks (language switch) get audio-only pumps. Memory: media more than KEEP_BEHIND_MS behind every
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
 import { randomHex } from './bytes.ts';
+import { background } from './timers.ts';
 import { VirtualFile } from './vfile.ts';
 import type { Segment } from './vfile.ts';
 import { errorMessage, toError } from './errors.ts';
@@ -280,7 +281,7 @@ export class PlaybackSession {
   scheduled: boolean;
   backoffUntil: number;
   throttleLogged: number;
-  timer: NodeJS.Timeout;
+  timer: ReturnType<typeof setTimeout>;
   // set on first use (absent from status() until then)
   runs?: number;
   reqs?: number;
@@ -318,8 +319,7 @@ export class PlaybackSession {
     this.scheduled = false;
     this.backoffUntil = 0;
     this.throttleLogged = 0;
-    this.timer = setInterval(() => this.schedule(), this.cfg.TICK_MS);
-    this.timer.unref?.();
+    this.timer = background(setInterval(() => this.schedule(), this.cfg.TICK_MS));
   }
 
   /** Track for a URL key ('video' or an audio format key); audio tracks are created on demand. */
@@ -362,7 +362,7 @@ export class PlaybackSession {
   poke(): void {
     if (this.scheduled || this.closed) return;
     this.scheduled = true;
-    setImmediate(() => { this.scheduled = false; this.schedule(); });
+    setTimeout(() => { this.scheduled = false; this.schedule(); }, 0);   // next turn of the event loop (node and browser)
   }
 
   schedule(): void {
