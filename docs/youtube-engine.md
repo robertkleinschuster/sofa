@@ -102,8 +102,24 @@ behaves exactly like YouTube's player - **the browser environment is refused, no
 Also measured: no `VISITOR_INFO1_LIVE` cookie in this profile, before or after consent ("Alle
 ablehnen").
 
-Next: which environment signal decides - headless/no WebGL (testable with a display instead of
-headless; no X server installed yet) or `navigator.webdriver` (changing it is the user's call).
+Ruled out, each measured with YouTube's own player (2026-11-06; one-off experiments, not kept):
+
+| Environment | webdriver | WebGL | Result |
+|---|---|---|---|
+| headless | true | none | stops at 60.0 s |
+| headless | false (experiment) | none | stops at 60.0 s |
+| Xvfb display, GPU process | true | WebGL 1+2 (Mesa softpipe, "Generic Renderer") | stops at 60.0 s |
+| Xvfb display, GPU process | false (experiment) | WebGL 1+2 | stops at 60.0 s |
+
+WebGL on a display needed: the `xorg-server-xvfb` overlay port (Xvfb alone; the 10.9 X server port
+builds Xquartz, which switches Xvfb off), Mesa found under its macOS names (Firefox asks for
+`libGL.so.1`, Xvfb for `swrast_dri.so` - measured with temporary links, a port patch each if this
+route is kept), and the GPU process on (the firefox-x11 port's remote-X defaults turn it off, and
+Firefox disables WebGL without it). Those defaults (30 Hz, reduced motion, no animations, fission
+off) are visible to pages and must be reset in the engine's profile.
+
+Open suspect: the connection itself. Five bot checks from this IP on 2026-11-06; the node sidecar
+gets the same rejection. Control: a normal browser on another device behind the same IP.
 The profile setup of the engine must answer the consent dialog once, like a user.
 
 ## Still open

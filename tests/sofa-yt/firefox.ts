@@ -60,11 +60,48 @@ export function writeProfile(profile: string, extra: Record<string, string | num
   fs.writeFileSync(path.join(profile, 'user.js'), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});\n`).join(''));
 }
 
-/** Start headless Firefox on `profile` with BiDi on a free port; the screen the page sees is the TV's. */
-export async function launchFirefox(profile: string, { width = 1920, height = 1080 } = {}): Promise<RunningFirefox> {
-  const env: NodeJS.ProcessEnv = { ...process.env, MOZ_HEADLESS_WIDTH: String(width), MOZ_HEADLESS_HEIGHT: String(height) };
+export const XVFB = process.env.SOFA_XVFB || '/opt/local/bin/Xvfb';
+
+/**
+ * Prefs for Firefox on a display (startXvfb): the firefox-x11 port's defaults are tuned for remote X
+ * (no GPU process, WebGL off); a browser on a screen has both, as a stock Firefox does. Without the
+ * GPU process Firefox disables WebGL (gfxPlatform: FEATURE_WEBGL_NO_GPU_PROCESS); Mesa's software
+ * GL is on Firefox's blocklist, hence force-enabled.
+ */
+export const DISPLAY_PREFS = { 'layers.gpu-process.enabled': true, 'webgl.disabled': false, 'webgl.force-enabled': true };
+
+/** A virtual X display (Xvfb with Mesa GL): Firefox on it renders like on a screen, WebGL included. */
+export interface VirtualDisplay { display: string; stop(): Promise<void> }
+
+export async function startXvfb({ width = 1920, height = 1080 } = {}): Promise<VirtualDisplay> {
+  const env = { ...process.env };
   delete env.DYLD_INSERT_LIBRARIES;
-  const proc = spawn(FIREFOX, ['--headless', '--no-remote', '--profile', profile, '--remote-debugging-port', '0', 'about:blank'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // -displayfd: Xvfb picks a free display and writes its number once it accepts clients (readiness)
+  const proc = spawn(XVFB, ['-displayfd', '3', '-screen', '0', `${width}x${height}x24`, '-nolisten', 'tcp'], { env, stdio: ['ignore', 'ignore', 'pipe', 'pipe'] });
+  let num = '';
+  (proc.stdio[3] as NodeJS.ReadableStream).on('data', (d) => { num += d; });
+  let err = '';
+  proc.stderr!.on('data', (d) => { err += d; });
+  const exited = new Promise((r) => proc.on('exit', r));
+  const stop = async (): Promise<void> => {
+    if (proc.exitCode === null) proc.kill('SIGTERM');
+    await within(exited, 5000);
+    if (proc.exitCode === null) proc.kill('SIGKILL');
+  };
+  if (!await until(() => /\d+\n/.test(num), 15000, 50)) { await stop(); throw new Error(`Xvfb did not start (${err.slice(-300)})`); }
+  return { display: `:${num.trim()}`, stop };
+}
+
+/**
+ * Start Firefox on `profile` with BiDi on a free port: headless, or on `display` (startXvfb) like a
+ * browser on a screen. The screen the page sees is the TV's.
+ */
+export async function launchFirefox(profile: string, { width = 1920, height = 1080, display }: { width?: number; height?: number; display?: string } = {}): Promise<RunningFirefox> {
+  const env: NodeJS.ProcessEnv = display ? { ...process.env, DISPLAY: display }
+    : { ...process.env, MOZ_HEADLESS_WIDTH: String(width), MOZ_HEADLESS_HEIGHT: String(height) };
+  delete env.DYLD_INSERT_LIBRARIES;
+  const args = [...(display ? [`--width=${width}`, `--height=${height}`] : ['--headless']), '--no-remote', '--profile', profile, '--remote-debugging-port', '0', 'about:blank'];
+  const proc = spawn(FIREFOX, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   proc.stderr!.on('data', (d) => { out += d; });
   proc.stdout!.on('data', (d) => { out += d; });

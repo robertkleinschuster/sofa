@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DIR, until } from './helpers.ts';
-import { ENGINE, FIREFOX, bidi, callIn, engineMessages, injectEngine, launchFirefox, writeProfile } from './firefox.ts';
+import { ENGINE, FIREFOX, XVFB, DISPLAY_PREFS, startXvfb, bidi, callIn, engineMessages, injectEngine, launchFirefox, writeProfile } from './firefox.ts';
 import type { VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
 import type { SessionStatus } from '../../res/sofa-yt/lib/session.ts';
 
@@ -31,8 +31,10 @@ test('live: the engine on youtube.com opens a video and SABR accepts its PO toke
     || ((sofaBlock()?.until ?? 0) > Date.now() / 1000 && 'Sofa\'s bot-check breaker is open'),
   timeout: 240000,
 }, async () => {
-  writeProfile(PROFILE, { 'intl.accept_languages': 'de-AT, de, en-US, en' });
-  const ff = await launchFirefox(PROFILE);
+  // on a virtual display when Xvfb is installed (WebGL like a browser on a screen); SOFA_YT_HEADLESS=1 compares
+  const screen = fs.existsSync(XVFB) && process.env.SOFA_YT_HEADLESS !== '1' ? await startXvfb() : null;
+  writeProfile(PROFILE, { 'intl.accept_languages': 'de-AT, de, en-US, en' , ...(screen ? DISPLAY_PREFS : {}) });
+  const ff = await launchFirefox(PROFILE, { display: screen?.display });
   const report = (k: string, v: unknown): void => { process.stderr.write(`LIVE-ENGINE ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}\n`); };
   try {
     const b = await bidi(ff.url);
@@ -90,5 +92,6 @@ test('live: the engine on youtube.com opens a video and SABR accepts its PO toke
     } finally { b.close(); }
   } finally {
     await ff.stop();
+    await screen?.stop();
   }
 });
