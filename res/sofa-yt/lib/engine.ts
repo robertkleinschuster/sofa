@@ -20,6 +20,7 @@ import { APP_ENDPOINTS } from './youtube.ts';
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 export const SESSION_IDLE_MS = 10 * 60 * 1000;
 export const MAX_SESSIONS = 4;
+export const READ_MAX = 8 * 1024 * 1024;   // one read(); the caller reads on in a loop
 const IN_USE_MS = 60000;   // read within this time = in use (mpv reconnects, pauses between reads)
 
 /** What the engine uses of YouTube / the PO token minter / the breaker (tests pass fakes). */
@@ -156,6 +157,13 @@ export interface MediaTrack {
   serve(start: number, end: number, to: ServeTarget): Promise<number>;
 }
 
+/** Bytes of a track read in one piece (the browser engine's read()). */
+export interface MediaBytes {
+  total: number;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
 export interface EngineHealth {
   ok: true;
   session: EngineYouTube['sessionState'];
@@ -173,6 +181,8 @@ export interface Engine {
   close(sid: string): boolean;
   /** `key`: 'video', 'audio' (the main audio track) or an audio format key. */
   track(sid: string, key: string): MediaTrack;
+  /** Bytes [offset, offset + maxBytes) of a track (at most READ_MAX); waits for SABR like a streaming reader. */
+  read(sid: string, key: string, offset: number, maxBytes: number): Promise<MediaBytes>;
   playlist(sid: string): Promise<string>;
   subtitles(sid: string, key: string): Promise<string>;
   status(sid: string): object;
@@ -381,6 +391,19 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     };
   }
 
+  async function read(sid: string, key: string, offset: number, maxBytes: number): Promise<MediaBytes> {
+    const t = track(sid, key);
+    const start = Math.max(0, Math.floor(offset) || 0);
+    if (start >= t.total) throw new EngineError(416, { error: `offset ${start} beyond ${t.total}` });
+    const end = Math.min(t.total, start + Math.min(READ_MAX, Math.max(1, Math.floor(maxBytes) || READ_MAX)));
+    const parts: Uint8Array[] = [];
+    const n = await t.serve(start, end, { write(c) { parts.push(c.slice()); return true; }, on() {}, off() {} });
+    const bytes = new Uint8Array(n);
+    let at = 0;
+    for (const p of parts) { bytes.set(p, at); at += p.length; }
+    return { total: t.total, mimeType: t.mimeType, bytes };
+  }
+
   async function playlist(sid: string): Promise<string> {
     const s = session(sid);
     if (s.kind !== 'hls') throw new EngineError(404, { error: 'not a live session' });
@@ -447,6 +470,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       return !!s;
     },
     track,
+    read,
     playlist,
     subtitles,
     status: (sid) => session(sid).status(),

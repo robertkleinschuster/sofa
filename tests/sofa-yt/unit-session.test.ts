@@ -135,6 +135,26 @@ test('sequential read from 0 and a seek: correct bytes at the right offsets, see
   } finally { await app.close(); }
 });
 
+test('engine.read (media path of the browser engine): the same bytes in chunks, statuses as HTTP', async () => {
+  const { app } = await setup();
+  const { EngineError } = await mod('lib/engine.ts');
+  try {
+    const r = await openJson(app, `v=${ID}&prefetch=0`);
+    const first = await app.engine.read(r.sid, 'video', 0, 1 << 20);
+    assert.equal(first.total, VLEN);
+    assert.equal(first.mimeType, 'video/webm');
+    assert.equal(first.bytes.length, 1 << 20);
+    const next = await app.engine.read(r.sid, 'video', 1 << 20, 1 << 20);   // the caller reads on in a loop
+    assert.ok(Buffer.concat([first.bytes, next.bytes]).equals(expectedBytes(VINIT, 0, 2 << 20)), 'chunks join to the track bytes');
+    const audio = await app.engine.read(r.sid, 'audio', 0, 1000);   // 'audio' = the main audio track
+    assert.ok(Buffer.from(audio.bytes).equals(expectedBytes(AINIT, 0, 1000)));
+    const status = (p: Promise<unknown>) => p.then(() => 0, (e: unknown) => (e instanceof EngineError ? e.status : -1));
+    assert.equal(await status(app.engine.read(r.sid, 'video', VLEN, 10)), 416);
+    assert.equal(await status(app.engine.read('nope', 'video', 0, 10)), 404);
+    assert.equal(await status(app.engine.read(r.sid, '999', 0, 10)), 404);
+  } finally { await app.close(); }
+});
+
 test('pacing: pull pauses ~HIGH ahead of a stalled reader, resumes below LOW; memory behind is evicted', async () => {
   const pumps = fakePumps(MEDIA);
   const formats = describeFormats(info.formats);
