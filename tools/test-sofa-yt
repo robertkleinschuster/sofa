@@ -14,7 +14,6 @@ set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="${SOFA_NODE:-/opt/local/bin/node}"
-NODE_BIN="${NODE_BIN:-/opt/local/bin}"
 VENDOR="$SRC/build/vendor/sofa-yt"
 DEV="$SRC/build/vendor/sofa-yt-dev"
 RUN="$SRC/build/sofa-yt-run"
@@ -24,17 +23,8 @@ if [ ! -f "$VENDOR/STAMP" ] || [ "$(cat "$VENDOR/STAMP")" != "$LOCK" ]; then
 fi
 
 # ---- type check -------------------------------------------------------------------------------
-# dev install: npm ci verifies every tarball against the lockfile, no install scripts
-if [ ! -f "$DEV/STAMP" ] || [ "$(cat "$DEV/STAMP")" != "$LOCK" ]; then
-  T="$DEV.tmp"; rm -rf "$T"; mkdir -p "$T"
-  cp "$SRC/res/sofa-yt/package.json" "$SRC/res/sofa-yt/package-lock.json" "$T/"
-  (cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --ignore-scripts --no-audit --no-fund \
-     --no-update-notifier --loglevel=error)
-  [ -f "$T/node_modules/typescript/bin/tsc" ] || { echo "test-sofa-yt: typescript missing after npm ci"; exit 1; }
-  echo "$LOCK" > "$T/STAMP"
-  rm -f "$T/package.json" "$T/package-lock.json"
-  rm -rf "$DEV"; mv "$T" "$DEV"
-fi
+# dev install (devDependencies too: typescript, esbuild-wasm, @types/*), see tools/fetch-sofa-yt --dev
+if [ ! -f "$DEV/STAMP" ] || [ "$(cat "$DEV/STAMP")" != "$LOCK" ]; then "$SRC/tools/fetch-sofa-yt" --dev; fi
 LINK="$SRC/res/sofa-yt/node_modules"
 if [ "$(readlink "$LINK" 2>/dev/null)" != "../../build/vendor/sofa-yt-dev/node_modules" ]; then
   [ -e "$LINK" ] && [ ! -L "$LINK" ] && { echo "test-sofa-yt: $LINK is not a symlink - remove it"; exit 1; }
@@ -42,21 +32,24 @@ if [ "$(readlink "$LINK" 2>/dev/null)" != "../../build/vendor/sofa-yt-dev/node_m
 fi
 # the type check runs beside the tests (independent; both must pass), its verdict is printed first
 TSC_OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-tsc.XXXXXX")"
-( "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt" --pretty false > "$TSC_OUT" 2>&1 ) & TSC=$!
+( "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt" --pretty false > "$TSC_OUT" 2>&1 \
+  && "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt/web" --pretty false >> "$TSC_OUT" 2>&1 ) & TSC=$!
 
 # ---- tests ------------------------------------------------------------------------------------
 rm -rf "$RUN"; mkdir -p "$RUN"
 # the sources as they ship (no dev node_modules, no tsconfig), plus the shipped dependencies
 (cd "$SRC/res/sofa-yt" && cp package.json *.ts "$RUN/" && mkdir -p "$RUN/lib" && cp lib/*.ts "$RUN/lib/")
 ln -s "$VENDOR/node_modules" "$RUN/node_modules"
-export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE"
+# the browser engine bundle (docs/youtube-engine.md), loaded by unit-engine in headless Firefox
+"$SRC/tools/build-yt-engine" >/dev/null || exit 1
+export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js"
 cd "$SRC/tests/sofa-yt"
 FILES=(unit-*.test.ts)
 [ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-smoke.test.ts)
 set +e
 "$NODE" --test --test-reporter=spec "${FILES[@]}" > "$TSC_OUT.tests" 2>&1; tests=$?
 wait $TSC; tsc=$?
-echo "==> tsc -p res/sofa-yt ($("$NODE" "$DEV/node_modules/typescript/bin/tsc" --version)): $([ $tsc = 0 ] && echo ok || echo FAILED)"
+echo "==> tsc -p res/sofa-yt + res/sofa-yt/web ($("$NODE" "$DEV/node_modules/typescript/bin/tsc" --version)): $([ $tsc = 0 ] && echo ok || echo FAILED)"
 cat "$TSC_OUT"
 cat "$TSC_OUT.tests"
 rm -f "$TSC_OUT" "$TSC_OUT.tests"

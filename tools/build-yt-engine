@@ -1,0 +1,26 @@
+#!/bin/bash
+# build-yt-engine -- bundle Sofa's YouTube engine for Firefox (docs/youtube-engine.md):
+# res/sofa-yt/web/engine.ts + its npm dependencies -> build/sofa-yt-web/engine.js (one IIFE, minified).
+# esbuild-wasm (exact pin, devDependency in res/sofa-yt/package.json): the native esbuild binary needs
+# macOS 10.15, the WebAssembly build runs in node on 10.9. Node is a build tool only here.
+set -eu
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+NODE="${SOFA_NODE:-/opt/local/bin/node}"
+DEV="$SRC/build/vendor/sofa-yt-dev"
+OUT="$SRC/build/sofa-yt-web"
+LOCK=$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)
+[ -f "$DEV/STAMP" ] && [ "$(cat "$DEV/STAMP")" = "$LOCK" ] || "$SRC/tools/fetch-sofa-yt" --dev
+mkdir -p "$OUT"
+# up to date: newer than every engine source and the lockfile (the sources it bundles from res/sofa-yt/lib
+# count too, as they move over)
+if [ -f "$OUT/engine.js" ] && [ -z "$(find "$SRC/res/sofa-yt/web" "$SRC/res/sofa-yt/lib" "$SRC/res/sofa-yt/package-lock.json" \
+     -newer "$OUT/engine.js" -type f 2>/dev/null | head -1)" ]; then
+  echo "yt engine up to date ($OUT/engine.js)"; exit 0
+fi
+# resolve the dependencies from the dev install (the sources stay free of node_modules)
+NODE_PATH="$DEV/node_modules" "$NODE" "$DEV/node_modules/esbuild-wasm/bin/esbuild" "$SRC/res/sofa-yt/web/engine.ts" \
+  --bundle --format=iife --platform=browser --target=firefox140 --minify --legal-comments=none \
+  --log-level=warning --outfile="$OUT/engine.js.tmp"
+mv "$OUT/engine.js.tmp" "$OUT/engine.js"
+echo "yt engine -> $OUT/engine.js ($(( $(wc -c < "$OUT/engine.js") / 1024 )) KB)"

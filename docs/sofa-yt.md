@@ -6,6 +6,9 @@ files with Range support. It replaced yt-dlp (which got "Sign in to confirm you'
 IP; removed 2026-11-06) and is Sofa's only way to YouTube; lives and post-live DVR recordings are
 served as a local HLS playlist from the same session (see "Lives").
 
+**Being replaced (2026-11-06):** the engine moves into a headless Firefox, Node stays a build tool
+only - target design and migration steps in `docs/youtube-engine.md`.
+
 ## Layout
 
 | Path | What |
@@ -27,6 +30,8 @@ served as a local HLS playlist from the same session (see "Lives").
 | `res/sofa-yt/tsconfig.json` | type checking only (strict); not shipped |
 | `res/sofa-yt/package.json`, `package-lock.json` | exact dependency pins (googlevideo 5.0.1, youtubei.js 18.3.0, bgutils-js 4.0.3, jsdom 25.0.1; dev only: typescript 6.0.3, @types/node 26.6.5, @types/jsdom 21.1.7) |
 | `tools/fetch-sofa-yt` | `npm ci --omit=dev` (lockfile integrity, no install scripts) -> `build/vendor/sofa-yt/node_modules` (what ships) |
+| `res/sofa-yt/web/engine.ts`, `web/tsconfig.json` | the browser engine (docs/youtube-engine.md), type-checked with DOM types |
+| `tools/build-yt-engine` | esbuild-wasm bundle -> `build/sofa-yt-web/engine.js` (skipped when up to date) |
 | `tools/test-sofa-yt` | `tsc` type check first (failing types = failing suite), then the tests (offline; `SOFA_YT_LIVE=1` adds the live smoke test) |
 | `tests/sofa-yt/` | tests + fixtures (init segments, trimmed player responses, recorded SABR segment table, a recorded live response + HLS playlists) |
 
