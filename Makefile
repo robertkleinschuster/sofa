@@ -54,7 +54,14 @@ SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources
 # user-facing changelog: Einstellungen -> "Neu in Version …"
 NOTES_RES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/CHANGELOG.md)
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES) $(NOTES_RES)
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(YTFILES) $(SYFILES) $(NOTES_RES) compile_commands.json
+
+# clangd (editor / Claude Code LSP) compilation database from the build's own CC + CFLAGS
+# (tools/gen-compile-commands). Machine-local absolute paths -> git-ignored. Depends on the
+# source directories, so adding a file or a new src/Apps/<App> regenerates it.
+UNITSRC := $(wildcard tests/units/*.m)
+compile_commands.json: Makefile tools/gen-compile-commands $(SRCDIRS) $(wildcard helper/ tests/units/)
+	@tools/gen-compile-commands $@ "$(CC)" "$(CFLAGS)" $(SRC) $(HSRC) $(UNITSRC)
 
 $(APP)/Contents/Resources/CHANGELOG.md $(DEVAPP)/Contents/Resources/CHANGELOG.md: CHANGELOG.md
 	@mkdir -p $(dir $@)

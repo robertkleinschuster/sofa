@@ -5,3 +5,5 @@ __pycache__/
 .claude/
 dist/
 res/sofa-yt/node_modules
+compile_commands.json
+.cache/

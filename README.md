@@ -97,6 +97,9 @@ make install    # copies Sofa.app to /Applications (PREFIX=..., DESTDIR=... supp
 tools/make-release   # self-contained Sofa.app + dist/Sofa-<version>.dmg (needs the MacPorts build deps)
 ```
 
+Editor / LSP: `make compile_commands.json` (also part of `make`) writes a git-ignored clangd
+compilation database from the build's own `CC`/`CFLAGS`, so headers and Foundation types resolve.
+
 The release bundle is built on a MacPorts machine: `tools/make-release` copies the runtime
 (tools, Python, PO token server, every dylib) into `Sofa.app/Contents` and relinks it
 `@loader_path`-relative, then checks that nothing points to `/opt/local` any more.

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+# gen-compile-commands -- write compile_commands.json for clangd (editor / Claude Code LSP).
+#
+# Called by the Makefile (`make compile_commands.json`, also part of `make all`) with the very
+# compiler and flags the build uses, so the language server sees the same -I list (SRCDIRS),
+# ARC and deployment target:
+#   tools/gen-compile-commands OUT CC "CFLAGS" FILE...
+# Paths in the flags stay relative to the project root ("directory"); the file contains the
+# absolute checkout path, so it is machine-local and git-ignored. Headers need no entry:
+# clangd borrows the flags of the closest source file.
+import json, os, shlex, sys
+
+if len(sys.argv) < 4:
+    sys.exit('usage: gen-compile-commands OUT CC "CFLAGS" FILE...')
+out, cc, cflags, files = sys.argv[1], sys.argv[2], shlex.split(sys.argv[3]), sys.argv[4:]
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+entries = [{'directory': root, 'file': f, 'arguments': [cc] + cflags + ['-c', f]}
+           for f in sorted(set(files))]
+tmp = out + '.tmp'
+with open(tmp, 'w') as fh:
+    json.dump(entries, fh, indent=1)
+    fh.write('\n')
+os.replace(tmp, out)  # atomic: a running clangd never reads a half-written file
