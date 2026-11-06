@@ -16,7 +16,7 @@
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
 #   tools/test-downloads   both parts side by side, each with its own instance and media server
-#                          (part a: 1-4b, part b: 5-7); DLTEST_PART=a|b runs one part here
+#                          (part a: 1-4, part b: 5-7, 4b); DLTEST_PART=a|b runs one part here
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -199,21 +199,6 @@ for i in $(seq 1 120); do grep -q "retrying the repair of $BADREF" "$LOG" && bre
 grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && ok "retry ran on its own when due" || bad "no scheduled retry: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
 
-echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
-  insert or replace into items (id,json) values
-    ('example:8','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}'),
-    ('example:9','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}');
-  insert into downloads (id,source,channel,state,progress,added,sub) values
-    ('example:8','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
-    ('example:9','example','Dev',0,0,strftime('%s','now'),NULL);"
-start
-for i in $(seq 1 80); do [ "$(grep -c 'downloads: FAILED example:[89]' "$LOG")" -ge 2 ] && break; sleep 0.5; done
-quit
-st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||(retryAt > strftime('%s','now')), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
-[ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
-
 fi   # part a
 
 if want b; then
@@ -281,6 +266,21 @@ grep -q "Platz schaffen: 1 deleted" "$LOG" && ok "bulk deletion ran (1 video)" |
 [ -e "$ROOT/dev/Room/gone.mp4" ] && ok "the video that is no longer online stays" || bad "irreplaceable video deleted!"
 [ -e "$ROOT/dev/Room/kept.mp4" ] && ok "the kept video stays" || bad "kept video deleted!"
 quit
+
+echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
+  insert or replace into items (id,json) values
+    ('example:8','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}'),
+    ('example:9','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}');
+  insert into downloads (id,source,channel,state,progress,added,sub) values
+    ('example:8','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
+    ('example:9','example','Dev',0,0,strftime('%s','now'),NULL);"
+start
+for i in $(seq 1 80); do [ "$(grep -c 'downloads: FAILED example:[89]' "$LOG")" -ge 2 ] && break; sleep 0.5; done
+quit
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||(retryAt > strftime('%s','now')), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
+[ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
 
 fi   # part b
 
