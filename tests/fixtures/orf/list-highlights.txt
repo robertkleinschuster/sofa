@@ -1,0 +1,58 @@
+item backdrop=https://api-tvthek.orf.at/assets/segments/0244/47/thumb_24346380_segments_highlight_teaser.jpg | channel=Film | date=2026-11-01T00:38:03Z | duration=6732 | geo=AT | id=orf:14346224 | image=https://api-tvthek.orf.at/assets/segments/0244/47/thumb_24346380_segments_player.jpg | kind=0 | plot=Kameras, Konventionen, Kälte: Diana ringt um Haltung, während ihre Welt zerbricht.
+
+Weihnachten 1991 auf Sandringham House: Prinzessin Diana erlebt die Feiertage im Kreis der königlichen Familie als emotionale Zerreißprobe. Die gescheiterte Ehe mit Prinz Charles, seine Nähe zu Camilla Parker-Bowles und die starren Regeln des Hofes setzen ihr zunehmend zu. Nur für ihre Söhne William und Harry wahrt Diana den Schein einer heilen Familie. Doch hinter der glanzvollen Fassade wächst ihr Gefühl von Einsamkeit, Enge und innerer Verzweiflung.
+
+Besetzung:
+Kristen Stewart (Prinzessin Diana)
+Jack Farthing (Prinz Charles)
+Timothy Spall (Major Alistar Gregory)
+Sally Hawkins (Maggie)
+Sean Harris (Darren)
+Jack Nielen (William)
+Freddie Spry (Harry)
+Thomas Douglas (Earl John Spencer)
+Stella Gonet (Queen Elizabeth)
+Richard Sammel (Prinz Philip)
+
+Regie: Pablo Larraín
+Drehbuch: Steven Knight
+
+Bildquelle: ORF/DCM Film Distribution/Pablo Larraín | ref=orf:14346224 | source=orf | subtitle=Film · <date> | title=Spencer
+item backdrop=https://api-tvthek.orf.at/assets/segments/0244/97/thumb_24396735_segments_highlight_teaser.jpg | channel=Serie | date=2026-11-04T19:15:18Z | duration=5335 | geo=AT | id=orf:14345928 | image=https://api-tvthek.orf.at/assets/segments/0244/97/thumb_24396735_segments_player.jpg | kind=0 | plot=Mutter, Tochter, neuer Freund: Eine Klettertour wird zum emotionalen Ausnahmezustand.
+
+Während einer Klettertour geraten Mareike Neuer und ihre 19-jährige Tochter Svea heftig aneinander. Auslöser des Streits ist Mareikes neuer Partner Jonas. Inmitten der angespannten Situation stürzt Svea plötzlich ab und bleibt bewusstlos im Seil hängen. Markus und sein Team retten die junge Frau, die scheinbar nur leicht verletzt ist. Doch auch nach der Bergung beruhigt sich die Lage nicht. Die Konflikte innerhalb der Gruppe spitzen sich weiter zu und führen zu deutlich schwerwiegenderen Konsequenzen. Zurück im Tal vertraut Katharina Markus schließlich ihre besorgniserregende Diagnose an.
+
+Besetzung:
+Sebastian Ströbel (Markus Kofler)
+Luise Bähr (Katharina Strasser)
+Markus Brandl (Tobias Herbrechter)
+Michael Pascher (Rudi Dolezal)
+Sonja Kirchberger (Elisa Rödder)
+Robert Lohr (Michael Dörfler)
+Viktoria Ngotsé (Alexandra Winkler)
+Isabell Polak (Mareike Neuner)
+Nelly Hoffmann (Svea Neuner)
+
+Regie: Carolin Otterbach
+Drehbuch: Christiane Rousseau (Headautorin)
+
+Bildquelle: ORF/ZDF/Sabine Finger | ref=orf:14345928 | source=orf | subtitle=Serie · <date> | title=Die Bergretter (2/7): Fehltritt
+item backdrop=https://api-tvthek.orf.at/assets/segments/0244/90/thumb_24389867_segments_highlight_teaser.jpg | channel=Film | date=2026-11-02T19:15:00Z | duration=5336 | id=orf:14345720 | image=https://api-tvthek.orf.at/assets/segments/0244/90/thumb_24389867_segments_player.jpg | kind=0 | plot=Der fiktionale Spielfilm erzählt vom Aufstieg René Benkos und von einer Welt, die an ihn glaubte und an die er glaubte.
+
+Der österreichische Schauspieler und Kabarettist Thomas Stipsits sieht René Benko nicht besonders ähnlich - und genau darum geht es. Der Film will nicht das Leben von Benko imitieren, Stipsits und der Film übersetzen Benko.  An der Seite von Thomas Stipsits spielt Heino Ferch. Er ist Benkos unsichtbarer Schatten, seine innere Stimme: Mal Verführer, mal Gewissen, mal Antreiber. Stück für Stück wird das Bild eines Unternehmers und Immobilienimperiums zusammengesetzt, das immer größer wurde und schließlich zusammenbrach.
+
+Besetzung: 
+Thomas Stipsits (René Benko)
+Heino Ferch (Benko 2)
+Patricia Aulitzky (Nathalie)
+Lisa Wagner (Riedler) u.a.
+
+Regie: Raymond Ley
+Drehbuch: Hannah Ley, Raymond Ley
+
+Bildquelle: ORF/UFA FICTION GmbH/ | ref=orf:14345720 | source=orf | subtitle=Film · <date> | title=Benko - Size Does Matter
+item backdrop=https://api-tvthek.orf.at/assets/segments/0244/95/thumb_24394935_segments_highlight_teaser.jpg | channel=Reportagen & Dokus | date=2026-11-04T19:15:00Z | duration=2816 | id=orf:14345868 | image=https://api-tvthek.orf.at/assets/segments/0244/95/thumb_24394935_segments_player.jpg | kind=0 | plot=Zwischen Amt, Antrag und absurden Regeln: Wie kompliziert muss Österreich wirklich sein?
+
+Gastmoderatorin Ulla Kramar-Schmid reist für "Dok 1" durch Österreichs Bürokratie-Dschungel und trifft Menschen, die an Vorschriften, Zuständigkeiten und Gesetzen scheitern. Ein Rollstuhlfahrer wartet auf ein Auto, das es noch nicht gibt, ein Wirt steckt wegen Auflagen fest, ein Pfleger muss seine Ausbildung wiederholen. Die Doku zeigt absurde Regeln, föderale Unterschiede und fragt, warum vieles unnötig kompliziert bleibt.
+
+Bildquelle: ORF/BFILM | ref=orf:14345868 | source=orf | subtitle=Reportagen & Dokus · <date> | title=Dok 1: Das ABC der Bürokratie

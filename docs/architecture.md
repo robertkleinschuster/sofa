@@ -17,7 +17,7 @@ modularity.**
   the documented fallback.
 - **Pure parsers, tested on real answers.** Turning a provider's JSON into items needs no request
   and no library state; recorded answers (cookies stripped) and their expected parse are the test
-  (`tools/test-yt-parse`).
+  (`tools/test-parse`).
 - **One responsibility per module.** No source file above 500 lines (`tools/check-arch`; the few
   older ones above it are listed there and may only shrink). Split by responsibility - a request
   client, a parser, pages, the `SFApp` adapter (categories for protocol parts such as playback).

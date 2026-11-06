@@ -1,0 +1,2 @@
+stream https://apasfiis.sf.apa.at/ipad/cms-austria/2025/10/16/2025-10-16_2015_in_01_Vienna-Killing-_____14295671__o__1693127435__s15964828_QXA.mp4/playlist.m3u8 drm=no
+sub de manual https://api-tvthek.orf.at/assets/subtitles/0221/21/c305db0e82b6254f6a6fe29b8d36da43aa97f191.vtt

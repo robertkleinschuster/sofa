@@ -6,7 +6,7 @@
 #   tools/check-arch      layer rules of docs/architecture.md (static)
 #   tools/test-units      pure core functions (tests/units, no app instance)
 #   tools/test-resolver   resolver selection logic (fixtures, no network)
-#   tools/test-yt-parse   YouTube parser against recorded InnerTube answers
+#   tools/test-parse   every app's parser against recorded real answers
 #   tools/test-playback   render-context race, video self-heal, fallback chain, download -> online
 #   tools/test-downloads  orphaned ffmpeg, verifier, quit during a download
 #   tools/test-home       mixed Home rows: only what plays here (drm, region), stored rows
@@ -14,7 +14,7 @@
 #   tools/test-sofa-yt    YouTube SABR sidecar: index/virtual files/pacing/eviction, mpv via fake SABR (offline)
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
-SUITES="check-arch test-units test-resolver test-yt-parse test-playback test-downloads test-home test-schema test-sofa-yt"
+SUITES="check-arch test-units test-resolver test-parse test-playback test-downloads test-home test-schema test-sofa-yt"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 serial=0; [ "${1:-}" = "--serial" ] && serial=1

@@ -81,6 +81,12 @@ typedef void (^SFResolver)(SFURLDone done);
 - (void)resolveURL:(SFURLDone)done;    // playURL or resolver or provider registry
 @end
 
+// One line per item for parser golden tests (tools/test-parse): every stored field, keys sorted, the
+// whole schedule. Dates: as age in hours when the source gives relative dates ("vor 2 Tagen" -
+// the age is what stays stable between runs), else as ISO 8601 UTC with the date label in the
+// subtitle as "<date>".
+NSString *SFCanonicalItem(SFItem *item, BOOL datesAsAge);
+
 extern NSString *const SFDRMNotice;   // uniform notice text for DRM content
 
 @interface SFShelf : NSObject

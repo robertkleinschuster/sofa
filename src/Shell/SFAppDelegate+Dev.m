@@ -73,7 +73,17 @@ static NSString *fifoPath(void) {
     NSString *arg = parts.count > 1 ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "] : nil;
     SFLog(@"dev: %@", line);
     if ([SFAppRegistry handleDevCommand:cmd arg:arg host:self]) return;   // app-specific commands (docs: each app's handleDevCommand)
-    if ([cmd isEqualToString:@"key"]) {
+    if ([cmd isEqualToString:@"parse"] && arg) {   // parser golden test: parse <app> <kind> <in.json> <out.txt>
+        NSArray *a = [arg componentsSeparatedByString:@" "];
+        Class<SFApp> app = a.count == 4 ? [SFAppRegistry appNamed:a[0]] : nil;
+        NSData *data = app ? [NSData dataWithContentsOfFile:a[2]] : nil;
+        id j = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
+        NSArray *lines = j && [app respondsToSelector:@selector(parseFixture:kind:)] ? [app parseFixture:j kind:a[1]] : nil;
+        if (!lines) { SFLog(@"dev: parse failed: %@", arg); return; }
+        NSString *out = lines.count ? [[lines componentsJoinedByString:@"\n"] stringByAppendingString:@"\n"] : @"";
+        [out writeToFile:a[3] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        SFLog(@"dev: parse written %@", a[3]);
+    } else if ([cmd isEqualToString:@"key"]) {
         NSDictionary *m = @{@"up": @(SFKeyUp), @"down": @(SFKeyDown), @"left": @(SFKeyLeft), @"right": @(SFKeyRight),
                             @"select": @(SFKeySelect), @"menu": @(SFKeyMenu), @"play": @(SFKeyPlayPause),
                             @"selecthold": @(SFKeySelectHold), @"menuhold": @(SFKeyMenuHold),

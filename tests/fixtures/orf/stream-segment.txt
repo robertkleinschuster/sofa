@@ -1,0 +1,2 @@
+stream https://apasfiis.sf.apa.at/ipad/cms-worldwide/2026/11/05/2026-11-05_1707_tl_02_Aktuell-nach-fu_Rene-Benko-erne__14346144__o__6407050706__s16182097_7__ORF2HD_17252415P_17271111P_QXA.mp4/playlist.m3u8 drm=no
+sub de manual https://api-tvthek.orf.at/assets/subtitles/0246/06/339a96dd237346a3d53a1d8f741ef5f810766ddd.vtt

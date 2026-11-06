@@ -1,7 +1,7 @@
 // What InnerTube JSON means for Sofa (docs/youtube.md §3.0): items, channel headers, watch pages.
 // Pure: no request, no library state - videos are online items, folders (playlists, channels)
 // come without a page loader. SFYTPages makes them what Sofa shows (local copies, pages).
-// Tested against recorded answers: tools/test-yt-parse.
+// Tested against recorded answers: tools/test-parse.
 #import "SFModel.h"
 
 NSString *SFYTBackdrop(NSString *videoID);   // TV-sized picture of a video (falls back to the tile picture where missing, SFImageLayer)

@@ -197,3 +197,28 @@ NSURL *SFNextAlternateURL(NSURL *failed) {
     NSString *n = failed ? gAlternates[failed.absoluteString] : nil;
     return n ? [NSURL URLWithString:n] : nil;
 }
+
+NSString *SFCanonicalItem(SFItem *item, BOOL datesAsAge) {
+    NSDateFormatter *iso = [NSDateFormatter new];
+    iso.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    iso.timeZone = [NSTimeZone timeZoneWithAbbreviation:@"UTC"];
+    iso.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
+    NSMutableDictionary *d = [[item dictionaryRepresentation] mutableCopy];
+    [d removeObjectForKey:@"date"];
+    [d removeObjectForKey:@"schedule"];   // stored form keeps only what has not ended: depends on now
+    if (item.date) {
+        if (datesAsAge) d[@"ageHours"] = @(lround(-item.date.timeIntervalSinceNow / 3600));
+        else d[@"date"] = [iso stringFromDate:item.date];
+        // the date label a parser puts in the subtitle ("Gestern") is relative to today: as a token
+        NSString *label = SFFormatDateShort(item.date);
+        if (!datesAsAge && label.length && item.subtitle) d[@"subtitle"] = [item.subtitle stringByReplacingOccurrencesOfString:label withString:@"<date>"];
+    }
+    if (item.schedule.count) {
+        NSMutableArray *a = [NSMutableArray new];
+        for (SFBroadcast *b in item.schedule) [a addObject:[NSString stringWithFormat:@"%@ %@", [iso stringFromDate:b.start], b.title]];
+        d[@"schedule"] = [a componentsJoinedByString:@" / "];
+    }
+    NSMutableArray *parts = [NSMutableArray new];
+    for (NSString *k in [d.allKeys sortedArrayUsingSelector:@selector(compare:)]) [parts addObject:[NSString stringWithFormat:@"%@=%@", k, d[k]]];
+    return [parts componentsJoinedByString:@" | "];
+}

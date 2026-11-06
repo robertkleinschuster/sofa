@@ -2,6 +2,7 @@
 #import "SFFollows.h"
 #import "SFIconArt.h"
 #import "SFORFApp.h"
+#import "SFORFParser.h"
 #import "SFJSON.h"
 #import "SFEngine.h"
 #import "SFNet.h"
@@ -12,8 +13,6 @@ static NSString *const kAPI = @"https://api-tvthek.orf.at/api/v4.3";
 // Publicly known app key (MServer OrfOnConstants.AUTH / yt-dlp).
 static NSString *const kAuth = @"Basic b3JmX29uX3Y0MzpqRlJzYk5QRmlQU3h1d25MYllEZkNMVU41WU5aMjhtdA==";
 
-
-static NSDate *isoDate(NSString *s) { return SFDateFromISO8601(s); }   // offset honoured (SFCore)
 
 @implementation SFORFApp
 
@@ -41,54 +40,9 @@ static NSString *href(id link) {
     return str(dict(link)[@"href"]);
 }
 
-static NSArray *listItems(id j) {
+static NSArray *listItems(id j) {   // profiles/genres lists (episodes: SFORFParser)
     NSDictionary *d = dict(j);
     return arr(d[@"_items"]) ?: arr(dict(d[@"_embedded"])[@"items"]) ?: arr(j) ?: @[];
-}
-
-+ (NSString *)image:(NSDictionary *)it big:(BOOL)big {
-    NSDictionary *pu = dict(dict(dict(dict(it[@"_embedded"])[@"image"]))[@"public_urls"]);
-    NSString *k1 = big ? @"highlight_teaser" : @"player";
-    return str(dict(pu[k1])[@"url"]) ?: str(dict(pu[@"highlight_teaser"])[@"url"]) ?: str(dict(pu[@"reference"])[@"url"]);
-}
-
-+ (SFItem *)episodeItem:(NSDictionary *)e {
-    // Highlights: {id, position, _embedded:{video_item:{_embedded:{item:{…Episode…}}}}}
-    NSDictionary *inner = dict(dict(dict(dict(dict(e)[@"_embedded"])[@"video_item"])[@"_embedded"])[@"item"]);
-    if (inner) e = inner;
-    if (!dict(e) || !nn(e[@"id"])) return nil;
-    SFItem *i = [SFItem new];
-    NSString *eid = [nn(e[@"id"]) description];
-    i.kind = SFItemVideo;
-    // a segment is one report out of a broadcast (the news lane: "ZIB 1", "Aktuell nach fünf"):
-    // its own id space (/segment/<id>), dated by its broadcast, the broadcast as channel
-    BOOL segment = [str(e[@"video_type"]) isEqualToString:@"segment"];
-    i.identifier = [(segment ? @"orfseg:" : @"orf:") stringByAppendingString:eid];
-    i.resolverRef = i.identifier;
-    i.title = str(e[@"title"]) ?: str(e[@"headline"]);
-    i.plot = str(e[@"description"]) ?: str(e[@"teaser_text"]);
-    i.image = [self image:e big:NO];
-    i.backdrop = [self image:e big:YES];
-    i.channel = segment ? (str(e[@"sub_headline"]) ?: str(e[@"genre_title"])) : (str(e[@"profile_title"]) ?: str(e[@"genre_title"]));
-    NSString *ph = str(dict(dict(e[@"_links"])[@"profile"])[@"href"]);
-    if (ph.length && str(e[@"profile_title"])) i.showRef = [@"orfprofile:" stringByAppendingString:ph.lastPathComponent];
-    i.date = isoDate(str(e[@"date"])) ?: isoDate(str(e[@"episode_date"]));
-    i.duration = [nn(e[@"duration_seconds"]) doubleValue];
-    i.source = @"orf"; i.themeName = @"orf";
-    i.style = SFTileStyleLandscape;
-    i.drm = [nn(e[@"is_drm_protected"]) boolValue];
-    if (i.drm) i.badge = @"DRM";
-    NSMutableArray *sub = [NSMutableArray new];
-    if (segment ? i.channel.length : str(e[@"genre_title"]).length) [sub addObject:segment ? i.channel : str(e[@"genre_title"])];
-    if (i.date) [sub addObject:SFFormatDateShort(i.date)];
-    i.subtitle = [sub componentsJoinedByString:@" · "];
-    return i;
-}
-
-+ (NSArray *)episodeItems:(id)json {
-    NSMutableArray *a = [NSMutableArray new];
-    for (id e in listItems(json)) { SFItem *it = [self episodeItem:e]; if (it) [a addObject:it]; }
-    return a;
 }
 
 #pragma mark Pages
@@ -110,7 +64,7 @@ static NSArray *listItems(id j) {
         };
         withTitle(^(NSString *title) {
         [self get:[NSString stringWithFormat:@"/profile/%@/episodes?limit=100", pid] cache:900 done:^(id j, NSError *e) {
-            NSArray *eps = [self episodeItems:j];
+            NSArray *eps = [SFORFParser episodeItems:j];
             if (!j) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"orf" shelves:@[[SFShelf grid:[NSString stringWithFormat:@"%lu %@", (unsigned long)eps.count, eps.count == 1 ? @"Folge" : @"Folgen"] style:SFTileStyleLandscape items:eps]]];
             if (!eps.count) p.emptyText = @"Aktuell sind keine Folgen verfügbar.";
@@ -128,8 +82,8 @@ static NSArray *listItems(id j) {
         NSString *t = str(p[@"title"]);
         SFItem *f = [self folder:t ident:[@"orfprofile:" stringByAppendingString:pid] loader:[self profileLoader:pid title:t]];
         f.style = SFTileStyleLandscape;
-        f.image = [self image:p big:NO];
-        f.backdrop = [self image:p big:YES];
+        f.image = [SFORFParser image:p big:NO];
+        f.backdrop = [SFORFParser image:p big:YES];
         f.plot = str(p[@"description"]);
         [a addObject:f];
     }
@@ -176,40 +130,7 @@ static NSArray *listItems(id j) {
 
 + (void)liveItems:(void (^)(NSArray *items))done {
     [self get:@"/livestreams" cache:60 done:^(id j, NSError *e) {
-        NSMutableArray *a = [NSMutableArray new];
-        NSDictionary *names = @{@"orf1": @"ORF 1", @"orf2": @"ORF 2", @"orf3": @"ORF III", @"orfs": @"ORF SPORT +", @"live_special": @"ORF Spezial"};
-        for (NSString *k in @[@"orf1", @"orf2", @"orf3", @"orfs", @"live_special"]) {
-            NSDictionary *it = dict(arr(dict(dict(j)[k])[@"items"]).firstObject);
-            if (!it || !nn(it[@"id"])) continue;
-            SFItem *i = [SFItem new];
-            NSString *lid = [nn(it[@"id"]) description];
-            i.kind = SFItemLive;
-            i.identifier = [@"orflive:" stringByAppendingString:k];
-            i.resolverRef = [@"orflive:" stringByAppendingString:lid];
-            i.title = names[k];
-            i.subtitle = str(it[@"title"]);
-            i.plot = str(it[@"description"]);
-            i.image = [self image:it big:NO];
-            i.backdrop = [self image:it big:YES];
-            i.source = @"orf"; i.themeName = @"orf"; i.style = SFTileStyleLandscape;
-            i.drm = [nn(it[@"is_drm_protected"]) boolValue];
-            i.badge = i.drm ? @"DRM" : @"LIVE";
-            i.station = k;
-            if ([str(it[@"right"]) isEqualToString:@"austria"]) i.geoRegion = @"AT";   // else "worldwide"
-            // the channel's programme: /livestreams lists its next broadcasts (start, end) - the first runs now
-            NSMutableArray *sched = [NSMutableArray new];
-            for (NSDictionary *b in arr(dict(dict(j)[k])[@"items"])) {
-                SFBroadcast *x = [SFBroadcast title:str(dict(b)[@"title"]) start:SFDateFromISO8601(str(b[@"start"])) end:SFDateFromISO8601(str(b[@"end"]))];
-                if (!x) continue;
-                NSString *sub = str(b[@"sub_headline"]);
-                if (![sub isEqualToString:x.title]) x.subtitle = sub;
-                x.plot = str(b[@"description"]);
-                [sched addObject:x];
-            }
-            i.schedule = sched;
-            [a addObject:i];
-        }
-        done(j ? a : nil);   // nil = request failed (not: no channels)
+        done([SFORFParser liveItemsIn:j at:[NSDate date]]);   // nil = request failed (not: no channels)
     }];
 }
 
@@ -236,7 +157,7 @@ static NSArray *listItems(id j) {
                 NSString *h = wanted[k][0];
                 NSString *u = [h stringByAppendingString:[h rangeOfString:@"?"].location == NSNotFound ? @"?limit=20" : @"&limit=20"];
                 [self get:u cache:900 done:^(id lj, NSError *le) {
-                    NSArray *items = [self episodeItems:lj];
+                    NSArray *items = [SFORFParser episodeItems:lj];
                     if (items.count) results[k] = items;
                     dispatch_group_leave(g);
                 }];
@@ -281,14 +202,14 @@ static NSArray *listItems(id j) {
                 if (!items.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", query];
                 done(p, nil);
             };
-            NSMutableArray *items = [[self episodeItems:@{@"_items": arr(eps[@"items"]) ?: @[]}] mutableCopy];
+            NSMutableArray *items = [[SFORFParser episodeItems:@{@"_items": arr(eps[@"items"]) ?: @[]}] mutableCopy];
             NSString *next = str(eps[@"next"]);
             if (!next) { finish(items); return; }
             [self get:next cache:600 done:^(id j2, NSError *e2) {
                 NSMutableSet *seen = [NSMutableSet new];
                 for (SFItem *i in items) [seen addObject:i.identifier];
                 id more = dict(dict(j2)[@"episodes"]) ?: dict(dict(dict(j2)[@"search"])[@"episodes"]) ?: j2;
-                for (SFItem *i in [self episodeItems:@{@"_items": arr(dict(more)[@"items"]) ?: listItems(more)}])
+                for (SFItem *i in [SFORFParser episodeItems:@{@"_items": arr(dict(more)[@"items"]) ?: listItems(more)}])
                     if (![seen containsObject:i.identifier]) [items addObject:i];
                 finish(items);
             }];
@@ -296,23 +217,25 @@ static NSArray *listItems(id j) {
     };
 }
 
-#pragma mark Stream
-
-+ (NSString *)hlsFrom:(NSDictionary *)obj drm:(BOOL *)drm {
-    NSArray *hls = arr(dict(obj[@"sources"])[@"hls"]);
-    NSString *any = nil;
-    for (NSDictionary *s in hls) {
-        if (!dict(s)) continue;
-        if ([nn(s[@"is_drm_protected"]) boolValue] || [str(s[@"quality_key"]) hasSuffix:@"DRM"]) { if (drm) *drm = YES; continue; }
-        NSString *q = str(s[@"quality_key"]), *src = str(s[@"src"]);
-        // adaptive QXA only: single qualities now deliver a "not available" clip
-        if ([q isEqualToString:@"QXA"] && src) return src;
-        if ([nn(s[@"is_adaptive_stream"]) boolValue] && !any) any = src;
-    }
-    return any;
-}
-
 #pragma mark SFApp
+
+// tools/test-parse: list (episodes/segments/highlights), live (/livestreams), stream (an
+// episode/segment). ORF dates are absolute. `live` is parsed at a moment inside the recorded
+// answer's programme (tests/fixtures/orf/live-livestreams: 2026-11-06 morning).
++ (NSArray *)parseFixture:(id)j kind:(NSString *)kind {
+    NSMutableArray *o = [NSMutableArray new];
+    NSArray *items;
+    if ([kind isEqualToString:@"list"]) items = [SFORFParser episodeItems:j];
+    else if ([kind isEqualToString:@"live"]) items = [SFORFParser liveItemsIn:j at:SFDateFromISO8601(@"2026-11-06T07:20:00+01:00")];
+    else if ([kind isEqualToString:@"stream"]) {
+        NSDictionary *st = [SFORFParser streamIn:dict(j)];
+        [o addObject:[NSString stringWithFormat:@"stream %@ drm=%@", st[@"url"] ?: @"-", st[@"drm"] ? @"yes" : @"no"]];
+        for (NSDictionary *sub in st[@"subs"]) [o addObject:[NSString stringWithFormat:@"sub %@ %@ %@", sub[@"lang"], sub[@"kind"], sub[@"url"]]];
+        return o;
+    } else return nil;
+    for (SFItem *i in items) [o addObject:[@"item " stringByAppendingString:SFCanonicalItem(i, NO)]];
+    return o;
+}
 
 + (NSString *)appIdentifier { return @"orf"; }
 + (NSString *)appName { return @"ORF"; }
@@ -382,29 +305,23 @@ static NSArray *listItems(id j) {
     [self get:path cache:300 done:^(id j, NSError *e) {
         NSDictionary *ep = dict(j);
         if (!ep) { done(nil, e); return; }
-        BOOL drm = NO;
-        NSDictionary *src = ep;
-        NSString *u = [self hlsFrom:ep drm:&drm];
-        if (!u) {   // segmented show: play the first part
-            NSDictionary *seg = dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject);
-            if (seg) { u = [self hlsFrom:seg drm:&drm]; src = seg; }
-        }
-        if (!u) { done(nil, SFError(drm ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
-        // subtitles: _embedded.subtitle.vtt_url (of the object actually played);
-        // ai_subtitles = machine-generated -> mark as "automatic"
-        NSString *vtt = str(dict(dict(src[@"_embedded"])[@"subtitle"])[@"vtt_url"]);
-        NSArray *subs = vtt ? @[@{@"lang": @"de", @"url": vtt, @"kind": [nn(src[@"ai_subtitles"]) boolValue] ? @"auto" : @"manual"}] : @[];
-        SFSetMPVSource([NSURL URLWithString:u], @{@"subs": subs, @"alang": @"de"});
-        done([NSURL URLWithString:u], nil);
+        NSDictionary *st = [SFORFParser streamIn:ep];
+        // a show split into parts without own sources: play the first part (the old API's shape;
+        // no recorded v4.3 answer has it - every episode seen carries its own sources)
+        if (!st[@"url"] && !st[@"drm"]) st = [SFORFParser streamIn:dict(arr(dict(ep[@"_embedded"])[@"segments"]).firstObject)];
+        NSURL *u = str(st[@"url"]) ? [NSURL URLWithString:st[@"url"]] : nil;
+        if (!u) { done(nil, SFError(st[@"drm"] ? @"Kopiergeschützt (DRM) – auf diesem Mac nicht abspielbar." : @"Kein abspielbarer Stream.")); return; }
+        SFSetMPVSource(u, @{@"subs": st[@"subs"], @"alang": @"de"});
+        done(u, nil);
     }];
 }
 
 + (void)resolve_orflive:(NSString *)lid done:(SFURLDone)done {
 
     [self get:[@"/livestream/" stringByAppendingString:lid] cache:0 done:^(id j, NSError *e) {
-        BOOL drm = NO;
-        NSString *u = dict(j) ? [self hlsFrom:j drm:&drm] : nil;
-        if (!u) { done(nil, e ?: SFError(drm ? @"Dieser Sender ist kopiergeschützt (DRM) und auf diesem Mac nicht abspielbar." : @"Livestream nicht verfügbar.")); return; }
+        NSDictionary *st = [SFORFParser streamIn:dict(j)];
+        NSString *u = str(st[@"url"]);
+        if (!u) { done(nil, e ?: SFError(st[@"drm"] ? @"Dieser Sender ist kopiergeschützt (DRM) und auf diesem Mac nicht abspielbar." : @"Livestream nicht verfügbar.")); return; }
         done([NSURL URLWithString:u], nil);
     }];
 }
@@ -427,7 +344,7 @@ static NSArray *listItems(id j) {
             if (!url) { next(); return; }
             NSString *u = [url stringByAppendingFormat:@"%@limit=%ld", [url rangeOfString:@"?"].location == NSNotFound ? @"?" : @"&", (long)limit];
             [self get:u cache:600 done:^(id lj, NSError *le) {
-                if (lj && !le) r[topic] = [self episodeItems:lj] ?: @[];
+                if (lj && !le) r[topic] = [SFORFParser episodeItems:lj] ?: @[];
                 next();
             }];
         };

@@ -1,0 +1,218 @@
+item backdrop=https://api-tvthek.orf.at/assets/segments/0245/02/thumb_24401901_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-11-10T20:05:00Z | duration=2590 | geo=AT | id=orf:14345362 | image=https://api-tvthek.orf.at/assets/segments/0245/02/thumb_24401901_segments_player.jpg | kind=0 | plot=Stalker, Geheimnisse und ein rätselhaftes Verschwinden setzen die Kripo Linz unter Druck.
+
+Als die Golfclub-Köchin Natalja plötzlich verschwindet, gerät sofort Jonathan ins Visier der Ermittlerinnen Joe und Biggi. Der Mann stalkt Biggi seit Monaten und tauchte ausgerechnet am Tag des Verschwindens im Golfclub auf. Doch auch Nataljas Freund Günther Pramhofer verhält sich auffällig: Er meldet sie vermisst, verschweigt jedoch entscheidende Informationen. Für die Kripo Linz beginnt ein Wettlauf gegen die Zeit voller Verdächtigungen, Täuschungen und falscher Fährten.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Markus Meyer (Christian Windisch)
+Julian Waldner (Jonathan Migler)
+Daniel Keberle (Günther Pramhofer)
+Corinna Pumm (Corinna Herndl)
+Zeynep Alan (Natalja Bilkava)
+Matthias Franz Stein (Kurt Schweigauer)
+
+Regie: Claudia Jüptner-Jonstorff
+Drehbuch: Alrun Fichtenbauer
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14345362 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (10/10): Ins letzte Loch
+item backdrop=https://api-tvthek.orf.at/assets/segments/0245/02/thumb_24401523_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-11-10T19:15:00Z | duration=2656 | geo=AT | id=orf:14345361 | image=https://api-tvthek.orf.at/assets/segments/0245/02/thumb_24401523_segments_player.jpg | kind=0 | plot=Im Visier der Ermittler: Vogelfreunde, Wilderer und ein Mord mit seltenem Motiv.
+
+Joe und Biggi untersuchen den Tod eines Hobby-Vogelbeobachters, der am Waldrand gefunden wurde. Schnell gerät dessen bester Freund unter Verdacht, ebenfalls leidenschaftlicher Birder. Für zusätzliche Unruhe sorgt die Erkenntnis, dass Patrizia Specht, Pichlwangers Lieblings-Journalistin, familiär mit dem Opfer verbunden ist. Gleichzeitig führt die Spur zu einem verschwundenen geschützten Raubvogel, den ein Jäger offenbar als Trophäe besitzen wollte.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Markus Meyer (Christian Windisch)
+Agnes Hausmann (Patrizia Specht)
+Julia Frisch (Carola Specht)
+Georg Rauber (Bernhard Neuhauser)
+Christian Himmelbauer (Simon Petz)
+Thomas Weilharter (Jakob Zeiler)
+
+Regie: Franziska Pflaum
+Drehbuch: Ralph Werner
+
+Bildquelle: ORF/Gebhardt Productions/Hubert Mican | ref=orf:14345361 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (9/10): Ein Prachtkerl
+item backdrop=https://api-tvthek.orf.at/assets/segments/0241/49/thumb_24048903_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-11-03T19:15:16Z | duration=2629 | geo=AT | id=orf:14345360 | image=https://api-tvthek.orf.at/assets/segments/0241/49/thumb_24048903_segments_player.jpg | kind=0 | plot=Eines Morgens wird in einem Maisfeld im Linzer Umland die Leiche eines ortsbekannten Ufologen gefunden. Auffallend ist, dass keine Spuren zum Toten führen. Es scheint, als wäre er vom Himmel gefallen. Die SOKO Linz steht vor einem Rätsel. Wie ist er in das Feld gekommen? Und warum? Jede neue Spur führt Joe und Biggi in unbekannte Spähren - denn die Ermittlungen nehmen ihren Anfang bei einer angeblichen Entführung durch Außerirdische.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Markus Meyer (Christian Windisch)
+Agnes Hausmann (Patrizia Specht)
+Karola Niederhuber (Erika Kreuzinger)
+Katharina Farnleitner (Simone Ebner)
+Michael Fuith (Jörg Riesel)
+Hubert Wolf (Helmut Kreuzinger)
+
+Bildquelle: ORF/Gebhardt Productions/Hubert Mican | ref=orf:14345360 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (8/10): Ich sehe was, was du nicht siehst
+item backdrop=https://api-tvthek.orf.at/assets/segments/0239/97/thumb_23896384_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-10-27T20:00:00Z | duration=2639 | geo=AT | id=orf:14344351 | image=https://api-tvthek.orf.at/assets/segments/0239/97/thumb_23896384_segments_player.jpg | kind=0 | plot=Zwischen Chorproben, Fanliebe und Eifersucht ermittelt die Kripo Linz in einem brutalen Mordfall.
+
+Der gefeierte Gesangspädagoge Darko Labrovic wird während einer frühen Radtour ermordet aufgefunden. Die Ermittlungen der Kripo Linz führen tief in das traditionsreiche Umfeld der St. Florianer Sängerknaben, wo Loyalitäten, Eifersucht und alte Abhängigkeiten aufbrechen. Eine charismatische Kollegin, ein fanatischer Bewunderer und Labrovics talentiertester Schüler geraten unter Verdacht. Während eine Konzertreise nach Argentinien näher rückt, wächst der Druck auf Joe und Biggi.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Markus Meyer (Christian Windisch)
+Agnes Hausmann (Patrizia Specht)
+Julian Waldner (Jonathan Migler)
+Caroline Athanasiadis (Jaqueline Pfaffenebner)
+Leonid Sushon (Enno Tomberg)
+Christina Trefny (Isolde Überbacher)
+Kevin Krennhuber (Valentin Überbacher)
+Rainer Egger (Joachim "Habi" Haberstetter)
+Romeo Kaltenbrunner (Kevin Schneeberger)
+
+Regie: Franziska Pflaum
+Drehbuch: Christiane Kalss
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14344351 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (7/10): Verstummt
+item backdrop=https://api-tvthek.orf.at/assets/segments/0236/16/thumb_23515570_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-10-13T18:15:25Z | duration=2650 | geo=AT | id=orf:14339546 | image=https://api-tvthek.orf.at/assets/segments/0236/16/thumb_23515570_segments_player.jpg | kind=0 | plot=Zwischen Sponsoren, Konkurrenzkampf und Dopingverdacht wird ein Todesfall zur Zerreißprobe.
+
+Die Skispringerin Andrea Hollaus überrascht nach einer langen Durststrecke mit einem spektakulären Schanzenrekord – und stirbt kurz darauf unter rätselhaften Umständen. Schnell geraten mögliche Dopingvorwürfe in den Fokus. Doch auch im persönlichen Umfeld der Sportlerin gibt es zahlreiche Verdächtige: ein Sponsor mit Ausstiegsplänen, eine Trainerin vor dem Karrierewechsel und eine ehrgeizige Konkurrentin. Joe und Biggi ermitteln in einem Fall voller Rivalität, Druck und dunkler Motive.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Markus Meyer (Christian Windisch)
+Serge Falck (Mark Kröhner)
+Julian Waldner (Jonathan Migler)
+Eva Maria Frank (Laura Timmer)
+Emilia Warenski (Mathea Janka)
+Anna Katharina Malli (Andrea Hollaus)
+Achmed Abdel-Salam (Manuel Rickle)
+
+Regie: Claudia Jüptner-Jonstorff
+Drehbuch: Harald Haller
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14339546 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (6/10): Absprung
+item backdrop=https://api-tvthek.orf.at/assets/segments/0235/88/thumb_23487556_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-10-06T18:15:06Z | duration=2639 | geo=AT | id=orf:14339545 | image=https://api-tvthek.orf.at/assets/segments/0235/88/thumb_23487556_segments_player.jpg | kind=0 | plot=Ein alter Todesfall, drei Ex-Kollegen und ein Mord, der längst vergangen Geglaubtes ans Licht bringt.
+
+Auf dem Gelände des Industriekonzerns "Minag" wird die junge Bauprojektleiterin Lisa Scharnick tot aufgefunden. Die Spuren führen zu den "Helden der Arbeit“, einem Verein ehemaliger Mitarbeiter. Drei von ihnen haben kurz zuvor durch Lisa ihren Job verloren. Doch dann rückt ein ungeklärter Todesfall aus der Vergangenheit ins Visier: Lisas Vater starb vor über 30 Jahren. War Lisa einer alten Vertuschung auf der Spur?
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Agnes Hausmann (Patrizia Specht)
+Markus Meyer (Christian Windisch)
+Wolf Bachofner (Otto Komosny)
+Margarete Voggeneder (Ricki Geissbauer)
+Markus Schramm (Heinz Hapt)
+Valentina Waldner (Lisa Scharnick)
+Wolfgang Rauh (Pirmin Zissner)
+
+Regie: Chris Raiber
+Drehbuch: Philipp Altmann
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14339545 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (5/10): Helden der Arbeit
+item backdrop=https://api-tvthek.orf.at/assets/segments/0235/41/thumb_23440297_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-09-29T18:15:00Z | duration=2651 | geo=AT | id=orf:14338199 | image=https://api-tvthek.orf.at/assets/segments/0235/41/thumb_23440297_segments_player.jpg | kind=0 | plot=Ein toter Gutachter, ein brisanter Prozess – und plötzlich gerät jeder unter Verdacht.
+
+Am Linzer Landesgericht steht ein brisanter Strafprozess vor der entscheidenden Wendung, als der psychiatrische Gutachter ermordet am Donauufer gefunden wird. Sein Gutachten hätte den Angeklagten womöglich hinter Gitter gebracht. Joe und Biggi übernehmen die Ermittlungen und treffen auf den neuen Staatsanwalt Dr. Christian Windisch, der die Ehefrau des Angeklagten verdächtigt. Doch auch Anwalt Unterpertinger, ein alter Bekannter von Joe, gerät ins Visier.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Agnes Hausmann (Patrizia Specht)
+Markus Meyer (Christian Windisch)
+Rainer Doppler (Ernst Unterpertinger)
+Sophie Aujesky (Anja Schlott)
+Isabella Händler (Helene Eibl)
+
+Regie: Chris Raiber
+Drehbuch: Nicola Dörper
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14338199 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (4/10): Kurzer Prozess
+item backdrop=https://api-tvthek.orf.at/assets/segments/0235/67/thumb_23466394_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-09-22T18:15:20Z | duration=2608 | geo=AT | id=orf:14338198 | image=https://api-tvthek.orf.at/assets/segments/0235/67/thumb_23466394_segments_player.jpg | kind=0 | plot=Ein Mord erschüttert das Mittelalterspiel und plötzlich kämpft jeder um weit mehr als nur die Krone.
+
+Ein als Zauberer verkleideter Mann wird tot aufgefunden – und Joe und Biggi stoßen schnell auf ein Live-Action-Rollenspiel in einer Burgruine. Dort liefern sich die Teilnehmerinnen und Teilnehmer als Prinz Theobar, Prinzessin Amalda und Hofzauberer Barilian einen erbitterten Kampf um die Krone. Doch hinter den Fantasy-Rollen verbergen sich echte Konflikte und mögliche Motive für Mord. Um den Täter zu entlarven, ermittelt Pichlwanger undercover als Ritter – mit überraschender Unterstützung.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Miriam Hie (Yara Nejem)
+Aaron Karl (Theobar)
+Laura Euler-Rolle (Amalda)
+Berni Wagner (Paul Bruckner)
+Julia Wozek (Maya Cerny)
+Franz Josef Danner (Olli Moors)
+
+Regie: Chris Raiber
+Drehbuch: Charlotte Weg, Hannes Blamayer
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14338198 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (3/10): Kampf um die Krone
+item backdrop=https://api-tvthek.orf.at/assets/segments/0232/45/thumb_23144685_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-09-15T18:15:00Z | duration=2629 | geo=AT | id=orf:14338197 | image=https://api-tvthek.orf.at/assets/segments/0232/45/thumb_23144685_segments_player.jpg | kind=0 | plot=Zwei Brüder, krumme Geschäfte und ein Toter: Joe und Biggi geraten in ein gefährliches Netz.
+
+Kirin und Hannibal Warga führen ein skrupelloses Imperium zwischen Rotlicht und Social Media. Als Kirin tot in seiner Agentur aufgefunden wird, scheint der Fall zunächst eindeutig. Doch Staatsanwältin Sarah Lorenzoni offenbart Joe und Biggi, dass sie längst gegen die Brüder ermittelt. Ein Überwachungsvideo bringt Model Naomi Ritter unter Verdacht. Während die Ermittler dem Täter näherkommen, sorgt eine unerwartete Wendung für neue Zweifel und bringt alle Beteiligten in Gefahr.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Damyan Andreev (Aleks Malenov)
+Paula Hainberger (Emilia Ertl)
+Agnes Hausmann (Patrizia Specht)
+Doris Schretzmayer (Sarah Lorenzoni)
+Paul Hassler (Hannibal Warga)
+Emilia Leytner (Naomi Ritter)
+Laurenz Prader (Kirin Warga)
+Sami Loris (Loris Ritter)
+Felix Stichmann (Samy Rahs)
+
+Regie: Chris Raiber
+Drehbuch: Philipp Altmann
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14338197 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (2/10): Videogirls & Loverboys
+item backdrop=https://api-tvthek.orf.at/assets/segments/0234/17/thumb_23316234_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-09-08T18:15:05Z | duration=2729 | geo=AT | id=orf:14338130 | image=https://api-tvthek.orf.at/assets/segments/0234/17/thumb_23316234_segments_player.jpg | kind=0 | plot=Angelika Niedetzky  ist in der Kategorie "Beliebteste Schauspielerin TV / Streaming" für eine Romy nominiert.
+
+Als der Amateur-Eishockeyspieler Karim Vitovic nach einem Trainingsmatch tot auf dem Eis liegt, beginnt ein brisanter Fall voller Geheimnisse und Verdächtigungen. Schnell gerät Trainer Walter, Biggis Bruder, ins Visier der Ermittler. Während Pichlwanger und Joe gegen eine sensationshungrige Journalistin kämpfen, verfolgt Biggi auf eigene Faust den Spieler Georg Pilhamer. Doch auch die Tochter des Toten scheint etwas zu verbergen – und das Netz aus Lügen zieht sich immer enger zu.
+
+Besetzung:
+Katharina Stemberger (Joe Haizinger)
+Angelika Niedetzky (Biggi Obergschwendter)
+Michael Steinocher (Stefan Pichlwanger)
+Alexander Pschill (Dr. Richie Vitek)
+Damyan Andreev (Aleks Malenov)
+Miriam Hie (Yara Nejem)
+Michael Edlinger (Walter Obergschwendter)
+Fabian Unger (Georg Pilhammer)
+Eva Maria Marold (Linda Pilhammer)
+Agnes Hausmann (Patrizia Specht)
+Toni Gohl (Nelly Vitovic)
+
+Regie: Chris Raiber
+Drehbuch: Alrun Fichtenbauer
+
+Bildquelle: ORF/Gebhardt Productions/Stefanie Leo | ref=orf:14338130 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Soko Linz (1/10): Bodycheck
+item backdrop=https://api-tvthek.orf.at/assets/segments/0230/78/thumb_22977107_segments_highlight_teaser.jpg | channel=Soko Linz Staffel 5 | date=2026-09-07T18:15:00Z | duration=27 | geo=AT | id=orf:14337851 | image=https://api-tvthek.orf.at/assets/segments/0230/78/thumb_22977107_segments_player.jpg | kind=0 | plot=Neue Staffel, maximale Spannung: "Soko Linz" geht in die nächste Runde. Das Team rund um Katharina Stemberger und Michael Steinocher kämpft wieder gegen das Unrecht und hat beruflich, aber auch privat alle Hände voll zu tun. Die erste der zehn neuen Folgen gibt es ab jetzt auf ORF ON im Stream. Jede weitere Folge ist bereits sieben Tage vorab abrufbar. | ref=orf:14337851 | showRef=orfprofile:13899279 | source=orf | subtitle=Serie · <date> | title=Trailer: "Soko Linz" Staffel 5

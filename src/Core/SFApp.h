@@ -94,6 +94,9 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (NSString *)remoteStatusNotification;      // posted when remoteStatus changes
 // --- dev (sofa-dev FIFO): app-specific commands, YES = handled. Apps see every command first. ---
 + (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host;
+// --- tests: what the app's pure parser makes of a recorded answer of `kind`, as lines
+//     ("item " + SFCanonicalItem, ...); nil = unknown kind. tools/test-parse, tests/fixtures/<app>/<kind>-<name>.json.gz ---
++ (NSArray *)parseFixture:(id)json kind:(NSString *)kind;
 @end
 
 @interface SFAppRegistry : NSObject
