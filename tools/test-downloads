@@ -168,8 +168,10 @@ cmd updatequit; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; slee
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after the update handover" || bad "ffmpeg survived the handover: $(ffpids)"
 grep -q "downloads: FAILED $REF" "$LOG" && bad "stopping it counted as a failure" || ok "stopping it is no failure"
 check "still running in the database, no attempt used" "$(/opt/local/bin/sqlite3 "$DEVDB" "select state || '/' || tries from downloads where id='$REF'")" "1/0"
+# the source's spacing says "not for an hour" - an interrupted run goes on anyway (2026-11-06)
+/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into settings (k,v) values ('downloads.nextStart.example', strftime('%s','now') + 3600);"
 start
-running && ok "download resumed on the next start" || bad "download not resumed"
+running && ok "download resumed on the next start (despite the source's spacing)" || bad "download not resumed"
 quit; sleep 1
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after quit" || bad "ffmpeg survived the quit: $(ffpids)"
 

@@ -45,7 +45,7 @@ static NSString *ffmpegPath(void) {
         }
         // re-queue runs interrupted last time
         for (SFDownloadRecord *r in _recs.allValues)
-            if (r.state == SFDLRunning) r.state = SFDLQueued;
+            if (r.state == SFDLRunning) { r.state = SFDLQueued; _resumeID = r.identifier; }
         SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
         __weak SFDownloads *ws = self;
         SFSetLocalFileLookup(^NSString *(NSString *ident) { return [ws fileFor:ident]; });

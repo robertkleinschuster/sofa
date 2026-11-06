@@ -65,6 +65,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSTimer *_storageTimer;          // re-check while full
     NSTimer *_diskWatch;             // disk check while ffmpeg runs
     NSString *_runningPart;          // part file of the running download
+    NSString *_resumeID;             // the run an exit interrupted: continues at once, not after the source's spacing
     NSMutableDictionary *_diskNeed;  // id -> bytes needed after a disk stop (hysteresis)
     NSString *_onlineCurrent;        // identifier being checked right now
     BOOL _storagePostPending;        // a coalesced storage notification is queued

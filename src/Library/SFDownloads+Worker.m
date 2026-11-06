@@ -42,6 +42,7 @@
     }
     _runningID = r.identifier;
     [self noteStartOf:[self sourceOf:r] at:now];
+    _resumeID = nil;
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
     [self changed:_runningID];
@@ -218,8 +219,10 @@ static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." s
     return SFBackgroundPausedUntil([[self sourceOf:r] stringByAppendingString:@":"]);
 }
 
-// pausedUntil plus the per-source spacing of starts
+// pausedUntil plus the per-source spacing of starts (not for the run an exit interrupted - the same
+// download going on, e.g. after an update, 2026-11-06: it waited 16 min)
 - (NSTimeInterval)notBefore:(SFDownloadRecord *)r {
+    if ([r.identifier isEqualToString:_resumeID]) return [self pausedUntil:r];
     return MAX([self pausedUntil:r], [self nextStartOf:[self sourceOf:r]]);
 }
 
