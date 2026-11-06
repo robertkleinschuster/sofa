@@ -40,9 +40,9 @@ if [ "$(readlink "$LINK" 2>/dev/null)" != "../../build/vendor/sofa-yt-dev/node_m
   [ -e "$LINK" ] && [ ! -L "$LINK" ] && { echo "test-sofa-yt: $LINK is not a symlink - remove it"; exit 1; }
   rm -f "$LINK"; ln -s ../../build/vendor/sofa-yt-dev/node_modules "$LINK"
 fi
-echo "==> tsc -p res/sofa-yt ($("$NODE" "$DEV/node_modules/typescript/bin/tsc" --version))"
-"$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt" --pretty false \
-  || { echo "test-sofa-yt: type check failed"; exit 1; }
+# the type check runs beside the tests (independent; both must pass), its verdict is printed first
+TSC_OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-tsc.XXXXXX")"
+( "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt" --pretty false > "$TSC_OUT" 2>&1 ) & TSC=$!
 
 # ---- tests ------------------------------------------------------------------------------------
 rm -rf "$RUN"; mkdir -p "$RUN"
@@ -53,4 +53,12 @@ export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE"
 cd "$SRC/tests/sofa-yt"
 FILES=(unit-*.test.ts)
 [ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-smoke.test.ts)
-exec "$NODE" --test --test-reporter=spec "${FILES[@]}"
+set +e
+"$NODE" --test --test-reporter=spec "${FILES[@]}" > "$TSC_OUT.tests" 2>&1; tests=$?
+wait $TSC; tsc=$?
+echo "==> tsc -p res/sofa-yt ($("$NODE" "$DEV/node_modules/typescript/bin/tsc" --version)): $([ $tsc = 0 ] && echo ok || echo FAILED)"
+cat "$TSC_OUT"
+cat "$TSC_OUT.tests"
+rm -f "$TSC_OUT" "$TSC_OUT.tests"
+[ $tsc = 0 ] || { echo "test-sofa-yt: type check failed"; exit 1; }
+exit $tests

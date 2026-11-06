@@ -14,12 +14,27 @@
 #      by itself once there is room (user 2026-11-05: never fill the disk, never delete by itself)
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
+#   tools/test-downloads   both parts side by side, each with its own instance and media server
+#                          (part a: 1-4b, part b: 5-7); DLTEST_PART=a|b runs one part here
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=dltest PORT=47995
+PART=${DLTEST_PART:-}
+if [ -z "$PART" ]; then   # both parts at once; output part by part
+  make -C "$SRC" >/dev/null || exit 1
+  O="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dlparts.XXXXXX")"
+  DLTEST_PART=a "$0" > "$O/a" 2>&1 & A=$!
+  DLTEST_PART=b "$0" > "$O/b" 2>&1 & B=$!
+  wait $A; ra=$?; wait $B; rb=$?
+  grep -hv '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b"
+  rm -rf "$O"
+  [ $ra = 0 ] && [ $rb = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
+fi
+want() { [ "$PART" = "$1" ]; }
+INST=dltest-$PART
+if want a; then PORT=47995 MEDIA_PORT=47982; else PORT=47984 MEDIA_PORT=47983; fi
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -57,7 +72,7 @@ cleanup() {
   { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # this instance's settings (after the app is gone)
   [ -n "$SRV" ] && { kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; }
   for p in $(ffpids); do kill $p 2>/dev/null; done
-  for p in $(pgrep -f "orphan-test.part"); do kill -9 $p 2>/dev/null; done
+  for p in $(pgrep -f "$ROOT/orphan-test.part"); do kill -9 $p 2>/dev/null; done   # this part's only
   rm -rf "$T"
 }
 trap cleanup EXIT
@@ -84,9 +99,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 time.sleep(0.25)
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
 PY
-/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" 47982 & SRV=$!
-export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:47982/good.mp4
+/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" $MEDIA_PORT & SRV=$!
+export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$MEDIA_PORT/good.mp4
 
+if want a; then
 echo "==> 1. orphaned ffmpeg from an earlier run"
 ( "$FF" -nostdin -v error -re -f lavfi -i testsrc=size=320x240:rate=10 -t 300 -c:v mpeg4 -y "$ROOT/orphan-test.part999.mp4" & )
 # a second orphan that ignores SIGTERM like ffmpeg stuck in a dead network read (copy of perl named ffmpeg)
@@ -186,6 +202,9 @@ st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||t
 [ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
 
+fi   # part a
+
+if want b; then
 echo "==> 5. YouTube download during a bot-check pause"
 start
 cmd "ytblock 900"; sleep 0.5
@@ -249,6 +268,8 @@ grep -q "Platz schaffen: 1 deleted" "$LOG" && ok "bulk deletion ran (1 video)" |
 [ -e "$ROOT/dev/Room/gone.mp4" ] && ok "the video that is no longer online stays" || bad "irreplaceable video deleted!"
 [ -e "$ROOT/dev/Room/kept.mp4" ] && ok "the kept video stays" || bad "kept video deleted!"
 quit
+
+fi   # part b
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
