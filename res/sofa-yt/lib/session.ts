@@ -107,7 +107,8 @@ export interface SessionStatus {
   sid: string;
   id: string;
   failed: string | null;
-  pumps: { startMs: number; video: string | null; audio: string; delivered: number; frontier: Record<string, number> }[];
+  /** diag: what SABR's server last said (stream protection, backoff; PumpHandle.diag) */
+  pumps: { startMs: number; video: string | null; audio: string; delivered: number; frontier: Record<string, number>; diag: string | null }[];
   tracks: Record<string, TrackStatus>;
   fetched: MediaCounters;
   sabrRuns: number | undefined;
@@ -626,7 +627,7 @@ export class PlaybackSession {
     return {
       sid: this.sid, id: this.info.id, failed: this.failed?.message || null, pumps: [...this.pumps].map((p) => ({
         startMs: p.startMs, video: p.video?.key || null, audio: p.audio.key, delivered: p.delivered,
-        frontier: Object.fromEntries([...p.frontier].map(([t, ms]) => [t.key, ms])) })),
+        frontier: Object.fromEntries([...p.frontier].map(([t, ms]) => [t.key, ms])), diag: p.handle?.diag?.() ?? null })),
       tracks, fetched: this.fetched, sabrRuns: this.runs, idleMs: now - this.lastActivity,
     };
   }

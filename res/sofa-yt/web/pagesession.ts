@@ -4,6 +4,7 @@
 import { Innertube, UniversalCache, Platform, Log } from 'youtubei.js/web';
 import type { SessionFactory } from '../lib/youtube.ts';
 import { pageClient, pageString } from './page.ts';
+import { compile } from './trusted.ts';
 
 /**
  * youtubei.js sets "Accept-Language: *" on every InnerTube request; YouTube's page sends none of its
@@ -20,8 +21,8 @@ export function pageSessions(): SessionFactory {
     headers: {},   // the browser sends its own
     async create(visitor) {
       Log.setLevel(Log.Level.ERROR);
-      // the n/sig transforms of the player run as the page's own player code does
-      Platform.shim.eval = async (data) => new Function(data.output)() as Record<string, unknown> | undefined; // eslint-disable-line no-new-func
+      // the n/sig transforms of the player, compiled through the engine's Trusted Types policy
+      Platform.shim.eval = async (data) => compile(data.output)() as Record<string, unknown> | undefined;
       const yt = await Innertube.create({
         fetch: pageFetch,
         cache: new UniversalCache(true),   // player.js in IndexedDB of the profile

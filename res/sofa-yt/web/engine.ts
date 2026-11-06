@@ -26,6 +26,7 @@ import type { SessionConfig } from '../lib/session.ts';
 import { pageSessions } from './pagesession.ts';
 import { documentMinter } from './pagebotguard.ts';
 import { onYouTubePage } from './page.ts';
+import { initTrustedTypes } from './trusted.ts';
 
 /** How Sofa starts the engine. */
 export interface EngineConfig {
@@ -116,6 +117,11 @@ const engine: SofaEngine = {
 
   connect(post) {
     channel = post;
+    if (location.origin === 'https://www.youtube.com') initTrustedTypes();   // before the page's scripts
+    // what the page's CSP refuses is what YouTube can see in its reports: never silent
+    document.addEventListener('securitypolicyviolation', (e) => {
+      log(`csp: ${e.disposition} ${e.violatedDirective} blocked ${e.blockedURI || '?'} ${(e.sample || '').slice(0, 80)}`);
+    });
     setLogSink((line) => send({ type: 'log', line }));
     send({ type: 'ready', userAgent: navigator.userAgent, url: location.href });
   },

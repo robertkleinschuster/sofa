@@ -5,7 +5,11 @@
 #   SOFA_YT_LIVE=1 tools/test-sofa-yt
 #                                   + live smoke test: one /open (at most one player request, none
 #                                     when the state dir still holds a valid response), 10 s of
-#                                     playback in mpv from 60 s, one seek. Uses YouTube - opt-in only.
+#                                     playback in mpv from 60 s, one seek; live engine test: the browser
+#                                     engine on youtube.com in headless Firefox (one player request,
+#                                     ~100 s of media, stream protection measured). Uses YouTube - opt-in only.
+#   SOFA_YT_FILES="unit-store.test.ts live-engine.test.ts" tools/test-sofa-yt
+#                                   only these test files (type check as always)
 # The sidecar runs from build/sofa-yt-run (res/sofa-yt + the node_modules of tools/fetch-sofa-yt, i.e.
 # exactly the runtime dependencies that ship). Type checking uses a separate dev install of the same
 # lockfile (devDependencies included: typescript, @types/*) in build/vendor/sofa-yt-dev, reachable for
@@ -45,7 +49,9 @@ ln -s "$VENDOR/node_modules" "$RUN/node_modules"
 export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js"
 cd "$SRC/tests/sofa-yt"
 FILES=(unit-*.test.ts)
-[ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-smoke.test.ts)
+[ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-*.test.ts)
+# SOFA_YT_FILES="live-engine.test.ts": only these (one live test without the others' requests)
+[ -n "${SOFA_YT_FILES:-}" ] && read -r -a FILES <<< "$SOFA_YT_FILES"
 set +e
 "$NODE" --test --test-reporter=spec "${FILES[@]}" > "$TSC_OUT.tests" 2>&1; tests=$?
 wait $TSC; tsc=$?

@@ -71,28 +71,35 @@ seeded by `start({block})` and `block()`, and reports every change.
 - Tests: the module unit tests keep running under Node against the same modules; a Firefox test
   injects the bundle as Sofa does (preload script + channel) into a local page (offline).
 
-## Open points for step 4 (first contact with youtube.com, measured then - not guessed now)
+## First contact with youtube.com (measured 2026-11-06, `SOFA_YT_LIVE=1 SOFA_YT_FILES=live-engine.test.ts`)
 
-- CSP / Trusted Types of youtube.com: the engine's `new Function` (player n/sig) and the interpreter
-  `<script>` must pass in the page realm; if not, a BiDi sandbox realm or a Trusted Types policy.
+Works in the page: the engine injects and starts, youtubei.js' session takes the page's context
+(`browser=Firefox/153.0`), BotGuard attests in the real document (~1 s), the player request
+answers, SABR streams from the page (62 s of 1080p VP9 + Opus). No consent page in this profile.
+
+Measured walls and their fixes:
+
+- Trusted Types: youtube.com enforces `require-trusted-types-for 'script'`; `script.src = string`
+  and `new Function(string)` are blocked and raise a `securitypolicyviolation` the page can report.
+  A policy of the engine's own is allowed: `web/trusted.ts` (interpreter URL limited to
+  www.google.com, player code); the engine logs every violation (`csp:` lines), the live test
+  requires none.
+- `fetch` must not be called with another `this` in the browser: SabrStream gets a wrapper.
+- Headless screen 1366x768 by default: `MOZ_HEADLESS_WIDTH/HEIGHT` = the TV's 1920x1080.
+
+Open - **stream protection rejects the engine's PO token** (`sps=3` after ~60 s, also after a fresh
+attestation), as it does the jsdom sidecar's. What BotGuard sees of this browser differs from a
+user's Firefox in two measured points:
+
+- `navigator.webdriver === true` while the remote agent (BiDi) runs - Firefox hardwires it
+  (`Navigator::Webdriver()`), no pref changes it (`dom.webdriver.enabled` measured: no effect).
+- No WebGL in headless mode (`getContext('webgl')` is null).
+
+Not yet known which of these (or something else, e.g. the visitor of the player request vs. the
+page's cookie) causes the rejection. Next: find out which signal it is, then fix it natively (for
+`webdriver` a documented patch in the firefox-x11 port; for WebGL a display instead of headless).
+
+## Still open
+
 - Live HLS: today mpv fetches segments from googlevideo itself - a second client. Segments go
   through the engine (`read`-like) so every request is the browser's.
-- CORS of the googlevideo / suggest / manifest requests from the page (YouTube's own player and
-  search box make the same ones).
-
-## Feasibility (measured 2026-11-06, no YouTube request)
-
-- Headless Firefox 153 with BiDi on 10.9: page load + script 0.4 s; UA "Macintosh; Intel Mac OS X
-  10.15; rv:153.0".
-- Page -> client over BiDi: 64 MB in 1.7 s (37 MB/s; 1080p needs ~1 MB/s).
-- Bundle (youtubei.js web + googlevideo + bgutils): 790 KB minified, built in 5 s; loads in
-  Firefox with Innertube, SabrStream, BotGuardClient and WebPoMinter available.
-
-## Migration steps
-
-1. Engine bundle + Firefox smoke test in the repo (this document, `web/engine.ts`). Done.
-2. Node-only seams out of the moved modules; engine core (`lib/engine.ts`) and the `sofaEngine` API
-   over it, tested in node (core) and headless Firefox (injection, channel, API). Done.
-3. Sofa: `SFYTEngine` (Firefox lifecycle, BiDi over libcurl) + loopback server; replaces `SFYTSabr`.
-4. First real request through Firefox; playback, downloads, follows, lives switch over.
-5. Remove the Node sidecar, jsdom, the runtime Node in the bundle; port dependencies updated.

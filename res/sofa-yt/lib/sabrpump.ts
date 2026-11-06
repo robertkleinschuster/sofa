@@ -64,6 +64,9 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     videoPlaybackUstreamerConfig: o.info.ustreamer,
     clientInfo: { clientName: o.info.clientName, clientVersion: o.info.clientVersion },
     poToken: o.poToken,
+    // SabrStream calls this.fetchFunction(...): the browser's fetch must not run with `this` set to the
+    // stream ("does not implement interface Window"; node does not care) - always call the global one
+    fetchFunction: (input, init) => fetch(input, init),
     callbacks: {
       onMintPoToken: () => o.mintPoToken(),
       onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { reloads++; log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
