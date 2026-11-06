@@ -151,6 +151,9 @@
             if (!shelves.count && !items) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:shelves];
             p.backdrop = header[@"banner"];
+            // focus starts on the first videos (live, continue watching or newest), not on "Gefolgt":
+            // the buttons stay visible above and are one UP away (user 2026-11-06)
+            if (shelves.count > 1) p.focusShelf = 1;
             if (!shelves.count) p.emptyText = @"Dieser Kanal hat keine Videos.";
             done(p, nil);
         };
