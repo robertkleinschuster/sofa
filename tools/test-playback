@@ -29,7 +29,7 @@
 #      media) a YouTube live plays through the sidecar's HLS playlist
 #
 #   tools/test-playback            all checks: two parts side by side, each in its own dev instance
-#                                  (part a: 1-7, part b: 8, 8c, 8b and the opt-in ones - they wait
+#                                  (part a: 1-7, 8c, 8b; part b: 8 and the opt-in ones - they wait
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
@@ -233,6 +233,8 @@ m2=$(mark); cmd "key menu"; waitlog $m2 'player: end -> leaving' 12 && ok "leavi
 stop
 unset SOFA_OFFLINE
 
+fi   # part b
+if want a; then   # (balances the parts: 8c and 8b run after 7)
 echo "==> 8c. a phone queue: watch pages only for the playing and the next video"
 # 2026-11-06: a 100-video playlist from the phone fetched 100 watch pages within a minute (three
 # bursts, bot checks 50 min later). Offline: the requests fail, the log line counts the attempts.
@@ -257,6 +259,8 @@ sleep 2; [ "$(since $m | grep -c 'example: session failed')" = 1 ] && ok "no fur
 stop
 unset SOFA_EXAMPLE_SESSION SOFA_EXAMPLE_MEDIA
 
+fi   # part a (8c, 8b)
+if want b; then
 if [ -n "${SOFA_YT_LIVE:-}" ]; then
   echo "==> 9. SABR playback + sidecar crash (YouTube media)"
   start
