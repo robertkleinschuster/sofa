@@ -1,32 +1,67 @@
 #!/bin/bash
 # screenshots -- regenerate the README screenshots of all main pages (for every release).
 #
-# Starts an invisible dev instance (own settings, does not change the real app),
-# opens the pages via the dev FIFO, renders them (1920x1080) and stores downscaled JPEGs
-# in docs/screenshots/. The content (channels, shows) is this Mac's.
-#   tools/screenshots [build/SofaDev.app]
+# Starts an invisible dev instance "shots" (own data directory and settings, does not change the
+# real app), opens the pages via the dev FIFO, renders them (1920x1080) and stores downscaled
+# JPEGs in docs/screenshots/.
+# Demo library: on the first run (or with --reseed) the instance follows a few YouTube channels
+# through the channel page's own "Folgen" button and starts watching some of their newest videos,
+# so Home and the YouTube start page show what a used Sofa looks like. It stays in the instance's
+# data directory: later runs reuse it (no extra YouTube requests).
+#   tools/screenshots [--reseed] [build/SofaDev.app]
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+reseed=0; [ "${1:-}" = "--reseed" ] && { reseed=1; shift; }
 APP="${1:-$SRC/build/SofaDev.app}"
 OUT="$SRC/docs/screenshots"
 INST=shots
+DATA="$HOME/Library/Application Support/Sofa-dev/$INST"
 FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo"
 LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/sofa-shots.XXXXXX")"
+Q() { /opt/local/bin/sqlite3 "$DATA/sofa.db" "$@" 2>/dev/null; }
+# channel id|name - followed for the demo library (Kurzgesagt stays unfollowed: its page shows "Folgen")
+CHANNELS="UCy0tKL1T7wFoYcxCe0xjN6Q|Technology Connections
+UCSju5G2aFaWMqn-_0YBtq5A|Stand-up Maths
+UCNNEMxGKV1LsKZRt4vaIbvw|ZDF MAGAZIN ROYALE"
 mkdir -p "$OUT"
 
 make -C "$SRC" >/dev/null || exit 1
-: > "$LOG"
-defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # fresh settings of this instance (show welcome/questions)
-"$APP/Contents/MacOS/Sofa" --dev --instance "$INST" --port 47990 >/dev/null 2>&1 &
-PID=$!
-trap 'kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT
-for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
-grep -q 'fifo ready' "$LOG" || { echo "dev instance does not start"; exit 1; }
-
+PID=
+trap '[ -n "$PID" ] && kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT
+start() {
+  : > "$LOG"
+  "$APP/Contents/MacOS/Sofa" --dev --instance "$INST" --port 47990 >/dev/null 2>&1 & PID=$!
+  for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.5; done
+  echo "dev instance does not start"; exit 1
+}
+quit() { cmd quit; for i in $(seq 1 50); do kill -0 $PID 2>/dev/null || break; sleep 0.2; done; PID=; }
 cmd()  { echo "$*" > "$FIFO"; }
 keys() { for k in "$@"; do cmd key "$k"; sleep 0.7; done; }
+waitlog() { for i in $(seq 1 $(( $2 * 10 ))); do grep -q "$1" "$LOG" && return 0; sleep 0.1; done; return 1; }   # waitlog PATTERN SECONDS
+
+if [ $reseed = 1 ] || [ "$(Q 'select count(*) from follows')" != "$(echo "$CHANNELS" | wc -l | tr -d ' ')" ]; then
+  echo "==> demo library"
+  rm -rf "$DATA"
+  start
+  echo "$CHANNELS" | while IFS='|' read -r id name; do
+    cmd home; cmd open "ytchannel:$id|$name"; sleep 6   # the page and its "Folgen" button (focused first)
+    keys select
+    waitlog "follows: + $name" 5 && echo "  follows $name" || echo "  FAILED to follow $name"
+  done
+  # each follow loads its videos right away
+  for i in $(seq 1 60); do [ "$(Q 'select count(distinct follow) from follow_items')" = "$(Q 'select count(*) from follows')" ] && break; sleep 1; done
+  quit
+  # "Weiterschauen": the newest video of each channel, partly watched (most recent first)
+  Q "INSERT INTO progress (id, pos, dur, watched, updated, source, item)
+     SELECT id, round(dur * (0.25 + 0.15 * (n % 3))), dur, 0, strftime('%s', 'now') - 600 * n, 'youtube', item
+     FROM (SELECT id, item, json_extract(item, '\$.duration') AS dur, row_number() OVER (ORDER BY follow) AS n
+           FROM follow_items WHERE pos = 0) WHERE dur > 0"
+  echo "  $(Q 'select count(*) from progress') videos started"
+fi
+defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # fresh settings of this instance (show welcome/questions)
+start
 # shot <name> <wait>: wait (images load), render, store as JPEG (1600 px wide)
 shot() {
   sleep "$2"
@@ -59,5 +94,5 @@ cmd home; cmd open history;   shot history 4
 cmd home; cmd open pair;      shot pair 6
 cmd home; cmd open welcome;   shot welcome 2
 keys select;                  shot first-start 2
-cmd quit
+quit
 echo "==> done ($(ls "$OUT"/*.jpg | wc -l | tr -d ' ') images)"
