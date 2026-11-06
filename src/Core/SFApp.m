@@ -13,6 +13,10 @@ static BOOL channels(Class<SFApp> a) { return [a respondsToSelector:@selector(sh
 BOOL SFShowRefIsChannel(NSString *ref) { return channels([SFAppRegistry appForRef:ref]); }
 BOOL SFItemShowsAreChannels(SFItem *item) { return channels([SFAppRegistry appForItem:item]); }
 BOOL SFSourceShowsAreChannels(NSString *source) { return channels([SFAppRegistry appNamed:source]); }
+NSTimeInterval SFBackgroundPausedUntil(NSString *ref) {
+    Class<SFApp> app = [SFAppRegistry appForRef:ref];
+    return [app respondsToSelector:@selector(backgroundPausedUntil)] ? [app backgroundPausedUntil] : 0;
+}
 
 @implementation SFAppRegistry
 

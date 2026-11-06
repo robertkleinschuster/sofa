@@ -7,6 +7,7 @@
 #import "SFYTParser.h"
 #import "SFYTResolver.h"
 #import "SFYTSabr.h"
+#import "SFYTBreaker.h"
 #import "SFLounge.h"
 #import "SFFollows.h"
 #import "SFNet.h"
@@ -93,6 +94,8 @@
 #pragma mark Channels (shows)
 
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { [SFYTFeeds feed:SFRefID(ref) done:done]; }
+// feed checks and downloads wait during a bot-check pause (no request, no attempt used up)
++ (NSTimeInterval)backgroundPausedUntil { return [SFYTBreaker shared].blockedUntil; }
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *))done { [SFYTFeeds avatar:SFRefID(ref) done:done]; }
 
 // channel of a video without a stored channel ID (older watch-later/continue watching/downloads)

@@ -97,7 +97,16 @@ static NSArray *videos(NSString *filter) {
     };
 }
 
-+ (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { done(videos(nil), nil); }
++ (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { SFLog(@"example: feed %@", ref); done(videos(nil), nil); }
+
+// A source may pause its background requests (YouTube: bot check). Tests set one with
+// SOFA_EXAMPLE_PAUSE=<seconds from launch>.
++ (NSTimeInterval)backgroundPausedUntil {
+    static NSTimeInterval until;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ double s = SFDevEnv(@"SOFA_EXAMPLE_PAUSE").doubleValue; until = s > 0 ? [NSDate date].timeIntervalSince1970 + s : 0; });
+    return until;
+}
 
 // Home rows mixed from all apps (SFHomeFeatures.h): items per topic. A real app reads them from its
 // start page (SFHomeFeaturesFromPage) and sets `drm` / `geoRegion` from the source's raw data -

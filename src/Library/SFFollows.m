@@ -273,7 +273,10 @@ static NSArray *stable(NSArray *dicts) {
         if (!due || [d compare:due] == NSOrderedAscending) { due = d; next = f; }
     }
     if (!next) return;
-    NSDate *earliest = [_lastCheck dateByAddingTimeInterval:SFRefreshGap(arc4random_uniform(1000) / 1000.0)];
+    static NSTimeInterval gapScale;   // tests shorten the gap (SOFA_FOLLOW_GAP: seconds instead of 20-40)
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gapScale = SFDevSeconds(@"SOFA_FOLLOW_GAP", SFRefreshGapMin) / SFRefreshGapMin; });
+    NSDate *earliest = [_lastCheck dateByAddingTimeInterval:gapScale * SFRefreshGap(arc4random_uniform(1000) / 1000.0)];
     NSDate *when = [due laterDate:earliest];
     NSString *fid = next[@"id"];
     _timer = [NSTimer scheduledTimerWithTimeInterval:MAX(1, when.timeIntervalSinceNow) target:self selector:@selector(checkDue:) userInfo:fid repeats:NO];
@@ -285,6 +288,15 @@ static NSArray *stable(NSArray *dicts) {
     if (!f) { [self planNext]; return; }
     if (![SFNet isOnline]) {   // offline: look again in a while (the plan stays)
         _timer = [NSTimer scheduledTimerWithTimeInterval:300 target:self selector:@selector(checkDue:) userInfo:t.userInfo repeats:NO];
+        return;
+    }
+    // its source paused background requests (YouTube bot check): wait it out - a check now would
+    // send nothing yet use up the follow's turn
+    // (one timer: only this follow waits; planNext spaces the ones after it)
+    NSTimeInterval paused = SFBackgroundPausedUntil(f[@"id"]) - [NSDate date].timeIntervalSince1970;
+    if (paused > 0) {
+        SFLog(@"follows: %@ waits %.0f s for its source's pause", f[@"title"], paused);
+        _timer = [NSTimer scheduledTimerWithTimeInterval:paused + 1 target:self selector:@selector(checkDue:) userInfo:t.userInfo repeats:NO];
         return;
     }
     [self checkFollow:f];

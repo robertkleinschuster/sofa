@@ -74,6 +74,22 @@ export async function loadIdentity(stateDir: string, fetchFn: typeof fetch = fet
   }
 }
 
+// ---- visitor ---------------------------------------------------------------------------------
+
+/** The visitor id YouTube gave this browser (visitorData), kept like the browser keeps its cookie. */
+export function loadVisitor(stateDir: string): string | undefined {
+  try {
+    const v = (JSON.parse(fs.readFileSync(path.join(stateDir, 'visitor.json'), 'utf8')) as { visitorData?: unknown }).visitorData;
+    return typeof v === 'string' && v ? v : undefined;
+  } catch { return undefined; }
+}
+
+export function saveVisitor(stateDir: string, visitorData: string): void {
+  if (!visitorData || visitorData === loadVisitor(stateDir)) return;
+  try { fs.writeFileSync(path.join(stateDir, 'visitor.json'), JSON.stringify({ visitorData }), { mode: 0o600 }); }
+  catch (e) { log('identity: visitor not saved:', errorMessage(e)); }
+}
+
 // ---- cookies ---------------------------------------------------------------------------------
 
 const YT_HOST = /(^|\.)youtube\.com$/;

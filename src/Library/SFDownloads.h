@@ -28,7 +28,7 @@ void SFFetchFeed(NSString *ref, SFFeedDone done);
 // show page already lists the episodes
 void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 // Download source, download pause and online check: SFApp downloadSourceForItem:,
-// downloadsPausedUntil, availabilityOfItem: (without a check the app's online resolver answers:
+// backgroundPausedUntil, availabilityOfItem: (without a check the app's online resolver answers:
 // a resolvable stream = online).
 
 @interface SFDownloads : NSObject

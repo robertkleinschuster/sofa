@@ -13,6 +13,9 @@
 #   4. a followed show whose stored picture is a deleted local file (artwork of a cleaned-up download
 #      folder, incident 2026-11-06: channel avatars missing) shows its newest episode's picture and
 #      is marked for a new one
+#   5. a follow due while its source pauses background requests (incident 2026-11-06: during a
+#      YouTube bot-check pause every follow was "checked" in turn without a request, then waited
+#      its full interval) waits for the end of the pause, then is checked
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -90,6 +93,16 @@ cmd follows; waitlog "dev: follows end"
 F=$(grep "dev: follows exampleshow:demo" "$LOG" | tail -1)
 case "$F" in *"image=https://example.invalid/1.jpg "*) ok "tile shows the newest episode's picture" ;; *) bad "tile picture: $F" ;; esac
 case "$F" in *"needs=1") ok "marked for a new picture" ;; *) bad "not marked: $F" ;; esac
+
+echo "==> 5. follow due during its source's pause"
+quit
+/opt/local/bin/sqlite3 "$SOFA_DATA_DIR/sofa.db" "UPDATE follows SET checked=NULL WHERE id='exampleshow:demo'"
+start SOFA_EXAMPLE_PAUSE=3 SOFA_FOLLOW_GAP=0.5
+waitlog "follows: Beispielsendung waits" && ok "waits for the pause" || bad "did not wait: $(grep -E 'follows:|example: feed' "$LOG" | tail -2)"
+grep -q "example: feed" "$LOG" && bad "feed asked during the pause" || ok "nothing asked during the pause"
+[ -z "$(/opt/local/bin/sqlite3 "$SOFA_DATA_DIR/sofa.db" "SELECT checked FROM follows WHERE id='exampleshow:demo'")" ] && ok "turn not used up" || bad "marked checked during the pause"
+for i in $(seq 1 60); do grep -q "example: feed exampleshow:demo" "$LOG" && break; sleep 0.1; done
+grep -q "example: feed exampleshow:demo" "$LOG" && ok "checked after the pause" || bad "not checked after the pause"
 
 [ $fail = 0 ] && echo "==> test-home ok" || echo "==> test-home FAILED"
 exit $fail

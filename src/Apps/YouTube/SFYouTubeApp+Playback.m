@@ -247,9 +247,6 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     });
 }
 
-// YouTube downloads wait during a bot-check pause (no request, no attempt used up)
-+ (NSTimeInterval)downloadsPausedUntil { return [SFYTBreaker shared].blockedUntil; }
-
 + (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done {
     NSString *vid = item.externalID ?: SFRefID(item.identifier);
     void (^viaYTDLP)(void) = ^{

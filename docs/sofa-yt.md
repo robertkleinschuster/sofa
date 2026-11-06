@@ -70,7 +70,7 @@ node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <yt-
 | Option | Default | |
 |---|---|---|
 | `--port N` | 0 | 0 = ephemeral; the port is reported in the ready line |
-| `--state DIR` | required | persistent: `identity.json` (Chrome major, weekly), `cookies.json` (YouTube's cookies, 0600, never logged), `ytjs-cache/` (visitorData, player.js), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
+| `--state DIR` | required | persistent: `identity.json` (Chrome major, weekly), `cookies.json` (YouTube's cookies, 0600, never logged), `visitor.json` (visitorData), `ytjs-cache/` (player.js; no session cache: each session is made fresh from `sw.js_data` like a page load), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
 | `--block-file PATH` | `<state>/youtube-block.json` | bot-check breaker, same file + format as ytresolver.py: `{"until": epoch, "backoff": secs}` |
 | `--ahead-low S` / `--ahead-high S` | 30 / 90 | pacing window in seconds of media ahead of the reader |
 | `--max-player-requests N`, `--budget-window S`, `--budget-file P` | 60 / 3600 / state | hard cap on player requests (safety net against loops; persisted) |
@@ -200,7 +200,10 @@ unavailable (yt-dlp then goes on without a token). No YouTube request unless the
 **One web identity.** `lib/identity.ts` (docs/youtube.md "One identity"): a current desktop Chrome UA
 with matching client hints, `de-AT`, and YouTube's cookies, set on the global fetch before anything
 else loads - Innertube, BotGuard (jsdom gets the same UA), captions and SABR send the same browser.
-`Innertube.create` with a disk cache keeps visitorData and player.js across restarts.
+Each session is made fresh (`enable_session_cache: false`): youtubei.js's cached session would keep the
+browser/OS fields of the UA it was made with and pin `clientVersion` to its built-in constant
+(`2.20260623` was still sent on 2026-11-06); `sw.js_data` gives the current one. visitorData is kept
+(`visitor.json`) and player.js cached (`ytjs-cache/`).
 Player requests are WEB client with `signatureTimestamp` of the pinned player and a video-bound PO token
 (`serviceIntegrityDimensions.poToken`). The SABR URL's n-parameter is deciphered **with the same player
 object right after the request** (YouTube A/B-serves several player.js versions; a mismatch = SABR 403);

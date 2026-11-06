@@ -78,7 +78,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *url))done;   // a followed show's picture when its stored one is missing/gone; done on main, nil = none (now)
 // --- library ---
 + (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done;
-+ (NSTimeInterval)downloadsPausedUntil;   // e.g. bot check: no downloads until then (epoch s, 0 = no pause)
++ (NSTimeInterval)backgroundPausedUntil;   // e.g. bot check: no background requests (feed refreshes, downloads) until then (epoch s, 0 = no pause)
 + (void)availabilityOfItem:(SFItem *)item done:(SFAvailabilityDone)done;
 // --- items ---
 + (SFItem *)itemForRef:(NSString *)ref title:(NSString *)title image:(NSString *)image;   // playable item for a video ref (phone, end cards); local copy preferred
@@ -121,6 +121,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 BOOL SFShowRefIsChannel(NSString *ref);
 BOOL SFItemShowsAreChannels(SFItem *item);
 BOOL SFSourceShowsAreChannels(NSString *source);   // by app identifier
+NSTimeInterval SFBackgroundPausedUntil(NSString *ref);   // the owning app's backgroundPausedUntil (0 = go)
 
 // "prefix:id" helpers
 NSString *SFRefPrefix(NSString *ref);   // nil without ':'

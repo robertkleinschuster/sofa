@@ -32,8 +32,8 @@ Every item that belongs to your app carries a ref `"<prefix>:<id>"` in `resolver
 | play a video                         | `resolve:done:` (+ `resolveOnline:done:`)            |
 | search page, keyboard suggestions    | `searchLoader:`, `suggestions:done:`, `searchPlaceholder` |
 | show/channel page, "Zur Sendung"     | `showRefPrefixes`, `showPageLoader:title:`, `showRefForItem:done:` |
-| follows, "Neue Folgen", auto download| `feed:done:`                                         |
-| download a video                     | `downloadSourceForItem:done:`, `downloadsPausedUntil` |
+| follows, "Neue Folgen", auto download| `feed:done:`, `backgroundPausedUntil`                |
+| download a video                     | `downloadSourceForItem:done:`, `backgroundPausedUntil` |
 | "Platz schaffen" online check        | `availabilityOfItem:done:`                           |
 | player info panel / up next / cards  | `watchDetailsForItem:done:`, `upNextForItem:done:`, stream description key `endCards` |
 | session streams (local services)     | `playbackIsSession:`, `playbackSessionFailed:…`, `playbackSessionLostNotification`, `playbackLiveEnded:done:`, `playbackPrepareReResolve:` |

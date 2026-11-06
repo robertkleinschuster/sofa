@@ -198,8 +198,7 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
 
 // Epoch until which the record's source has paused itself (0 = go).
 - (NSTimeInterval)pausedUntil:(NSDictionary *)r {
-    Class<SFApp> app = [SFAppRegistry appForRef:[[self sourceOf:r] stringByAppendingString:@":"]];
-    return [app respondsToSelector:@selector(downloadsPausedUntil)] ? [app downloadsPausedUntil] : 0;
+    return SFBackgroundPausedUntil([[self sourceOf:r] stringByAppendingString:@":"]);
 }
 
 // pausedUntil plus the per-source spacing of starts
