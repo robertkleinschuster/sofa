@@ -31,6 +31,8 @@ export interface SabrPumpOptions extends PumpRequest {
   formats: DescribedFormat[];                      // described formats (formats.ts)
   poToken?: string | undefined;                    // pre-minted websafe token (avoids SPS 3 + backoff on seek starts)
   mintPoToken: () => Promise<Uint8Array>;
+  /** YouTube rejected this run's PO token (stream protection status 3): the token must not be reused. */
+  onTokenRejected?: () => void;
   reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>;
 }
 
@@ -94,8 +96,10 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
   // what the server last said, for the session's stall report (2026-11-06: runs that stop at 60 s)
   let sps = 0, spsAt = 0, redirects = 0, reloads = 0;
   sabr.on('streamProtectionStatusUpdate', (s) => {
+    const was = sps;
     sps = s?.status ?? 0; spsAt = Date.now();
     if (sps !== 1) debug(`${tag}: SPS ${sps}`);
+    if (sps === 3 && was !== 3) { log(`${tag}: stream protection rejected the PO token`); o.onTokenRejected?.(); }
   });
   const setUrl = sabr.setStreamingURL.bind(sabr);
   sabr.setStreamingURL = (url: string | URL) => { redirects++; setUrl(url); };

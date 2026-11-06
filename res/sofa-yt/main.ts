@@ -102,6 +102,8 @@ const startPump: AppStartPump = (info, formats, opts) => {
       handle = startSabrPump({
         ...opts, info, formats, poToken,
         mintPoToken: () => po.mintBytes(info.id),
+        // a rejected token must not start the next run again; a fresh attestation for new ones
+        onTokenRejected: () => { tokenCache.delete(info.id); po.renew(); },
         reload: async (ctx?: ReloadPlaybackContext) => {
           const r = await youtube.reload(info.id, ctx, { bg: !!opts.bg });
           // the session keeps the info object: point it at the fresh URL for future runs

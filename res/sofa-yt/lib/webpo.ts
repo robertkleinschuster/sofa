@@ -35,6 +35,7 @@ interface PageChallenge {
 const FETCH_TIMEOUT_MS = 15000;
 const RETRY_MIN_MS = 60 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
+const RENEW_MIN_MS = 10 * 60 * 1000;   // renew() at most this often
 
 async function createMinter(identity: Identity): Promise<MinterSetup> {
   const { JSDOM } = await import('jsdom');
@@ -105,6 +106,7 @@ export class PoTokenProvider {
   retryMs: number;
   nextTry: number;
   lastError: string | null;
+  lastRenew = 0;
 
   constructor({ identity, factory }: { identity?: Identity; factory?: () => Promise<MinterSetup> } = {}) {
     if (!factory && !identity) throw new Error('PoTokenProvider needs an identity (or a test factory)');
@@ -157,6 +159,20 @@ export class PoTokenProvider {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * A fresh BotGuard attestation for the next tokens - after YouTube rejected a token (stream
+   * protection status 3; 2026-11-06 every stall stopped at 60 s with SPS 3). At most once per
+   * RENEW_MIN_MS: every renewal is a BotGuard request of its own.
+   */
+  renew(): void {
+    const now = Date.now();
+    if (!this.current || this.inflight || now - this.lastRenew < RENEW_MIN_MS) return;
+    this.lastRenew = now;
+    this.current.expiresAt = 0;   // ensure() creates a new minter; the old one is disposed then
+    log('webpo: renewing the attestation after a rejected token');
+    this.warm();
   }
 
   /** Websafe base64 token bound to `contentBinding` (video id). */
