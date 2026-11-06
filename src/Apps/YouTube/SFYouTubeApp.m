@@ -51,6 +51,11 @@
 // Idempotent; costs a few stat calls once there is nothing left.
 + (void)removeYTDLPLeftovers {
     NSFileManager *fm = [NSFileManager defaultManager];
+    // the bot-check file lived in that cache folder: a running pause moves along (unless the new
+    // place already has a state) - losing it sent a request during a pause (2026-11-06 11:11)
+    NSString *oldBlock = [[SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"] stringByAppendingPathComponent:@"youtube-block.json"];
+    if ([fm fileExistsAtPath:oldBlock] && ![fm fileExistsAtPath:[SFYTBreaker filePath]] && [fm moveItemAtPath:oldBlock toPath:[SFYTBreaker filePath] error:nil])
+        SFLog(@"yt: bot-check state moved to %@", [SFYTBreaker filePath].lastPathComponent);
     for (NSString *p in @[[SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp"], [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp.new"],
                           [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp.old"], [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"],
                           [SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"], [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]])
