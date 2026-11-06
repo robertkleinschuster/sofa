@@ -11,7 +11,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { DIR, get, json, nth, until, within } from './helpers.ts';
-import type { VodAnswer } from '../../res/sofa-yt/lib/app.ts';
+import type { VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
 import type { SessionStatus } from '../../res/sofa-yt/lib/session.ts';
 import { mpvIpc } from './mpvipc.ts';
 

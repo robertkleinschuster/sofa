@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { after } from 'node:test';
-import type { App, AppOptions, AppYouTube } from '../../res/sofa-yt/lib/app.ts';
+import type { Engine, EngineOptions, EngineYouTube } from '../../res/sofa-yt/lib/engine.ts';
 import type { MediaIndex } from '../../res/sofa-yt/lib/mediaindex.ts';
 import type { PumpEnd, PumpHandle, PumpRequest, TrackKind } from '../../res/sofa-yt/lib/session.ts';
 import type { RawCaptions, RawFormat, RawVideoDetails } from '../../res/sofa-yt/lib/ytraw.ts';
@@ -36,9 +36,11 @@ interface FormatXTagsCodec {
  * the types come from the sources (type-only imports, erased at run time).
  */
 interface Modules {
+  'lib/engine.ts': typeof import('../../res/sofa-yt/lib/engine.ts');
   'lib/app.ts': typeof import('../../res/sofa-yt/lib/app.ts');
   'lib/breaker.ts': typeof import('../../res/sofa-yt/lib/breaker.ts');
   'lib/bytes.ts': typeof import('../../res/sofa-yt/lib/bytes.ts');
+  'lib/filestore.ts': typeof import('../../res/sofa-yt/lib/filestore.ts');
   'lib/transport.ts': typeof import('../../res/sofa-yt/lib/transport.ts');
   'lib/formats.ts': typeof import('../../res/sofa-yt/lib/formats.ts');
   'lib/hls.ts': typeof import('../../res/sofa-yt/lib/hls.ts');
@@ -185,7 +187,7 @@ export function ytError(message: string, flags: YouTubeErrorFlags): Error & YouT
 }
 
 /** A fake YouTube client: what createApp uses, plus the counters tests read. */
-export type FakeYouTube = AppYouTube & { requests: number; cache: Map<string, VideoInfo> };
+export type FakeYouTube = EngineYouTube & { requests: number; cache: Map<string, VideoInfo> };
 
 /** Fake YouTube client: serves fixture infos, counts "player requests". */
 export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | 'unanswered'>, { breaker }: { breaker?: { blockedUntil(): number; heldUntil(): number; note(bot: boolean): void } } = {}): FakeYouTube {
@@ -213,38 +215,40 @@ export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | '
   return y;
 }
 
-/** A running app on an ephemeral port. */
+/** A running engine behind the HTTP adapter on an ephemeral port. */
 export interface TestApp {
-  app: App;
+  engine: Engine;
   port: number;
   base: string;
   close(): Promise<void>;
 }
 
 /** createApp options with test doubles: the fakes only need what the test exercises. */
-export type TestAppOptions = Omit<AppOptions, 'startPump' | 'po' | 'youtube'> & {
+export type TestAppOptions = Omit<EngineOptions, 'startPump' | 'po' | 'youtube' | 'base'> & {
   startPump: FakeStart;
-  po: Partial<AppOptions['po']>;
-  youtube: Pick<AppYouTube, 'info'> & Partial<AppYouTube>;
+  po: Partial<EngineOptions['po']>;
+  youtube: Pick<EngineYouTube, 'info'> & Partial<EngineYouTube>;
 };
 
 const unused = (what: string) => (): never => { throw new Error(`test double: ${what} not expected`); };
 
 /** Start createApp on an ephemeral port. */
 export async function startApp(opts: TestAppOptions): Promise<TestApp> {
+  const { createEngine } = await mod('lib/engine.ts');
   const { createApp } = await mod('lib/app.ts');
   // the doubles carry what a test exercises; a member a test leaves out must never be reached
-  const youtube: AppYouTube = { sessionState: 'ready', refresh: unused('youtube.refresh'), forget: unused('youtube.forget'),
+  const youtube: EngineYouTube = { sessionState: 'ready', refresh: unused('youtube.refresh'), forget: unused('youtube.forget'),
     webHeaders: unused('youtube.webHeaders'), ...opts.youtube };
-  const app = createApp({ ...opts, youtube, po: { state: 'ready', mintString: unused('po.mintString'), ...opts.po } });
-  const server = http.createServer(app.handler);
+  let port = 0;
+  const engine = createEngine({ ...opts, youtube, po: { state: 'ready', mintString: unused('po.mintString'), ...opts.po },
+    base: () => `http://127.0.0.1:${port}` });
+  const server = http.createServer(createApp(engine).handler);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const addr = server.address();
-  const port = addr !== null && typeof addr === 'object' ? addr.port : 0;
-  app.setPort(port);
+  port = addr !== null && typeof addr === 'object' ? addr.port : 0;
   return {
-    app, port, base: `http://127.0.0.1:${port}`,
-    async close() { app.shutdown(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    engine, port, base: `http://127.0.0.1:${port}`,
+    async close() { engine.shutdown(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
   };
 }
 

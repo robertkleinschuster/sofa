@@ -10,7 +10,7 @@ import path from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { mod, fakeYouTube, json, must, nth, startApp, get, until, within, vodInfo } from './helpers.ts';
 import type { FakeStart } from './helpers.ts';
-import type { VodAnswer } from '../../res/sofa-yt/lib/app.ts';
+import type { VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
 import type { PumpEnd, TrackKind } from '../../res/sofa-yt/lib/session.ts';
 import type { ChildProcess } from 'node:child_process';
 import { mpvIpc } from './mpvipc.ts';
@@ -101,7 +101,7 @@ test('mpv plays and seeks through the sidecar (real media, fake SABR)', { skip: 
     ],
   });
   const pumps = filePumps({ 242: path.join(dir, 'v.webm'), 251: path.join(dir, 'a.webm') }, { firstMs: Number(process.env.SOFA_YT_TEST_FIRST_MS || 400) });
-  const app = await startApp({ youtube: fakeYouTube({ testtesttes: info }), po: { state: 'ready' }, breaker: new Breaker(null),
+  const app = await startApp({ youtube: fakeYouTube({ testtesttes: info }), po: { state: 'ready' }, breaker: new Breaker(),
     startPump: pumps.start, sessionCfg: { LOW_MS: 4000, HIGH_MS: 8000, GRACE_MS: 1500 } });
   const sock = path.join(dir, 'mpv.sock');
   let mpv: ChildProcess | null = null; let mlog = '';

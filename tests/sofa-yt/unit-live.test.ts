@@ -10,7 +10,7 @@ import path from 'node:path';
 import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, noSessions } from './helpers.ts';
 import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { FakeStart } from './helpers.ts';
-import type { AppYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/app.ts';
+import type { EngineYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/engine.ts';
 import type { LiveStatus, PlaylistFetch } from '../../res/sofa-yt/lib/hls.ts';
 import type { RawPlayerResponse } from '../../res/sofa-yt/lib/ytraw.ts';
 import type { HlsInfo, VideoInfo, YouTubeErrorFlags } from '../../res/sofa-yt/lib/youtube.ts';
@@ -211,7 +211,7 @@ function fakeUpstream({ variant = VARIANT } = {}): Upstream {
   return f;
 }
 
-type FakeYT = AppYouTube & { requests: number; refreshes: number; forgotten: number };
+type FakeYT = EngineYouTube & { requests: number; refreshes: number; forgotten: number };
 
 function fakeYT(info: VideoInfo, { refreshInfo }: { refreshInfo?: () => VideoInfo } = {}): FakeYT {
   const y: FakeYT = {
@@ -339,7 +339,7 @@ test('unusable manifest at /open: live error, cached URL forgotten, no session',
     const r = await j<OpenFailure>(`${app.base}/open?v=${LIVE}`);  // second: from cache
     assert.equal(r.live, true); assert.match(r.error, /HLS manifest unavailable: HTTP 403/);
     assert.equal(yt.forgotten, 1);
-    assert.equal(app.app.sessions.size, 0);
+    assert.equal(app.engine.sessions.size, 0);
   } finally { await app.close(); }
 });
 
@@ -358,13 +358,13 @@ test('background opens (downloads) of lives are refused with live:true', async (
   try {
     const r = await j<OpenFailure>(`${app.base}/open?v=${LIVE}&bg=1`);
     assert.equal(r.live, true); assert.equal(r.error, 'live');
-    assert.equal(app.app.sessions.size, 0);
+    assert.equal(app.engine.sessions.size, 0);
   } finally { await app.close(); }
 });
 
 test('/open of an upcoming stream: error upcoming with the start time', async () => {
   const start = Math.floor(Date.now() / 1000) + 3600;
-  const yt: Pick<AppYouTube, 'info' | 'sessionState'> = { sessionState: 'ready', async info() { throw ytError('upcoming', { live: true, upcoming: true, startTime: start }); } };
+  const yt: Pick<EngineYouTube, 'info' | 'sessionState'> = { sessionState: 'ready', async info() { throw ytError('upcoming', { live: true, upcoming: true, startTime: start }); } };
   const app = await startApp({ youtube: yt, po: {}, breaker, startPump: noPump });
   try {
     const r = await j<OpenFailure>(`${app.base}/open?v=${LIVE}`);
@@ -376,9 +376,9 @@ test('idle live sessions expire like VOD sessions', async () => {
   const app = await startApp({ youtube: fakeYT(liveInfo()), po: {}, breaker, startPump: noPump, fetchFn: fakeUpstream().fetch, idleMs: 50, sweepMs: 20 });
   try {
     const r = await j(`${app.base}/open?v=${LIVE}`);
-    assert.equal(app.app.sessions.size, 1);
+    assert.equal(app.engine.sessions.size, 1);
     await sleep(150);
-    assert.equal(app.app.sessions.size, 0);
+    assert.equal(app.engine.sessions.size, 0);
     assert.equal((await fetch(`${app.base}/s/${r.sid}/live.m3u8`)).status, 404);
   } finally { await app.close(); }
 });

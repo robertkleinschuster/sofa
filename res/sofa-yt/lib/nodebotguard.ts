@@ -17,7 +17,10 @@ export async function jsdomMinter(identity: Identity): Promise<MinterSetup> {
     globalObject: globalThis as unknown as Record<string, unknown>,
     // dispose: the renewal (every ~12 h) must not keep the old jsdom window alive (review 2026-11-05)
     dispose: () => { try { dom.window.close(); } catch { /* already closed */ } },
-    preparePage(pageHtml) {
+    async page() {
+      const pageHtml = await (await fetch('https://www.youtube.com', {
+        headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      })).text();
       const ytConfig = pageHtml.match(/ytcfg\.set\(({.+?})\);/s)?.[1];
       if (!ytConfig) throw new Error('webpo: ytcfg not found in page');
       win.yt = { config_: parseJson(ytConfig) };
@@ -35,6 +38,7 @@ export async function jsdomMinter(identity: Identity): Promise<MinterSetup> {
       Object.assign(globalThis, { yt: win.yt, window: dom.window, document: dom.window.document,
         location: dom.window.location, origin: dom.window.origin });
       if (!('navigator' in globalThis)) Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+      return pageHtml;
     },
     async loadInterpreter(url) {
       const js = await (await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })).text();

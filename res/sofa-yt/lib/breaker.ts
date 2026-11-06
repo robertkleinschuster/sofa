@@ -1,61 +1,56 @@
-// Bot-check circuit breaker in a file shared with Sofa (SFYTBreaker) and every instance on this IP
-// ({"until": epoch_seconds, "backoff": seconds}). After "Sign in to confirm you're not a bot" the
+// Bot-check circuit breaker; its state ({"until": epoch_seconds, "backoff": seconds}) is shared with
+// Sofa (SFYTBreaker) and every instance on this IP. After "Sign in to confirm you're not a bot" the
 // background (preload, downloads) sends no player request until `until`: 1 h, doubling up to 8 h,
 // reset by the first success - a probe every few minutes met the same block and kept it alive
 // (2026-11-06: 27 refused requests, probes after 5/10/20/40 min). Playback the user starts still
 // tries, except within FG_HOLD_S of the check: retries from the phone went straight into the block
 // (7 player requests in 15 min). The file is re-read on every check because another instance
-// (another sidecar) may update it too.
-import fs from 'node:fs';
-import { parseJson, record } from './json.ts';
-import { errorMessage } from './errors.ts';
+// (another sidecar, Sofa) may update it too. Where the state lives is a BlockStore: the shared file in
+// node (filestore.ts), memory in the browser engine (seeded by Sofa, changes reported back to it).
 import { log } from './log.ts';
 
 export const BLOCK_MIN = 3600;
 export const BLOCK_MAX = 8 * 3600;
 export const FG_HOLD_S = 180;
 
-/** The breaker file: `until` epoch seconds, `backoff` seconds. */
+/** The breaker state: `until` epoch seconds, `backoff` seconds. */
 export interface BlockState {
   until: number;
   backoff: number;
 }
 
+/** Where the breaker state lives. read(): null = none or unreadable. */
+export interface BlockStore {
+  read(): BlockState | null;
+  write(b: BlockState): void;
+}
+
+/** Breaker state in memory; `onWrite` sees every change (the browser engine tells Sofa). */
+export class MemoryBlocks implements BlockStore {
+  state: BlockState | null;
+  onWrite: ((b: BlockState) => void) | null;
+  constructor(state: BlockState | null = null, onWrite: ((b: BlockState) => void) | null = null) { this.state = state; this.onWrite = onWrite; }
+  read(): BlockState | null { return this.state; }
+  write(b: BlockState): void { this.state = b; this.onWrite?.(b); }
+}
+
 export class Breaker {
-  file: string | null;
+  store: BlockStore;
   now: () => number;
   mem: BlockState;
 
-  constructor(file: string | null, now = (): number => Date.now() / 1000) {
-    this.file = file;
+  constructor(store: BlockStore = new MemoryBlocks(), now = (): number => Date.now() / 1000) {
+    this.store = store;
     this.now = now;
-    this.mem = { until: 0, backoff: 0 }; // used when no file is configured / unreadable
+    this.mem = { until: 0, backoff: 0 }; // the last state written, used while the store has none / is unreadable
   }
 
-  read(): BlockState {
-    if (!this.file) return this.mem;
-    try {
-      const b = parseJson(fs.readFileSync(this.file, 'utf8'));
-      if (b === null) return this.mem;   // unusable: as if unreadable
-      const r = record(b);
-      return { until: Number(r.until) || 0, backoff: Number(r.backoff) || 0 };
-    } catch {
-      return this.mem;
-    }
-  }
+  read(): BlockState { return this.store.read() ?? this.mem; }
 
   write(b: BlockState): void {
     this.mem = b;
-    if (!this.file) return;
-    try {
-      const tmp = `${this.file}.tmp.${process.pid}`;
-      fs.writeFileSync(tmp, JSON.stringify(b));
-      fs.renameSync(tmp, this.file);
-    } catch (e) {
-      log('breaker: cannot write', this.file, errorMessage(e));
-    }
+    this.store.write(b);
   }
-
   /** Epoch seconds until which background requests are paused, 0 if not blocked. */
   blockedUntil(): number {
     const b = this.read();

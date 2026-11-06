@@ -12,12 +12,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import type { ReloadPlaybackContext } from 'googlevideo/protos';
-import { errorMessage, toError } from './lib/errors.ts';
 import { log, setDebug } from './lib/log.ts';
 import { parseJson, record } from './lib/json.ts';
-import type { AppStartPump } from './lib/app.ts';
-import type { PumpHandle, SessionConfig } from './lib/session.ts';
+import type { SessionConfig } from './lib/session.ts';
 
 const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(`--${name}`);
@@ -46,7 +43,7 @@ if (flag('check')) {
   await import('undici');
   await import('./lib/transport.ts');
   await import('./lib/app.ts');
-  await import('./lib/sabrpump.ts');
+  await import('./lib/pump.ts');
   await import('./lib/webpo.ts');
   process.stderr.write(`sofa-yt: check ok (node ${process.version})\n`);
   process.exit(0);
@@ -73,12 +70,13 @@ const { Breaker } = await import('./lib/breaker.ts');
 const { PoTokenProvider } = await import('./lib/webpo.ts');
 const { jsdomMinter } = await import('./lib/nodebotguard.ts');
 const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
-const { FileStore } = await import('./lib/filestore.ts');
+const { FileStore, FileBlocks } = await import('./lib/filestore.ts');
 const { nodeSessions } = await import('./lib/nodesession.ts');
-const { startSabrPump } = await import('./lib/sabrpump.ts');
+const { sabrPumps } = await import('./lib/pump.ts');
+const { createEngine } = await import('./lib/engine.ts');
 const { createApp } = await import('./lib/app.ts');
 
-const breaker = new Breaker(blockFile);
+const breaker = new Breaker(new FileBlocks(blockFile));
 const po = new PoTokenProvider({ factory: () => jsdomMinter(identity) });
 const maxReq = Number(opt('max-player-requests', 60));
 const store = new FileStore(stateDir);   // player responses, budget, visitor (lib/store.ts)
@@ -89,54 +87,16 @@ const budget = new PlayerBudget({
 });
 const youtube = new YouTube({ store, sessions: nodeSessions(identity, stateDir), breaker, po, budget });
 
-/** Pump factory: real SABR with this process' PO tokens and reload path. */
-async function preMint(videoId: string): Promise<string | undefined> {
-  try { return await po.mintString(videoId); } catch (e) { log('PO token for SABR unavailable:', errorMessage(e)); return undefined; }
-}
-const tokenCache = new Map<string, { token: string; at: number }>(); // videoId -> one pre-minted token per video, reused for restarts
-const startPump: AppStartPump = (info, formats, opts) => {
-  let handle: PumpHandle | null = null;
-  let aborted = false;
-  const tc = tokenCache.get(info.id);
-  const launch = (poToken: string | undefined): void => {
-    if (aborted) return;
-    try {
-      handle = startSabrPump({
-        ...opts, info, formats, poToken,
-        mintPoToken: () => po.mintBytes(info.id),
-        // a rejected token must not start the next run again; a fresh attestation for new ones
-        onTokenRejected: () => { tokenCache.delete(info.id); po.renew(); },
-        reload: async (ctx?: ReloadPlaybackContext) => {
-          const r = await youtube.reload(info.id, ctx, { bg: !!opts.bg });
-          // the session keeps the info object: point it at the fresh URL for future runs
-          const fresh = youtube.cached(info.id);
-          if (fresh && fresh.kind !== 'hls') { info.sabrUrl = fresh.sabrUrl; info.ustreamer = fresh.ustreamer; info.expires = fresh.expires; }
-          return r;
-        },
-      });
-    } catch (e) {
-      opts.onEnd(toError(e), 'error');
-    }
-  };
-  if (tc && Date.now() - tc.at < 30 * 60 * 1000) launch(tc.token);
-  else {
-    preMint(info.id).then((token) => {
-      if (token) {
-        if (tokenCache.size > 32) tokenCache.delete(tokenCache.keys().next().value!); // bounded
-        tokenCache.set(info.id, { token, at: Date.now() });
-      }
-      launch(token);
-    });
-  }
-  // diag: what SABR's server last said (stall reports); the wrapper must pass it on
-  return { abort() { aborted = true; handle?.abort(); }, diag: () => handle?.diag?.() ?? '[waiting for the PO token]' };
-};
+const startPump = sabrPumps({ youtube, po });
 
 // pacing window (seconds of media buffered ahead of the reader): resume below low, pause above high
 const sessionCfg: Partial<SessionConfig> = {};
 if (opt('ahead-low')) sessionCfg.LOW_MS = Number(opt('ahead-low')) * 1000;
 if (opt('ahead-high')) sessionCfg.HIGH_MS = Number(opt('ahead-high')) * 1000;
-const app = createApp({ youtube, po, breaker, startPump, sessionCfg });
+let port = 0;
+const engine = createEngine({ youtube, po, breaker, startPump, sessionCfg, base: () => `http://127.0.0.1:${port}`,
+  memoryMB: () => Math.round(process.memoryUsage().rss / 1048576) });
+const app = createApp(engine);
 const server = http.createServer(app.handler);
 server.on('clientError', (_err, sock) => { try { sock.destroy(); } catch { /* gone */ } });
 
@@ -145,7 +105,7 @@ function shutdown(why: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
   log(`exiting (${why})`);
-  app.shutdown();
+  engine.shutdown();
   server.close();
   server.closeAllConnections?.();
   setTimeout(() => process.exit(0), 300).unref();
@@ -165,8 +125,7 @@ process.on('uncaughtException', (e) => { log('uncaught exception:', e.stack || e
 
 server.listen(Number(opt('port', 0)), '127.0.0.1', () => {
   const addr = server.address();
-  const port = addr !== null && typeof addr === 'object' ? addr.port : 0;   // always an AddressInfo for TCP
-  app.setPort(port);
+  port = addr !== null && typeof addr === 'object' ? addr.port : 0;   // always an AddressInfo for TCP
   process.stdout.write(`${JSON.stringify({ ready: true, port, userAgent: identity.userAgent })}\n`);
   log(`listening on 127.0.0.1:${port}, state ${stateDir}`);
   // warm up the web identity (no player request): Innertube session + BotGuard minter. Not when

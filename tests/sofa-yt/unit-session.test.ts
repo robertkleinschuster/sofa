@@ -11,7 +11,7 @@ import {
   xtags, FakeRes, json, must, nth,
 } from './helpers.ts';
 import type { TestApp, TestAppOptions } from './helpers.ts';
-import type { OpenAnswer, OpenFailure, VodAnswer } from '../../res/sofa-yt/lib/app.ts';
+import type { OpenAnswer, OpenFailure, VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
 import type { BlockState } from '../../res/sofa-yt/lib/breaker.ts';
 import type { SessionConfig, SessionStatus } from '../../res/sofa-yt/lib/session.ts';
 import type { VideoInfo, VodInfo } from '../../res/sofa-yt/lib/youtube.ts';
@@ -20,6 +20,7 @@ const { parseIndex } = await mod('lib/mediaindex.ts');
 const { PlaybackSession } = await mod('lib/session.ts');
 const { describeFormats, pickVideo, pickAudio, audioTracks } = await mod('lib/formats.ts');
 const { Breaker } = await mod('lib/breaker.ts');
+const { FileBlocks } = await mod('lib/filestore.ts');
 
 const ID = 'OzCYsIrrRyw';
 const VINIT = fixtureInit(ID, 248);
@@ -62,7 +63,7 @@ interface SetupOptions {
   appOpts?: Partial<TestAppOptions>;
 }
 
-async function setup({ fail = null, stall = false, cfg = {}, infos = { [ID]: info }, breaker = new Breaker(null), appOpts = {} }: SetupOptions = {}) {
+async function setup({ fail = null, stall = false, cfg = {}, infos = { [ID]: info }, breaker = new Breaker(), appOpts = {} }: SetupOptions = {}) {
   const pumps = fakePumps(MEDIA, { fail, stall });
   const youtube = fakeYouTube(infos, { breaker });
   const po = { state: 'ready' as const, mintString: async () => 'tok' };
@@ -266,7 +267,7 @@ test('open: YouTube not answering is marked unanswered (the app then asks no one
 test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is refused', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-test-'));
   const file = path.join(dir, 'youtube-block.json');
-  const breaker = new Breaker(file);
+  const breaker = new Breaker(new FileBlocks(file));
   const { app, youtube } = await setup({ breaker, infos: { [ID]: info, jNQXAC9IVRw: 'bot', aaaaaaaaaaa: 'live' } });
   try {
     const bot = await openJson<OpenFailure>(app, 'v=jNQXAC9IVRw');

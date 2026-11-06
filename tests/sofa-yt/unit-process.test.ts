@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DIR, get, json, nth, until, sleep, within } from './helpers.ts';
-import type { OpenFailure } from '../../res/sofa-yt/lib/app.ts';
+import type { OpenFailure } from '../../res/sofa-yt/lib/engine.ts';
 
 test('ready line, health, bg breaker, exit on stdin EOF', async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-proc-'));

@@ -12,8 +12,11 @@ import type { MinterSetup } from './webpo.ts';
 
 /** Where BotGuard runs. */
 export interface AttestEnv {
-  /** Make the page's globals ready for BotGuard (node: a jsdom window with the page's ytcfg). */
-  preparePage(pageHtml: string): void;
+  /**
+   * The youtube.com page's HTML, its globals ready for BotGuard (node: fetched, a jsdom window with
+   * the page's ytcfg; browser: the document the engine runs in - no second page load).
+   */
+  page(): Promise<string>;
   /** Run Google's interpreter so its global exists (node: evaluate it; browser: load it as the page does). */
   loadInterpreter(url: string): Promise<void>;
   /** The global object BotGuard's VM lives in. */
@@ -36,10 +39,7 @@ export async function attest(env: AttestEnv): Promise<MinterSetup> {
   const t0 = performance.now();
   const sig = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
   try {
-    const pageHtml = await (await fetch('https://www.youtube.com', {
-      headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }, signal: sig(),
-    })).text();
-    env.preparePage(pageHtml);
+    const pageHtml = await env.page();
     const att = pageHtml.match(/window\.ytAtN\(\s*({[\s\S]*?})\s*\)/);
     if (!att) throw new Error('webpo: challenge not found in page');
     const loose: unknown = parseLooseJSON(att[1]!).R;
