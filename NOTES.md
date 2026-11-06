@@ -19,8 +19,9 @@ AVX2, Radeon HD 6770M, 2560x1440).
 3. **Own scrapers** for the Mediatheken, directly against the source APIs; MediathekView
    (MServer, open source) only as a reference for endpoints — **no dependency on
    MediathekView servers** in the final state.
-4. **yt-dlp = the only external engine**, only for YouTube (signature/nsig/PO-token
-   arms race), encapsulated behind the resolver interface, separate process.
+4. ~~yt-dlp = the only external engine~~ (superseded 2026-11-06, user: yt-dlp removed): YouTube
+   runs through Sofa's own sidecar `res/sofa-yt` (youtubei.js + SABR, one browser identity), a
+   separate process behind a local HTTP interface.
 5. Apple Remote **Menu button starts Sofa** (Front Row principle) via our own helper.
 6. Final state as a MacPorts port in the overlay (`~/backport-toolkit/ports`), follow the doctrine.
 7. Subtitles are NOT needed.
@@ -361,6 +362,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 - [x] 2026-11-06 Crash 12:36 (`SFYTParser channelHeaderIn:` put a nil banner into a dictionary for a channel without one) left the TV dark: launchd's KeepAlive only covers a Sofa it launched at login, not one SofaRemote launched after an update. Fixed: parser (+ the banner URL kept the old size: cut at the first "=", not the last), regression fixture `header-nobanner`; SofaRemote supervises (`SRSupervisor`, relaunch 10 s after an unplanned end, max 3 per 10 min, unit test); test-parse names a crashed instance; all suites write the FIFO non-blocking (a crashed instance hung test-parse).
 - [x] 2026-11-06 Bot-check root cause found in the logs: the phone remote (Lounge setPlaylist) filled the details of EVERY queue entry at once - ~100 "next" calls within one minute at 10:03/10:12/10:31, bot checks from 10:56. Now only the playing + next entry, the rest as playback reaches it (`SFYTRemoteFillAhead`); test-playback 8c (verified failing with the old code). Also seen: 09:22 ~200 direct youtubei/player calls of the old app code (gone since the identity commit, the sidecar refuses app player calls). Since 11:00: max 4 requests/min.
 - [x] 2026-11-06 DB review (user request): `subscriptions` duplicated title/image/source of its follow - 70 of 127 copies stale. Schema step 9: own fields only (keepDays, since, added), a subscription without follow becomes one, the in-code one-time adoption (follows.migrated) removed; imports adopt follows quietly (`SFFollows adopt:`, no check burst). Verified on a copy of the real DB. Rest of the review: no orphans, cache bounded (64 MB / 14 d, incremental vacuum), indexes only where queries sort on disk.
+- [x] 2026-11-06 Data model review (artifact "Sofa Datenmodell"): schema step 10 moves the response cache into its own file `Caches/Sofa/cache.db` (attached as `cache`; user DB 68.9 MB -> 2.1 MB, entries kept so the update fetches nothing again) and deletes 4 settings of removed code. Open, waiting for the user: one `items` table for video metadata (253 of 293 duplicated videos disagree), explicit download states (retry wait / repair pending), typed records instead of dictionaries.
 - [ ] Rare test-sofa-yt flake under test-all load (2026-11-06, once in 6 runs: an `assert.ok` with its own message false, name lost in the tail; then 0 failures in 14 further runs - the one failure coincided with the real app relaunching on the same CPU). test-all now prints failing check names; catch it next time. Suspects (short deadlines under load): unit-process "request took < 1500 ms", unit-session "pull resumed" (3 s), "expired"/"pumps stopped" (3 s/2 s). Do not widen deadlines blindly.
 - [ ] Robustness (User 2026-11-04, standing rule): no ordering assumptions between async subsystems, readiness signal + timeout, watchdog/self-healing for long-lived state, one regression check per incident (`tools/test-playback`, `tools/test-resolver`).
 

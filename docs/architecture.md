@@ -148,12 +148,15 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   transaction with its version bump (a failing step rolls back and is retried next launch).
   Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
   migrates a 0.3.8 database and checks every step - extend it with each new step.
-- Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
+- Tables: `progress` (positions, history), `settings`,
   `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
   picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
   (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`. Items are
   stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
+- The response cache (`jcache`: SFNet's raw answers, apps' derived data) is not user data: its own
+  file `cache.db` in the caches folder (`SFCacheDir`), attached to the same connection as schema
+  `cache` (`-[SFStore attachCache]`). Losing it costs requests, nothing else.
 - WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.
   The response cache is trimmed after launch and daily: 14 days, 64 MB at most, oldest first.
 - `settings` holds preferences and small state only (`setSetting:nil` removes a key). Raw

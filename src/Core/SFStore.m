@@ -31,6 +31,7 @@
         [self exec:@"PRAGMA synchronous=NORMAL"];
         [self exec:@"PRAGMA temp_store=MEMORY"];
         [self exec:@"PRAGMA journal_size_limit=8388608"];   // WAL file trimmed back to 8 MB after checkpoints
+        [self attachCache];
         [self migrate];
         [self loadProgress];
         // response cache housekeeping: shortly after launch, then daily
@@ -44,7 +45,7 @@
 // order, inside one transaction with its version bump. Never change a step that has shipped - add one.
 // Tables hold Sofa's own data; items are stored as their JSON (SFItem dictionaryRepresentation)
 // and loaded into memory at launch, so besides the primary keys only the queries that page or
-// sort on disk need an index (progress by updated, jcache by age for trimming).
+// sort on disk need an index (progress by updated; the response cache, in its own file, by age).
 
 - (NSArray *)migrations {
     return @[
@@ -123,6 +124,14 @@
             [self exec:@"ALTER TABLE subscriptions_new RENAME TO subscriptions"];
             [self exec:@"DELETE FROM settings WHERE k = 'follows.migrated'"];   // that adoption is this step now
         },
+        // 10: the response cache moves to its own file (attachCache) - its entries go along, so the
+        // update fetches nothing again; settings of removed code go (YouTube RSS feeds, the Kodi
+        // import, the YouTube-account import, the old Watch Later import)
+        ^{
+            [self exec:@"INSERT OR IGNORE INTO cache.jcache (k, t, v) SELECT k, t, v FROM main.jcache"];
+            [self exec:@"DROP TABLE main.jcache"];
+            [self exec:@"DELETE FROM settings WHERE k IN ('yt.feeds.v2', 'kodi.imported', 'follows.ytAccountImported', 'watchlater.import.youtube')"];
+        },
     ];
 }
 
@@ -159,6 +168,23 @@
     }
 }
 
+#pragma mark Response cache
+
+// The response cache is not user data: its own file in the caches folder (SFCacheDir: the real app
+// ~/Library/Caches/Sofa, a dev instance its own), attached to the one connection as schema "cache".
+// Losing it costs requests, nothing else; macOS may clear it. Its table is created here, not by a
+// migration step - the cache has no history to migrate (schema step 10 moved the old one over).
+- (void)attachCache {
+    NSString *p = [SFCacheDir() stringByAppendingPathComponent:@"cache.db"];
+    char *sql = sqlite3_mprintf("ATTACH DATABASE %Q AS cache", p.fileSystemRepresentation);
+    [self exec:@(sql)];
+    sqlite3_free(sql);
+    [self exec:@"PRAGMA cache.auto_vacuum=INCREMENTAL"];   // takes effect on a new file (before the first table)
+    [self exec:@"PRAGMA cache.journal_mode=WAL"];
+    [self exec:@"CREATE TABLE IF NOT EXISTS cache.jcache (k TEXT PRIMARY KEY, t REAL, v BLOB)"];
+    [self exec:@"CREATE INDEX IF NOT EXISTS cache.jcache_t ON jcache(t)"];
+}
+
 #pragma mark Response cache housekeeping
 // SFNet keeps raw answers here (fresh for their cacheAge; older ones are the fallback when a source
 // fails) and apps keep derived data under their own keys (YouTube's stored feeds, rewritten when
@@ -168,19 +194,20 @@ static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
 
 - (void)trimCacheNow {
     double now = [NSDate date].timeIntervalSince1970;
-    [self runNow:@"DELETE FROM jcache WHERE t < ?" args:@[@(now - kCacheKeep)]];
+    [self runNow:@"DELETE FROM cache.jcache WHERE t < ?" args:@[@(now - kCacheKeep)]];
     // size cap in one pass: newest first, everything from the entry that crosses the cap on goes
     long long bytes = 0;
-    for (NSDictionary *r in [self rowsNow:@"SELECT t, LENGTH(v) AS n FROM jcache ORDER BY t DESC" args:nil]) {
+    for (NSDictionary *r in [self rowsNow:@"SELECT t, LENGTH(v) AS n FROM cache.jcache ORDER BY t DESC" args:nil]) {
         bytes += [r[@"n"] longLongValue];
-        if (bytes > kCacheMaxBytes) { [self runNow:@"DELETE FROM jcache WHERE t <= ?" args:@[r[@"t"]]]; break; }
+        if (bytes > kCacheMaxBytes) { [self runNow:@"DELETE FROM cache.jcache WHERE t <= ?" args:@[r[@"t"]]]; break; }
     }
 }
 
 - (void)trimCache {   // on _q
     [self trimCacheNow];
-    [self exec:@"PRAGMA incremental_vacuum"];
-    [self exec:@"PRAGMA wal_checkpoint(TRUNCATE)"];
+    [self exec:@"PRAGMA main.incremental_vacuum"];
+    [self exec:@"PRAGMA cache.incremental_vacuum"];
+    [self exec:@"PRAGMA wal_checkpoint(TRUNCATE)"];   // every attached database
     __weak SFStore *ws = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(86400 * NSEC_PER_SEC)), _q, ^{ [ws trimCache]; });
 }
@@ -352,7 +379,7 @@ static SFItem *playableItem(id json) {
     __block NSData *data = nil;
     dispatch_sync(_q, ^{   // only the read under the queue; parsing (up to ~1 MB) happens outside
         sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, "SELECT t,v FROM jcache WHERE k=?", -1, &st, NULL) != SQLITE_OK) return;
+        if (sqlite3_prepare_v2(self->_db, "SELECT t,v FROM cache.jcache WHERE k=?", -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, key);
         if (sqlite3_step(st) == SQLITE_ROW && [NSDate date].timeIntervalSince1970 - sqlite3_column_double(st, 0) <= age) {
             const void *b = sqlite3_column_blob(st, 1);
@@ -369,7 +396,7 @@ static SFItem *playableItem(id json) {
     double now = [NSDate date].timeIntervalSince1970;
     dispatch_async(_q, ^{
         sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO jcache (k,t,v) VALUES (?,?,?)", -1, &st, NULL) != SQLITE_OK) return;
+        if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO cache.jcache (k,t,v) VALUES (?,?,?)", -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, key);
         sqlite3_bind_double(st, 2, now);
         sqlite3_bind_blob(st, 3, d.bytes, (int)d.length, SQLITE_TRANSIENT);

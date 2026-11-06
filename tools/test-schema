@@ -8,6 +8,7 @@
 #   8  feed_cache dropped again (RSS change detector gone)
 #   9  subscriptions keep only their own fields (title/picture/source are the follow's); one
 #      without a follow becomes one
+#  10  the response cache moves to its own file (entries kept), settings of removed code deleted
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
@@ -21,6 +22,7 @@ export SOFA_DATA_DIR="$T/data" SOFA_OFFLINE=1 SOFA_ONLY_APPS=example
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 DB="$SOFA_DATA_DIR/sofa.db"
 Q() { /opt/local/bin/sqlite3 "$DB" "$@"; }
+QC() { /opt/local/bin/sqlite3 "$SOFA_DATA_DIR/Caches/cache.db" "$@"; }   # the response cache file (step 10)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
 
@@ -59,24 +61,25 @@ INSERT INTO follow_items VALUES ('exampleshow:a', 'example:3', '{"id":"example:3
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:2', '{"id":"example:2","kind":0,"title":"Mitte"}', 100);
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:1', '{"id":"example:1","kind":0,"title":"Alt"}', 100);
 INSERT INTO settings VALUES ('dev.keyboard.layout', 'qwertz'), ('lounge.dev.token', 'x'), ('lounge.token', 'keep'),
-  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json'), ('follows.migrated', '0');
+  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json'), ('follows.migrated', '0'), ('kodi.imported', '1/0'), ('yt.feeds.v2', '1'), ('welcome.shown', '1');
 INSERT INTO jcache VALUES ('yt.feed.UCabcdefghijklmnopqrstuv', $NOW, CAST('{"sig":"a,b","items":[{"id":"yt:aaaaaaaaaaa","kind":0}]}' AS BLOB));
 INSERT INTO jcache VALUES ('yt.feed.UCbroken0000000000000000', $NOW, CAST('{"sig":' AS BLOB));   -- cut off: must not block step 5
 INSERT INTO jcache VALUES ('GET https://old.example/', $NOW - 30 * 86400, CAST('{}' AS BLOB));
+INSERT INTO jcache VALUES ('GET https://fresh.example/', $NOW, CAST('{"a":1}' AS BLOB));   -- moves along in step 10
 SQL
 ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 9
+check "schema version" "$(Q 'pragma user_version')" 10
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
-check "3: jcache age index" "$(Q "select count(*) from sqlite_master where name='jcache_t'")" 1
-check "3: expired cache entry trimmed" "$(Q "select count(*) from jcache where k like 'GET https://old%'")" 0
+check "3: cache age index (in the cache file)" "$(QC "select count(*) from sqlite_master where name='jcache_t'")" 1
+check "3: expired cache entry trimmed" "$(QC "select count(*) from jcache where k like 'GET https://old%'")" 0
 check "4: dev settings deleted, others kept" "$(Q "select group_concat(k) from settings where k like '%lounge%' or k like 'dev.%'")" "lounge.token"
 check "1: downloads columns added" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('failedAt','keep','online','onlineAt')")" 4
-check "5: no feed left in the response cache" "$(Q "select count(*) from jcache where k like 'yt.feed.%'")" 0
+check "5: no feed left in the response cache" "$(QC "select count(*) from jcache where k like 'yt.feed.%'")" 0
 check "5: follow_items in written order" "$(Q "select group_concat(id, ' ') from (select id from follow_items order by follow, pos)")" "example:3 example:2 example:1"
 check "5: follow_items columns" "$(Q "select group_concat(name) from pragma_table_info('follow_items')")" "follow,id,pos,item"
 check "5: subscriptions without lastCheck" "$(Q "select count(*) from pragma_table_info('subscriptions') where name='lastCheck'")" 0
@@ -89,6 +92,9 @@ check "9: the follow's title wins over the stale copy" "$(Q "select title from f
 check "9: subscription without follow became one" "$(Q "select title || ' ' || image from follows where id='exampleshow:b'")" "Show B https://img.example/b.jpg"
 check "9: its own fields kept" "$(Q "select keepDays || ' ' || since from subscriptions where id='exampleshow:b'")" "30 7.0"
 check "9: old adoption marker gone" "$(Q "select count(*) from settings where k='follows.migrated'")" 0
+check "10: no cache table in the user database" "$(Q "select count(*) from sqlite_master where name like 'jcache%'")" 0
+check "10: cache entry moved along" "$(QC "select CAST(v AS TEXT) from jcache where k='GET https://fresh.example/'")" '{"a":1}'
+check "10: settings of removed code gone, others kept" "$(Q "select group_concat(k) from (select k from settings where k in ('kodi.imported','yt.feeds.v2','welcome.shown') order by k)")" "welcome.shown"
 check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1122"
 
 echo "==> restart (no step runs twice)"
@@ -100,10 +106,11 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 9
+check "schema version" "$(Q 'pragma user_version')" 10
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
-  "downloads follow_items follows jcache progress recent_searches settings stats subscriptions watch_later"
+  "downloads follow_items follows progress recent_searches settings stats subscriptions watch_later"
+check "the cache file has its table" "$(QC "select count(*) from sqlite_master where name='jcache'")" 1
 
 [ $fail = 0 ] && echo "==> test-schema ok" || echo "==> test-schema FAILED"
 exit $fail
