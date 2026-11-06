@@ -108,8 +108,7 @@ Mixed rows (`src/Core/SFHomeFeatures.h`): apps feature content on Home through t
 `SFHomeTopicHighlights`; topics are defined in Core, a topic is a promise about what the row
 means). ZDF/ARD/ORF read news from their news pages (lead cluster / "News" lane, ORF segments as
 `orfseg:`); YouTube contributes Highlights without a request: videos of followed channels far
-above the channel's usual views (`SFItem.viewCount`; came from RSS `media:statistics`, empty since the
-RSS outage 2026-11-05 - open, NOTES). Most apps derive them
+above the channel's usual views (`SFItem.viewCount`, read from the lists' view text: `SFYTViewCount`). Most apps derive them
 structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
 `SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
 items), keeps each app's list (stored: Home shows them at once after a launch) and refreshes

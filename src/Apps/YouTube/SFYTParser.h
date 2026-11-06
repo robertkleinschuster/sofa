@@ -5,6 +5,8 @@
 #import "SFModel.h"
 
 NSString *SFYTBackdrop(NSString *videoID);   // TV-sized picture of a video (falls back to the tile picture where missing, SFImageLayer)
+// "313.544 Aufrufe" / "1,4 Mio. Aufrufe" (hl=de) -> count; -1 = not a view count
+long long SFYTViewCount(NSString *s);
 
 @interface SFYTParser : NSObject
 // Every video/playlist (in order, without duplicates) and channel in an answer, and its continuation token

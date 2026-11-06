@@ -38,6 +38,25 @@ static NSDate *relativeDate(NSString *s) {
     return unit ? [NSDate dateWithTimeIntervalSinceNow:-n * unit] : nil;
 }
 
+// A list entry's views as YouTube writes them for hl=de (the only language Sofa asks in):
+// "313.544 Aufrufe", "1 Aufruf", "1,4 Mio. Aufrufe" (lists), "1 Million Aufrufe" / "1,6 Millionen
+// Aufrufe" (watch-page suggestions), the same with "Mrd." / "Milliarde(n)", "Keine Aufrufe" -> 0.
+// Exact below a million, two significant digits above - lists carry no number field
+// (lockupViewModel/videoRenderer checked 2026-11-06); enough to compare a video with its
+// channel's usual views (Home highlights). -1 = not a view count (date, live "Zuschauer", ...).
+long long SFYTViewCount(NSString *s) {
+    NSString *t = [[s stringByReplacingOccurrencesOfString:@"\u00a0" withString:@" "] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (![t hasSuffix:@" Aufrufe"] && ![t hasSuffix:@" Aufruf"]) return -1;
+    NSArray *w = [t componentsSeparatedByString:@" "];
+    if ([w.firstObject isEqualToString:@"Keine"]) return 0;
+    NSDictionary *units = @{@"Mio.": @1e6, @"Million": @1e6, @"Millionen": @1e6, @"Mrd.": @1e9, @"Milliarde": @1e9, @"Milliarden": @1e9};
+    double scale = w.count == 2 ? 1 : w.count == 3 ? [units[w[1]] doubleValue] : 0;
+    NSString *num = [[w.firstObject stringByReplacingOccurrencesOfString:@"." withString:@""] stringByReplacingOccurrencesOfString:@"," withString:@"."];
+    if (!scale || !num.length || [num rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789."] invertedSet]].location != NSNotFound) return -1;
+    if (scale == 1 && [num rangeOfString:@"."].location != NSNotFound) return -1;   // a decimal without unit: not YouTube's format
+    return llround(num.doubleValue * scale);
+}
+
 // A channel avatar in TV size: its size is freely selectable (=s88-... -> =s400-...).
 static NSString *tvAvatar(NSString *avatar) {
     NSRange r = [avatar rangeOfString:@"=s" options:NSBackwardsSearch];
@@ -131,6 +150,7 @@ static NSString *tvAvatar(NSString *avatar) {
         if (channel && meta) meta = [NSString stringWithFormat:@"%@ · %@", channel, meta];
         SFItem *vi = [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
         for (NSString *part in [labels arrayByAddingObjectsFromArray:rowTexts.lastObject ?: @[]]) if ((vi.date = relativeDate(part))) break;
+        for (NSString *part in rowTexts.lastObject) { long long n = SFYTViewCount(part); if (n >= 0) { vi.viewCount = n; break; } }
         return vi;
     }
     if ([type isEqualToString:@"LOCKUP_CONTENT_TYPE_PLAYLIST"]) {
@@ -173,6 +193,7 @@ static NSString *tvAvatar(NSString *avatar) {
     SFItem *vi = [self videoItem:vid title:title channel:channel channelID:chID meta:[meta componentsJoinedByString:@" · "]
                            thumb:SFYTLastURL(SFYTPath(v, @"thumbnail.thumbnails")) duration:dur live:live];
     vi.date = relativeDate(when);
+    if (!live && SFYTViewCount(views) >= 0) vi.viewCount = SFYTViewCount(views);
     return vi;
 }
 
