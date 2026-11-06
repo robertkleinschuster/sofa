@@ -4,11 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { identityFor } from '../../res/sofa-yt/lib/identity.ts';
 import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { StateStore } from '../../res/sofa-yt/lib/store.ts';
 import { FileStore } from '../../res/sofa-yt/lib/filestore.ts';
-import { mod, tempDir } from './helpers.ts';
+import { mod, tempDir, noSessions } from './helpers.ts';
 
 const { YouTube } = await mod('lib/youtube.ts');
 
@@ -35,7 +34,7 @@ test('FileStore keeps the sidecar layout, private files', () => {
 
 test('visitor: kept across restarts, empty answers and garbage ignored', () => {
   const store = new MemoryStore();
-  const make = () => new YouTube({ store, identity: identityFor(142), breaker: { blockedUntil: () => 0, heldUntil: () => 0, note() {} },
+  const make = () => new YouTube({ store, sessions: noSessions, breaker: { blockedUntil: () => 0, heldUntil: () => 0, note() {} },
     po: { mintString: () => Promise.reject(new Error('none')) } });
   const yt = make();
   assert.equal(yt.visitor(), undefined);

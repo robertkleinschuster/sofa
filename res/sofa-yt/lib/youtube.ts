@@ -7,14 +7,11 @@
 // serverAbrStreamingUrl must be transformed with the SAME player whose signatureTimestamp went into
 // the player request, otherwise SABR answers 403. Hence the player object is captured before the
 // request and used for deciphering right after it; only the deciphered URL is cached.
-import { LANG, LOCATION, TIMEZONE, browserContext } from './identity.ts';
-import type { Identity } from './identity.ts';
 import type { StateStore } from './store.ts';
 import type { ReloadPlaybackContext } from 'googlevideo/protos';
 import type { ReloadResponse } from 'googlevideo/sabr-stream';
 import type { Innertube, Player } from 'youtubei.js';
-import { isBotCheck } from './breaker.ts';
-import type { Breaker } from './breaker.ts';
+import { isBotCheck } from './botcheck.ts';
 import { errorMessage } from './errors.ts';
 import { prepareManifestUrl, pathExpire } from './hls.ts';
 import { isRecord, parseJson, records } from './json.ts';
@@ -263,13 +260,32 @@ export class PlayerBudget {
 export const APP_ENDPOINTS = ['browse', 'next', 'search', 'navigation/resolve_url'] as const;
 export type AppEndpoint = typeof APP_ENDPOINTS[number];
 
+/** The bot-check pause as YouTube sees it: node - lib/breaker.ts on the file shared with Sofa;
+ *  browser engine - what Sofa passes with each call (docs/youtube-engine.md). */
+export interface BotPause {
+  /** background requests wait until then (epoch s, 0 = go) */
+  blockedUntil(): number;
+  /** even user playback waits until then, right after a check (epoch s, 0 = go) */
+  heldUntil(): number;
+  /** an answer was (true) or was not (false) a bot check */
+  note(botCheck: boolean): void;
+}
+
+/**
+ * How this runtime opens an Innertube session: node - lib/nodesession.ts under the Chrome identity;
+ * browser engine - youtubei.js' web build, the browser is the identity (docs/youtube-engine.md).
+ */
+export interface SessionFactory {
+  create(visitor: string | undefined): Promise<Innertube>;
+  /** what a plain fetch (captions) adds to look like the web player; {} where the browser sends its own */
+  headers: Record<string, string>;
+}
+
 export interface YouTubeOptions {
   /** player responses, visitor (players/<id>.json, visitor.json) */
   store: StateStore;
-  /** youtubei.js' cache for the player script (node: a directory; browser: its own default) */
-  jsCacheDir?: string;
-  identity: Identity;
-  breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
+  sessions: SessionFactory;
+  breaker: BotPause;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget?: PlayerBudget;
 }
@@ -278,9 +294,8 @@ export type SessionState = 'pending' | 'ready' | 'error';
 
 export class YouTube {
   state: StateStore;
-  jsCacheDir: string | undefined;
-  identity: Identity;
-  breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
+  sessions: SessionFactory;
+  breaker: BotPause;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget: PlayerBudget;
   yt: Innertube | null;
@@ -296,10 +311,9 @@ export class YouTube {
   reloads: Map<string, number[]>;
   notYet: Map<string, { at: number; err: YouTubeError }>;
 
-  constructor({ store, jsCacheDir, identity, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
+  constructor({ store, sessions, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
     this.state = store;
-    this.jsCacheDir = jsCacheDir;
-    this.identity = identity;
+    this.sessions = sessions;
     this.breaker = breaker;
     this.po = po;
     this.budget = budget;
@@ -329,29 +343,9 @@ export class YouTube {
       this.ytInflight = (async () => {
         const t0 = performance.now();
         try {
-          const { Innertube, UniversalCache, Platform, Log } = await import('youtubei.js');
-          Log.setLevel(Log.Level.ERROR);
-          // youtubei.js 18 ships no JS evaluator for node; the n/sig transforms need one.
-          Platform.shim.eval = async (data) => new Function(data.output)() as Record<string, unknown> | undefined; // eslint-disable-line no-new-func
-          const yt = await withTimeout(Innertube.create({
-            cache: new UniversalCache(true, this.jsCacheDir), // player.js
-            // No cached session: youtubei.js would restore the old context (browser/OS fields of the UA
-            // it was made with) and pin clientVersion to its built-in constant. Fresh, like a page load:
-            // sw.js_data gives the current clientVersion and YouTube's reading of our UA. Only the
-            // visitor stays, as the browser's cookie does.
-            enable_session_cache: false,
-            visitor_data: this.visitor(),
-            retrieve_player: true,
-            user_agent: this.identity.userAgent, // the one browser identity (identity.ts), also BotGuard's
-            lang: LANG, location: LOCATION, timezone: TIMEZONE,
-          }), SESSION_TIMEOUT_MS, 'Innertube session');
+          const yt = await withTimeout(this.sessions.create(this.visitor()), SESSION_TIMEOUT_MS, 'Innertube session');
           if (!yt.session.player) throw new Error('no player script');
           this.keepVisitor(yt.session.context.client.visitorData ?? '');
-          // sw.js_data no longer names the browser (2026-11-06: undefined); the page's own context
-          // carries it - the identity's, not a guess
-          const bc = browserContext(this.identity);
-          yt.session.context.client.browserName ||= bc.browserName;
-          yt.session.context.client.browserVersion ||= bc.browserVersion;
           this.yt = yt;
           this.ytCreated = Date.now();
           this.ytState = 'ready';
@@ -639,7 +633,7 @@ export class YouTube {
     const yt = await this.session();
     const c = yt.session.context.client;
     return {
-      ...this.identity.headers,
+      ...this.sessions.headers,
       origin: 'https://www.youtube.com',
       referer: 'https://www.youtube.com/',
       ...(c.visitorData ? { 'x-goog-visitor-id': c.visitorData } : {}),

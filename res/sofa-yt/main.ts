@@ -73,6 +73,7 @@ const { Breaker } = await import('./lib/breaker.ts');
 const { PoTokenProvider } = await import('./lib/webpo.ts');
 const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
 const { FileStore } = await import('./lib/filestore.ts');
+const { nodeSessions } = await import('./lib/nodesession.ts');
 const { startSabrPump } = await import('./lib/sabrpump.ts');
 const { createApp } = await import('./lib/app.ts');
 
@@ -85,7 +86,7 @@ const budget = new PlayerBudget({
   max: maxReq > 0 ? maxReq : Infinity,
   windowS: Number(opt('budget-window', 3600)),
 });
-const youtube = new YouTube({ store, jsCacheDir: path.join(stateDir, 'ytjs-cache'), identity, breaker, po, budget });
+const youtube = new YouTube({ store, sessions: nodeSessions(identity, stateDir), breaker, po, budget });
 
 /** Pump factory: real SABR with this process' PO tokens and reload path. */
 async function preMint(videoId: string): Promise<string | undefined> {

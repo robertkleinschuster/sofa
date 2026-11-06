@@ -11,6 +11,7 @@ import { PlaybackSession } from '../lib/session.ts';
 import { startSabrPump } from '../lib/sabrpump.ts';
 import { describeFormats } from '../lib/formats.ts';
 import { parseIndex } from '../lib/mediaindex.ts';
+import { YouTube } from '../lib/youtube.ts';
 
 /** What Sofa can ask the engine (BiDi script.callFunction on globalThis.sofaEngine). */
 export interface SofaEngine {
@@ -20,7 +21,7 @@ export interface SofaEngine {
 
 const engine: SofaEngine = {
   health: () => ({
-    libraries: [Innertube, SabrStream, BotGuardClient, WebPoMinter, PlaybackSession, startSabrPump, describeFormats, parseIndex]
+    libraries: [Innertube, SabrStream, BotGuardClient, WebPoMinter, PlaybackSession, startSabrPump, describeFormats, parseIndex, YouTube]
       .every((c) => typeof c === 'function'),
     userAgent: navigator.userAgent,
     origin: location.origin,

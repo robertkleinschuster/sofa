@@ -337,3 +337,9 @@ export function vodInfo(over: Partial<VodInfo> & { id: string }): VodInfo {
 export function json<T>(body: Buffer | string): T {
   return JSON.parse(body.toString()) as T;
 }
+
+/** A SessionFactory for tests that stub the Innertube session (or never need one). */
+export const noSessions = {
+  headers: {} as Record<string, string>,
+  create: (): Promise<never> => Promise.reject(new Error('no Innertube session in this test')),
+};

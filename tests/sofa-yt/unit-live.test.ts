@@ -7,8 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { identityFor } from '../../res/sofa-yt/lib/identity.ts';
-import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError } from './helpers.ts';
+import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, noSessions } from './helpers.ts';
 import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { FakeStart } from './helpers.ts';
 import type { AppYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/app.ts';
@@ -118,7 +117,7 @@ function makeYouTube(raws: RawPlayerResponse[]) {
       return stub as unknown as Innertube;
     }
   }
-  return new StubbedYouTube({ store: new MemoryStore(), identity: identityFor(142), breaker: { blockedUntil: () => 0, heldUntil: () => 0, note: (b) => { notes.push(b); } },
+  return new StubbedYouTube({ store: new MemoryStore(), sessions: noSessions, breaker: { blockedUntil: () => 0, heldUntil: () => 0, note: (b) => { notes.push(b); } },
     po: { mintString: async () => 'POTOKEN' } });
 }
 
