@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { identityFor } from '../../res/sofa-yt/lib/identity.ts';
-import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, tempDir } from './helpers.ts';
+import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError } from './helpers.ts';
+import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { FakeStart } from './helpers.ts';
 import type { AppYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/app.ts';
 import type { LiveStatus, PlaylistFetch } from '../../res/sofa-yt/lib/hls.ts';
@@ -100,7 +101,6 @@ type Innertube = Awaited<ReturnType<InstanceType<typeof YouTube>['session']>>;
 
 /** YouTube whose Innertube session is a stand-in answering /player with the given raw responses. */
 function makeYouTube(raws: RawPlayerResponse[]) {
-  const dir = tempDir('sofa-yt-live-');
   const notes: boolean[] = [];
   const player = {
     player_id: 'ef321720', signature_timestamp: 20759,
@@ -118,7 +118,7 @@ function makeYouTube(raws: RawPlayerResponse[]) {
       return stub as unknown as Innertube;
     }
   }
-  return new StubbedYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => 0, heldUntil: () => 0, note: (b) => { notes.push(b); } },
+  return new StubbedYouTube({ store: new MemoryStore(), identity: identityFor(142), breaker: { blockedUntil: () => 0, heldUntil: () => 0, note: (b) => { notes.push(b); } },
     po: { mintString: async () => 'POTOKEN' } });
 }
 

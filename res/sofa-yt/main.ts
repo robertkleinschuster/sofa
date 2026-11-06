@@ -2,7 +2,7 @@
 //
 //   node main.ts --port 0 --state <dir> --block-file <path> [--debug] [--no-warm]
 //                 [--ahead-low 30 --ahead-high 90]
-//                 [--max-player-requests N --budget-file <path> --budget-window <sec>]
+//                 [--max-player-requests N --budget-window <sec>]
 //   node main.ts --check             load every dependency and exit (bundle self-test)
 //
 // stdout: exactly one line {"ready":true,"port":N,"userAgent":"..."} once the HTTP server listens on
@@ -72,18 +72,20 @@ globalThis.fetch = browserFetch(identity, new CookieJar(path.join(stateDir, 'coo
 const { Breaker } = await import('./lib/breaker.ts');
 const { PoTokenProvider } = await import('./lib/webpo.ts');
 const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
+const { FileStore } = await import('./lib/filestore.ts');
 const { startSabrPump } = await import('./lib/sabrpump.ts');
 const { createApp } = await import('./lib/app.ts');
 
 const breaker = new Breaker(blockFile);
 const po = new PoTokenProvider({ identity });
 const maxReq = Number(opt('max-player-requests', 60));
+const store = new FileStore(stateDir);   // player responses, budget, visitor (lib/store.ts)
 const budget = new PlayerBudget({
-  file: String(opt('budget-file', path.join(stateDir, 'player-requests.json'))),
+  store,
   max: maxReq > 0 ? maxReq : Infinity,
   windowS: Number(opt('budget-window', 3600)),
 });
-const youtube = new YouTube({ stateDir, identity, breaker, po, budget });
+const youtube = new YouTube({ store, jsCacheDir: path.join(stateDir, 'ytjs-cache'), identity, breaker, po, budget });
 
 /** Pump factory: real SABR with this process' PO tokens and reload path. */
 async function preMint(videoId: string): Promise<string | undefined> {

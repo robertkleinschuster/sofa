@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { identityFor, browserContext, majorFromVersionHistory, loadIdentity, loadVisitor, saveVisitor, CookieJar, browserFetch } from '../../res/sofa-yt/lib/identity.ts';
+import { identityFor, browserContext, majorFromVersionHistory, loadIdentity, CookieJar, browserFetch } from '../../res/sofa-yt/lib/identity.ts';
 import { startApp, tempDir } from './helpers.ts';
 
 test('user agent is a complete current Chrome with matching client hints', () => {
@@ -36,17 +36,6 @@ test('loadIdentity: asks once a week, keeps the last known version when unreacha
   fs.writeFileSync(file, JSON.stringify({ major: 151, at: 0 }));   // expired
   const down = (async () => { throw new Error('offline'); }) as typeof fetch;
   assert.equal((await loadIdentity(dir, down)).chromeMajor, 151);
-});
-
-test('visitor: kept across restarts, garbage ignored', () => {
-  const dir = tempDir('sofa-yt-visitor-');
-  assert.equal(loadVisitor(dir), undefined);
-  saveVisitor(dir, 'CgtABC');
-  assert.equal(loadVisitor(dir), 'CgtABC');
-  saveVisitor(dir, '');
-  assert.equal(loadVisitor(dir), 'CgtABC', 'an empty answer does not forget the visitor');
-  fs.writeFileSync(path.join(dir, 'visitor.json'), '{"visitorData":5}');
-  assert.equal(loadVisitor(dir), undefined);
 });
 
 test('cookie jar: keeps youtube.com cookies, honours expiry, persists', () => {

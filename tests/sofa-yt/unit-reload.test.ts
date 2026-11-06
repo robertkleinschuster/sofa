@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { identityFor } from '../../res/sofa-yt/lib/identity.ts';
-import { mod, vodInfo, tempDir } from './helpers.ts';
+import { mod, vodInfo } from './helpers.ts';
+import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { VideoInfo } from '../../res/sofa-yt/lib/youtube.ts';
 
 const { YouTube } = await mod('lib/youtube.ts');
@@ -20,8 +21,7 @@ class CountingYouTube extends YouTube {
 }
 
 function make({ blocked = 0, held = 0 } = {}): CountingYouTube {
-  const dir = tempDir('sofa-yt-reload-');
-  return new CountingYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => blocked, heldUntil: () => held, note() {} },
+  return new CountingYouTube({ store: new MemoryStore(), identity: identityFor(142), breaker: { blockedUntil: () => blocked, heldUntil: () => held, note() {} },
     po: { mintString: () => Promise.reject(new Error('no PO token in reload tests')) } });
 }
 

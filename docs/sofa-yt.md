@@ -78,7 +78,7 @@ node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <Sof
 | `--state DIR` | required | persistent: `identity.json` (Chrome major, weekly), `cookies.json` (YouTube's cookies, 0600, never logged), `visitor.json` (visitorData), `ytjs-cache/` (player.js; no session cache: each session is made fresh from `sw.js_data` like a page load), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
 | `--block-file PATH` | `<state>/youtube-block.json` | bot-check breaker, the file `SFYTBreaker` reads: `{"until": epoch, "backoff": secs}` |
 | `--ahead-low S` / `--ahead-high S` | 30 / 90 | pacing window in seconds of media ahead of the reader |
-| `--max-player-requests N`, `--budget-window S`, `--budget-file P` | 60 / 3600 / state | hard cap on player requests (safety net against loops; persisted) |
+| `--max-player-requests N`, `--budget-window S` | 60 / 3600 | hard cap on player requests (safety net against loops; persisted) |
 | `--no-warm` (or env `SOFA_NO_WARMUP`) | | skip the startup warm-up (Innertube session + BotGuard; no player request either way) |
 | `--debug` (or env `SOFA_YT_DEBUG=1`) | | log every request, segment, SABR run |
 | `--check` | | load all dependencies and exit 0 (bundle self-test, no network) |

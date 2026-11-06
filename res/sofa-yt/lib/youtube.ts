@@ -7,10 +7,9 @@
 // serverAbrStreamingUrl must be transformed with the SAME player whose signatureTimestamp went into
 // the player request, otherwise SABR answers 403. Hence the player object is captured before the
 // request and used for deciphering right after it; only the deciphered URL is cached.
-import { LANG, LOCATION, TIMEZONE, browserContext, loadVisitor, saveVisitor } from './identity.ts';
+import { LANG, LOCATION, TIMEZONE, browserContext } from './identity.ts';
 import type { Identity } from './identity.ts';
-import fs from 'node:fs';
-import path from 'node:path';
+import type { StateStore } from './store.ts';
 import type { ReloadPlaybackContext } from 'googlevideo/protos';
 import type { ReloadResponse } from 'googlevideo/sabr-stream';
 import type { Innertube, Player } from 'youtubei.js';
@@ -18,7 +17,7 @@ import { isBotCheck } from './breaker.ts';
 import type { Breaker } from './breaker.ts';
 import { errorMessage } from './errors.ts';
 import { prepareManifestUrl, pathExpire } from './hls.ts';
-import { isRecord, parseJson, record, records } from './json.ts';
+import { isRecord, parseJson, records } from './json.ts';
 import type { JsonObject } from './json.ts';
 import { log } from './log.ts';
 import { asPlayerResponse, rawText } from './ytraw.ts';
@@ -224,22 +223,26 @@ interface BudgetEntry {
   why: string;
 }
 
+export const BUDGET_KEY = 'player-requests.json';
+const PLAYERS = 'players/';
+const VISITOR_KEY = 'visitor.json';
+const playerKey = (videoId: string): string => `${PLAYERS}${videoId}.json`;
+
 export class PlayerBudget {
-  file: string | null;
+  store: StateStore | null;
   max: number;
   windowS: number;
   mem: BudgetEntry[];
 
-  constructor({ file = null, max = Infinity, windowS = 3600 }: { file?: string | null; max?: number; windowS?: number } = {}) {
-    this.file = file; this.max = max; this.windowS = windowS; this.mem = [];
+  constructor({ store = null, max = Infinity, windowS = 3600 }: { store?: StateStore | null; max?: number; windowS?: number } = {}) {
+    this.store = store; this.max = max; this.windowS = windowS; this.mem = [];
   }
 
   load(): BudgetEntry[] {
-    if (!this.file) return this.mem;
-    try {
-      return records(parseJson(fs.readFileSync(this.file, 'utf8')))
-        .filter((e): e is JsonObject & BudgetEntry => typeof e.at === 'string' && typeof e.why === 'string');
-    } catch { return []; }
+    if (!this.store) return this.mem;
+    const raw = this.store.get(BUDGET_KEY);
+    if (raw === null) return [];
+    return records(parseJson(raw)).filter((e): e is JsonObject & BudgetEntry => typeof e.at === 'string' && typeof e.why === 'string');
   }
 
   take(why: string): number {
@@ -251,9 +254,7 @@ export class PlayerBudget {
     }
     b.push({ at: new Date(now).toISOString(), why });
     this.mem = b;
-    if (this.file) {
-      try { fs.writeFileSync(this.file, JSON.stringify(b, null, 1)); } catch (e) { log('budget: cannot write', errorMessage(e)); }
-    }
+    this.store?.set(BUDGET_KEY, JSON.stringify(b, null, 1));
     return b.length;
   }
 }
@@ -263,7 +264,10 @@ export const APP_ENDPOINTS = ['browse', 'next', 'search', 'navigation/resolve_ur
 export type AppEndpoint = typeof APP_ENDPOINTS[number];
 
 export interface YouTubeOptions {
-  stateDir: string;
+  /** player responses, visitor (players/<id>.json, visitor.json) */
+  store: StateStore;
+  /** youtubei.js' cache for the player script (node: a directory; browser: its own default) */
+  jsCacheDir?: string;
   identity: Identity;
   breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
@@ -273,12 +277,12 @@ export interface YouTubeOptions {
 export type SessionState = 'pending' | 'ready' | 'error';
 
 export class YouTube {
-  stateDir: string;
+  state: StateStore;
+  jsCacheDir: string | undefined;
   identity: Identity;
   breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget: PlayerBudget;
-  playerDir: string;
   yt: Innertube | null;
   ytCreated: number;
   ytInflight: Promise<Innertube> | null;
@@ -292,14 +296,13 @@ export class YouTube {
   reloads: Map<string, number[]>;
   notYet: Map<string, { at: number; err: YouTubeError }>;
 
-  constructor({ stateDir, identity, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
-    this.stateDir = stateDir;
+  constructor({ store, jsCacheDir, identity, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
+    this.state = store;
+    this.jsCacheDir = jsCacheDir;
     this.identity = identity;
     this.breaker = breaker;
     this.po = po;
     this.budget = budget;
-    this.playerDir = path.join(stateDir, 'players');
-    fs.mkdirSync(this.playerDir, { recursive: true });
     this.yt = null;
     this.ytCreated = 0;
     this.ytInflight = null;
@@ -331,19 +334,19 @@ export class YouTube {
           // youtubei.js 18 ships no JS evaluator for node; the n/sig transforms need one.
           Platform.shim.eval = async (data) => new Function(data.output)() as Record<string, unknown> | undefined; // eslint-disable-line no-new-func
           const yt = await withTimeout(Innertube.create({
-            cache: new UniversalCache(true, path.join(this.stateDir, 'ytjs-cache')), // player.js
+            cache: new UniversalCache(true, this.jsCacheDir), // player.js
             // No cached session: youtubei.js would restore the old context (browser/OS fields of the UA
             // it was made with) and pin clientVersion to its built-in constant. Fresh, like a page load:
             // sw.js_data gives the current clientVersion and YouTube's reading of our UA. Only the
             // visitor stays, as the browser's cookie does.
             enable_session_cache: false,
-            visitor_data: loadVisitor(this.stateDir),
+            visitor_data: this.visitor(),
             retrieve_player: true,
             user_agent: this.identity.userAgent, // the one browser identity (identity.ts), also BotGuard's
             lang: LANG, location: LOCATION, timezone: TIMEZONE,
           }), SESSION_TIMEOUT_MS, 'Innertube session');
           if (!yt.session.player) throw new Error('no player script');
-          saveVisitor(this.stateDir, yt.session.context.client.visitorData ?? '');
+          this.keepVisitor(yt.session.context.client.visitorData ?? '');
           // sw.js_data no longer names the browser (2026-11-06: undefined); the page's own context
           // carries it - the identity's, not a guess
           const bc = browserContext(this.identity);
@@ -405,11 +408,10 @@ export class YouTube {
   cached(videoId: string): VideoInfo | null {
     let c = this.cache.get(videoId) ?? null;
     if (!c) {
-      try {
-        const j = parseJson(fs.readFileSync(this.cacheFile(videoId), 'utf8'));
-        if (isVideoInfo(j, videoId)) { c = j; this.cache.set(videoId, c); }
-        else if (isRecord(j) && j.id === videoId) this.forget(videoId);   // unusable (as if expired)
-      } catch { c = null; }
+      const raw = this.state.get(playerKey(videoId));
+      const j = raw === null ? null : parseJson(raw);
+      if (isVideoInfo(j, videoId)) { c = j; this.cache.set(videoId, c); }
+      else if (raw !== null) this.forget(videoId);   // unusable (as if expired)
     }
     if (c && c.expires - Date.now() / 1000 > REUSE_MARGIN_S) return c;
     if (c) this.forget(videoId);
@@ -418,22 +420,28 @@ export class YouTube {
 
   forget(videoId: string): void {
     this.cache.delete(videoId);
-    try { fs.unlinkSync(this.cacheFile(videoId)); } catch { /* not cached */ }
+    this.state.delete(playerKey(videoId));
   }
 
-  cacheFile(videoId: string): string { return path.join(this.playerDir, `${videoId}.json`); }
-
+  /** Stored player responses that expired (or are unreadable) are dropped. */
   pruneDisk(): void {
     const now = Date.now() / 1000;
-    try {
-      for (const f of fs.readdirSync(this.playerDir)) {
-        const p = path.join(this.playerDir, f);
-        try {
-          const c = parseJson(fs.readFileSync(p, 'utf8'));
-          if (!(Number(record(c).expires) > now)) fs.unlinkSync(p);
-        } catch { try { fs.unlinkSync(p); } catch { /* gone */ } }
-      }
-    } catch { /* no dir */ }
+    for (const k of this.state.keys(PLAYERS)) {
+      const raw = this.state.get(k);
+      const c = raw === null ? null : parseJson(raw);
+      if (!(Number(isRecord(c) ? c.expires : 0) > now)) this.state.delete(k);
+    }
+  }
+
+  /** The visitor id a browser keeps in its cookie (visitor.json). */
+  visitor(): string | undefined {
+    const raw = this.state.get(VISITOR_KEY);
+    const v = raw === null ? null : parseJson(raw);
+    return isRecord(v) && typeof v.visitorData === 'string' && v.visitorData ? v.visitorData : undefined;
+  }
+
+  keepVisitor(visitorData: string): void {
+    if (visitorData && visitorData !== this.visitor()) this.state.set(VISITOR_KEY, JSON.stringify({ visitorData }));
   }
 
   /**
@@ -528,7 +536,7 @@ export class YouTube {
 
   store(info: VideoInfo): VideoInfo {
     this.cache.set(info.id, info);
-    try { fs.writeFileSync(this.cacheFile(info.id), JSON.stringify(info)); } catch (e) { log('cannot cache player response:', errorMessage(e)); }
+    this.state.set(playerKey(info.id), JSON.stringify(info));
     return info;
   }
 

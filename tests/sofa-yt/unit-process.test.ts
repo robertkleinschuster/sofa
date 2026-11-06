@@ -45,7 +45,6 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
     const o = json<OpenFailure>((await get(`${base}/open?v=jNQXAC9IVRw&bg=1`)).body);
     assert.equal(o.bot, true);
     assert.match(o.error, /no request sent/);
-    assert.ok(fs.existsSync(path.join(state, 'players')));
     assert.ok(!fs.existsSync(path.join(state, 'player-requests.json')), 'no player request was counted');
     assert.equal(out.trim().split('\n').length, 1, 'nothing but the readiness line on stdout');
     assert.match(err, /^sofa-yt: /m);
