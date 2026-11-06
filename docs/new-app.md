@@ -36,7 +36,7 @@ Every item that belongs to your app carries a ref `"<prefix>:<id>"` in `resolver
 | download a video                     | `downloadSourceForItem:done:`, `backgroundPausedUntil` |
 | "Platz schaffen" online check        | `availabilityOfItem:done:`                           |
 | player info panel / up next / cards  | `watchDetailsForItem:done:`, `upNextForItem:done:`, stream description key `endCards` |
-| session streams (local services)     | `playbackIsSession:`, `playbackSessionFailed:…`, `playbackSessionLostNotification`, `playbackLiveEnded:done:`, `playbackPrepareReResolve:` |
+| session streams (local services)     | `playbackIsSession:`, `playbackSessionFailed:…`, `playbackSessionLostNotification`, `playbackLiveEnded:done:` |
 | focus preload                        | `preloadOnFocus:`                                    |
 | stored items (history …)             | `updateStoredItem:`                                  |
 | phone remote                         | `startRemoteWithHost:`, `stopRemote`, `remoteStatus:`, `remoteStatusNotification` |

@@ -1,5 +1,8 @@
 # Modern codecs – research (2026-11-03, agent, nothing built)
 
+Status 2026-11-06: outcome went further than recommended here - mpv is the only engine, AVFoundation
+is removed (NOTES "Remove AVFoundation"). Kept as the research record.
+
 Legend: [V] verified on the device, [D] docs/web, [W] knowledge/estimate.
 
 ## Hardware

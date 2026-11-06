@@ -274,8 +274,8 @@ Live SABR would need a second serving model (no `contentLength`/Cues -> no virtu
 two endless, unseekable streams to sync, or we would generate an HLS/DASH playlist from SABR segments
 ourselves, plus heartbeats and sequence/DVR-window bookkeeping) - a reimplementation of what YouTube's HLS
 manifest already is. The HLS manifest comes from the same WEB player request (one request, same
-identity, PO-token-bound like the web player's media requests), is one muxed stream mpv (and
-AVFoundation) plays natively, and the DVR window/sequence numbers are YouTube's. The real desktop web
+identity, PO-token-bound like the web player's media requests), is one muxed stream mpv plays
+natively, and the DVR window/sequence numbers are YouTube's. The real desktop web
 player uses SABR for lives; Safari's web player uses this HLS manifest - so the requests still look like
 a YouTube web player. Live SABR stays an option if YouTube ever drops HLS for WEB.
 

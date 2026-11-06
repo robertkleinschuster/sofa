@@ -1,9 +1,8 @@
 #import "SFMPVEngine.h"
-#import <dlfcn.h>
 #import "SFModel.h"
 #import "SFUserAgent.h"
 
-#pragma mark mpv sources (side channel from the resolver to the player, like SFSetAlternateURLs)
+#pragma mark mpv sources (side channel from the resolver to the player)
 
 static NSMutableDictionary *gSources;
 void SFSetMPVSource(NSURL *forURL, NSDictionary *source) {
@@ -24,18 +23,6 @@ NSDictionary *SFMPVSourceFor(NSURL *url) {
 NSString *SFMPVDevFrameShotPath = nil;
 
 
-
-BOOL SFMPVAvailable(void) {
-#if SF_HAVE_MPV
-    static int v = -1;
-    if (v < 0) v = dlsym(RTLD_DEFAULT, "mpv_create") != NULL;   // weakly linked: if the dylib is missing, the symbol is NULL
-    return v == 1;
-#else
-    return NO;
-#endif
-}
-
-#if SF_HAVE_MPV
 
 #pragma mark Engine
 
@@ -78,7 +65,6 @@ static void onWakeup(void *ctx) {
 - (instancetype)init {
     if ((self = [super init])) {
         _layer = [SFMPVLayer layer];
-        if (!SFMPVAvailable()) return self;
         _mpv = mpv_create();
         if (!_mpv) return self;
         const char *opts[][2] = {
@@ -283,7 +269,7 @@ static void onWakeup(void *ctx) {
 
 - (SFEngineStatus)status { return _status; }
 - (NSError *)error { return _error; }
-- (BOOL)playing { return _loaded && !_paused && !_eof; }   // like AVPlayer.rate: "running" while buffering too
+- (BOOL)playing { return _loaded && !_paused && !_eof; }   // "running" while buffering too
 - (BOOL)likelyToKeepUp { return !_waiting; }
 - (NSTimeInterval)currentTime { return _time > 0 ? _time : 0; }
 - (NSTimeInterval)duration { return _dur > 0 ? _dur : 0; }
@@ -321,36 +307,8 @@ static void onWakeup(void *ctx) {
 - (void)dealloc { [self shutdown]; }
 @end
 
-#else   // built without mpv headers: stub (SFMPVAvailable() == NO)
-
-@implementation SFMPVEngine
-@synthesize delegate = _delegate, muted = _muted;
-- (NSString *)engineName { return @"mpv (not available)"; }
-- (CALayer *)videoLayer { return nil; }
-- (SFEngineStatus)status { return SFEngineFailed; }
-- (NSError *)error { return SFError(@"mpv nicht verfügbar"); }
-- (BOOL)playing { return NO; }
-- (BOOL)likelyToKeepUp { return YES; }
-- (NSTimeInterval)currentTime { return 0; }
-- (NSTimeInterval)duration { return 0; }
-- (NSTimeInterval)bufferedUntil { return 0; }
-- (void)openURL:(NSURL *)u audioURL:(NSURL *)a start:(NSTimeInterval)s exact:(BOOL)e paused:(BOOL)p {
-    dispatch_async(dispatch_get_main_queue(), ^{ [self.delegate engineStatusChanged]; });
-}
-- (void)play {}
-- (void)pause {}
-- (void)seekTo:(NSTimeInterval)t exact:(BOOL)e {}
-- (void)close {}
-- (void)shutdown {}
-@end
-
-#endif
 
 void SFMPVDevFrameShot(NSString *path) {
-#if SF_HAVE_MPV
     SFMPVDevFrameShotPath = path;
     dispatch_async(dispatch_get_main_queue(), ^{ [[SFMPVLayer devCurrent] devFrameShot]; });
-#else
-    SFLog(@"mpv: built without libmpv - no frameshot");
-#endif
 }

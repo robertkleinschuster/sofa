@@ -1,4 +1,4 @@
-// Sofa — 10-foot media center for macOS 10.9 (Apple Remote, AVFoundation).
+// Sofa — 10-foot media center for macOS 10.9 (Apple Remote, mpv).
 // Shared basics: input keys, layout scaling, logging, helpers.
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
@@ -72,8 +72,7 @@ NSString *SFDevEnv(NSString *name);
 // a duration knob: NAME in seconds when set (> 0) in a dev instance, otherwise the default
 NSTimeInterval SFDevSeconds(NSString *name, NSTimeInterval dflt);
 
-// Dev: render the layer tree into a context (model layers, AVPlayerLayer left out —
-// presentationLayer copies of the AVPlayerLayer crash on release on 10.9).
+// Dev: render the layer tree into a context; video layers are replaced by their current frame.
 void SFRenderLayerTree(CALayer *root, CGContextRef ctx);
 
 // Dev test: SOFA_OFFLINE=1 makes all network requests fail (dev instances only)

@@ -1,9 +1,6 @@
-// Playback engines behind SFPlayerScreen (docs/codecs-research.md):
-//  - SFMPVEngine: libmpv (VP9/AV1/Opus, DASH, HLS, H.264 in software) - default since 2026-11-04;
-//                 weakly linked (optional).
-//  - SFAVEngine:  AVFoundation (hardware H.264, HLS) - fallback when mpv fails, and via the
-//                 emergency switch SFPreferAVFoundation (defaults) the old choice.
-// The screen only knows this protocol: OSD, progress, remote stay engine-independent.
+// The playback engine behind SFPlayerScreen (docs/codecs-research.md): SFMPVEngine, libmpv (VP9/AV1/
+// Opus, DASH, HLS, H.264 in software) - the only engine since 2026-11-06 (AVFoundation removed).
+// The screen only knows this protocol: OSD, progress, remote stay independent of libmpv.
 #import "SFCore.h"
 
 typedef NS_ENUM(NSInteger, SFEngineStatus) {
@@ -56,4 +53,3 @@ typedef NS_ENUM(NSInteger, SFEngineStatus) {
 // mpv source for a resolved URL (e.g. YouTube DASH: video/audio/height/fps/hlsHeight/hlsFps)
 void SFSetMPVSource(NSURL *forURL, NSDictionary *source);
 NSDictionary *SFMPVSourceFor(NSURL *url);
-BOOL SFMPVAvailable(void);        // libmpv present at runtime?

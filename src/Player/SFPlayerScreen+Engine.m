@@ -9,40 +9,17 @@
 
 #pragma mark SFEngineDelegate
 
-// Error text for the TV: the cause in German instead of the system message ("unknown error")
+// Error text for the TV: Sofa's own messages (stall watchdog, ...) as they are; mpv's technical
+// ones ("mpv: loading failed") as a sentence a viewer understands
 static NSString *SFFriendlyPlaybackError(NSError *e) {
-    NSError *u = e.userInfo[NSUnderlyingErrorKey];
-    for (NSError *x in @[e ?: [NSNull null], u ?: [NSNull null]]) {
-        if (![x isKindOfClass:[NSError class]]) continue;
-        if ([x.domain isEqualToString:NSURLErrorDomain]) switch (x.code) {
-            case NSURLErrorNotConnectedToInternet: case NSURLErrorNetworkConnectionLost:
-                return @"Keine Internetverbindung.";
-            case NSURLErrorTimedOut: case NSURLErrorCannotConnectToHost: case NSURLErrorCannotFindHost:
-            case NSURLErrorDNSLookupFailed:
-                return @"Der Server des Anbieters antwortet nicht.";
-            default: break;
-        }
-        if ([x.domain isEqualToString:NSOSStatusErrorDomain] && (x.code == -12660 || x.code == -12938))   // HTTP 403 / 404
-            return @"Der Anbieter liefert dieses Video gerade nicht aus.";
-    }
+    NSString *m = e.localizedDescription;
+    if (m.length && ![m hasPrefix:@"mpv:"]) return m;
     return @"Das Video ließ sich nicht laden – bitte später noch einmal versuchen.";
 }
 
 // Where to continue after a failure: aborted midway -> there, otherwise at the start point
 - (NSTimeInterval)failurePosition {
     return MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
-}
-
-// Fallback step: reopen the same (or another) URL after a short delay, at the failure position.
-// Dropped if closed meanwhile or another video is playing.
-- (void)reopen:(NSURL *)url forceMPV:(BOOL)forceMPV after:(double)delay resetTries:(BOOL)reset {
-    SFItem *it = _item; NSTimeInterval pos = [self failurePosition];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (self->_closing || it != self->_item) return;
-        if (reset) self->_openTries = 0;
-        if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-        [self playURL:url forceMPV:forceMPV];
-    });
 }
 
 // The opened stream comes from an app session (e.g. YouTube SABR via the sidecar)?
@@ -78,7 +55,6 @@ static const NSTimeInterval kSessionReopenMinPlay = 60;
 
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
-        BOOL viaMPV = [_engine isKindOfClass:[SFMPVEngine class]];
         if (SFDevMode) {   // make the cause traceable (domain/code/underlying error)
             NSError *e = _engine.error, *u = e.userInfo[NSUnderlyingErrorKey];
             SFLog(@"player: error %@ %ld %@ | underlying %@ %ld | %@", e.domain, (long)e.code, e.localizedFailureReason ?: @"",
@@ -86,54 +62,6 @@ static const NSTimeInterval kSessionReopenMinPlay = 60;
         }
         // a session stream (app service) failed: the app's recovery first (see sessionFailed:)
         if ([self sessionSource]) { [self sessionFailed:_engine.error.localizedDescription]; return; }
-        // googlevideo HLS sporadically fails immediately on 10.9 (-12643/-12939), the same
-        // URL works on the next attempt (docs/youtube.md §6) -> reopen up to 3x.
-        if (!viaMPV && _openURL && !_openURL.isFileURL && _openTries < 3 && -[_openAt timeIntervalSinceNow] < 3) {
-            SFLog(@"player: open failed (%ld), retry %ld", (long)_engine.error.code, (long)_openTries);
-            SFCount(@"player.av-open-retry");
-            [self reopen:_openURL forceMPV:NO after:0.1 resetTries:NO];
-            return;
-        }
-        // YouTube occasionally rejects the DASH streams right away (HTTP 403), the HLS stream of the same
-        // resolution plays: first mpv with HLS, instead of AVFoundation retries (docs/youtube.md §6)
-        if (viaMPV && _openedDash && _openURL && ![_openURL isEqual:_dashFailedURL]) {
-            SFLog(@"player: DASH rejected -> mpv with HLS");
-            SFCount(@"player.dash-to-hls");
-            _dashFailedURL = _openURL;
-            [self reopen:_openURL forceMPV:YES after:0.1 resetTries:YES];
-            return;
-        }
-        if (viaMPV && _openURL && ![_openURL isEqual:_mpvFailedURL]) {   // mpv fails -> AVFoundation
-            SFLog(@"player: mpv fails -> AVFoundation");
-            SFCount(@"player.mpv-to-av");
-            _mpvFailedURL = _openURL;
-            [self reopen:_openURL forceMPV:NO after:0.2 resetTries:YES];
-            return;
-        }
-        NSURL *alt = viaMPV ? nil : SFNextAlternateURL(_openURL);
-        // formats AVFoundation can't do (HLS v7, fMP4, ...): mpv takes over before worse fallback streams
-        BOOL tryMPV = !viaMPV && SFMPVAvailable() && _openURL && ![_openURL isEqual:_mpvFailedURL];
-        if (tryMPV || alt) {
-            NSURL *next = tryMPV ? _openURL : alt;
-            SFLog(@"player: %@", tryMPV ? @"AVFoundation fails -> mpv" : @"switching to alternate stream");
-            SFCount(tryMPV ? @"player.av-to-mpv" : @"player.alternate-stream");
-            [self reopen:next forceMPV:tryMPV after:0.2 resetTries:YES];
-            return;
-        }
-        // all streams rejected (e.g. YouTube 403/-1102): resolve afresh once if the app says it helps
-        Class<SFApp> app = [SFAppRegistry appForItem:_item];
-        if (!_reresolved && [app respondsToSelector:@selector(playbackPrepareReResolve:)] && [app playbackPrepareReResolve:_item]) {
-            _reresolved = YES;
-            SFLog(@"player: all streams rejected -> resolving afresh");
-            SFCount(@"player.re-resolve");
-            _mpvFailedURL = nil;
-            self.startPaused = self.startPaused || _holdPaused;   // "start paused" survives the re-resolve
-            NSTimeInterval pos = [self failurePosition];
-            if (pos > 0) self.startPosition = pos; else self.startFromBeginning = YES;
-            [self teardownPlayer];
-            [self startItem];
-            return;
-        }
         [self showSpinner:NO];
         _failed = YES;
         SFLog(@"player: failed (%@) %@", _engine.engineName, _engine.error);

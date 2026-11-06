@@ -11,12 +11,10 @@
 #import "SFStats.h"
 #import "SFDownloads.h"
 #import "SFEngine.h"
-#import "SFSettings.h"
 #import "SFCurl.h"
 
 static NSString *const kBotMsg = @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
 
-static NSString *const kNoMPVMsg = @"YouTube-Videos brauchen den eingebauten mpv-Player (Notschalter „AVFoundation bevorzugen“ ist an).";
 static NSString *const kNoSidecarMsg = @"Die YouTube-Wiedergabe ist in dieser Installation nicht verfügbar.";
 
 // The sidecar's end screen elements (res/sofa-yt/lib/youtube.ts endscreenElements) as generic end
@@ -87,12 +85,11 @@ static NSString *outcome(NSError *e) {
     return @"error";
 }
 
-// SABR via the sofa-yt sidecar (looks like the web player: one request per video). VOD needs mpv
-// (local WebM/MP4 tracks); a video that turned out to be live comes back as HLS.
+// SABR via the sofa-yt sidecar (looks like the web player: one request per video): local WebM/MP4
+// tracks for mpv; a video that turned out to be live comes back as HLS.
 static void playOnline(NSString *vid, SFURLDone done) {
     SFYTSabr *sabr = [SFYTSabr shared];
     if (!sabr.available) { SFCount(@"yt.play.no-sidecar"); done(nil, SFError(kNoSidecarMsg)); return; }
-    if (!SFMPVAvailable() || SFPreferAVFoundation()) { SFCount(@"yt.play.no-mpv"); done(nil, SFError(kNoMPVMsg)); return; }
     [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.play." stringByAppendingString:outcome(e)]);
@@ -103,8 +100,7 @@ static void playOnline(NSString *vid, SFURLDone done) {
     }];
 }
 
-// Lives: the web player's HLS manifest from the sidecar's own session, as a local playlist - plain
-// HLS, so mpv and AVFoundation both play it.
+// Lives: the web player's HLS manifest from the sidecar's own session, as a local playlist.
 static void playLive(NSString *vid, SFURLDone done) {
     SFYTSabr *sabr = [SFYTSabr shared];
     if (!sabr.available) { SFCount(@"yt.live.no-sidecar"); done(nil, SFError(kNoSidecarMsg)); return; }
@@ -113,9 +109,7 @@ static void playLive(NSString *vid, SFURLDone done) {
             SFCount([@"yt.live." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
         }
-        // a former live that is a processed video by now comes back as a DASH pair: needs mpv
-        if (!r[@"hls"] && (!SFMPVAvailable() || SFPreferAVFoundation())) { SFCount(@"yt.live.no-mpv"); done(nil, SFError(kNoMPVMsg)); return; }
-        SFCount(@"yt.live.sabr");
+        SFCount(@"yt.live.sabr");   // (a former live that is a processed video by now comes back as a DASH pair: sabrPlay opens either)
         sabrPlay(vid, r, done);
     }];
 }

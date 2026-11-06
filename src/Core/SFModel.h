@@ -116,9 +116,5 @@ void SFResolveRef(NSString *ref, SFURLDone done);
 void SFResolveRefOnline(NSString *ref, SFURLDone done);
 
 NSError *SFError(NSString *msg);
-// Fallback URLs (e.g. YouTube: 1080p HLS -> 720p HLS -> 360p MP4) in case AVFoundation repeatedly
-// fails to open the first URL.
-void SFSetAlternateURLs(NSURL *primary, NSArray *alternates);
 // Offline copy for a source ID (set by SFDownloads): resolveURL then plays locally.
 void SFSetLocalFileLookup(NSString *(^lookup)(NSString *identifier));
-NSURL *SFNextAlternateURL(NSURL *failed);

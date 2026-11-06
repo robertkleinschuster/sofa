@@ -605,6 +605,8 @@ yt-dlp --no-config --cache-dir <dir> --js-runtimes quickjs:/opt/local/bin/qjs \
 
 ## 6. AVFoundation on 10.9 — playback tests
 
+*Historical (2026-11-03): Sofa no longer uses AVFoundation; mpv plays YouTube DASH/HLS.*
+
 Probe program `docs/probes/avtest.m` (usage: `avtest single <file-with-url>` | `avtest comp <video-url-file> <audio-url-file>`)
 (built with `clang -fobjc-arc -c` + link without ARC flag, frameworks Foundation,
 AVFoundation, CoreMedia, CoreVideo, QuartzCore). Frames counted with

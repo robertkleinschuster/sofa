@@ -2,8 +2,6 @@
 #import "SFRuntime.h"
 #import "SFModel.h"
 #import "SFYTBreaker.h"
-#import "SFEngine.h"
-#import "SFSettings.h"
 #import "SFStats.h"
 #import "SFUserAgent.h"
 #import <signal.h>
@@ -62,8 +60,8 @@ static NSString *SabrMain(void) { return [[NSBundle mainBundle].resourcePath str
 
 
 - (BOOL)preloadOnFocus:(NSString *)vid {
-    // only what this device plays via SABR (VOD needs mpv), never during a bot-check pause
-    if (!vid.length || !self.available || !SFMPVAvailable() || SFPreferAVFoundation() || [SFYTBreaker shared].blockedUntil) return NO;
+    // never during a bot-check pause
+    if (!vid.length || !self.available || [SFYTBreaker shared].blockedUntil) return NO;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970;
     if (!_preloads) _preloads = [NSMutableArray array];
     while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];

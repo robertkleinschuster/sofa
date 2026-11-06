@@ -2,7 +2,6 @@
 #import "SFMPVEngine.h"
 #import "SFModel.h"
 
-#if SF_HAVE_MPV
 // Reads the FBO into a CGImage (+1). GL returns rows bottom-up.
 static CGImageRef devReadImage(GLint fbo, GLint w, GLint h) {
     NSMutableData *px = [NSMutableData dataWithLength:(NSUInteger)w * h * 4];
@@ -25,9 +24,7 @@ static CGImageRef devReadImage(GLint fbo, GLint w, GLint h) {
     if (err != GL_NO_ERROR) SFLog(@"mpv: dev frame read %dx%d fbo=%d glerr=0x%x", w, h, fbo, err);
     return img;
 }
-#endif
 
-#if SF_HAVE_MPV
 
 static void *glProc(void *ctx, const char *name) {
     static CFBundleRef gl;
@@ -206,4 +203,3 @@ static void onUpdate(void *ctx) {
 }
 @end
 
-#endif

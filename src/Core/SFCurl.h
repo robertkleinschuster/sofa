@@ -2,7 +2,7 @@
 // TLS 1.3) are unreachable with 10.9's SecureTransport. For these hosts
 // Sofa uses libcurl from MacPorts (OpenSSL).
 //  * SFCurlFetch: synchronous fetch (call in the background only)
-//  * SFStreamProxy: local HTTP proxy (127.0.0.1) for AVFoundation incl. HLS rewriting
+//  * SFStreamProxy: local HTTP proxy (127.0.0.1) for readers without curl, incl. HLS rewriting
 #import "SFCore.h"
 
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
@@ -29,8 +29,5 @@ BOOL SFIsTLSError(NSError *e);
 @interface SFStreamProxy : NSObject
 + (instancetype)shared;
 // Returns a local proxy URL for https URLs of a curl host, otherwise the URL itself.
-// YouTube HLS playlists also go through the proxy (segments stay direct), see .m.
 - (NSURL *)playableURLFor:(NSURL *)url;
-// Preload a YouTube playlist in the background (after resolving) so playback starts locally right away.
-- (void)warmPlaylist:(NSURL *)url;
 @end

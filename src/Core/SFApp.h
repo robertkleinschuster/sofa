@@ -56,13 +56,11 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)resolve:(NSString *)ref done:(SFURLDone)done;
 + (void)resolveOnline:(NSString *)ref done:(SFURLDone)done;   // skip local copies ("Online abspielen")
 // --- player hooks: app knowledge about a running playback. `source` = the stream description the
-//     app's resolver attached to the opened URL (SFMPVSourceFor). The generic fallback chain
-//     (engine switch, DASH->HLS, alternates) stays in the player. ---
+//     app's resolver attached to the opened URL (SFMPVSourceFor). ---
 + (BOOL)playbackIsSession:(NSDictionary *)source;   // stream served by an app session (local service) whose loss needs recovery
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why;   // before the player reopens the item (recover the app's side, e.g. a fresh session)
 + (NSString *)playbackSessionLostNotification;      // posted when the service behind session streams died
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)
-+ (BOOL)playbackPrepareReResolve:(SFItem *)item;    // all streams rejected: drop caches, YES = resolving afresh can help
 + (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *next))done;   // autoplay recommendation (from half time)
 // info panel: description/channel and related videos (done on main; related empty + details nil =
 // failed). details keys: description, channel, showRef, avatar, date (NSDate) - only when found.

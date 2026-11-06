@@ -74,12 +74,12 @@ preload, stored-item refresh, remote control, home sections, dev commands, lifec
 
 ## Player hooks
 
-The player keeps the generic fallback chain (engine switch, DASH→HLS, alternates,
-re-resolve) and counts it in SFStats. App knowledge comes through the protocol, keyed by the
+The player has one engine (mpv) and no generic fallback chain: a stream that fails ends in a
+readable message, a session stream (below) is reopened by its app. App knowledge comes through the protocol, keyed by the
 stream description the app's resolver attached to the URL (`SFMPVSourceFor`):
-`playbackIsSession:` / `playbackSessionFailed:item:retried:reason:` /
+`playbackIsSession:` / `playbackSessionFailed:item:reason:` /
 `playbackSessionLostNotification` (streams served by a local app service, e.g. YouTube SABR),
-`playbackLiveEnded:done:`, `playbackPrepareReResolve:`, `upNextForItem:done:`,
+`playbackLiveEnded:done:`, `upNextForItem:done:`,
 `watchDetailsForItem:done:` (info panel). End cards come generically in the stream
 description under `endCards` (`kind`: video/playlist/channel/follow, `ref`, geometry, time);
 opening them goes through `itemForRef:title:image:` / `listLoader:title:` / show pages.
@@ -176,8 +176,7 @@ instance) and the dev control pipes `dev-<instance>.fifo`.
 Test knobs are environment variables read through `SFDevEnv` / `SFDevSeconds` (SFCore), which
 honour them in dev instances only - the real app never sees them:
 `SOFA_OFFLINE=1` (simulated offline), `SOFA_RETRY_BASE` / `SOFA_SOURCE_GAP` (download retry and
-per-source start spacing, seconds), `SOFA_STALL_LIMIT` (player stall watchdog, seconds),
-`SOFA_NO_PLAYLIST_PROXY=1`. Tests wait for log lines (`dev: shot written PATH`, ...), never for
+per-source start spacing, seconds), `SOFA_STALL_LIMIT` (player stall watchdog, seconds). Tests wait for log lines (`dev: shot written PATH`, ...), never for
 fixed times.
 
 ## Design system (Framework)

@@ -109,9 +109,8 @@ since $m3 | grep -q 'info: panel closed' && ok "MENU closed the panel" || bad "M
 awk "BEGIN{exit !($t3 > $t2 + 1)}" 2>/dev/null && ok "playback continues after MENU ($t3 s)" || bad "playback stopped after MENU ($t3)"
 since $m | grep -q 'player: resolve\|player: play ' && bad "the panel restarted playback" || ok "no restart by the panel"
 
-echo "==> 4. broken stream -> fallback chain -> readable message"
+echo "==> 4. broken stream -> readable message"
 m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; waitlog $m 'player: failed' 60
-since $m | grep -q 'mpv fails -> AVFoundation' && ok "fallback chain ran" || bad "no fallback"
 since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no final failure"
 shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
 stop

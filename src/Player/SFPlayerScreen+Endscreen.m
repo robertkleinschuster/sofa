@@ -39,7 +39,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     _esVideoRect = CGRectZero;
 }
 
-// The picture inside the (full-screen) video layer: aspect fit, as mpv/AVPlayerLayer draw it
+// The picture inside the (full-screen) video layer: aspect fit, as mpv draws it
 - (CGRect)esComputeVideoRect {
     CGRect b = self.layer.bounds;
     CGSize vs = [_engine respondsToSelector:@selector(videoSize)] ? [_engine videoSize] : CGSizeZero;

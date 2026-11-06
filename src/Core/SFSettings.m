@@ -26,8 +26,6 @@ BOOL SFRemoteLaunchEnabled(void) { return SFGetBool(CFSTR("remoteLaunch"), YES);
 void SFSetRemoteLaunchEnabled(BOOL on) { SFSetBool(CFSTR("remoteLaunch"), on); }
 BOOL SFAutoUpdateEnabled(void) { return SFGetBool(CFSTR("autoUpdate"), YES); }
 void SFSetAutoUpdateEnabled(BOOL on) { SFSetBool(CFSTR("autoUpdate"), on); }
-// Hidden emergency switch (no UI): defaults write de.sofa.app preferAVFoundation -bool YES
-BOOL SFPreferAVFoundation(void) { return SFGetBool(CFSTR("preferAVFoundation"), NO); }
 
 NSString *SFSubtitleLanguage(void) {
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("subtitleLanguage"), SFDomain());

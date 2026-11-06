@@ -12,8 +12,6 @@ BOOL SFRemoteLaunchEnabled(void);         // launch a closed Sofa with any Apple
 void SFSetRemoteLaunchEnabled(BOOL on);
 BOOL SFAutoUpdateEnabled(void);           // download updates from GitHub automatically + install when idle (default: on)
 void SFSetAutoUpdateEnabled(BOOL on);
-// mpv is the default player; YES = old choice (H.264 via AVFoundation). Only via defaults, emergency switch.
-BOOL SFPreferAVFoundation(void);
 // Preferred subtitle language (e.g. "de"); nil = subtitles off (default). Remembered on every
 // choice in the player and applied to the next video when the language is available.
 NSString *SFSubtitleLanguage(void);

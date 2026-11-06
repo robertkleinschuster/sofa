@@ -2,7 +2,6 @@
 #import "SFSettings.h"
 #import "SFLayers.h"
 #import "SFStore.h"
-#import "SFAVEngine.h"
 #import "SFMPVEngine.h"
 #import "SFApp.h"
 #import "SFPower.h"
@@ -220,7 +219,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)startItem {
     _ended = NO; _failed = NO;
     [self esReset];
-    if (_item != _lastStartedItem) { _reresolved = NO; _sessionReopenedAt = -1; _mpvFailedURL = nil; _dashFailedURL = nil; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) { _sessionReopenedAt = -1; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -246,43 +245,26 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
             SFLog(@"player: resolve failed %@", err);
             return;
         }
-        self->_openTries = 0;
         self->_holdPaused = self.startPaused;   // new item: paused only if explicitly requested
         [self playURL:url];
     }];
 }
 
-- (void)playURL:(NSURL *)url { [self playURL:url forceMPV:NO]; }
-
-// Engine choice (user decision 2026-11-04): mpv plays everything. AVFoundation sporadically failed on
-// 10.9 at the start of YouTube HLS (docs/youtube.md §6), can't do VP9/AV1, and mpv decodes 1080p50
-// in software with ~1/3 of a core (mpv hardware decoding doesn't work on 10.9). AVFoundation stays
-// the fallback when mpv fails on a stream, and via the emergency switch (SFPreferAVFoundation)
-// the old choice: H.264 via AVFoundation, mpv only for better/foreign formats.
-- (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url {
-    if (!SFMPVAvailable() || [url isEqual:_mpvFailedURL]) return NO;
-    if (!SFPreferAVFoundation()) return YES;
-    NSString *ext = url.path.pathExtension.lowercaseString;
-    if ([@[@"webm", @"mkv", @"ogv"] containsObject:ext]) return YES;
-    if (!src[@"video"]) return NO;
-    double dh = [src[@"height"] doubleValue], df = [src[@"fps"] doubleValue];
-    double hh = [src[@"hlsHeight"] doubleValue], hf = [src[@"hlsFps"] doubleValue];
-    return dh > hh || (dh == hh && df > hf + 1);
-}
-
-- (void)playURL:(NSURL *)url forceMPV:(BOOL)forceMPV {
+// One engine since 2026-11-06: mpv (libmpv) plays everything - AVFoundation, the fallback until
+// then, rescued no playback in its last days (4 of 4 fallbacks failed the same way) and can't do
+// VP9/AV1/Opus or DASH (user decision 2026-11-04 "AVFoundation entfernen", docs/codecs-research.md).
+- (void)playURL:(NSURL *)url {
     [self teardownPlayer];
-    _openURL = url; _openAt = [NSDate date]; _openTries++;
+    _openURL = url;
     if (self.startPaused) _holdPaused = YES;
     NSDictionary *src = SFMPVSourceFor(url);
-    BOOL useMPV = SFMPVAvailable() && (forceMPV || [self prefersMPV:src url:url]);
     NSURL *open = url, *audio = nil;
-    _openedDash = useMPV && src[@"video"] && ![url isEqual:_dashFailedURL];
+    _openedDash = src[@"video"] != nil;   // separate video/audio tracks (YouTube SABR)
     if (_openedDash) {
         open = [NSURL URLWithString:src[@"video"]];
         if (src[@"audio"]) audio = [NSURL URLWithString:src[@"audio"]];
     }
-    _engine = useMPV ? (id<SFEngine>)[SFMPVEngine new] : (id<SFEngine>)[SFAVEngine new];
+    _engine = [SFMPVEngine new];
     _engine.delegate = self;
     _engine.muted = SFDevMode;   // dev mode: don't disturb anyone
     SFNoAnimate(^{

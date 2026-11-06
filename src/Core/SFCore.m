@@ -190,13 +190,12 @@ void SFNoAnimate(dispatch_block_t changes) {
     [CATransaction commit];
 }
 
-#import <AVFoundation/AVFoundation.h>
 #import <objc/message.h>
-// Video layers render black in renderInContext: (AVPlayerLayer, mpv's CAOpenGLLayer). They are
+// Video layers render black in renderInContext: (mpv's CAOpenGLLayer). They are
 // hidden while rendering; one that can produce its frame (mpv: devCopyFrameOfSize:, dev mode) is
 // drawn in its place, so dev screenshots and the dev stream show the real picture.
 static void collectPlayerLayers(CALayer *l, NSMutableArray *out) {
-    if ([l isKindOfClass:[AVPlayerLayer class]] || [l respondsToSelector:@selector(devCopyFrameOfSize:)]) { [out addObject:l]; return; }
+    if ([l respondsToSelector:@selector(devCopyFrameOfSize:)]) { [out addObject:l]; return; }
     for (CALayer *s in l.sublayers) collectPlayerLayers(s, out);
 }
 void SFRenderLayerTree(CALayer *root, CGContextRef ctx) {

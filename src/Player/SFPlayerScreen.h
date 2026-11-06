@@ -1,4 +1,4 @@
-// Full-screen player (AVFoundation) with its own OSD, resume, seeking, autoplay.
+// Full-screen player (mpv, SFMPVEngine) with its own OSD, resume, seeking, autoplay.
 #import "SFScreen.h"
 #import "SFModel.h"
 
@@ -6,7 +6,7 @@
 - (instancetype)initWithItem:(SFItem *)item queue:(NSArray *)queue index:(NSUInteger)index;
 @property (nonatomic) BOOL startFromBeginning;
 @property (nonatomic) NSTimeInterval startPosition;
-@property (nonatomic) BOOL startPaused;               // keep paused after an update   // >0: start exactly here (resume after update)
+@property (nonatomic) BOOL startPaused;               // keep paused after an update
 @property (nonatomic, readonly) SFItem *item;
 @property (nonatomic, readonly) id engineForDiagnostics;   // dev: current engine
 - (NSTimeInterval)currentTime;

@@ -4,7 +4,6 @@
 #import "SFSettings.h"
 #import "SFLayers.h"
 #import "SFStore.h"
-#import "SFAVEngine.h"
 #import "SFMPVEngine.h"
 #import "SFApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
@@ -18,12 +17,11 @@
     NSArray *_queue;
     id _powerObs;
     BOOL _explicitQueue;   // phone playlist: next = next queue entry
-    NSURL *_dashFailedURL; // DASH streams of this source rejected (YouTube 403) -> mpv with the HLS stream
-    BOOL _openedDash;      // current attempt: mpv with separate DASH streams
+    BOOL _openedDash;      // current attempt: separate video/audio tracks
     BOOL _subsApplied;     // preferred subtitles already applied for this item
     CALayer *_trackKey; SFLabel *_trackHint;   // OSD: "[OK] hold: info"
     NSUInteger _index;
-    id<SFEngine> _engine;        // AVFoundation or mpv (SFEngine.h)
+    id<SFEngine> _engine;        // mpv (SFEngine.h)
     CALayer *_videoHost;         // hosts the video layer of the active engine
     IOPMAssertionID _assertion, _sysAssertion;
     BOOL _hasAssertion;
@@ -47,14 +45,12 @@
     NSTimer *_seekTimer;
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
-    NSURL *_openURL; NSDate *_openAt; NSInteger _openTries; NSTimeInterval _openResume;
-    BOOL _holdPaused;   // "start paused" holds across retries/fallback streams until the user presses play   // retry on sporadic HLS open errors
+    NSURL *_openURL; NSTimeInterval _openResume;
+    BOOL _holdPaused;   // "start paused" holds across reopens until the user presses play
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
-    NSURL *_mpvFailedURL;        // mpv failed on this URL -> try AVFoundation
     NSTimeInterval _sessionReopenedAt;   // position of the last session reopen (-1 = none for this item)
     id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)
-    BOOL _reresolved;            // YouTube: streams rejected -> resolve afresh once
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;
     __weak SFItem *_lastStartedItem;
@@ -84,11 +80,8 @@
 - (void)willDisappear;
 - (void)startItem;
 - (void)playURL:(NSURL *)url;
-- (BOOL)prefersMPV:(NSDictionary *)src url:(NSURL *)url;
-- (void)playURL:(NSURL *)url forceMPV:(BOOL)forceMPV;
 - (id)engineForDiagnostics;
 - (NSTimeInterval)failurePosition;
-- (void)reopen:(NSURL *)url forceMPV:(BOOL)forceMPV after:(double)delay resetTries:(BOOL)reset;
 - (BOOL)sessionSource;
 - (void)sessionFailed:(NSString *)why;
 - (void)engineStatusChanged;

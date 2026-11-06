@@ -180,24 +180,6 @@ void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [loo
 }
 @end
 
-static NSMutableDictionary *gAlternates;   // URL string -> next URL string
-void SFSetAlternateURLs(NSURL *primary, NSArray *alts) {
-    if (!primary) return;
-    if (!gAlternates) gAlternates = [NSMutableDictionary new];
-    NSString *prev = primary.absoluteString;
-    for (id a in alts) {
-        NSString *s = [a isKindOfClass:[NSURL class]] ? [a absoluteString] : a;
-        if (![s isKindOfClass:[NSString class]] || [s isEqualToString:prev]) continue;
-        gAlternates[prev] = s;
-        prev = s;
-    }
-    if (gAlternates.count > 400) [gAlternates removeAllObjects];
-}
-NSURL *SFNextAlternateURL(NSURL *failed) {
-    NSString *n = failed ? gAlternates[failed.absoluteString] : nil;
-    return n ? [NSURL URLWithString:n] : nil;
-}
-
 NSString *SFCanonicalItem(SFItem *item, BOOL datesAsAge) {
     NSDateFormatter *iso = [NSDateFormatter new];
     iso.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];

@@ -18,12 +18,9 @@ HBIN    := $(APP)/Contents/MacOS/SofaRemote
 SRCDIRS := $(filter-out src/Apps/,$(wildcard src/*/)) $(wildcard src/Apps/*/)
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
-LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework AVFoundation \
-           -framework CoreMedia -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl
-# libmpv (overlay port multimedia/mpv) optional + weakly linked: without it Sofa runs with AVFoundation only
-ifneq ($(wildcard $(MP)/lib/libmpv.dylib),)
-LDFLAGS += -framework OpenGL -weak-lmpv
-endif
+LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework OpenGL \
+           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl
+# libmpv (overlay port multimedia/mpv) is the player engine: required
 SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
 HSRC    := $(wildcard helper/*.m)

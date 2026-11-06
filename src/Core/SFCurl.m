@@ -145,20 +145,12 @@ BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error) {
 
 #pragma mark - Stream proxy
 
-// YouTube HLS on 10.9: CoreMedia fetches the playlist from manifest.googlevideo.com itself and
-// sporadically fails right away (≈1/6 to 1/3 of starts: -12939 on the playlist URL,
-// -11800/-12643 or -1102), although the server returns 200. The same playlist from 127.0.0.1
-// never failed in 25 attempts (measured 2026-11-04, docs/youtube.md §6). Hence: playlists
-// of this host go through the proxy (VOD playlists cached and preloaded after
-// resolving), AVFoundation keeps fetching the segments (rr*.googlevideo.com) directly.
+// Hosts the system TLS can't reach (SFHostNeedsCurl, e.g. ORF) go through this local proxy, which
+// fetches with curl and rewrites HLS playlists so that every segment comes through it too (ffmpeg
+// downloads). VOD playlists are cached briefly.
 static BOOL SFIsPlaylistURL(NSString *abs) {
     NSString *ext = [[NSURL URLWithString:abs] path].pathExtension.lowercaseString;
     return [ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"];
-}
-static BOOL SFProxyPlaylistHost(NSString *host) {
-    static BOOL off; static dispatch_once_t o;   // dev A/B test: SOFA_NO_PLAYLIST_PROXY=1
-    dispatch_once(&o, ^{ off = SFDevEnv(@"SOFA_NO_PLAYLIST_PROXY") != nil; });
-    return !off && [host isEqualToString:@"manifest.googlevideo.com"];
 }
 
 static const NSTimeInterval kPlaylistTTL = 600;   // a VOD playlist doesn't change; URLs are valid for hours
@@ -204,27 +196,21 @@ static const NSUInteger kPlaylistCacheMax = 8;
 
 - (NSString *)proxyStringFor:(NSString *)abs {
     NSString *enc = [abs stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet alphanumericCharacterSet]];
-    // keep the extension: AVFoundation recognises HLS by ".m3u8", among others
+    // keep the extension: players recognise HLS by ".m3u8", among others
     NSString *ext = [[[NSURL URLWithString:abs] path] pathExtension];
     return [NSString stringWithFormat:@"http://127.0.0.1:%d/p/%@%@", _port, enc, ext.length ? [@"." stringByAppendingString:ext] : @""];
 }
 
-// Via the proxy: everything from curl hosts (TLS bridge) and playlists from SFProxyPlaylistHost.
+// Via the proxy: everything from curl hosts (TLS bridge).
 - (BOOL)shouldProxy:(NSString *)abs {
     NSURL *u = [NSURL URLWithString:abs];
     if (![u.scheme isEqualToString:@"https"] || !_port) return NO;
-    return SFHostNeedsCurl(u.host) || (SFProxyPlaylistHost(u.host) && SFIsPlaylistURL(abs));
+    return SFHostNeedsCurl(u.host);
 }
 
 - (NSURL *)playableURLFor:(NSURL *)url {
     if (![self shouldProxy:url.absoluteString]) return url;
     return [NSURL URLWithString:[self proxyStringFor:url.absoluteString]];
-}
-
-- (void)warmPlaylist:(NSURL *)url {
-    if (!url || !SFProxyPlaylistHost(url.host) || !SFIsPlaylistURL(url.absoluteString)) return;
-    NSString *t = url.absoluteString;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ [self playlistFor:t status:NULL]; });
 }
 
 // Rewritten playlist: from the cache, from a running fetch (wait for it) or fresh.
@@ -361,7 +347,7 @@ static void sendHeaders(StreamCtx *c) {
 static size_t bodyCB(char *p, size_t sz, size_t n, void *ud) {
     StreamCtx *c = ud;
     sendHeaders(c);
-    if (c->failed || !writeAll(c->fd, p, sz * n)) { c->failed = YES; return 0; }   // abort when AVPlayer closes
+    if (c->failed || !writeAll(c->fd, p, sz * n)) { c->failed = YES; return 0; }   // abort when the reader closes
     return sz * n;
 }
 
