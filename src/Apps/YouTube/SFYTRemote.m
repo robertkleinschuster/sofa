@@ -1,5 +1,7 @@
 // Phone remote (YouTube "Mit TV verbinden"): commands from SFLounge -> the shell's player host.
 #import "SFYouTubeApp.h"
+#import "SFYTPages.h"
+#import "SFYTWatch.h"
 #import "SFPlayerScreen.h"
 #import "SFLounge.h"
 
@@ -22,7 +24,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
         NSTimeInterval t = [args[@"currentTime"] doubleValue];
         NSString *list = args[@"listId"] ?: @"";
         NSMutableArray *items = [NSMutableArray new];
-        for (NSString *v in vids) [items addObject:[SFYouTubeApp itemForVideoID:v]];
+        for (NSString *v in vids) [items addObject:[SFYTPages itemForVideoID:v title:nil thumb:nil]];
         // If exactly this video is already playing (phone reconnected, e.g. after a Sofa update):
         // never reload. Adopt list/queue; only seek if the phone knows a real, different
         // position (after a restart it often reports 0 -> Sofa's position wins).
@@ -34,7 +36,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
             if (![p.remoteListID isEqualToString:list] || ![curIDs isEqualToArray:vids]) {
                 p.remoteListID = list;
                 [p adoptQueue:items index:idx];
-                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTubeApp fillDetails:items[k] done:nil];
+                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYTWatch fillDetails:items[k] done:nil];
             }
             if (t > 1 && fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
             [p remotePlay];
@@ -43,7 +45,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
         }
         [host wakeAndFront];
         NSUInteger gen = ++gen_;   // later setPlaylist wins
-        [SFYouTubeApp fillDetails:items[idx] done:^{
+        [SFYTWatch fillDetails:items[idx] done:^{
             if (gen != gen_) return;
             SFPlayerScreen *cur = [host topPlayer];
             if (cur.remoteListID) { cur.remoteListID = list; [cur replaceQueue:items index:idx at:t]; }
@@ -53,7 +55,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
                 if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
                 [host presentPlayer:ps];
             }
-            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYouTubeApp fillDetails:items[k] done:nil];
+            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYTWatch fillDetails:items[k] done:nil];
         }];
     } else if (!p) {
         return;

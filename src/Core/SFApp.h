@@ -75,6 +75,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (SFPageLoader)showPageLoader:(NSString *)ref title:(NSString *)title;   // page of a show/channel ref
 + (void)showRefForItem:(SFItem *)item done:(void (^)(NSString *ref))done; // item -> its show/channel ref
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *items, NSError *e))done;   // newest episodes of a show ref
++ (void)showImage:(NSString *)ref done:(void (^)(NSString *url))done;   // a followed show's picture when its stored one is missing/gone; done on main, nil = none (now)
 // --- library ---
 + (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done;
 + (NSTimeInterval)downloadsPausedUntil;   // e.g. bot check: no downloads until then (epoch s, 0 = no pause)

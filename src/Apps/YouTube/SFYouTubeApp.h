@@ -1,24 +1,15 @@
-// YouTube: browsing 100 % native via InnerTube (WEB client), without sign-in; playback via
-// SFYTResolver (yt-dlp, HLS 1080p). Following channels = Sofa's own list (SFFollows).
-// Reference: docs/youtube.md. Local downloads (~/TV Shows, genre YouTube) are played
-// in preference when the same video is already there.
+// YouTube: browsing 100 % native via InnerTube (WEB client), without sign-in; playback via the
+// sofa-yt sidecar (SABR), yt-dlp as fallback. Following channels = Sofa's own list (SFFollows).
+// Reference: docs/youtube.md. The app's modules:
+//   SFYTInnerTube  request + JSON shapes       SFYTParser  JSON -> items (pure, tools/test-yt-parse)
+//   SFYTPages      pages (home, channel, …)    SFYTWatch   one video: watch page, details, channel
+//   SFYTFeeds      followed channels' feeds    SFYTSabr / SFYTResolver / SFYTBreaker  playback paths
+//   SFLounge / SFYTRemote / SFPairScreen  phone remote
+// This class is the SFApp adapter (SFYouTubeApp.m, +Playback.m, +Dev.m).
 #import "SFApp.h"
 
 @interface SFYouTubeApp : NSObject <SFApp>
-+ (SFPageLoader)channelLoader:(NSString *)channelID title:(NSString *)title;
-+ (SFPageLoader)playlistLoader:(NSString *)playlistID title:(NSString *)title;
-+ (SFItem *)itemForVideoID:(NSString *)vid;                     // placeholder (local copy, if present)
-// Video known by title/thumbnail only (end screen tile); the local copy, if present, is preferred
-+ (SFItem *)itemForVideoID:(NSString *)vid title:(NSString *)title thumb:(NSString *)thumb;
-+ (void)upNextFor:(NSString *)videoID done:(void (^)(SFItem *next))done;   // "up next" (recommendation, without Shorts/live/watched)
-// Related videos of the watch page (no Shorts < 90 s, not the video itself); done on main, never nil
-+ (void)relatedFor:(NSString *)videoID done:(void (^)(NSArray *items))done;
-// Watch page in one request (the same cached InnerTube "next" call as related/up next):
-// related = as relatedFor; details = description, channel, channelID (UC…), avatar, date (NSDate) –
-// keys only present when found. done on main; related empty + details nil = request failed.
-+ (void)watchPageFor:(NSString *)videoID done:(void (^)(NSArray *related, NSDictionary *details))done;
-+ (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *channelID))done;   // @handle-URL -> UC…
-+ (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done; // title/channel/duration via InnerTube "player"
++ (void)resolveChannelURL:(NSString *)url done:(void (^)(NSString *channelID))done;   // @handle URL -> UC… (library import)
 @end
 
 // phone remote: one SFLounge command -> player host (SFYTRemote.m)

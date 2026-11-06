@@ -8,7 +8,7 @@ identity, and every request to YouTube is counted and justified.**
 
 | Layer | What | Runs |
 |---|---|---|
-| Browsing | InnerTube `browse`/`search`/`next` from ObjC (`SFYouTubeApp`) | in the app |
+| Browsing | InnerTube `browse`/`search`/`next` from ObjC (`SFYTInnerTube` request, `SFYTParser` meaning, `SFYTPages`; modules: `SFYouTubeApp.h`) | in the app |
 | **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted); **PO tokens for the fallback** (`GET /pot`) | always (node, ~50 MB) |
 | yt-dlp fallback (`res/ytresolver.py`, `SFYTResolver`) | only when the sidecar could not serve a video (error other than a bot check, video marked failed after two SABR failures, no mpv); one client per request; tokens from the sidecar via Sofa's own provider plugin (`res/yt-dlp-plugins`, provider "Sofa") | **on demand**, ends after 10 min idle |
 | Breaker (`SFYTBreaker`, shared file `Caches/Sofa/yt-dlp/youtube-block.json`) | a bot check pauses background work (preloads, downloads) 5 min → 1 h; playback never falls back to the other path after a bot check | both paths read/write it |
@@ -441,7 +441,7 @@ the entry (checked 2026-11-05). Exact sources, in Sofa's order of use:
   ("2019-01-09T06:03:03-08:00"); the sidecar returns it as `published` (epoch s) from `/open`,
   yt-dlp as `timestamp`. Downloads store this exact time (SFDownloadURLDone info).
 - **Watch page** (`next`): `dateText` "02.11.2026" (day; request is hl=de/gl=AT) – info panel.
-`relativeDate()` in SFYouTubeApp is the fallback for list entries only (approximate).
+`relativeDate()` in SFYTParser is the fallback for list entries only (approximate).
 
 ## 4. Images
 

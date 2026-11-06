@@ -2,6 +2,7 @@
 #import "SFStore.h"
 #import "SFDownloads.h"
 #import "SFNet.h"
+#import "SFApp.h"
 
 NSString *const SFFollowsDidChangeNotification = @"SFFollowsDidChange";
 
@@ -135,12 +136,19 @@ static BOOL usable(NSString *img) {
     return f && !usable(f[@"image"]);
 }
 
-- (void)setImage:(NSString *)url forFollow:(NSString *)identifier {
-    NSMutableDictionary *f = identifier ? _follows[identifier] : nil;
-    if (!f || !url.length || [f[@"image"] isEqualToString:url]) return;
-    f[@"image"] = url;
-    [self save:f];
-    [self changed];
+// A missing or gone picture: the show's app finds the current one (SFApp showImage, on its own
+// budget) - written only when it changed.
+- (void)renewImage:(NSString *)identifier {
+    if (![self needsImage:identifier]) return;
+    Class<SFApp> app = [SFAppRegistry appForRef:identifier];
+    if (![app respondsToSelector:@selector(showImage:done:)]) return;
+    [app showImage:identifier done:^(NSString *url) {
+        NSMutableDictionary *f = self->_follows[identifier];
+        if (!f || !url.length || [f[@"image"] isEqualToString:url]) return;
+        f[@"image"] = url;
+        [self save:f];
+        [self changed];
+    }];
 }
 
 - (NSArray *)follows:(NSString *)source {
@@ -256,6 +264,7 @@ static NSArray *stable(NSArray *dicts) {
         }
         NSDictionary *f = all[i++];
         [me refreshOne:f done:^{
+            [me renewImage:f[@"id"]];
             if (i % 20 == 0) [me changed];   // make intermediate state visible
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
         }];

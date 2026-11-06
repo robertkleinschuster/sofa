@@ -23,7 +23,6 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (void)unfollow:(NSString *)identifier;               // also ends "Automatisch herunterladen"
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
-- (void)setImage:(NSString *)url forFollow:(NSString *)identifier;   // the app's current picture (written only when it changed)
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
 - (void)refreshNow;
 @end
