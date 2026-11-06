@@ -35,7 +35,12 @@ the sidecar got no answer. Fixed causes:
   cookie jar (`<state>/cookies.json`, 0600, never logged), a fresh session per sidecar session (current
   clientVersion and YouTube's reading of the UA from `sw.js_data`; youtubei.js's session cache had
   kept June's clientVersion and the old UA's browser fields), the visitor kept - set on the global fetch, so InnerTube,
-  BotGuard/WebPO, captions and SABR all send it. The app sends **no** request to youtube.com itself:
+  BotGuard/WebPO, captions and SABR all send it. Underneath, the connection is Chrome's too
+  (`lib/transport.ts`, global undici dispatcher): Chrome's cipher suites, groups (X25519MLKEM768
+  first), signature algorithms and ALPN `h2` before `http/1.1` - Node's defaults (52 suites, X448/
+  ffdhe, `http/1.1` first) were no browser's fingerprint. The JA4 cipher part now equals Chrome's;
+  OpenSSL lacks a few of Chrome's extensions, so the extension part still differs.
+  The app sends **no** request to youtube.com itself:
   every InnerTube call goes through `POST /yt/<endpoint>` (`player` refused there - only the sidecar
   asks it, with a PO token; the watch details come from `next`).
 - **Cadence like a person** (`SFRefreshPlan`, `SFFollows`): each followed channel is checked on its

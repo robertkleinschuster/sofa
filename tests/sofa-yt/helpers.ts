@@ -38,6 +38,7 @@ interface FormatXTagsCodec {
 interface Modules {
   'lib/app.ts': typeof import('../../res/sofa-yt/lib/app.ts');
   'lib/breaker.ts': typeof import('../../res/sofa-yt/lib/breaker.ts');
+  'lib/transport.ts': typeof import('../../res/sofa-yt/lib/transport.ts');
   'lib/formats.ts': typeof import('../../res/sofa-yt/lib/formats.ts');
   'lib/hls.ts': typeof import('../../res/sofa-yt/lib/hls.ts');
   'lib/mediaindex.ts': typeof import('../../res/sofa-yt/lib/mediaindex.ts');

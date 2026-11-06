@@ -43,6 +43,8 @@ if (flag('check')) {
   await import('bgutils-js/webpo');
   await import('bgutils-js/utils');
   await import('jsdom');
+  await import('undici');
+  await import('./lib/transport.ts');
   await import('./lib/app.ts');
   await import('./lib/sabrpump.ts');
   await import('./lib/webpo.ts');
@@ -58,7 +60,11 @@ fs.mkdirSync(stateDir, { recursive: true });
 const blockFile = String(opt('block-file', path.join(stateDir, 'youtube-block.json')));
 
 // One browser identity for every request of this process (identity.ts): youtubei.js, BotGuard,
-// SABR and captions all use the global fetch - it carries the identity's headers and cookies.
+// SABR and captions all use the global fetch - it carries the identity's headers and cookies, and
+// connects like Chrome (transport.ts: TLS offer, HTTP/2).
+const { setGlobalDispatcher } = await import('undici');
+const { chromeAgent } = await import('./lib/transport.ts');
+setGlobalDispatcher(chromeAgent());
 const { loadIdentity, CookieJar, browserFetch } = await import('./lib/identity.ts');
 const identity = await loadIdentity(stateDir);
 globalThis.fetch = browserFetch(identity, new CookieJar(path.join(stateDir, 'cookies.json')), globalThis.fetch);
