@@ -10,6 +10,11 @@ media.ccc.de, all Mediatheken), local downloads + streaming + own subscription e
 program. Intuitive, stable, light on resources on the iMac12,2 (i5-2500S Sandy Bridge, no
 AVX2, Radeon HD 6770M, 2560x1440).
 
+## Architecture rule (user 2026-11-06, BINDING)
+Build every architecture the way it would ideally be built from scratch - fewest runtimes and
+processes, one responsibility each, explicit dependencies - and migrate to it; never keep a
+component only because it already exists.
+
 ## Hard rules (user requirements 2026-11-03)
 1. **New, clean monolith.** No dependency on old code (Kodi add-ons
    `script.ytdlsub`, `script.mobilecast`, `~/ytdl-sub/*.py`, run.sh). The old code
@@ -36,11 +41,17 @@ AVX2, Radeon HD 6770M, 2560x1440).
    client with the same cookies, TLS and HTTP behaviour. Mixing clients under one visitor is
    counterproductive.
 3. **A real browser, long-term stable.** Target: a bundled headless Firefox (port
-   `firefox-x11`, 153 ESR, built and installed) is the YouTube client - youtubei.js, googlevideo
-   and BotGuard run in a youtube.com page in it; Node only bridges media to mpv and keeps the
-   session/pacing logic. Acceptable alternative only if it is equally indistinguishable from a
-   real browser without Firefox. Feasibility 2026-11-06: BiDi headless works on 10.9 (UA
-   "Intel Mac OS X 10.15; rv:153.0"), page->Node 37 MB/s.
+   `firefox-x11`, 153 ESR, built and installed) is the YouTube client. Acceptable alternative
+   only if it is equally indistinguishable from a real browser without Firefox. Feasibility
+   2026-11-06: BiDi headless works on 10.9 (UA "Intel Mac OS X 10.15; rv:153.0"), page->client
+   37 MB/s.
+   **Target architecture (built as if from scratch, user rule 2026-11-06):** two runtimes only -
+   Sofa (ObjC: UI, library, libmpv, ffmpeg, the loopback HTTP server mpv/ffmpeg read from) and
+   Firefox (one hidden youtube.com page running Sofa's YouTube engine: youtubei.js web build,
+   googlevideo SABR, BotGuard in the real DOM - no jsdom - plus the session/pacing logic of
+   today's `res/sofa-yt/lib/session.ts`). Sofa drives Firefox and pulls media bytes over
+   WebDriver BiDi (WebSocket via libcurl). **No Node at runtime**: Node/TypeScript only at build
+   time (bundle the engine to one JS file; port depends_build), the engine's unit tests stay.
 4. **Human cadence.** Few requests at a viewer's pace (downloads 20-30 min apart, no bursts,
    preloads only on real focus changes); no retries into a fresh block.
 5. **Dependencies explicit** (user): every library/tool Sofa uses is declared (Makefile/port
