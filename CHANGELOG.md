@@ -13,6 +13,8 @@ Einstellungen → „Update installieren“.
 - **Titel und Bilder überall gleich.** Ein Video ist jetzt nur noch einmal gespeichert. Ändert ein
   Kanal einen Titel, zeigen Verlauf, Downloads und „Später ansehen“ ihn ab dem nächsten Start auch – vorher
   behielt jede Liste ihren alten Stand.
+- **Updates unterbrechen Downloads nicht mehr als Fehler.** Lief beim Update gerade ein Download,
+  galt er als fehlgeschlagen und wartete 15 Minuten. Jetzt läuft er nach dem Neustart sofort weiter.
 
 ## 0.3.10
 

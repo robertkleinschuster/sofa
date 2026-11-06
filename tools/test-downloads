@@ -6,7 +6,8 @@
 # same .part file as the restarted download -> corrupt 1.2 GB file. Checks:
 #   1. an orphaned ffmpeg writing into the download folder is killed at start, its part file swept
 #   2. the verifier accepts a healthy file and rejects a corrupted one
-#   3. quitting during a download leaves no ffmpeg behind, and the download resumes on the next start
+#   3. quitting during a download (update handover, plain quit) leaves no ffmpeg behind, uses no
+#      attempt, and the download resumes on the next start
 #   4. a failed repair keeps the old file and is retried later (YouTube's bot check blocks for hours)
 #   5. during a YouTube bot-check pause a queued YouTube download waits without any request
 #   6. storage guard: below the reserve no download starts and a running one stops - both stay
@@ -50,6 +51,7 @@ REF=example:1      # downloadable (local server, slow enough to quit during the 
 BADREF=example:0   # an id the Example app does not know: its download always fails
 YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube paused)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
 
 make -C "$SRC" >/dev/null || exit 1
 APP=
@@ -153,17 +155,23 @@ for i in $(seq 1 20); do grep -q 'proctest status' "$LOG" && break; sleep 0.5; d
 grep -q 'proctest status -2 after [12]\.' "$LOG" && ok "hung child process is killed at its timeout" \
   || bad "process timeout did not work: $(grep 'proctest' "$LOG")"
 
-echo "==> 3. quit during a download"
+echo "==> 3. quit during a download (update handover, then a plain quit)"
+running() {
+  for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
+  for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done
+  [ -n "$(ffpids)" ]
+}
 cmd "dlget $REF"
-for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
-for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done
-[ -n "$(ffpids)" ] && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
+running && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
+# the update handover waits half a second before exiting - ffmpeg's end is handled meanwhile
+cmd updatequit; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=
+[ -z "$(ffpids)" ] && ok "no ffmpeg left after the update handover" || bad "ffmpeg survived the handover: $(ffpids)"
+grep -q "downloads: FAILED $REF" "$LOG" && bad "stopping it counted as a failure" || ok "stopping it is no failure"
+check "still running in the database, no attempt used" "$(/opt/local/bin/sqlite3 "$DEVDB" "select state || '/' || tries from downloads where id='$REF'")" "1/0"
+start
+running && ok "download resumed on the next start" || bad "download not resumed"
 quit; sleep 1
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after quit" || bad "ffmpeg survived the quit: $(ffpids)"
-start
-for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
-grep -q "downloads: loading" "$LOG" && ok "download resumed on the next start" || bad "download not resumed"
-quit
 
 echo "==> 4. a failed repair keeps the file and is retried"
 # nothing else in the dev queue may run first (dev database only)

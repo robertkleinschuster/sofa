@@ -328,6 +328,10 @@ static NSString *gb(unsigned long long b) {
     NSTask *t = _task;
     if (!t.isRunning) return;
     SFLog(@"downloads: stopping ffmpeg before exit (%@ resumes on the next start)", _runningID);
+    // not a failure: let go of it first, so its termination handler only removes the part file
+    // (it stays Running in the database; the next start queues it again). Before 2026-11-06 a
+    // handler that still ran (update restart) counted it as a failed attempt.
+    _task = nil; _runningID = nil;
     pid_t pid = t.processIdentifier;
     [t terminate];
     for (int i = 0; i < 20 && t.isRunning; i++) usleep(50 * 1000);

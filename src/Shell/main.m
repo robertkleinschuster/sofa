@@ -3,7 +3,8 @@
 // Dev mode (`Sofa --dev [--size WxH]`): window outside the visible
 // screen, no Dock presence, no focus, muted. Controlled via the FIFO
 // the dev FIFO (SFAppDelegate+Dev fifoPath; lines: "key <up|down|left|right|select|menu|play|
-// selecthold|menuhold|next|prev>", "shot <path.png>", "home", "quit").
+// selecthold|menuhold|next|prev>", "shot <path.png>", "home", "quit", "updatequit" - the update
+// handover: save, stop, exit as before a new version starts).
 #import "SFCore.h"
 #import "SFLibraryPages.h"
 #import "SFScreen.h"

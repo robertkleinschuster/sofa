@@ -213,6 +213,8 @@ static NSString *fifoPath(void) {
         });
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
+    } else if ([cmd isEqualToString:@"updatequit"]) {   // as when SofaRemote installs an update
+        [self prepareForUpdate];
     }
 }
 
