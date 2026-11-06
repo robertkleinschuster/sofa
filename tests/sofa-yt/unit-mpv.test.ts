@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
-import { mod, fakeYouTube, json, must, nth, startApp, get, until, sleep, vodInfo } from './helpers.ts';
+import { mod, fakeYouTube, json, must, nth, startApp, get, until, within, vodInfo } from './helpers.ts';
 import type { FakeStart } from './helpers.ts';
 import type { VodAnswer } from '../../res/sofa-yt/lib/app.ts';
 import type { PumpEnd, TrackKind } from '../../res/sofa-yt/lib/session.ts';
@@ -30,7 +30,8 @@ function gen(dir: string): void {
   // noise keeps the bitrate at 2 Mbit/s: 60 s = 15 MB, far more than socket buffers hold, so mpv
   // really has to seek over HTTP (a tiny file would just be read through)
   let r = spawnSync(FFMPEG, [...common, '-f', 'lavfi', '-i', 'testsrc2=size=426x240:rate=25,noise=alls=30:allf=t', '-t', '60',
-    '-c:v', 'libvpx-vp9', '-b:v', '2M', '-minrate', '2M', '-maxrate', '2M', '-g', '50', '-keyint_min', '50', '-deadline', 'realtime', '-cpu-used', '8', '-an', ...dash, path.join(dir, 'v.webm')], { env });
+    '-c:v', 'libvpx-vp9', '-b:v', '2M', '-minrate', '2M', '-maxrate', '2M', '-g', '50', '-keyint_min', '50', '-deadline', 'realtime', '-cpu-used', '8',
+    '-row-mt', '1', '-threads', '4', '-tile-columns', '2', '-an', ...dash, path.join(dir, 'v.webm')], { env });
   if (r.status !== 0) throw new Error(`ffmpeg video: ${r.stderr}`);
   r = spawnSync(FFMPEG, [...common, '-f', 'lavfi', '-i', 'sine=f=440:r=48000', '-t', '60', '-c:a', 'libopus', '-b:a', '48k', '-vn', ...dash, path.join(dir, 'a.webm')], { env });
   if (r.status !== 0) throw new Error(`ffmpeg audio: ${r.stderr}`);
@@ -125,7 +126,7 @@ test('mpv plays and seeks through the sidecar (real media, fake SABR)', { skip: 
     assert.ok(pumps.log.starts.some((s) => s.video === '242' && s.startMs >= 38000 && s.startMs <= 40000), `SABR restarted near 40 s: ${JSON.stringify(pumps.log.starts)}`);
     await ipc.cmd('quit');
     ipc.close();
-    assert.equal(await Promise.race([exited, sleep(10000).then(() => 'timeout')]), 0);
+    assert.equal(await within(exited, 10000), 0);
     mpv = null;
   } catch (err) {
     const e = err instanceof Error ? err : new Error(String(err));

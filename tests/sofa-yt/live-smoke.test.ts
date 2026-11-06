@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { DIR, get, json, nth, until, sleep } from './helpers.ts';
+import { DIR, get, json, nth, until, within } from './helpers.ts';
 import type { VodAnswer } from '../../res/sofa-yt/lib/app.ts';
 import type { SessionStatus } from '../../res/sofa-yt/lib/session.ts';
 import { mpvIpc } from './mpvipc.ts';
@@ -74,7 +74,7 @@ test('live: /open, mpv plays 10 s from 1:00, one seek, subtitles', { timeout: 18
     assert.equal(v?.['demux-h'], o.height);
     await ipc.cmd('quit');
     ipc.close();
-    const code = await Promise.race([mpvExit, sleep(10000).then(() => 'timeout')]);
+    const code = await within(mpvExit, 10000);
     assert.equal(code, 0, `mpv exit (${mlog.slice(-2000)})`);
     mpv = null;
 
@@ -94,7 +94,7 @@ test('live: /open, mpv plays 10 s from 1:00, one seek, subtitles', { timeout: 18
   } finally {
     if (mpv && mpv.exitCode === null) mpv.kill('SIGKILL');
     side.stdin.end();
-    await Promise.race([new Promise((r) => side.on('exit', r)), sleep(5000)]);
+    await within(new Promise((r) => side.on('exit', r)), 5000);
     if (side.exitCode === null) side.kill('SIGKILL');
     fs.writeFileSync(path.join(STATE, 'last-run.log'), err);
   }

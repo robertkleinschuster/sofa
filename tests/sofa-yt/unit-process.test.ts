@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { DIR, get, json, nth, until, sleep } from './helpers.ts';
+import { DIR, get, json, nth, until, sleep, within } from './helpers.ts';
 import type { OpenFailure } from '../../res/sofa-yt/lib/app.ts';
 
 test('ready line, health, bg breaker, exit on stdin EOF', async () => {
@@ -50,7 +50,7 @@ test('ready line, health, bg breaker, exit on stdin EOF', async () => {
     assert.equal(out.trim().split('\n').length, 1, 'nothing but the readiness line on stdout');
     assert.match(err, /^sofa-yt: /m);
     child.stdin.end();
-    const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 5000))]);
+    const code = await within(exited, 5000);
     assert.equal(code, 0, 'exits when stdin closes');
   } finally {
     if (child.exitCode === null) child.kill('SIGKILL');

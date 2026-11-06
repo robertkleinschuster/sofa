@@ -270,6 +270,14 @@ export async function get(url: string, { range, timeoutMs = 10000, maxBytes = In
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** p, or 'timeout' after ms - the timer is cleared either way, so a settled p does not keep the
+ *  test process alive (a bare race with sleep() held each run open for its full length). */
+export async function within<T>(p: Promise<T>, ms: number): Promise<T | 'timeout'> {
+  let t: NodeJS.Timeout | undefined;
+  try { return await Promise.race([p, new Promise<'timeout'>((r) => { t = setTimeout(() => r('timeout'), ms); })]); }
+  finally { clearTimeout(t); }
+}
+
 export async function until(fn: () => boolean | Promise<boolean>, timeoutMs = 5000, stepMs = 10): Promise<boolean> {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) { if (await fn()) return true; await sleep(stepMs); }
