@@ -63,7 +63,7 @@ trap cleanup EXIT
 mkdir -p "$ROOT"
 
 # test media: a healthy 60 s file (also the verifier's good case)
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine -t 60 \
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t 60 \
       -c:v libx264 -preset ultrafast -c:a aac -movflags +faststart "$T/good.mp4"
 # the Example app's media for the download sections: served at ~256 KB/s (a download takes a while)
 cat > "$T/slow.py" <<'PY'
@@ -114,7 +114,7 @@ done
 "$FF" -hide_banner -loglevel error -y -i "$T/good.mp4" -c copy -metadata comment="$(printf 'ab\xc3')" "$T/latin.mp4"
 # VP9 + Opus in MP4 muxed from WebM tracks like the SABR downloads: the null muxer warns about
 # timestamps after -ss (ms timebase), which used to count as decode errors
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=426x240:rate=15 -t 19 -c:v libvpx-vp9 -deadline realtime -b:v 300k "$T/v.webm"
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=426x240:rate=15 -t 19 -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -b:v 300k "$T/v.webm"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i sine -t 19 -c:a libopus "$T/a.webm"
 "$FF" -hide_banner -loglevel error -y -i "$T/v.webm" -i "$T/a.webm" -map 0:v:0 -map 1:a:0 -shortest -c copy -movflags +faststart "$T/vp9.mp4"
 cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; cmd "dlverify $T/vp9.mp4"

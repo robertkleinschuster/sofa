@@ -9,7 +9,7 @@
 #   2. a dead video output heals itself (watchdog re-selects the video track)
 #   3. the info panel (OK hold) opens over the running video, which keeps playing under it and
 #      after MENU (the panel must never stop or restart playback)
-#   4. a broken stream walks the fallback chain and ends in a readable German message
+#   4. a broken stream ends in a readable German message
 #   5. a downloaded item switches to the online stream at the same position, chosen in the info
 #      panel ("Online abspielen" used to restart the local file because the download lookup found it again)
 #   6. a remembered subtitle preference is applied automatically
@@ -45,7 +45,7 @@ ORF=example:1   # an online item (the Example app's test pattern)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine=frequency=440 \
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine=frequency=440 \
       -t 90 -c:v libx264 -preset ultrafast -c:a aac "$T/local.mp4" || { echo "ffmpeg failed"; exit 1; }
 
 APP=
@@ -157,7 +157,7 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
 PY
 /opt/local/bin/python3.14 -I "$T/stall.py" "$T/local.mp4" 47981 & SRV=$!
-for i in $(seq 1 40); do nc -z 127.0.0.1 47981 2>/dev/null && break; sleep 0.1; done   # listening before the app asks
+for i in $(seq 1 40); do nc -z 127.0.0.1 47981 >/dev/null 2>&1 && break; sleep 0.1; done   # listening before the app asks
 start
 m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"
 for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' && break; sleep 0.5; done
@@ -174,16 +174,16 @@ echo "==> 8. YouTube end screen (fake data, offline)"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "cellauto=size=300x300:rule=110" -frames:v 1 "$T/esav.png"
 cp "$T/local.mp4" "$T/endvid.mp4"
 sqlite3 "$DEVDB" "insert or replace into downloads (id,source,channel,item,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}','$T/endvid.mp4',2,1,strftime('%s','now'));"
-ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es1.png"},'\
-'{"kind":"video","ref":"yt:esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":6000,"endMs":0,"image":"'$T'/es2.png"},'\
-'{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":7000,"endMs":0,"image":"'$T'/esav.png"}]'
+ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es1.png"},'\
+'{"kind":"video","ref":"yt:esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es2.png"},'\
+'{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":2500,"endMs":0,"image":"'$T'/esav.png"}]'
 export SOFA_OFFLINE=1
 start
 m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"
-waitlog $m 'endscreen: 3 tiles from 6.0 s' && ok "end screen data taken over" || bad "no end screen tiles: $(since $m | grep 'endscreen' | tail -2)"
+waitlog $m 'endscreen: 3 tiles from 2.0 s' && ok "end screen data taken over" || bad "no end screen tiles: $(since $m | grep 'endscreen' | tail -2)"
 waitlog $m 'endscreen: shown at' 60
 at=$(since $m | grep 'endscreen: shown at' | head -1 | sed 's/.*shown at \([0-9.]*\) s/\1/')
-awk "BEGIN{exit !($at >= 6.0 && $at < 8)}" 2>/dev/null && ok "tiles appear at the first startMs ($at s)" || bad "tiles appeared at '$at' (want 6 s)"
+awk "BEGIN{exit !($at >= 2.0 && $at < 4)}" 2>/dev/null && ok "tiles appear at the first startMs ($at s)" || bad "tiles appeared at '$at' (want 2 s)"
 since $m | grep -q 'endscreen: video rect {{0, 0}, {1920, 1080}}' && ok "tiles placed over the video rect" || bad "video rect: $(since $m | grep 'video rect' | tail -1)"
 sleep 1.5; shot "$T/endscreen.png"; [ -s "$T/endscreen.png" ] && { ok "end screen rendered"; keep "$T/endscreen.png"; } || bad "no end screen screenshot"
 m=$(mark); cmd "key down"; sleep 0.4; cmd "key right"; sleep 0.4; cmd "key left"; sleep 0.4; cmd "key down"; sleep 0.6
@@ -200,7 +200,7 @@ cmd "key play"
 m=$(mark); waitlog $m 'endscreen: shown at' 60; cmd "key down"; sleep 0.4; cmd "key select"
 waitlog $m 'player: play endvid.mp4' && ok "OK on a video tile plays it" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
 m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"; waitlog $m 'endscreen: 3 tiles' 
-for k in right right right left; do cmd "key $k"; sleep 0.3; done   # one jump of +80 s -> ~8 s before the end
+cmd "mpvset time-pos 85"   # ~5 s before the end
 waitlog $m 'endscreen: shown at' 20; cmd "key down"
 waitlog $m 'ended while in the end screen' 80 && ok "the end waits while the tiles have focus" || bad "end did not wait: $(since $m | grep 'player:\|endscreen' | tail -2)"
 sleep 1.5; since $m | grep -q 'player: end ->' && bad "end flow ran while the tiles had focus" || ok "no up-next/leave under the tiles"
