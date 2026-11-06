@@ -35,11 +35,17 @@ static NSString *ffmpegPath(void) {
         _recs = [NSMutableDictionary new];
         _subs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];
-        for (NSDictionary *r in [st rows:@"SELECT d.*, i.json AS item FROM downloads d LEFT JOIN items i ON i.id = d.id" args:nil]) _recs[r[@"id"]] = [r mutableCopy];
-        for (NSDictionary *r in [st rows:@"SELECT * FROM subscriptions" args:nil]) _subs[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *row in [st rows:@"SELECT d.*, i.json AS item FROM downloads d LEFT JOIN items i ON i.id = d.id" args:nil]) {
+            SFDownloadRecord *r = [SFDownloadRecord recordWithRow:row];
+            if (r.identifier) _recs[r.identifier] = r;
+        }
+        for (NSDictionary *row in [st rows:@"SELECT * FROM subscriptions" args:nil]) {
+            SFSubscription *sub = [SFSubscription subscriptionWithRow:row];
+            if (sub.identifier) _subs[sub.identifier] = sub;
+        }
         // re-queue runs interrupted last time
-        for (NSMutableDictionary *r in _recs.allValues)
-            if ([r[@"state"] integerValue] == SFDLRunning) r[@"state"] = @(SFDLQueued);
+        for (SFDownloadRecord *r in _recs.allValues)
+            if (r.state == SFDLRunning) r.state = SFDLQueued;
         SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
         __weak SFDownloads *ws = self;
         SFSetLocalFileLookup(^NSString *(NSString *ident) { return [ws fileFor:ident]; });
@@ -49,21 +55,16 @@ static NSString *ffmpegPath(void) {
 
 #pragma mark Persistence
 
-- (void)save:(NSDictionary *)r {
+- (void)save:(SFDownloadRecord *)r {
     NSArray *w = [self write:r];
     [[SFStore shared] run:w[0] args:w[1]];
 }
 
 // the statement that stores a record (save:, or several in one runAll:)
-- (NSArray *)write:(NSDictionary *)r {
-    [_itemCache removeObjectForKey:r[@"id"]];
+- (NSArray *)write:(SFDownloadRecord *)r {
+    [_itemCache removeObjectForKey:r.identifier];
     _generation++;
-    return @[@"INSERT OR REPLACE INTO downloads (id,source,channel,path,thumb,state,progress,bytes,added,published,sub,error,tries,retryAt,keep,online,onlineAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-             @[r[@"id"], r[@"source"] ?: [NSNull null], r[@"channel"] ?: [NSNull null],
-               r[@"path"] ?: [NSNull null], r[@"thumb"] ?: [NSNull null], r[@"state"] ?: @0, r[@"progress"] ?: @0.0,
-               r[@"bytes"] ?: @0, r[@"added"] ?: @0.0, r[@"published"] ?: [NSNull null], r[@"sub"] ?: [NSNull null],
-               r[@"error"] ?: [NSNull null], r[@"tries"] ?: @0, r[@"retryAt"] ?: [NSNull null],
-               r[@"keep"] ?: @0, r[@"online"] ?: [NSNull null], r[@"onlineAt"] ?: [NSNull null]]];
+    return r.writeStatement;
 }
 
 
@@ -74,15 +75,15 @@ static NSString *ffmpegPath(void) {
 - (void)retryDueRepairs {
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, next = 0;
     NSMutableArray *writes = [NSMutableArray new];
-    for (NSMutableDictionary *r in _recs.allValues) {
-        if ([r[@"state"] integerValue] != SFDLDone || !r[@"retryAt"]) continue;   // no repair pending
-        NSTimeInterval due = [r[@"retryAt"] doubleValue];
+    for (SFDownloadRecord *r in _recs.allValues) {
+        if (r.state != SFDLDone || !r.retryAt) continue;   // no repair pending
+        NSTimeInterval due = r.retryAt;
         if (due > now) { next = next ? MIN(next, due) : due; continue; }
-        if (![[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) continue;
-        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r[@"id"], (long)[r[@"tries"] integerValue] + 1);
-        [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"];
-        r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
-        [writes addObject:[self write:r]]; [self changed:r[@"id"]];
+        if (!r.path || ![[NSFileManager defaultManager] fileExistsAtPath:r.path]) continue;
+        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r.identifier, (long)r.tries + 1);
+        r.error = nil; r.retryAt = 0;
+        r.state = SFDLQueued; r.progress = 0;
+        [writes addObject:[self write:r]]; [self changed:r.identifier];
     }
     if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
     if (next && (!_repairWake || next < _repairWake || _repairWake <= now)) {
@@ -95,12 +96,11 @@ static NSString *ffmpegPath(void) {
 }
 
 - (void)expireRepairBackoffForTesting {
-    for (NSMutableDictionary *r in _recs.allValues) if ([r[@"state"] integerValue] == SFDLDone && r[@"retryAt"]) r[@"retryAt"] = @0;
+    for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone && r.retryAt) r.retryAt = 1;   // due long ago
 }
 
 - (BOOL)willRetry:(NSString *)identifier {
-    NSDictionary *r = _recs[identifier];
-    return [r[@"state"] integerValue] == SFDLRetrying;
+    return [self recOf:identifier].state == SFDLRetrying;
 }
 
 - (void)storageChangedSoon {
@@ -118,68 +118,68 @@ static NSString *ffmpegPath(void) {
 
 // The record's item: its metadata goes to the shared items table, the record keeps the JSON for
 // parseRec (until the next launch reads it back from there)
-- (void)setItem:(SFItem *)item ofRec:(NSMutableDictionary *)r {
-    r[@"item"] = [[SFStore shared] saveItem:item];
+- (void)setItem:(SFItem *)item ofRec:(SFDownloadRecord *)r {
+    r.itemJSON = [[SFStore shared] saveItem:item];
 }
 
 #pragma mark Queries
 
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress {
-    NSDictionary *r = identifier ? _recs[identifier] : nil;
+    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
     if (!r) return SFDLNone;
-    if (progress) *progress = [r[@"progress"] doubleValue];
-    SFDLState s = [r[@"state"] integerValue];
-    if (s == SFDLDone && ![[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) return SFDLNone;
-    return s;
+    if (progress) *progress = r.progress;
+    if (r.state == SFDLDone && ![self fileExists:r]) return SFDLNone;
+    return r.state;
+}
+
+- (SFDownloadRecord *)recOf:(NSString *)identifier { return identifier ? _recs[identifier] : nil; }
+
+- (BOOL)fileExists:(SFDownloadRecord *)r {
+    return r.path && [[NSFileManager defaultManager] fileExistsAtPath:r.path];
 }
 
 - (NSString *)fileFor:(NSString *)identifier {
-    NSDictionary *r = identifier ? _recs[identifier] : nil;
-    if ([r[@"state"] integerValue] != SFDLDone) return nil;
-    return [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]] ? r[@"path"] : nil;
+    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
+    return r.state == SFDLDone && [self fileExists:r] ? r.path : nil;
 }
 
-- (SFItem *)itemFromRec:(NSDictionary *)r {
-    SFItem *c = _itemCache[r[@"id"]];
+- (SFItem *)itemFromRec:(SFDownloadRecord *)r {
+    SFItem *c = _itemCache[r.identifier];
     if (c) return c;
     c = [self parseRec:r];
-    if (c) _itemCache[r[@"id"]] = c;
+    if (c) _itemCache[r.identifier] = c;
     return c;
 }
 
-- (SFItem *)parseRec:(NSDictionary *)r {
-    NSDictionary *d = [NSJSONSerialization JSONObjectWithData:[r[@"item"] ?: @"{}" dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+- (SFItem *)parseRec:(SFDownloadRecord *)r {
+    NSDictionary *d = SFJSONParse(r.itemJSON ?: @"{}");
     if (![d isKindOfClass:[NSDictionary class]]) return nil;
     SFItem *i = [SFItem itemWithDictionary:d];
-    if ([r[@"state"] integerValue] == SFDLDone) {
-        i.localPath = r[@"path"];
-        i.playURL = [NSURL fileURLWithPath:r[@"path"]];
+    if (r.state == SFDLDone && r.path) {
+        i.localPath = r.path;
+        i.playURL = [NSURL fileURLWithPath:r.path];
     }
-    if (r[@"thumb"] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"thumb"]]) { i.image = r[@"thumb"]; i.backdrop = i.backdrop ?: r[@"thumb"]; }
+    if (r.thumb && [[NSFileManager defaultManager] fileExistsAtPath:r.thumb]) { i.image = r.thumb; i.backdrop = i.backdrop ?: r.thumb; }
     // the download's own facts: its show's name, the publication time it learned (exact when the
     // source gave one - a list's "vor 2 Wochen" written to the item later must not replace it)
-    if ([r[@"channel"] length]) i.channel = r[@"channel"];
-    if ([r[@"published"] doubleValue] > 0) i.date = [NSDate dateWithTimeIntervalSince1970:[r[@"published"] doubleValue]];
+    if (r.channel.length) i.channel = r.channel;
+    if (r.published > 0) i.date = [NSDate dateWithTimeIntervalSince1970:r.published];
     i.style = SFTileStyleLandscape;
     i.inDownloadsList = YES;
     return i;
 }
 
 - (SFItem *)itemFor:(NSString *)identifier {
-    NSDictionary *r = identifier ? _recs[identifier] : nil;
-    if ([r[@"state"] integerValue] != SFDLDone || ![self fileFor:identifier]) return nil;
-    return [self itemFromRec:r];
+    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
+    return r.state == SFDLDone && [self fileExists:r] ? [self itemFromRec:r] : nil;
 }
 
 - (NSArray *)recsWithState:(SFDLState)st source:(NSString *)source {
     NSMutableArray *a = [NSMutableArray new];
-    for (NSDictionary *r in _recs.allValues) {
-        if ([r[@"state"] integerValue] != st) continue;
-        if (source && ![r[@"source"] isEqualToString:source]) continue;
-        [a addObject:r];
-    }
-    [a sortUsingComparator:^NSComparisonResult(NSDictionary *x, NSDictionary *y) {
-        double px = [x[@"published"] doubleValue] ?: [x[@"added"] doubleValue], py = [y[@"published"] doubleValue] ?: [y[@"added"] doubleValue];
+    for (SFDownloadRecord *r in _recs.allValues)
+        if (r.state == st && (!source || [r.source isEqualToString:source])) [a addObject:r];
+    [a sortUsingComparator:^NSComparisonResult(SFDownloadRecord *x, SFDownloadRecord *y) {
+        double px = x.published ?: x.added, py = y.published ?: y.added;
         return px > py ? NSOrderedAscending : px < py ? NSOrderedDescending : NSOrderedSame;
     }];
     return a;
@@ -187,9 +187,8 @@ static NSString *ffmpegPath(void) {
 
 - (NSArray *)items:(NSString *)source {
     NSMutableArray *out = [NSMutableArray new];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    for (NSDictionary *r in [self recsWithState:SFDLDone source:source]) {
-        if (![fm fileExistsAtPath:r[@"path"]]) continue;
+    for (SFDownloadRecord *r in [self recsWithState:SFDLDone source:source]) {
+        if (![self fileExists:r]) continue;
         SFItem *i = [self itemFromRec:r];
         if (i) [out addObject:i];
     }
@@ -199,14 +198,14 @@ static NSString *ffmpegPath(void) {
 - (NSArray *)active {
     NSMutableArray *out = [NSMutableArray new];
     for (NSNumber *st in @[@(SFDLRunning), @(SFDLQueued)])
-        for (NSDictionary *r in [self recsWithState:st.integerValue source:nil]) { SFItem *i = [self itemFromRec:r]; if (i) [out addObject:i]; }
+        for (SFDownloadRecord *r in [self recsWithState:st.integerValue source:nil]) { SFItem *i = [self itemFromRec:r]; if (i) [out addObject:i]; }
     return out;
 }
 
 - (unsigned long long)bytesUsedFor:(NSString *)source {
     unsigned long long n = 0;
-    for (NSDictionary *r in _recs.allValues)
-        if ([r[@"state"] integerValue] == SFDLDone && (!source || [r[@"source"] isEqualToString:source])) n += [r[@"bytes"] unsignedLongLongValue];
+    for (SFDownloadRecord *r in _recs.allValues)
+        if (r.state == SFDLDone && (!source || [r.source isEqualToString:source])) n += r.bytes;
     return n;
 }
 
@@ -221,9 +220,9 @@ static NSString *gb(unsigned long long b) {
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
 }
 
-- (NSDictionary *)recordFor:(NSString *)identifier {
-    NSDictionary *r = identifier ? _recs[identifier] : nil;
-    return [r[@"state"] integerValue] == SFDLDone ? [r copy] : nil;
+- (SFDownloadRecord *)recordFor:(NSString *)identifier {
+    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
+    return r.state == SFDLDone ? [r copy] : nil;
 }
 
 - (NSString *)storageSummary:(NSString *)source {
@@ -232,12 +231,11 @@ static NSString *gb(unsigned long long b) {
 
 - (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source {
     NSUInteger n = 0;
-    for (NSDictionary *r in [_recs.allValues copy]) {
-        NSString *rc = [r[@"channel"] length] ? r[@"channel"] : SFUnsortedChannel;
-        if (![rc isEqualToString:channel] || (source && ![r[@"source"] isEqualToString:source])) continue;
-        SFDLState st = [r[@"state"] integerValue];
-        if (st == SFDLDismissed || [r[@"keep"] boolValue]) continue;   // "Behalten" survives deleting the show
-        [self remove:r[@"id"]];
+    for (SFDownloadRecord *r in [_recs.allValues copy]) {
+        NSString *rc = r.channel.length ? r.channel : SFUnsortedChannel;
+        if (![rc isEqualToString:channel] || (source && ![r.source isEqualToString:source])) continue;
+        if (r.state == SFDLDismissed || r.keep) continue;   // "Behalten" survives deleting the show
+        [self remove:r.identifier];
         n++;
     }
     SFLog(@"downloads: deleted %lu downloads of %@", (unsigned long)n, channel);
@@ -250,30 +248,30 @@ static NSString *gb(unsigned long long b) {
 
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID {
     if (!item.identifier || item.kind != SFItemVideo) return NO;
-    NSMutableDictionary *r = _recs[item.identifier];
-    SFDLState st = r ? [r[@"state"] integerValue] : SFDLNone;
+    SFDownloadRecord *r = _recs[item.identifier];
+    SFDLState st = r ? r.state : SFDLNone;
     if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
     if (subID && r && st == SFDLDismissed) return NO;
     if (subID && r && (st == SFDLFailed || st == SFDLRetrying)) {
-        if ([r[@"tries"] integerValue] >= kSubMaxTries) return NO;                                 // given up
-        if ([NSDate date].timeIntervalSince1970 < [r[@"retryAt"] doubleValue]) return NO;          // keep waiting
+        if (r.tries >= kSubMaxTries) return NO;                                   // given up
+        if ([NSDate date].timeIntervalSince1970 < r.retryAt) return NO;          // keep waiting
     }
-    if (subID && r && !r[@"sub"]) subID = nil;   // downloaded manually once = manual (no retention)
-    // subscription episodes belong to the subscription's show (ZDF/ARD often name the series differently)
-    // (the download's channel - the item itself keeps its source's)
-    NSString *subTitle = subID ? [[SFFollows shared] recordOf:subID][@"title"] : nil;
-    r = r ?: [NSMutableDictionary new];
-    r[@"id"] = item.identifier;
-    r[@"source"] = item.source ?: @"";
-    r[@"channel"] = subTitle.length ? subTitle : item.channel ?: @"";
+    if (subID && r && !r.sub) subID = nil;   // downloaded manually once = manual (no retention)
+    // subscription episodes belong to the subscription's show (ZDF/ARD often name the series
+    // differently) - the download's channel; the item itself keeps its source's
+    NSString *subTitle = subID ? [[SFFollows shared] recordOf:subID].title : nil;
+    r = r ?: [SFDownloadRecord new];
+    r.identifier = item.identifier;
+    r.source = item.source ?: @"";
+    r.channel = subTitle.length ? subTitle : item.channel ?: @"";
     [self setItem:item ofRec:r];
-    r[@"state"] = @(SFDLQueued);
-    r[@"progress"] = @0;
-    r[@"added"] = @([[NSDate date] timeIntervalSince1970]);
-    if (item.date) r[@"published"] = @([item.date timeIntervalSince1970]);
-    if (subID) r[@"sub"] = subID; else [r removeObjectForKey:@"sub"];   // manual = never delete automatically
-    if (!subID) r[@"tries"] = @0;
-    [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"];
+    r.state = SFDLQueued;
+    r.progress = 0;
+    r.added = [[NSDate date] timeIntervalSince1970];
+    if (item.date) r.published = [item.date timeIntervalSince1970];
+    r.sub = subID;   // nil = manual: never deleted automatically
+    if (!subID) r.tries = 0;
+    r.error = nil; r.retryAt = 0;
     _recs[item.identifier] = r;
     [self save:r];
     [self changed:item.identifier];
@@ -283,7 +281,7 @@ static NSString *gb(unsigned long long b) {
 }
 
 - (void)remove:(NSString *)identifier {
-    NSMutableDictionary *r = _recs[identifier];
+    SFDownloadRecord *r = _recs[identifier];
     if (!r) return;
     if ([identifier isEqualToString:_runningID]) {   // running: free the slot right away, drop the callbacks
         NSTask *t = _task;
@@ -291,11 +289,11 @@ static NSString *gb(unsigned long long b) {
         [t terminate];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
     }
-    if (r[@"path"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"path"] error:nil];
-    if (r[@"thumb"]) [[NSFileManager defaultManager] removeItemAtPath:r[@"thumb"] error:nil];
-    [self pruneEmptyDirs:[r[@"path"] stringByDeletingLastPathComponent]];
-    if (r[@"sub"]) {   // subscription episode: remember it so it does not come back
-        r[@"state"] = @(SFDLDismissed); r[@"bytes"] = @0; [r removeObjectForKey:@"path"];
+    if (r.path) [[NSFileManager defaultManager] removeItemAtPath:r.path error:nil];
+    if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
+    [self pruneEmptyDirs:[r.path stringByDeletingLastPathComponent]];
+    if (r.sub) {   // subscription episode: remember it so it does not come back
+        r.state = SFDLDismissed; r.bytes = 0; r.path = nil;
         [self save:r];
     } else {
         [_recs removeObjectForKey:identifier];
@@ -355,7 +353,7 @@ static NSString *gb(unsigned long long b) {
     // subscriptions: a follow with news (its own refresh plan), plus all of them locally shortly
     // after start and every 3 h with the repairs
     [[NSNotificationCenter defaultCenter] addObserverForName:SFFollowsNewItemsNotification object:nil queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification *n) { NSMutableDictionary *s = self->_subs[n.object]; if (s) [self checkSub:s]; }];
+                                                  usingBlock:^(NSNotification *n) { SFSubscription *s = self->_subs[n.object]; if (s) [self checkSub:s]; }];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
     _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
 }
@@ -371,22 +369,22 @@ static NSString *gb(unsigned long long b) {
 - (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err {
     if (!item.identifier || ![[NSFileManager defaultManager] fileExistsAtPath:path]) return NO;
     if ([self fileFor:item.identifier]) { if (err) *err = SFError(@"bereits vorhanden"); return NO; }
-    NSMutableDictionary *r = [@{@"id": item.identifier, @"source": item.source ?: @"", @"channel": item.channel ?: @"",
-                                @"state": @(SFDLDone), @"progress": @1.0,
-                                @"added": @([[NSDate date] timeIntervalSince1970])} mutableCopy];
+    SFDownloadRecord *r = [SFDownloadRecord new];
+    r.identifier = item.identifier; r.source = item.source ?: @""; r.channel = item.channel ?: @"";
+    r.state = SFDLDone; r.progress = 1; r.added = [[NSDate date] timeIntervalSince1970];
     [self setItem:item ofRec:r];
-    if (item.date) r[@"published"] = @([item.date timeIntervalSince1970]);
-    if (subID) r[@"sub"] = subID;
+    if (item.date) r.published = [item.date timeIntervalSince1970];
+    r.sub = subID;
     NSString *target = [self targetPathFor:r item:item];
     if (![path.pathExtension.lowercaseString isEqualToString:@"mp4"]) target = [[target stringByDeletingPathExtension] stringByAppendingPathExtension:path.pathExtension];
     NSFileManager *fm = [NSFileManager defaultManager];
     [fm createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
     if (![fm moveItemAtPath:path toPath:target error:err]) return NO;      // same volume: just rename
-    r[@"path"] = target;
-    r[@"bytes"] = @([[fm attributesOfItemAtPath:target error:nil] fileSize]);
+    r.path = target;
+    r.bytes = [[fm attributesOfItemAtPath:target error:nil] fileSize];
     if (thumb && [fm fileExistsAtPath:thumb]) {
         NSString *tt = [[target stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
-        if ([fm moveItemAtPath:thumb toPath:tt error:nil]) r[@"thumb"] = tt;
+        if ([fm moveItemAtPath:thumb toPath:tt error:nil]) r.thumb = tt;
     }
     _recs[item.identifier] = r;
     [self save:r];

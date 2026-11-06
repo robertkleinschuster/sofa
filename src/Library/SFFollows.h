@@ -15,6 +15,19 @@ SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil if no pa
 typedef void (^SFShowRefLookup)(SFItem *item, void (^done)(NSString *ref));
 SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForItem:, nil if it has none
 
+// One followed show/channel (a row of follows).
+@interface SFFollow : NSObject <NSCopying>
+@property (nonatomic, copy) NSString *identifier;   // the show ref ("ytchannel:UC...", "zdfshow:...")
+@property (nonatomic, copy) NSString *source;       // its app
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *image;        // URL or a local file; nil = none yet
+@property (nonatomic) NSTimeInterval added;
+@property (nonatomic) NSTimeInterval checked;       // last check (the spread refresh plan); 0 = never
++ (instancetype)followWithRow:(NSDictionary *)row;
++ (instancetype)followOf:(SFItem *)folder;          // a new follow of this show/channel folder
+- (NSArray *)writeStatement;                        // @[sql, args]
+@end
+
 @interface SFFollows : NSObject
 + (instancetype)shared;
 - (void)start;                                         // migration + the spread refresh plan (SFRefreshPlan)
@@ -22,10 +35,10 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (BOOL)isFollowing:(NSString *)identifier;
 - (void)follow:(SFItem *)folder;
 - (void)unfollow:(NSString *)identifier;               // also ends "Automatisch herunterladen"
-- (NSDictionary *)recordOf:(NSString *)identifier;     // id, source, title, image of a follow; nil = not followed
+- (SFFollow *)recordOf:(NSString *)identifier;         // a copy; nil = not followed
 // follow without checking now (imports: many at once would be a burst of requests) - the spread
-// refresh plan checks it in its turn. record: id, source, title, image
-- (void)adopt:(NSDictionary *)record;
+// refresh plan checks it in its turn
+- (void)adopt:(SFFollow *)record;
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows

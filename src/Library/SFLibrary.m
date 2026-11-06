@@ -88,7 +88,7 @@ NSString *const SFLibraryDidChangeNotification = @"SFLibraryDidChange";
         return [(b.latest ?: [NSDate distantPast]) compare:(a.latest ?: [NSDate distantPast])];
     }];
     NSMutableDictionary *added = [NSMutableDictionary new];
-    for (SFItem *e in recent) added[e.identifier] = [dl recordFor:e.identifier][@"added"] ?: @0;
+    for (SFItem *e in recent) added[e.identifier] = @([dl recordFor:e.identifier].added);
     [recent sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
         return [added[b.identifier] compare:added[a.identifier]];
     }];

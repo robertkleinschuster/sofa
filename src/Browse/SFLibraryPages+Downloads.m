@@ -93,14 +93,14 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
         if (o == 0) { gone++; continue; }
         if (o < 0) { unchecked++; continue; }
         [ok addObject:i];
-        bytes += [[dl recordFor:i][@"bytes"] unsignedLongLongValue];
+        bytes += [dl recordFor:i].bytes;
     }
     return @{@"ids": ok, @"bytes": @(bytes), @"gone": @(gone), @"unchecked": @(unchecked)};
 }
 
 + (unsigned long long)bytesOf:(NSArray *)ids {
     unsigned long long n = 0;
-    for (NSString *i in ids) n += [[[SFDownloads shared] recordFor:i][@"bytes"] unsignedLongLongValue];
+    for (NSString *i in ids) n += [[SFDownloads shared] recordFor:i].bytes;
     return n;
 }
 
@@ -184,15 +184,15 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
         NSMutableDictionary *byShow = [NSMutableDictionary new];   // "source|channel" -> ids
         for (SFItem *it in [dl items:nil]) {
             NSString *i = it.identifier;
-            NSDictionary *r = [dl recordFor:i];
+            SFDownloadRecord *r = [dl recordFor:i];
             if (!r) continue;
             SFItem *c = [it copy];
-            c.subtitle = SFDotJoin(c.channel, SFGB([r[@"bytes"] unsignedLongLongValue]));
+            c.subtitle = SFDotJoin(c.channel, SFGB(r.bytes));
             if ([dl isKept:i]) { [keptItems addObject:c]; continue; }
             if ([dl onlineStateFor:i] == 0) [goneItems addObject:c];
             if ([st progressFor:i] >= 1) [watched addObject:i];
-            else if (now - [r[@"added"] doubleValue] > 180 * 86400) [old addObject:i];
-            NSString *k = [NSString stringWithFormat:@"%@|%@", r[@"source"] ?: @"", it.channel ?: SFUnsortedChannel];
+            else if (now - r.added > 180 * 86400) [old addObject:i];
+            NSString *k = [NSString stringWithFormat:@"%@|%@", r.source ?: @"", it.channel ?: SFUnsortedChannel];
             if (!byShow[k]) byShow[k] = [NSMutableArray new];
             [byShow[k] addObject:i];
         }

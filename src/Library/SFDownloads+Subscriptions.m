@@ -32,18 +32,18 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 
 // A subscription is its follow's auto-download: the row holds only its own fields (keepDays,
 // since, added); title, picture and source are the follow's (schema step 9).
-- (void)saveSub:(NSDictionary *)s {
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO subscriptions (id,keepDays,since,added) VALUES (?,?,?,?)"
-                     args:@[s[@"id"], s[@"keepDays"] ?: @90, s[@"since"] ?: @0.0, s[@"added"] ?: @0.0]];
+- (void)saveSub:(SFSubscription *)s {
+    NSArray *w = s.writeStatement;
+    [[SFStore shared] run:w[0] args:w[1]];
 }
 
-- (NSString *)titleOfSub:(NSString *)sid { return [[SFFollows shared] recordOf:sid][@"title"]; }
+- (NSString *)titleOfSub:(NSString *)sid { return [[SFFollows shared] recordOf:sid].title; }
 
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source {
     if (!channel) return nil;
     for (NSString *sid in _subs) {
-        NSDictionary *f = [[SFFollows shared] recordOf:sid];
-        if ([f[@"title"] isEqualToString:channel] && (!source || [f[@"source"] isEqualToString:source])) return sid;
+        SFFollow *f = [[SFFollows shared] recordOf:sid];
+        if ([f.title isEqualToString:channel] && (!source || [f.source isEqualToString:source])) return sid;
     }
     return nil;
 }
@@ -51,21 +51,24 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 - (BOOL)canSubscribe:(SFItem *)folder { return folder.identifier && SFHasFeed(folder.identifier); }
 - (BOOL)isSubscribed:(NSString *)fid { return fid && _subs[fid] != nil; }
 
-- (void)addSubscriptionRecord:(NSDictionary *)rec {
-    if (![rec[@"id"] length]) return;
-    [[SFFollows shared] adopt:rec];   // following is a prerequisite of auto-download (title, picture)
-    NSMutableDictionary *s = [@{@"id": rec[@"id"], @"keepDays": rec[@"keepDays"] ?: @90, @"since": rec[@"since"] ?: @0,
-                                @"added": rec[@"added"] ?: @([[NSDate date] timeIntervalSince1970])} mutableCopy];
-    _subs[s[@"id"]] = s;
+- (SFSubscription *)newSub:(NSString *)identifier keepDays:(NSInteger)keepDays since:(NSTimeInterval)since {
+    SFSubscription *s = [SFSubscription new];
+    s.identifier = identifier; s.keepDays = keepDays; s.since = since;
+    s.added = [[NSDate date] timeIntervalSince1970];
+    _subs[identifier] = s;
     [self saveSub:s];
+    return s;
+}
+
+- (void)addSubscription:(SFFollow *)follow keepDays:(NSInteger)keepDays since:(NSTimeInterval)since {
+    if (!follow.identifier.length) return;
+    [[SFFollows shared] adopt:follow];   // following is a prerequisite of auto-download (title, picture)
+    [self newSub:follow.identifier keepDays:keepDays since:since];
 }
 
 - (void)subscribe:(SFItem *)folder {
     if (![self canSubscribe:folder]) return;
-    NSMutableDictionary *s = [@{@"id": folder.identifier, @"keepDays": @90, @"since": @0,
-                                @"added": @([[NSDate date] timeIntervalSince1970])} mutableCopy];
-    _subs[folder.identifier] = s;
-    [self saveSub:s];
+    SFSubscription *s = [self newSub:folder.identifier keepDays:90 since:0];
     SFLog(@"downloads: auto-download on: %@ (%@)", folder.title, folder.identifier);
     [[SFFollows shared] follow:folder];   // auto-download requires following
     [self changed:folder.identifier];
@@ -82,10 +85,10 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     [_subs removeObjectForKey:fid];
     NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM subscriptions WHERE id=?", @[fid]]];
     // already downloaded episodes stay, but are no longer deleted automatically
-    for (NSMutableDictionary *r in _recs.allValues)
-        if ([r[@"sub"] isEqualToString:fid] && [r[@"state"] integerValue] != SFDLDismissed) {
-            [r removeObjectForKey:@"sub"];
-            if ([r[@"state"] integerValue] == SFDLRetrying) r[@"state"] = @(SFDLFailed);   // nobody retries it now
+    for (SFDownloadRecord *r in _recs.allValues)
+        if ([r.sub isEqualToString:fid] && r.state != SFDLDismissed) {
+            r.sub = nil;
+            if (r.state == SFDLRetrying) r.state = SFDLFailed;   // nobody retries it now
             [writes addObject:[self write:r]];
         }
     [self changed:fid];
@@ -96,13 +99,13 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 // auto-download): no feed request of its own - the follow's spread refresh plan (SFRefreshPlan)
 // is the only one asking the source, and its news triggers the check (SFFollowsNewItemsNotification).
 // A subscription never checked before (`since` unset) takes the 3 newest, never a backfill.
-- (void)checkSub:(NSMutableDictionary *)s {
-    if (_subs[s[@"id"]] != s) return;
-    NSArray *items = [[SFFollows shared] itemsOf:s[@"id"]];
+- (void)checkSub:(SFSubscription *)s {
+    if (_subs[s.identifier] != s) return;
+    NSArray *items = [[SFFollows shared] itemsOf:s.identifier];
     if (!items.count) return;   // not checked yet: its follow's news brings it here
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-    double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
-    double since = [s[@"since"] doubleValue];   // set once, on the first check
+    double keep = (s.keepDays ?: 90) * 86400.0;
+    double since = s.since;   // set once, on the first check
     BOOL initial = since <= 0;
     NSInteger added = 0, n = 0;
     for (SFItem *it in items) {
@@ -110,7 +113,7 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
         n++;
         if (initial && n > 3) {                              // new subscription: the 3 newest, never backfill older ones
             double pub3 = it.date ? [it.date timeIntervalSince1970] : now;
-            if ([s[@"since"] doubleValue] <= 0) s[@"since"] = @(pub3);
+            if (s.since <= 0) s.since = pub3;
             break;
         }
         double pub = it.date ? [it.date timeIntervalSince1970] : 0;
@@ -118,16 +121,16 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
         if (since > 0 && pub && pub <= since) break;         // migrated subscriptions: only new ones
         if ([[SFStore shared] watched:it.identifier]) continue;
         if (added >= 5) break;                               // at most 5 per check
-        if ([self enqueue:it sub:s[@"id"]]) added++;
+        if ([self enqueue:it sub:s.identifier]) added++;
     }
-    if ([s[@"since"] doubleValue] != since) [self saveSub:s];   // the only thing a check changes
-    if (added) SFLog(@"downloads: subscription %@: %ld new", [self titleOfSub:s[@"id"]] ?: s[@"id"], (long)added);
+    if (s.since != since) [self saveSub:s];   // the only thing a check changes
+    if (added) SFLog(@"downloads: subscription %@: %ld new", [self titleOfSub:s.identifier] ?: s.identifier, (long)added);
 }
 
 // all subscriptions against their follows' lists - local, no request (start, every 3 h with the repairs)
 - (void)checkSubscriptionsNow {
     [self retryDueRepairs];
-    for (NSMutableDictionary *s in [_subs.allValues copy]) [self checkSub:s];
+    for (SFSubscription *s in [_subs.allValues copy]) [self checkSub:s];
     SFLog(@"downloads: subscription check done");
 }
 

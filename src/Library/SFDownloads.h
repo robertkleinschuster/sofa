@@ -5,24 +5,13 @@
 // Subscriptions ("download new episodes automatically") replace ytdl-sub.
 #import "SFModel.h"
 #import "SFApp.h"
+#import "SFDownloadRecord.h"   // SFDLState, the record of one download
+@class SFFollow;
 
 extern NSString *const SFDownloadsDidChangeNotification;   // object = identifier (or nil = many)
 // storage became full or free again, an online check finished ("Platz schaffen" page reloads)
 extern NSString *const SFDownloadsStorageDidChangeNotification;
 extern NSString *const SFUnsortedChannel;   // show name for videos without a channel
-
-typedef NS_ENUM(NSInteger, SFDLState) {
-    SFDLNone = -1,
-    SFDLQueued = 0,
-    SFDLRunning = 1,
-    SFDLDone = 2,
-    SFDLFailed = 3,        // gave up (manual download, or a subscription episode after kSubMaxTries)
-    SFDLDismissed = 4,     // deleted by the user -> the subscription does not download it again
-    SFDLRetrying = 5,      // a subscription episode failed; Sofa tries again by itself at retryAt
-};
-// retryAt (record field / column): the earliest next attempt - of the download (Retrying, also a
-// manual Failed one a subscription finds later) or of the repair of a finished file (Done + retryAt
-// = a repair is pending, the old file stays playable). No retryAt = nothing pending.
 
 // Feeds (newest episodes of a show/channel, newest first) come from the owning app (SFApp feed:).
 typedef void (^SFFeedDone)(NSArray *items, NSError *e);
@@ -54,7 +43,7 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (unsigned long long)freeBytes;                           // free space on the storage volume
 - (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"
 - (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source;   // number of deleted downloads (kept ones stay)
-- (NSDictionary *)recordFor:(NSString *)identifier;   // finished download: bytes, added, published, channel, source, keep
+- (SFDownloadRecord *)recordFor:(NSString *)identifier;   // finished download (a copy); nil otherwise
 - (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // folder of a show in Sofa's storage
 
 // Migration (one-time): adopt an existing file (moved into Sofa's storage)
@@ -95,6 +84,6 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (void)checkSubscriptionsNow;
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
 
-// Migration (one-time): adopt a subscription
-- (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image (-> its follow), keepDays, since
+// Migration (one-time): adopt a subscription - its follow first (title, picture), then the auto-download
+- (void)addSubscription:(SFFollow *)follow keepDays:(NSInteger)keepDays since:(NSTimeInterval)since;
 @end

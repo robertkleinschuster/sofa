@@ -161,6 +161,11 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   over the item's. Rows nothing references go with the daily housekeeping.
 - Loaded into memory at launch; indexes exist only where a query pages or sorts on disk
   (`progress(updated)`, `jcache(t)`).
+- In memory a row is a typed record, never a dictionary: `SFDownloadRecord` and `SFSubscription`
+  (`src/Library/SFDownloadRecord.h`), `SFFollow` (`SFFollows.h`). Each reads its row
+  (`...WithRow:`) and gives the statement that stores it (`writeStatement`) - the column list
+  lives in one place. Absent values: nil / 0 / -1 ("unknown"), written as NULL
+  (`tests/units/downloadrecord.m`).
 - The response cache (`jcache`: SFNet's raw answers, apps' derived data) is not user data: its own
   file `cache.db` in the caches folder (`SFCacheDir`), attached to the same connection as schema
   `cache` (`-[SFStore attachCache]`). Losing it costs requests, nothing else.

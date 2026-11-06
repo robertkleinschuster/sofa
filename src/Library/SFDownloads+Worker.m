@@ -5,8 +5,8 @@
 
 @implementation SFDownloads (Worker)
 
-- (NSString *)targetPathFor:(NSDictionary *)r item:(SFItem *)item {
-    NSString *dir = [self folderForSource:r[@"source"] channel:item.channel];
+- (NSString *)targetPathFor:(SFDownloadRecord *)r item:(SFItem *)item {
+    NSString *dir = [self folderForSource:r.source channel:item.channel];
     NSString *rest = restOf(item.identifier);
     // short IDs (YouTube) readable; long ones (ARD crid base64, ZDF canonical) share long prefixes -> hash
     NSString *idPart = rest.length <= 16 ? safeName(rest, 16) : idHash(item.identifier);
@@ -17,33 +17,33 @@
     if (!_started || _runningID) return;
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
     // manual downloads before subscription downloads, oldest request first in each
-    NSDictionary *next = nil;
+    SFDownloadRecord *next = nil;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;
-    for (NSDictionary *r in _recs.allValues) {
-        if ([r[@"state"] integerValue] != SFDLQueued) continue;
+    for (SFDownloadRecord *r in _recs.allValues) {
+        if (r.state != SFDLQueued) continue;
         NSTimeInterval until = [self notBefore:r];
         if (until > now) { wake = wake ? MIN(wake, until) : until; continue; }   // source paused: later
         if (!next) { next = r; continue; }
-        BOOL rm = r[@"sub"] == nil, nm = next[@"sub"] == nil;
+        BOOL rm = r.sub == nil, nm = next.sub == nil;
         if (rm != nm) { if (rm) next = r; continue; }
-        if ([r[@"added"] doubleValue] < [next[@"added"] doubleValue]) next = r;
+        if (r.added < next.added) next = r;
     }
     if (!next) { if (wake) [self pumpAt:wake]; else [self setStorageFull:NO]; return; }
     if ([self checkStorageFor:next]) return;   // not enough room for it: wait (re-checked every minute, user asked)
     NSString *ff = [SFDownloads ffmpegToolPath];
     if (!ff) { SFLog(@"downloads: ffmpeg missing"); return; }
-    NSMutableDictionary *r = _recs[next[@"id"]];
+    SFDownloadRecord *r = next;
     SFItem *item = [self itemFromRec:r];
     if (!item) {
-        r[@"state"] = @(SFDLFailed); r[@"error"] = @"Eintrag unlesbar"; r[@"tries"] = @(kSubMaxTries);
+        r.state = SFDLFailed; r.error = @"Eintrag unlesbar"; r.tries = kSubMaxTries;
         [self save:r];
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
     }
-    _runningID = r[@"id"];
+    _runningID = r.identifier;
     if (!_lastStart) _lastStart = [NSMutableDictionary new];
     _lastStart[[self sourceOf:r]] = @(now);
-    r[@"state"] = @(SFDLRunning); r[@"progress"] = @0;
+    r.state = SFDLRunning; r.progress = 0;
     [self save:r];
     [self changed:_runningID];
     NSString *ident = _runningID;
@@ -56,7 +56,7 @@
             NSDate *published = [info[@"published"] isKindOfClass:[NSDate class]] ? info[@"published"] : nil;
             if (published) {   // exact time from the source replaces a list's approximation ("vor 2 Wochen")
                 item.date = published;
-                r[@"published"] = @([published timeIntervalSince1970]);
+                r.published = [published timeIntervalSince1970];
                 [self setItem:item ofRec:r];
                 [self save:r];
             }
@@ -66,7 +66,7 @@
     if (custom) [app downloadSourceForItem:item done:got]; else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, nil, e); }];
 }
 
-- (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(NSMutableDictionary *)r item:(SFItem *)item {
+- (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(SFDownloadRecord *)r item:(SFItem *)item {
     NSString *target = [self targetPathFor:r item:item];
     NSString *part = [[target stringByDeletingPathExtension] stringByAppendingString:[self partSuffix]];
     [[NSFileManager defaultManager] createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
@@ -100,7 +100,7 @@
     t.environment = env;
     NSPipe *out = [NSPipe pipe], *err = [NSPipe pipe];
     t.standardOutput = out; t.standardError = err; t.standardInput = [NSFileHandle fileHandleWithNullDevice];
-    NSString *ident = r[@"id"];
+    NSString *ident = r.identifier;
     double dur = item.duration;
     __block NSDate *lastUI = [NSDate distantPast];
     out.fileHandleForReading.readabilityHandler = ^(NSFileHandle *h) {
@@ -111,7 +111,7 @@
         double p = MIN(0.99, us / 1e6 / dur);
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
-            r[@"progress"] = @(p);
+            r.progress = p;
             if (-[lastUI timeIntervalSinceNow] > 2) { lastUI = [NSDate date]; [self changed:ident]; }
         });
     };
@@ -141,7 +141,7 @@
             } else {
                 [fm removeItemAtPath:part error:nil];
                 NSString *msg; @synchronized (errData) { msg = [[NSString alloc] initWithData:errData encoding:NSUTF8StringEncoding]; }
-                if ([self->_recs[ident][@"state"] integerValue] != SFDLRunning) return;   // cancelled
+                if ([self recOf:ident].state != SFDLRunning) return;   // cancelled
                 [self finish:ident ok:NO error:[msg stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] ?: @"ffmpeg-Fehler"];
             }
         });
@@ -154,30 +154,30 @@
     SFLog(@"downloads: loading %@", item.title);
 }
 
-- (void)installPart:(NSString *)part target:(NSString *)target rec:(NSMutableDictionary *)r item:(SFItem *)item {
+- (void)installPart:(NSString *)part target:(NSString *)target rec:(SFDownloadRecord *)r item:(SFItem *)item {
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *old = r[@"path"];   // repair of an earlier file whose name changed: drop the old one
+    NSString *old = r.path;   // repair of an earlier file whose name changed: drop the old one
     if (old.length && ![old isEqualToString:target]) [fm removeItemAtPath:old error:nil];
     [fm removeItemAtPath:target error:nil];
     [fm moveItemAtPath:part toPath:target error:nil];
-    r[@"path"] = target;
-    r[@"bytes"] = @([[fm attributesOfItemAtPath:target error:nil] fileSize]);
+    r.path = target;
+    r.bytes = [[fm attributesOfItemAtPath:target error:nil] fileSize];
     [self fetchThumb:item rec:r];
-    [self finish:r[@"id"] ok:YES error:nil];
+    [self finish:r.identifier ok:YES error:nil];
 }
 
-- (void)fetchThumb:(SFItem *)item rec:(NSMutableDictionary *)r {
+- (void)fetchThumb:(SFItem *)item rec:(SFDownloadRecord *)r {
     NSString *img = item.image;
-    if (![img hasPrefix:@"http"]) return;
-    NSString *thumb = [[r[@"path"] stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
-    NSString *ident = r[@"id"];
+    if (![img hasPrefix:@"http"] || !r.path) return;
+    NSString *thumb = [[r.path stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
+    NSString *ident = r.identifier;
     SFBackground(^{
         NSInteger st = 0;
         NSData *d = SFCurlFetch(img, @"GET", nil, nil, &st, NULL);
         if (d.length && st < 400 && [d writeToFile:thumb atomically:YES]) SFMain(^{
-            NSMutableDictionary *rr = self->_recs[ident];
+            SFDownloadRecord *rr = self->_recs[ident];
             if (!rr) return;
-            rr[@"thumb"] = thumb; [self save:rr]; [self changed:ident];
+            rr.thumb = thumb; [self save:rr]; [self changed:ident];
         });
     });
 }
@@ -191,18 +191,18 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
     return gap;
 }
 
-- (NSString *)sourceOf:(NSDictionary *)r {
+- (NSString *)sourceOf:(SFDownloadRecord *)r {
     SFItem *item = [self itemFromRec:r];
-    return prefixOf(item.resolverRef ?: item.identifier ?: r[@"id"]);
+    return prefixOf(item.resolverRef ?: item.identifier ?: r.identifier);
 }
 
 // Epoch until which the record's source has paused itself (0 = go).
-- (NSTimeInterval)pausedUntil:(NSDictionary *)r {
+- (NSTimeInterval)pausedUntil:(SFDownloadRecord *)r {
     return SFBackgroundPausedUntil([[self sourceOf:r] stringByAppendingString:@":"]);
 }
 
 // pausedUntil plus the per-source spacing of starts
-- (NSTimeInterval)notBefore:(NSDictionary *)r {
+- (NSTimeInterval)notBefore:(SFDownloadRecord *)r {
     NSString *src = [self sourceOf:r];
     NSTimeInterval last = [_lastStart[src] doubleValue];
     return MAX([self pausedUntil:r], last ? last + SFSourceGap() : 0);
@@ -220,7 +220,7 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
 }
 
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
-    NSMutableDictionary *r = _recs[ident];
+    SFDownloadRecord *r = _recs[ident];
     _task = nil; _runningID = nil; _runningPart = nil;
     [self watchDiskDuringRun:NO];
     // a run that failed on a (nearly) full disk - ENOSPC, or stopped by the disk watch - is not the
@@ -231,36 +231,34 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
     if (r && !ok && ([self pausedUntil:r] > [NSDate date].timeIntervalSince1970 || self.storageFull || diskFull)) {
         // the source paused itself (YouTube bot check) or the disk is full - not the download's fault:
         // back into the queue without using up an attempt; pump continues when the pause is over
-        r[@"state"] = @(SFDLQueued); r[@"progress"] = @0;
+        r.state = SFDLQueued; r.progress = 0;
         [self save:r]; [self changed:ident];
         SFLog(@"downloads: %@ deferred (%@)", ident, error);
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
     }
-    if (r && !ok && [r[@"path"] length] && [[NSFileManager defaultManager] fileExistsAtPath:r[@"path"]]) {
+    if (r && !ok && [self fileExists:r]) {
         // a repair download failed: keep the existing file instead of losing it, and remember the
         // repair (retryAt, persisted) so retryDueRepairs tries again with backoff - YouTube's bot
         // check often blocks for hours, a single attempt would leave the file broken
-        NSInteger n = [r[@"tries"] integerValue] + 1;
-        r[@"state"] = @(SFDLDone); r[@"progress"] = @1.0;
-        r[@"tries"] = @(n); r[@"error"] = error ?: @"Fehler";
-        if (n < kSubMaxTries) r[@"retryAt"] = @([NSDate date].timeIntervalSince1970 + SFRetryDelay(n));
-        else [r removeObjectForKey:@"retryAt"];
+        NSInteger n = r.tries + 1;
+        r.state = SFDLDone; r.progress = 1;
+        r.tries = n; r.error = error ?: @"Fehler";
+        r.retryAt = n < kSubMaxTries ? [NSDate date].timeIntervalSince1970 + SFRetryDelay(n) : 0;
         [self save:r];
         SFLog(@"downloads: repair of %@ failed (%@) - keeping the existing file, %@", ident, error,
               n < kSubMaxTries ? [NSString stringWithFormat:@"retry in %.0f min", SFRetryDelay(n) / 60] : @"giving up");
         dispatch_async(dispatch_get_main_queue(), ^{ [self retryDueRepairs]; });   // schedules the retry
     } else if (r) {
-        r[@"progress"] = @(ok ? 1.0 : 0.0);
-        if (ok) { r[@"state"] = @(SFDLDone); [r removeObjectForKey:@"error"]; [r removeObjectForKey:@"retryAt"]; r[@"tries"] = @0; }
+        r.progress = ok ? 1 : 0;
+        if (ok) { r.state = SFDLDone; r.error = nil; r.retryAt = 0; r.tries = 0; }
         else {
             // the next attempt's time is kept for every failure under the limit (a subscription may find
             // a manual one later); only a subscription episode is retried by Sofa itself
-            NSInteger n = [r[@"tries"] integerValue] + 1;
-            r[@"error"] = error ?: @"Fehler"; r[@"tries"] = @(n);
-            if (n < kSubMaxTries) r[@"retryAt"] = @([NSDate date].timeIntervalSince1970 + SFRetryDelay(n));
-            else [r removeObjectForKey:@"retryAt"];
-            r[@"state"] = @(r[@"sub"] && n < kSubMaxTries ? SFDLRetrying : SFDLFailed);
+            NSInteger n = r.tries + 1;
+            r.error = error ?: @"Fehler"; r.tries = n;
+            r.retryAt = n < kSubMaxTries ? [NSDate date].timeIntervalSince1970 + SFRetryDelay(n) : 0;
+            r.state = r.sub && n < kSubMaxTries ? SFDLRetrying : SFDLFailed;
         }
         [self save:r];
         SFLog(@"downloads: %@ %@%@", ok ? @"done" : @"FAILED", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);

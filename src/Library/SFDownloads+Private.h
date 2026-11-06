@@ -50,8 +50,8 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 
 
 @interface SFDownloads () {
-    NSMutableDictionary *_recs;      // id -> NSMutableDictionary (columns of the downloads table)
-    NSMutableDictionary *_subs;      // id -> NSMutableDictionary
+    NSMutableDictionary *_recs;      // id -> SFDownloadRecord
+    NSMutableDictionary *_subs;      // id -> SFSubscription
     NSTask *_task;
     NSString *_runningID;
     BOOL _started;
@@ -72,35 +72,37 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
 }
-- (void)save:(NSDictionary *)r;
-- (NSArray *)write:(NSDictionary *)r;   // the statement save: runs - for several records in one runAll:
+- (void)save:(SFDownloadRecord *)r;
+- (BOOL)fileExists:(SFDownloadRecord *)r;   // its file is there
+- (SFDownloadRecord *)recOf:(NSString *)identifier;   // the record (not a copy); nil = none
+- (NSArray *)write:(SFDownloadRecord *)r;   // the statement save: runs - for several records in one runAll:
 - (void)changed:(NSString *)identifier;
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = already present/rejected
 - (void)retryDueRepairs;
 - (void)expireRepairBackoffForTesting;   // dev command dlretry
-- (SFItem *)itemFromRec:(NSDictionary *)r;
-- (void)setItem:(SFItem *)item ofRec:(NSMutableDictionary *)r;   // item JSON in the record + the items table
+- (SFItem *)itemFromRec:(SFDownloadRecord *)r;
+- (void)setItem:(SFItem *)item ofRec:(SFDownloadRecord *)r;   // item JSON in the record + the items table
 + (NSString *)ffmpegToolPath;
 + (NSString *)root;
 @end
 
 @interface SFDownloads (SubscriptionsPrivate)
-- (void)checkSub:(NSMutableDictionary *)s;   // against its follow's list (no request)
+- (void)checkSub:(SFSubscription *)s;   // against its follow's list (no request)
 @end
 
 // Worker (SFDownloads+Worker.m): next download, ffmpeg run, install, outcome
 @interface SFDownloads (Worker)
 - (void)pump;
 - (void)pumpAt:(NSTimeInterval)when;
-- (NSString *)targetPathFor:(NSDictionary *)r item:(SFItem *)item;
-- (void)fetchThumb:(SFItem *)item rec:(NSMutableDictionary *)r;
+- (NSString *)targetPathFor:(SFDownloadRecord *)r item:(SFItem *)item;
+- (void)fetchThumb:(SFItem *)item rec:(SFDownloadRecord *)r;
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error;
 @end
 
 // Integrity layer (SFDownloads+Integrity.m): orphan reaping, unique part files, verification, audit
 // Storage layer (SFDownloads+Storage.m): disk reserve, "Behalten", online availability
 @interface SFDownloads (StoragePrivate)
-- (BOOL)checkStorageFor:(NSDictionary *)next;   // YES = not enough room for it: don't start (re-check scheduled, notifies)
+- (BOOL)checkStorageFor:(SFDownloadRecord *)next;   // YES = not enough room for it: don't start (re-check scheduled, notifies)
 - (void)stopIfDiskRunsOut;     // during a run: stop ffmpeg when the reserve is half used up
 - (void)watchDiskDuringRun:(BOOL)on;   // 10-s disk check while ffmpeg runs
 - (void)setStorageFull:(BOOL)full;

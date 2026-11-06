@@ -163,9 +163,9 @@ static double SFParseDuration(NSString *s) {
     // from the end, position persisted after every file
     NSString *pos = [[SFStore shared] setting:kAuditPosKey];
     NSMutableArray *todo = [NSMutableArray array];
-    for (NSDictionary *r in _recs.allValues)
-        if ([r[@"state"] integerValue] == SFDLDone && [r[@"path"] length] && (!pos.length || [r[@"id"] compare:pos] == NSOrderedDescending))
-            [todo addObject:r[@"id"]];
+    for (SFDownloadRecord *r in _recs.allValues)
+        if (r.state == SFDLDone && r.path && (!pos.length || [r.identifier compare:pos] == NSOrderedDescending))
+            [todo addObject:r.identifier];
     [todo sortUsingSelector:@selector(compare:)];
     todo = [[[todo reverseObjectEnumerator] allObjects] mutableCopy];
     SFLog(@"downloads: verifying %lu existing download(s) once in the background", (unsigned long)todo.count);
@@ -179,20 +179,20 @@ static double SFParseDuration(NSString *s) {
         return;
     }
     NSString *ident = todo.lastObject; [todo removeLastObject];
-    NSDictionary *r = _recs[ident];
-    NSString *path = r[@"path"];
-    if ([r[@"state"] integerValue] != SFDLDone || !path || [ident isEqualToString:_runningID]) { [self auditNext:todo ff:ff broken:broken]; return; }
+    SFDownloadRecord *r = _recs[ident];
+    NSString *path = r.path;
+    if (r.state != SFDLDone || !path || [ident isEqualToString:_runningID]) { [self auditNext:todo ff:ff broken:broken]; return; }
     SFBackground(^{
         NSString *problem = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:ff];   // metadata durations are too imprecise for old files
         SFMain(^{
             NSUInteger b = broken;
-            NSMutableDictionary *rr = self->_recs[ident];
-            if (problem && rr && [rr[@"path"] isEqualToString:path] && [rr[@"state"] integerValue] == SFDLDone) {
+            SFDownloadRecord *rr = self->_recs[ident];
+            if (problem && rr && [rr.path isEqualToString:path] && rr.state == SFDLDone) {
                 // Keep the old file until a verified replacement exists: the verifier could be wrong, and
                 // Mediathek items may have expired upstream (finish:ok:NO then keeps the old file).
                 SFLog(@"downloads: %@ is broken (%@) - downloading it again", ident, problem);
-                [rr removeObjectForKey:@"error"]; [rr removeObjectForKey:@"retryAt"];
-                rr[@"state"] = @(SFDLQueued); rr[@"progress"] = @0; rr[@"tries"] = @0;
+                rr.error = nil; rr.retryAt = 0;
+                rr.state = SFDLQueued; rr.progress = 0; rr.tries = 0;
                 [self save:rr]; [self changed:ident];
                 b++;
                 [self pump];

@@ -1,5 +1,6 @@
 #import "SFMigration.h"
 #import "SFDownloads.h"
+#import "SFFollows.h"
 #import "SFStore.h"
 #import "SFYouTubeApp.h"
 
@@ -222,11 +223,11 @@ void SFMigrateLibraryIfNeeded(void) {
                 subscriptionID(s[@"source"], s[@"url"], ^(NSString *sid) {
                     SFMain(^{
                         if (sid) {
-                            NSMutableDictionary *rec = [@{@"id": sid, @"source": s[@"source"], @"title": s[@"channel"], @"keepDays": @90,
-                                                          @"since": @([x[@"newest"] timeIntervalSince1970])} mutableCopy];
+                            SFFollow *f = [SFFollow new];
+                            f.identifier = sid; f.source = s[@"source"]; f.title = s[@"channel"];
                             NSString *poster = [[dl folderForSource:s[@"source"] channel:s[@"channel"]] stringByAppendingPathComponent:@"poster.jpg"];
-                            if ([fm fileExistsAtPath:poster]) rec[@"image"] = poster;
-                            if (![dl isSubscribed:sid]) { [dl addSubscriptionRecord:rec]; okSubs++; }
+                            if ([fm fileExistsAtPath:poster]) f.image = poster;
+                            if (![dl isSubscribed:sid]) { [dl addSubscription:f keepDays:90 since:[x[@"newest"] timeIntervalSince1970]]; okSubs++; }
                         } else [unresolved addObject:s[@"channel"]];
                         if (next) next();
                     });

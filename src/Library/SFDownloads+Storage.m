@@ -59,15 +59,15 @@ static unsigned long long gReserve = 10 * kGB;
 // ~1 MB/s (1080p60 VP9 + Opus measured 0.4-0.9 MB/s), 2 GB when unknown. After a disk stop at least
 // 2.5x what that run had written - hysteresis: removing its part file frees the room again, and
 // without it the same download started over and over (review 2026-11-05).
-- (unsigned long long)roomNeededFor:(NSDictionary *)r {
+- (unsigned long long)roomNeededFor:(SFDownloadRecord *)r {
     SFItem *item = [self itemFromRec:r];
     unsigned long long est = item.duration > 0 ? (unsigned long long)(item.duration * 1e6) : 2 * kGB;
     unsigned long long need = self.storageReserve + 2 * est;
-    unsigned long long stopped = [_diskNeed[r[@"id"]] unsignedLongLongValue];
+    unsigned long long stopped = [_diskNeed[r.identifier] unsignedLongLongValue];
     return MAX(need, self.storageReserve + stopped);
 }
 
-- (BOOL)checkStorageFor:(NSDictionary *)next {
+- (BOOL)checkStorageFor:(SFDownloadRecord *)next {
     if (!next) return NO;
     [self setStorageFull:self.freeBytes < [self roomNeededFor:next]];
     return _storageFull;
@@ -95,12 +95,12 @@ static unsigned long long gReserve = 10 * kGB;
 
 #pragma mark Behalten
 
-- (BOOL)isKept:(NSString *)identifier { return [_recs[identifier][@"keep"] boolValue]; }
+- (BOOL)isKept:(NSString *)identifier { return [self recOf:identifier].keep; }
 
 - (void)setKept:(BOOL)kept forIdentifier:(NSString *)identifier {
-    NSMutableDictionary *r = _recs[identifier];
-    if (!r || [r[@"keep"] boolValue] == kept) return;
-    r[@"keep"] = @(kept);
+    SFDownloadRecord *r = _recs[identifier];
+    if (!r || r.keep == kept) return;
+    r.keep = kept;
     [self save:r];
     [self changed:identifier];
     SFLog(@"downloads: %@ %@", identifier, kept ? @"kept (Behalten)" : @"no longer kept");
@@ -111,10 +111,10 @@ static unsigned long long gReserve = 10 * kGB;
 - (NSInteger)onlineStateFor:(NSString *)identifier { return [self onlineStateFor:identifier maxAge:kOnlineValid]; }
 
 - (NSInteger)onlineStateFor:(NSString *)identifier maxAge:(NSTimeInterval)maxAge {
-    NSDictionary *r = _recs[identifier];
-    if (!r[@"online"] || r[@"online"] == [NSNull null]) return -1;
-    BOOL online = [r[@"online"] integerValue] != 0;
-    NSTimeInterval age = [NSDate date].timeIntervalSince1970 - [r[@"onlineAt"] doubleValue];
+    SFDownloadRecord *r = _recs[identifier];
+    if (!r || r.online < 0) return -1;
+    BOOL online = r.online != 0;
+    NSTimeInterval age = [NSDate date].timeIntervalSince1970 - r.onlineAt;
     if (age > (online ? maxAge : MIN(maxAge, kGoneValid))) return -1;
     return online ? 1 : 0;
 }
@@ -124,7 +124,7 @@ static unsigned long long gReserve = 10 * kGB;
 - (void)checkOnline:(NSArray *)identifiers maxAge:(NSTimeInterval)maxAge done:(dispatch_block_t)done {
     if (!_onlineQueue) { _onlineQueue = [NSMutableArray new]; _onlineDone = [NSMutableArray new]; }
     for (NSString *i in identifiers)
-        if ([self onlineStateFor:i maxAge:maxAge] < 0 && [_recs[i][@"state"] integerValue] == SFDLDone
+        if ([self onlineStateFor:i maxAge:maxAge] < 0 && [self recOf:i].state == SFDLDone
             && ![_onlineQueue containsObject:i] && ![i isEqualToString:_onlineCurrent]) [_onlineQueue addObject:i];
     if (done) [_onlineDone addObject:[done copy]];
     if (!_checkingOnline) [self nextOnlineCheck];
@@ -151,9 +151,9 @@ static unsigned long long gReserve = 10 * kGB;
         SFMain(^{
             if (answered) return;
             answered = YES;
-            NSMutableDictionary *r = self->_recs[ident];
+            SFDownloadRecord *r = self->_recs[ident];
             if (r && online >= 0) {
-                r[@"online"] = @(online); r[@"onlineAt"] = @([NSDate date].timeIntervalSince1970);
+                r.online = online ? 1 : 0; r.onlineAt = [NSDate date].timeIntervalSince1970;
                 [self save:r];
                 if (!online) SFLog(@"downloads: %@ is no longer online at its source", ident);
             }

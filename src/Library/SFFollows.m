@@ -24,7 +24,7 @@ SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
 static const NSInteger kPerShow = 12;              // keep this many newest episodes per show
 
 @implementation SFFollows {
-    NSMutableDictionary *_follows;   // id -> @{id, source, title, image, added}
+    NSMutableDictionary *_follows;   // id -> SFFollow
     NSMutableDictionary *_items;     // id -> NSArray<SFItem> (newest first)
     BOOL _started;
     NSTimer *_timer;                 // the next planned check (SFRefreshPlan)
@@ -43,7 +43,10 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
         SFStore *st = [SFStore shared];
         _follows = [NSMutableDictionary new];
         _items = [NSMutableDictionary new];
-        for (NSDictionary *r in [st rows:@"SELECT * FROM follows" args:nil]) _follows[r[@"id"]] = [r mutableCopy];
+        for (NSDictionary *row in [st rows:@"SELECT * FROM follows" args:nil]) {
+            SFFollow *f = [SFFollow followWithRow:row];
+            if (f.identifier) _follows[f.identifier] = f;
+        }
         for (NSDictionary *r in [st rows:@"SELECT f.follow, i.json AS item FROM follow_items f JOIN items i ON i.id = f.id ORDER BY f.follow, f.pos" args:nil]) {
             NSDictionary *d = SFJSONParse(r[@"item"]);
             if (![d isKindOfClass:[NSDictionary class]]) continue;
@@ -63,10 +66,9 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     });
 }
 
-- (void)save:(NSDictionary *)f {
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?)"
-                     args:@[f[@"id"], f[@"source"] ?: @"", f[@"title"] ?: @"", f[@"image"] ?: [NSNull null],
-                            f[@"added"] ?: @([NSDate date].timeIntervalSince1970), f[@"checked"] ?: [NSNull null]]];
+- (void)save:(SFFollow *)f {
+    NSArray *w = f.writeStatement;
+    [[SFStore shared] run:w[0] args:w[1]];
 }
 
 #pragma mark Start / Migration
@@ -88,23 +90,21 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 - (BOOL)isFollowing:(NSString *)identifier { return identifier && _follows[identifier] != nil; }
 
 - (void)addFollow:(SFItem *)folder {
-    NSMutableDictionary *f = [@{@"id": folder.identifier, @"source": folder.source ?: @"", @"title": folder.title ?: @"",
-                                @"added": @([NSDate date].timeIntervalSince1970)} mutableCopy];
-    if (folder.image.length) f[@"image"] = folder.image;
-    _follows[folder.identifier] = f;
+    SFFollow *f = [SFFollow followOf:folder];
+    _follows[f.identifier] = f;
     [self save:f];
 }
 
-- (NSDictionary *)recordOf:(NSString *)identifier { return identifier ? [_follows[identifier] copy] : nil; }
+- (SFFollow *)recordOf:(NSString *)identifier { return identifier ? [_follows[identifier] copy] : nil; }
 
-- (void)adopt:(NSDictionary *)record {
-    if (![record[@"id"] length] || _follows[record[@"id"]]) return;
-    NSMutableDictionary *f = [@{@"id": record[@"id"], @"source": record[@"source"] ?: @"", @"title": record[@"title"] ?: @"",
-                                @"added": @([NSDate date].timeIntervalSince1970)} mutableCopy];
-    if ([record[@"image"] length]) f[@"image"] = record[@"image"];
-    _follows[f[@"id"]] = f;
+- (void)adopt:(SFFollow *)record {
+    if (!record.identifier.length || _follows[record.identifier]) return;
+    SFFollow *f = [record copy];
+    f.checked = 0;   // its turn in the refresh plan comes first
+    if (f.added <= 0) f.added = [NSDate date].timeIntervalSince1970;
+    _follows[f.identifier] = f;
     [self save:f];
-    SFLog(@"follows: + %@ (adopted)", f[@"title"]);
+    SFLog(@"follows: + %@ (adopted)", f.title);
     [self changed];
 }
 
@@ -136,8 +136,8 @@ static BOOL usable(NSString *img) {
 }
 
 - (BOOL)needsImage:(NSString *)identifier {
-    NSDictionary *f = identifier ? _follows[identifier] : nil;
-    return f && !usable(f[@"image"]);
+    SFFollow *f = identifier ? _follows[identifier] : nil;
+    return f && !usable(f.image);
 }
 
 // A missing or gone picture: the show's app finds the current one (SFApp showImage, on its own
@@ -147,9 +147,9 @@ static BOOL usable(NSString *img) {
     Class<SFApp> app = [SFAppRegistry appForRef:identifier];
     if (![app respondsToSelector:@selector(showImage:done:)]) return;
     [app showImage:identifier done:^(NSString *url) {
-        NSMutableDictionary *f = self->_follows[identifier];
-        if (!f || !url.length || [f[@"image"] isEqualToString:url]) return;
-        f[@"image"] = url;
+        SFFollow *f = self->_follows[identifier];
+        if (!f || !url.length || [f.image isEqualToString:url]) return;
+        f.image = url;
         [self save:f];
         [self changed];
     }];
@@ -157,18 +157,18 @@ static BOOL usable(NSString *img) {
 
 - (NSArray *)follows:(NSString *)source {
     NSMutableArray *out = [NSMutableArray new];
-    for (NSDictionary *f in _follows.allValues) {
-        if (source && ![f[@"source"] isEqualToString:source]) continue;
-        SFPageLoader page = SFShowPageLoader(f[@"id"], f[@"title"]);
+    for (SFFollow *f in _follows.allValues) {
+        if (source && ![f.source isEqualToString:source]) continue;
+        SFPageLoader page = SFShowPageLoader(f.identifier, f.title);
         if (!page) continue;   // app gone/unknown namespace
         SFItem *i = [SFItem new];
         i.kind = SFItemFolder;
-        i.identifier = f[@"id"];
-        i.title = f[@"title"];
-        i.source = f[@"source"]; i.themeName = f[@"source"];
-        NSArray *latest = _items[f[@"id"]];
+        i.identifier = f.identifier;
+        i.title = f.title;
+        i.source = f.source; i.themeName = f.source;
+        NSArray *latest = _items[f.identifier];
         SFItem *newest = latest.firstObject;
-        i.image = usable(f[@"image"]) ? f[@"image"] : newest.image;
+        i.image = usable(f.image) ? f.image : newest.image;
         i.backdrop = newest.backdrop ?: newest.image ?: i.image;
         i.date = newest.date;
         i.subtitle = newest ? [NSString stringWithFormat:@"Neueste Folge: %@", SFFormatDateShort(newest.date)] : nil;
@@ -183,8 +183,8 @@ static BOOL usable(NSString *img) {
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source {
     NSMutableArray *all = [NSMutableArray new];
     for (NSString *fid in _items) {
-        NSDictionary *f = _follows[fid];
-        if (!f || (source && ![f[@"source"] isEqualToString:source])) continue;
+        SFFollow *f = _follows[fid];
+        if (!f || (source && ![f.source isEqualToString:source])) continue;
         [all addObjectsFromArray:_items[fid]];
     }
     [all sortUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
@@ -223,47 +223,47 @@ static BOOL hasCounts(NSArray *dicts) {
     return NO;
 }
 
-- (void)refreshOne:(NSDictionary *)f done:(dispatch_block_t)done {
-    if (!SFHasFeed(f[@"id"])) { if (done) done(); return; }
+- (void)refreshOne:(SFFollow *)f done:(dispatch_block_t)done {
+    if (!SFHasFeed(f.identifier)) { if (done) done(); return; }
     __block BOOL finished = NO;
     dispatch_block_t finish = ^{ if (finished) return; finished = YES; if (done) done(); };
-    SFFetchFeed(f[@"id"], ^(NSArray *items, NSError *e) {
+    SFFetchFeed(f.identifier, ^(NSArray *items, NSError *e) {
         SFMain(^{
-            if (items && self->_follows[f[@"id"]]) {
+            if (items && self->_follows[f.identifier]) {
                 NSMutableArray *keep = [NSMutableArray new];
                 NSMutableSet *seen = [NSMutableSet new];
                 for (SFItem *i in items) {
                     if (i.kind != SFItemVideo || !i.identifier || [seen containsObject:i.identifier]) continue;
                     [seen addObject:i.identifier];
                     SFItem *c = [i copy];
-                    c.channel = f[@"title"];   // uniform: the name it is followed under
+                    c.channel = f.title;   // uniform: the name it is followed under
                     c.style = SFTileStyleLandscape;
                     [keep addObject:c];
                     if ((NSInteger)keep.count >= kPerShow) break;
                 }
                 NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
-                NSArray *before = [self->_items[f[@"id"]] valueForKey:@"dictionaryRepresentation"];
+                NSArray *before = [self->_items[f.identifier] valueForKey:@"dictionaryRepresentation"];
                 BOOL news = ![[dicts valueForKey:@"id"] isEqualToArray:[before valueForKey:@"id"]];   // new episodes/videos
                 BOOL updated = !news && bringsValues(dicts, before);
                 // counts first known (stored before the source had them): written once, so they
                 // survive a restart; later count changes alone are not a change
                 BOOL gainedCounts = !hasCounts(before) && hasCounts(dicts);
-                self->_items[f[@"id"]] = keep;
+                self->_items[f.identifier] = keep;
                 if (!news && !updated && !gainedCounts) { finish(); return; }   // most refreshes: nothing new, nothing to write
-                NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f[@"id"]]]];
+                NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM follow_items WHERE follow=?", @[f.identifier]]];
                 [keep enumerateObjectsUsingBlock:^(SFItem *c, NSUInteger n, BOOL *stop) {
                     NSArray *iw = [[SFStore shared] itemWrite:c];
                     if (!iw) return;
                     [writes addObject:iw];
-                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos) VALUES (?,?,?)", @[f[@"id"], c.identifier, @(n)]]];
+                    [writes addObject:@[@"INSERT OR REPLACE INTO follow_items (follow,id,pos) VALUES (?,?,?)", @[f.identifier, c.identifier, @(n)]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
                 if (!news && !updated) { finish(); return; }   // only the counts were stored
                 [self changed];
                 if (news) {
-                    SFLog(@"follows: %@ has news", f[@"title"]);
-                    [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f[@"id"]];
-                } else SFLog(@"follows: %@ updated", f[@"title"]);
+                    SFLog(@"follows: %@ has news", f.title);
+                    [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f.identifier];
+                } else SFLog(@"follows: %@ updated", f.title);
             }
             finish();
         });
@@ -274,20 +274,20 @@ static BOOL hasCounts(NSArray *dicts) {
 // One follow at a time, each at its own time (SFRefreshPlan: its upload rhythm, variation, night),
 // with a gap between any two - spread over the day instead of all follows every 30 min in a burst
 // (until 2026-11-06: 135 requests within a minute, part of what made YouTube suspect a bot).
-- (NSDate *)dueOf:(NSDictionary *)f {
-    double checked = [f[@"checked"] doubleValue];
+- (NSDate *)dueOf:(SFFollow *)f {
+    double checked = f.checked;
     if (checked <= 0) return [NSDate distantPast];   // never checked: first in line
-    if (!_jitter[f[@"id"]]) _jitter[f[@"id"]] = @(arc4random_uniform(1000) / 1000.0);
-    NSArray *dates = [_items[f[@"id"]] valueForKey:@"date"];
+    if (!_jitter[f.identifier]) _jitter[f.identifier] = @(arc4random_uniform(1000) / 1000.0);
+    NSArray *dates = [_items[f.identifier] valueForKey:@"date"];
     return SFRefreshNextDue([dates filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self != nil"]],
-                            [NSDate dateWithTimeIntervalSince1970:checked], [_jitter[f[@"id"]] doubleValue], nil);
+                            [NSDate dateWithTimeIntervalSince1970:checked], [_jitter[f.identifier] doubleValue], nil);
 }
 
 - (void)planNext {
     [_timer invalidate]; _timer = nil;
-    NSDictionary *next = nil; NSDate *due = nil;
-    for (NSDictionary *f in _follows.allValues) {
-        if (!SFHasFeed(f[@"id"])) continue;
+    SFFollow *next = nil; NSDate *due = nil;
+    for (SFFollow *f in _follows.allValues) {
+        if (!SFHasFeed(f.identifier)) continue;
         NSDate *d = [self dueOf:f];
         if (!due || [d compare:due] == NSOrderedAscending) { due = d; next = f; }
     }
@@ -297,12 +297,12 @@ static BOOL hasCounts(NSArray *dicts) {
     dispatch_once(&once, ^{ gapScale = SFDevSeconds(@"SOFA_FOLLOW_GAP", SFRefreshGapMin) / SFRefreshGapMin; });
     NSDate *earliest = [_lastCheck dateByAddingTimeInterval:gapScale * SFRefreshGap(arc4random_uniform(1000) / 1000.0)];
     NSDate *when = [due laterDate:earliest];
-    NSString *fid = next[@"id"];
+    NSString *fid = next.identifier;
     _timer = [NSTimer scheduledTimerWithTimeInterval:MAX(1, when.timeIntervalSinceNow) target:self selector:@selector(checkDue:) userInfo:fid repeats:NO];
 }
 
 - (void)checkDue:(NSTimer *)t {
-    NSMutableDictionary *f = _follows[t.userInfo];
+    SFFollow *f = _follows[t.userInfo];
     _timer = nil;
     if (!f) { [self planNext]; return; }
     if (![SFNet isOnline]) {   // offline: look again in a while (the plan stays)
@@ -312,25 +312,62 @@ static BOOL hasCounts(NSArray *dicts) {
     // its source paused background requests (YouTube bot check): wait it out - a check now would
     // send nothing yet use up the follow's turn
     // (one timer: only this follow waits; planNext spaces the ones after it)
-    NSTimeInterval paused = SFBackgroundPausedUntil(f[@"id"]) - [NSDate date].timeIntervalSince1970;
+    NSTimeInterval paused = SFBackgroundPausedUntil(f.identifier) - [NSDate date].timeIntervalSince1970;
     if (paused > 0) {
-        SFLog(@"follows: %@ waits %.0f s for its source's pause", f[@"title"], paused);
+        SFLog(@"follows: %@ waits %.0f s for its source's pause", f.title, paused);
         _timer = [NSTimer scheduledTimerWithTimeInterval:paused + 1 target:self selector:@selector(checkDue:) userInfo:t.userInfo repeats:NO];
         return;
     }
     [self checkFollow:f];
 }
 
-- (void)checkFollow:(NSMutableDictionary *)f {
+- (void)checkFollow:(SFFollow *)f {
     _lastCheck = [NSDate date];
-    f[@"checked"] = @(_lastCheck.timeIntervalSince1970);
-    [_jitter removeObjectForKey:f[@"id"]];   // a new variation for the next one
-    [[SFStore shared] run:@"UPDATE follows SET checked=? WHERE id=?" args:@[f[@"checked"], f[@"id"]]];
+    f.checked = _lastCheck.timeIntervalSince1970;
+    [_jitter removeObjectForKey:f.identifier];   // a new variation for the next one
+    [[SFStore shared] run:@"UPDATE follows SET checked=? WHERE id=?" args:@[@(f.checked), f.identifier]];
     __weak SFFollows *ws = self;
     [self refreshOne:f done:^{
         SFFollows *me = ws;
-        [me renewImage:f[@"id"]];
+        [me renewImage:f.identifier];
         [me planNext];
     }];
 }
+@end
+
+@implementation SFFollow
+
++ (instancetype)followWithRow:(NSDictionary *)row {
+    SFFollow *f = [self new];
+    f.identifier = [row[@"id"] length] ? row[@"id"] : nil;
+    f.source = row[@"source"] ?: @"";
+    f.title = row[@"title"] ?: @"";
+    f.image = [row[@"image"] length] ? row[@"image"] : nil;
+    f.added = [row[@"added"] doubleValue];
+    f.checked = [row[@"checked"] doubleValue];
+    return f;
+}
+
++ (instancetype)followOf:(SFItem *)folder {
+    SFFollow *f = [self new];
+    f.identifier = folder.identifier;
+    f.source = folder.source ?: @"";
+    f.title = folder.title ?: @"";
+    f.image = folder.image.length ? folder.image : nil;
+    f.added = [NSDate date].timeIntervalSince1970;
+    return f;
+}
+
+- (NSArray *)writeStatement {
+    return @[@"INSERT OR REPLACE INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?)",
+             @[_identifier, _source ?: @"", _title ?: @"", _image ?: [NSNull null],
+               @(_added > 0 ? _added : [NSDate date].timeIntervalSince1970), _checked > 0 ? @(_checked) : [NSNull null]]];
+}
+
+- (id)copyWithZone:(NSZone *)zone {
+    SFFollow *c = [[self class] new];
+    c.identifier = _identifier; c.source = _source; c.title = _title; c.image = _image; c.added = _added; c.checked = _checked;
+    return c;
+}
+
 @end
