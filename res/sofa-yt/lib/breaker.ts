@@ -1,15 +1,19 @@
 // Bot-check circuit breaker in a file shared with Sofa (SFYTBreaker) and every instance on this IP
 // ({"until": epoch_seconds, "backoff": seconds}). After "Sign in to confirm you're not a bot" the
-// background (preload, downloads) sends no player request until `until`: 5 min, doubling up to 1 h,
-// reset by the first success. Playback the user starts still tries. The file is re-read on every
-// check because another instance (another sidecar) may update it too.
+// background (preload, downloads) sends no player request until `until`: 1 h, doubling up to 8 h,
+// reset by the first success - a probe every few minutes met the same block and kept it alive
+// (2026-11-06: 27 refused requests, probes after 5/10/20/40 min). Playback the user starts still
+// tries, except within FG_HOLD_S of the check: retries from the phone went straight into the block
+// (7 player requests in 15 min). The file is re-read on every check because another instance
+// (another sidecar) may update it too.
 import fs from 'node:fs';
 import { parseJson, record } from './json.ts';
 import { errorMessage } from './errors.ts';
 import { log } from './log.ts';
 
-export const BLOCK_MIN = 300;
-export const BLOCK_MAX = 3600;
+export const BLOCK_MIN = 3600;
+export const BLOCK_MAX = 8 * 3600;
+export const FG_HOLD_S = 180;
 
 /** The breaker file: `until` epoch seconds, `backoff` seconds. */
 export interface BlockState {
@@ -56,6 +60,14 @@ export class Breaker {
   blockedUntil(): number {
     const b = this.read();
     return b.until > this.now() ? b.until : 0;
+  }
+
+  /** Epoch seconds until which even user playback sends nothing (right after a bot check), 0 if not. */
+  heldUntil(): number {
+    const b = this.read();
+    if (!b.until || !b.backoff) return 0;
+    const hold = b.until - b.backoff + FG_HOLD_S;   // the check happened at until - backoff
+    return hold > this.now() ? hold : 0;
   }
 
   note(botCheck: boolean): void {

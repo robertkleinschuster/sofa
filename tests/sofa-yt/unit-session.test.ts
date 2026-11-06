@@ -271,14 +271,19 @@ test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is re
   try {
     const bot = await openJson<OpenFailure>(app, 'v=jNQXAC9IVRw');
     assert.equal(bot.bot, true);
-    assert.ok(bot.blocked_until > Date.now() / 1000 + 200, 'breaker opened (5 min)');
-    assert.deepEqual(json<BlockState>(fs.readFileSync(file, 'utf8')).backoff, 300, 'the file format SFYTBreaker reads');
+    assert.ok(bot.blocked_until > Date.now() / 1000 + 3500, 'breaker opened (1 h)');
+    const state = json<BlockState>(fs.readFileSync(file, 'utf8'));
+    assert.deepEqual(state.backoff, 3600, 'the file format SFYTBreaker reads');
     const before = youtube.requests;
     const bg = await openJson<OpenFailure>(app, `v=${ID}&bg=1`);
     assert.equal(bg.bot, true);
     assert.equal(youtube.requests, before, 'no request while blocked');
+    const held = await openJson<OpenFailure>(app, `v=${ID}`);
+    assert.equal(held.bot, true, 'right after the check even user playback waits');
+    assert.equal(youtube.requests, before, 'no request into a fresh block');
+    fs.writeFileSync(file, JSON.stringify({ ...state, until: state.until - 200 }));   // the check was 200 s ago
     const fg = await openJson(app, `v=${ID}`);
-    assert.ok(fg.sid, 'user playback still tries');
+    assert.ok(fg.sid, 'user playback tries again after the hold');
     const live = await openJson<OpenFailure>(app, 'v=aaaaaaaaaaa');
     assert.deepEqual([live.error, live.live], ['live', true]);
     breaker.note(false);

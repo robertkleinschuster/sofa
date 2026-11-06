@@ -281,6 +281,10 @@ quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||(retryAt > strftime('%s','now')), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
 [ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
+# the spacing of starts survives a restart (2026-11-06: an update restart started the next YouTube
+# download at once): the next allowed start of the source is stored
+nx=$(/opt/local/bin/sqlite3 "$DEVDB" "select v > strftime('%s','now') - 60 from settings where k='downloads.nextStart.example'")
+check "next start of the source stored" "$nx" "1"
 
 fi   # part b
 

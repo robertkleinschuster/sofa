@@ -44,6 +44,7 @@
     CALayer *_header;
     SFLabel *_wordmark, *_pageTitle, *_clock, *_hint, *_phone;
     NSTimer *_prefetchTimer;      // app preload (preloadOnFocus:) while focus rests
+    NSString *_prefetchedID;      // the item last preloaded: a page rebuild that keeps the focus does not preload it again
     CALayer *_hintKey, *_phonePill, *_phoneDot;   // status line top right
     CALayer *_searchPill; CAShapeLayer *_searchIcon; SFLabel *_searchLabel;   // header: "Suche"
     BOOL _headerFocus;           // focus is on "Suche" instead of a tile

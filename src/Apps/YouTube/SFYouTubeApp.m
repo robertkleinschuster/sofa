@@ -116,6 +116,9 @@
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { [SFYTFeeds feed:SFRefID(ref) done:done]; }
 // feed checks and downloads wait during a bot-check pause (no request, no attempt used up)
 + (NSTimeInterval)backgroundPausedUntil { return [SFYTBreaker shared].blockedUntil; }
+// Downloads at a viewer's pace: each one is a player request plus a whole video's media. 85 a day,
+// up to 17 player requests an hour, preceded every bot check on 2026-11-06 - now at most ~3 an hour.
++ (NSTimeInterval)downloadSpacing { return 20 * 60; }
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *))done { [SFYTFeeds avatar:SFRefID(ref) done:done]; }
 
 // channel of a video without a stored channel ID (older watch-later/continue watching/downloads)

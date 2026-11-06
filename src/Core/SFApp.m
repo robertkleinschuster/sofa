@@ -17,6 +17,10 @@ NSTimeInterval SFBackgroundPausedUntil(NSString *ref) {
     Class<SFApp> app = [SFAppRegistry appForRef:ref];
     return [app respondsToSelector:@selector(backgroundPausedUntil)] ? [app backgroundPausedUntil] : 0;
 }
+NSTimeInterval SFDownloadSpacing(NSString *ref) {
+    Class<SFApp> app = [SFAppRegistry appForRef:ref];
+    return [app respondsToSelector:@selector(downloadSpacing)] ? [app downloadSpacing] : 30;
+}
 
 @implementation SFAppRegistry
 

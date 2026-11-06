@@ -186,13 +186,13 @@ export function ytError(message: string, flags: YouTubeErrorFlags): Error & YouT
 export type FakeYouTube = AppYouTube & { requests: number; cache: Map<string, VideoInfo> };
 
 /** Fake YouTube client: serves fixture infos, counts "player requests". */
-export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | 'unanswered'>, { breaker }: { breaker?: { blockedUntil(): number; note(bot: boolean): void } } = {}): FakeYouTube {
+export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | 'unanswered'>, { breaker }: { breaker?: { blockedUntil(): number; heldUntil(): number; note(bot: boolean): void } } = {}): FakeYouTube {
   const y: FakeYouTube = {
     requests: 0, sessionState: 'ready', cache: new Map(),
     async info(id, { bg = false } = {}) {
       const have = y.cache.get(id);
       if (have) return { info: have, cached: true };
-      if (bg && breaker?.blockedUntil()) {
+      if (breaker && (bg ? breaker.blockedUntil() : breaker.heldUntil())) {   // as YouTube.info
         throw ytError("Sign in to confirm you're not a bot (paused, no request sent)", { bot: true });
       }
       y.requests++;

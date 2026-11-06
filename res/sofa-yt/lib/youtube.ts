@@ -265,7 +265,7 @@ export type AppEndpoint = typeof APP_ENDPOINTS[number];
 export interface YouTubeOptions {
   stateDir: string;
   identity: Identity;
-  breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
+  breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget?: PlayerBudget;
 }
@@ -275,7 +275,7 @@ export type SessionState = 'pending' | 'ready' | 'error';
 export class YouTube {
   stateDir: string;
   identity: Identity;
-  breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
+  breaker: Pick<Breaker, 'blockedUntil' | 'heldUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget: PlayerBudget;
   playerDir: string;
@@ -383,7 +383,8 @@ export class YouTube {
 
   /**
    * Info for `videoId`, from the cache when still valid for REUSE_MARGIN_S, else one player request.
-   * `bg`: background request -> refused while the bot-check breaker is open.
+   * `bg`: background request -> refused while the bot-check breaker is open; a user request only
+   * right after a bot check (Breaker.heldUntil).
    * Concurrent calls for the same video share one request.
    */
   async info(videoId: string, { bg = false }: { bg?: boolean } = {}): Promise<{ info: VideoInfo; cached: boolean }> {
@@ -393,9 +394,8 @@ export class YouTube {
     if (ny && Date.now() - ny.at < UPCOMING_CACHE_MS) throw ny.err;
     const pending = this.inflight.get(videoId);
     if (pending) return { info: await pending, cached: false };
-    if (bg) {
-      const until = this.breaker.blockedUntil();
-      if (until) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no request sent)", { bot: true });
+    if (bg ? this.breaker.blockedUntil() : this.breaker.heldUntil()) {
+      throw new YouTubeError("Sign in to confirm you're not a bot (paused, no request sent)", { bot: true });
     }
     const p = this.request(videoId, null).finally(() => this.inflight.delete(videoId));
     this.inflight.set(videoId, p);
@@ -592,7 +592,7 @@ export class YouTube {
     if (recent && Date.now() / 1000 - (recent.fetchedAt || 0) < RELOAD_FRESH_S) return recent;
     const pending = this.reloading.get(videoId);
     if (pending) return pending;
-    if (bg && this.breaker.blockedUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no reload sent)", { bot: true });
+    if (bg ? this.breaker.blockedUntil() : this.breaker.heldUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, no reload sent)", { bot: true });
     const now = Date.now();
     const times = (this.reloads.get(videoId) || []).filter((t) => now - t < RELOAD_WINDOW_S * 1000);
     if (times.length >= RELOAD_MAX) throw new YouTubeError(`reload limit reached for ${videoId}`);

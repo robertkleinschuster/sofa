@@ -41,8 +41,7 @@
         return;
     }
     _runningID = r.identifier;
-    if (!_lastStart) _lastStart = [NSMutableDictionary new];
-    _lastStart[[self sourceOf:r]] = @(now);
+    [self noteStartOf:[self sourceOf:r] at:now];
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
     [self changed:_runningID];
@@ -182,13 +181,31 @@
     });
 }
 
-// Epoch until which the record's source must not be asked (0 = go).
-// Starts per source at least this far apart: quick failures or short videos must not turn into a
-// burst of requests to one site (YouTube flags the IP for bursts of player requests).
-static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOURCE_GAP)
-    static NSTimeInterval gap; static dispatch_once_t once;
-    dispatch_once(&once, ^{ gap = SFDevSeconds(@"SOFA_SOURCE_GAP", 30); });
-    return gap;
+// Starts per source at least the app's downloadSpacing apart: quick failures or short videos must
+// not turn into a burst of requests to one site (YouTube flags the IP for bursts of player
+// requests). Above a minute up to half of it more at random - no machine cadence. Tests set
+// SOFA_SOURCE_GAP (seconds, every source, no randomness).
+static NSTimeInterval SFStartSpacing(NSString *src) {
+    NSTimeInterval dev = SFDevSeconds(@"SOFA_SOURCE_GAP", 0);
+    if (dev > 0) return dev;
+    NSTimeInterval gap = SFDownloadSpacing([src stringByAppendingString:@":"]);
+    return gap > 60 ? gap + arc4random_uniform((uint32_t)(gap / 2)) : gap;
+}
+
+static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." stringByAppendingString:src]; }
+
+- (NSTimeInterval)nextStartOf:(NSString *)src {
+    if (!_nextStart) _nextStart = [NSMutableDictionary new];
+    NSNumber *n = _nextStart[src];
+    if (!n) _nextStart[src] = n = @([[[SFStore shared] setting:nextStartKey(src)] doubleValue]);
+    return n.doubleValue;
+}
+
+- (void)noteStartOf:(NSString *)src at:(NSTimeInterval)now {
+    NSTimeInterval next = now + SFStartSpacing(src);
+    if (!_nextStart) _nextStart = [NSMutableDictionary new];
+    _nextStart[src] = @(next);
+    [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", next] forKey:nextStartKey(src)];
 }
 
 - (NSString *)sourceOf:(SFDownloadRecord *)r {
@@ -203,16 +220,14 @@ static NSTimeInterval SFSourceGap(void) {   // 30 s; tests shorten it (SOFA_SOUR
 
 // pausedUntil plus the per-source spacing of starts
 - (NSTimeInterval)notBefore:(SFDownloadRecord *)r {
-    NSString *src = [self sourceOf:r];
-    NSTimeInterval last = [_lastStart[src] doubleValue];
-    return MAX([self pausedUntil:r], last ? last + SFSourceGap() : 0);
+    return MAX([self pausedUntil:r], [self nextStartOf:[self sourceOf:r]]);
 }
 
 - (void)pumpAt:(NSTimeInterval)when {
     if (_pauseWake && _pauseWake <= when && _pauseWake > [NSDate date].timeIntervalSince1970) return;   // earlier wake pending
     _pauseWake = when;
     NSTimeInterval in = MAX(1, when - [NSDate date].timeIntervalSince1970 + 1);
-    if (in > SFSourceGap() + 2) SFLog(@"downloads: source paused - next attempt in %.0f min", round(in / 60));
+    if (in > 60) SFLog(@"downloads: source paused - next attempt in %.0f min", round(in / 60));
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(in * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (self->_pauseWake == when) self->_pauseWake = 0;
         [self pump];

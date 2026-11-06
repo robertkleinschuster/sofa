@@ -118,7 +118,7 @@ function makeYouTube(raws: RawPlayerResponse[]) {
       return stub as unknown as Innertube;
     }
   }
-  return new StubbedYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => 0, note: (b) => { notes.push(b); } },
+  return new StubbedYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => 0, heldUntil: () => 0, note: (b) => { notes.push(b); } },
     po: { mintString: async () => 'POTOKEN' } });
 }
 
@@ -225,7 +225,7 @@ function fakeYT(info: VideoInfo, { refreshInfo }: { refreshInfo?: () => VideoInf
   return y;
 }
 
-const breaker = { blockedUntil: () => 0, note() {} };
+const breaker = { blockedUntil: () => 0, heldUntil: () => 0, note() {} };
 const noPump: FakeStart = () => { throw new Error('no SABR for lives'); };
 /** GET a JSON answer of the sidecar (the test states its shape). */
 const j = async <T = LiveAnswer>(url: string): Promise<T> => (await fetch(url)).json() as Promise<T>;

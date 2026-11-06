@@ -15,6 +15,11 @@ Einstellungen → „Update installieren“.
   behielt jede Liste ihren alten Stand.
 - **Updates unterbrechen Downloads nicht mehr als Fehler.** Lief beim Update gerade ein Download,
   galt er als fehlgeschlagen und wartete 15 Minuten. Jetzt läuft er nach dem Neustart sofort weiter.
+- **YouTube: weniger Anlass für Bot-Prüfungen.** Abo-Downloads von YouTube starten jetzt höchstens
+  etwa alle 20 bis 30 Minuten statt im Halbminutentakt, auch über einen Neustart hinweg. Nach einer
+  Bot-Prüfung wartet Sofa im Hintergrund eine Stunde (bis zu acht) statt fünf Minuten, und direkt
+  danach gehen auch Versuche vom Handy drei Minuten lang nicht an YouTube. Das Vorladen eines
+  Videos passiert nur noch, wenn du wirklich auf ein anderes Video wechselst.
 - **YouTube-Vorschaubilder sind wieder da.** YouTube schickt sie jetzt im WebP-Format, das macOS 10.9
   nicht kennt – Sofa liest es jetzt selbst.
 

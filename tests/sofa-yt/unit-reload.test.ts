@@ -19,9 +19,9 @@ class CountingYouTube extends YouTube {
   }
 }
 
-function make({ blocked = 0 } = {}): CountingYouTube {
+function make({ blocked = 0, held = 0 } = {}): CountingYouTube {
   const dir = tempDir('sofa-yt-reload-');
-  return new CountingYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => blocked, note() {} },
+  return new CountingYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => blocked, heldUntil: () => held, note() {} },
     po: { mintString: () => Promise.reject(new Error('no PO token in reload tests')) } });
 }
 
@@ -54,4 +54,16 @@ test('background sessions send no reload while the breaker is open; playback sti
   assert.equal(yt.calls, 0);
   await yt.reload('d', null, { bg: false });
   assert.equal(yt.calls, 1);
+});
+
+test('right after a bot check even user playback sends nothing (retries from the phone)', async () => {
+  const yt = make({ blocked: Date.now() / 1000 + 3600, held: Date.now() / 1000 + 180 });
+  await assert.rejects(yt.info('a'), /not a bot \(paused, no request sent\)/);
+  await assert.rejects(yt.refresh('a'), /paused, no reload sent/);
+  assert.equal(yt.calls, 0);
+  const later = make({ blocked: Date.now() / 1000 + 3600 });   // hold over, pause still on
+  await later.info('a');
+  assert.equal(later.calls, 1, 'user playback tries again');
+  await assert.rejects(later.info('b', { bg: true }), /paused/);
+  assert.equal(later.calls, 1, 'the background still waits');
 });
