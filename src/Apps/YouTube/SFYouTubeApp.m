@@ -1275,6 +1275,30 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 #pragma mark - Dev commands (sofa-dev FIFO)
 
+// One line per parsed item, keys sorted; dates as age in hours (InnerTube gives relative dates,
+// so the age is what stays stable between runs) - tools/test-yt-parse compares it with the
+// recorded output of tests/fixtures/youtube.
+static NSString *canonicalItem(SFItem *i) {
+    NSMutableDictionary *d = [[i dictionaryRepresentation] mutableCopy];
+    [d removeObjectForKey:@"date"];
+    if (i.date) d[@"ageHours"] = @(lround(-i.date.timeIntervalSinceNow / 3600));
+    NSMutableArray *parts = [NSMutableArray new];
+    for (NSString *k in [d.allKeys sortedArrayUsingSelector:@selector(compare:)]) [parts addObject:[NSString stringWithFormat:@"%@=%@", k, d[k]]];
+    return [parts componentsJoinedByString:@" | "];
+}
+static NSString *SFParseDump(NSString *kind, NSData *data) {
+    id j = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
+    NSMutableString *o = [NSMutableString new];
+    NSArray *items = @[]; NSMutableArray *channels = [NSMutableArray new]; NSString *cont = nil;
+    if ([kind isEqualToString:@"feed"]) items = [SFYouTubeApp feedItemsIn:j];
+    else if ([kind isEqualToString:@"header"]) [o appendFormat:@"avatar %@\n", channelAvatar(j)];
+    else items = [SFYouTubeApp videosIn:j cont:&cont channels:channels];
+    for (SFItem *i in items) [o appendFormat:@"item %@\n", canonicalItem(i)];
+    for (SFItem *c in channels) [o appendFormat:@"channel %@\n", canonicalItem(c)];
+    [o appendFormat:@"continuation %@\n", cont.length ? @"yes" : @"no"];
+    return o;
+}
+
 + (BOOL)handleDevCommand:(NSString *)cmd arg:(NSString *)arg host:(id<SFPlayerHost>)host {
     SFNavigator *nav = [host nav];
     if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"pair"]) {   // pairing code screen
@@ -1284,6 +1308,11 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
         NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
         f.pageLoader = [self channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(nav, f, nil, 0);
+    } else if ([cmd isEqualToString:@"ytparse"] && arg) {   // parser golden test: ytparse <list|feed|header|watch> <in.json> <out.txt>
+        NSArray *a = [arg componentsSeparatedByString:@" "];
+        if (a.count != 3) { SFLog(@"dev: ytparse needs <kind> <in> <out>"); return YES; }
+        [SFParseDump(a[0], [NSData dataWithContentsOfFile:a[1]]) writeToFile:a[2] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        SFLog(@"dev: ytparse written %@", a[2]);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // play a video from the start (startup tests)
         SFItem *it = [self itemForVideoID:[arg substringFromIndex:3]];
         [self fillDetails:it done:^{
