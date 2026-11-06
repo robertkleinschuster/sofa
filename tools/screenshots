@@ -60,7 +60,7 @@ if [ $reseed = 1 ] || [ "$(Q 'select count(*) from follows')" != "$(echo "$CHANN
            FROM follow_items WHERE pos = 0) WHERE dur > 0"
   echo "  $(Q 'select count(*) from progress') videos started"
 fi
-defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # fresh settings of this instance (show welcome/questions)
+{ defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # fresh settings of this instance (show welcome/questions)
 start
 # shot <name> <wait>: wait (images load), render, store as JPEG (1600 px wide)
 shot() {

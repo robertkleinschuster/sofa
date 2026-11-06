@@ -28,7 +28,10 @@
 #  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
 #      media) a YouTube live plays through the sidecar's HLS playlist
 #
-#   tools/test-playback            all checks
+#   tools/test-playback            all checks: two parts side by side, each in its own dev instance
+#                                  (part a: 1-7, part b: 8, 8c, 8b and the opt-in ones - they wait
+#                                  for playback, not for the CPU)
+#   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
 #   PLAYTEST_SHOTS=dir             keep the screenshots there
 # Exit code 0 = all ok.
@@ -36,7 +39,19 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=${PLAYTEST_INSTANCE:-playtest} PORT=${PLAYTEST_PORT:-47994}
+PART=${PLAYTEST_PART:-}
+if [ -z "$PART" ]; then   # both parts at once, each with its own instance; output part by part
+  make -C "$SRC" >/dev/null || exit 1
+  O="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playparts.XXXXXX")"
+  PLAYTEST_PART=a PLAYTEST_INSTANCE=playtest-a PLAYTEST_PORT=47997 "$0" > "$O/a" 2>&1 & A=$!
+  PLAYTEST_PART=b PLAYTEST_INSTANCE=playtest-b PLAYTEST_PORT=47998 "$0" > "$O/b" 2>&1 & B=$!
+  wait $A; ra=$?; wait $B; rb=$?
+  grep -v '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b" -h
+  rm -rf "$O"
+  [ $ra = 0 ] && [ $rb = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
+fi
+want() { [ "$PART" = "$1" ]; }
+INST=${PLAYTEST_INSTANCE:-playtest-$PART} PORT=${PLAYTEST_PORT:-47997}
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -80,12 +95,13 @@ ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow
 cleanup() {
   [ -n "$APP" ] && { kill $APP 2>/dev/null; wait $APP 2>/dev/null; }
   # this instance's settings (section 6) - after the app is gone, or its last write brings them back
-  defaults delete de.sofa.dev.$INST >/dev/null 2>&1
+  { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
   rm -rf "$T"
 }
 trap cleanup EXIT
 SQL=/opt/local/bin/sqlite3; sqlite3() { "$SQL" "$@"; }
 
+if want a; then
 echo "==> 1. playback right after launch"
 start
 m=$(mark); cmd "play $T/local.mp4|$ORF"; waitlog $m 'player: play local.mp4'
@@ -143,7 +159,7 @@ start
 m=$(mark); cmd "playlist $T/subs.mp4"
 waitlog $m 'subtitles .*remembered language' && ok "subtitles applied automatically" \
   || bad "remembered subtitle preference not applied: $(since $m | grep -i 'subtitle\|player:' | tail -2)"
-defaults delete de.sofa.dev.$INST >/dev/null 2>&1
+{ defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
 stop
 
 echo "==> 7. stream stops delivering -> stall watchdog"
@@ -171,6 +187,9 @@ since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable fa
 kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
 stop
 
+fi   # part a
+if want b; then
+start; stop   # the instance creates its database (section 8 writes a download into it before its start)
 echo "==> 8. YouTube end screen (fake data, offline)"
 # thumbnails + a "downloaded" copy of the first tile's video: OK on it plays a local file, no network
 "$FF" -hide_banner -loglevel error -y -f lavfi -i mandelbrot=size=640x360 -frames:v 1 "$T/es1.png"
@@ -266,5 +285,6 @@ if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then
   stop
 fi
 
+fi   # part b
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

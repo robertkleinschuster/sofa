@@ -37,7 +37,7 @@ run() {   # start the instance until its store is open, then quit
   for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
   kill $APP 2>/dev/null; APP=
 }
-trap '[ -n "$APP" ] && kill $APP 2>/dev/null; defaults delete de.sofa.dev.$INST >/dev/null 2>&1; rm -rf "$T"' EXIT
+trap '[ -n "$APP" ] && kill $APP 2>/dev/null; { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1; rm -rf "$T"' EXIT
 
 echo "==> legacy database (0.3.8)"
 mkdir -p "$SOFA_DATA_DIR"

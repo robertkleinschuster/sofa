@@ -2,7 +2,7 @@
 # test-all -- every offline/dev regression suite; make-release refuses to build when one fails.
 # Each suite runs in its own invisible dev instance with its own fresh data directory
 # (SOFA_DATA_DIR, docs/architecture.md "Dev instances") and never touches the real app or its
-# data, and makes no network request - so the suites run side by side (~1 min). --serial: one after another.
+# data, and makes no network request - so the suites run side by side (~50 s). --serial: one after another.
 #   tools/check-arch      layer rules of docs/architecture.md (static)
 #   tools/test-units      pure core functions (tests/units, no app instance)
 #   tools/test-parse   every app's parser against recorded real answers

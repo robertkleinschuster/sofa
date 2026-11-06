@@ -11,7 +11,7 @@ set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=parse PORT=47994
+INST=parse PORT=47999
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-parse.XXXXXX")"
 export SOFA_DATA_DIR="$T/data" SOFA_OFFLINE=1
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -22,7 +22,7 @@ fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 
 make -C "$SRC" >/dev/null || exit 1
 APP=
-trap '[ -n "$APP" ] && kill $APP 2>/dev/null; defaults delete de.sofa.dev.$INST >/dev/null 2>&1; rm -rf "$T"' EXIT
+trap '[ -n "$APP" ] && kill $APP 2>/dev/null; { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1; rm -rf "$T"' EXIT
 : > "$LOG"
 "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
 for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.1; done

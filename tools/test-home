@@ -54,7 +54,7 @@ rows() {   # rows TOPIC: the ids/badges of the row as Home shows it now
 has() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
 cleanup() {
   [ -n "$APP" ] && quit
-  defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings: fresh per run
+  { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # this instance's settings: fresh per run
   rm -rf "$T"
 }
 trap cleanup EXIT

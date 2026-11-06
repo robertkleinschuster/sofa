@@ -43,13 +43,13 @@ EOF
 /opt/local/bin/python3.14 -m http.server --bind 127.0.0.1 --directory "$T/www" $PORT >/dev/null 2>&1 &
 SRV=$!
 rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"
-defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings only
+{ defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # this instance's settings only
 : > "$LOG"
 SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
 APP=$!
 keep=0
 # settings deleted after the app is gone (its last write would bring them back)
-trap 'kill $APP $SRV 2>/dev/null; wait $APP 2>/dev/null; defaults delete de.sofa.dev.$INST >/dev/null 2>&1
+trap 'kill $APP $SRV 2>/dev/null; wait $APP 2>/dev/null; { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
       rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"; [ $keep = 1 ] || rm -rf "$T"' EXIT
 for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
 cmd() { echo "$*" 1<>"$FIFO"; }
