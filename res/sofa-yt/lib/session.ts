@@ -59,6 +59,8 @@ export interface PumpRequest {
 
 export interface PumpHandle {
   abort(): void;
+  /** What the source last said about this run, for stall reports (e.g. SABR's protection status, backoff). */
+  diag?(): string;
 }
 
 export type StartPump = (o: PumpRequest) => PumpHandle;
@@ -518,7 +520,8 @@ export class PlaybackSession {
     const sec = (ms: number) => (ms / 1000).toFixed(1);
     const pumps = [...this.pumps].map((p) => {
       const fr = [...p.frontier].map(([tr, ms]) => `${tr.key}@${sec(ms)}`).join('/') || '-';
-      return `@${sec(p.startMs)} ${p.video ? 'video+' : ''}${p.audio.key} seg=${p.delivered} to=${fr} idle=${sec(now - p.lastDataAt)}s`;
+      const said = p.handle?.diag?.();
+      return `@${sec(p.startMs)} ${p.video ? 'video+' : ''}${p.audio.key} seg=${p.delivered} to=${fr} idle=${sec(now - p.lastDataAt)}s${said ? ` ${said}` : ''}`;
     });
     const demands = t.demands(now).map((d) => {
       const sat = t.satisfied(d);

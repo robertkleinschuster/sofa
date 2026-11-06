@@ -64,7 +64,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     poToken: o.poToken,
     callbacks: {
       onMintPoToken: () => o.mintPoToken(),
-      onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
+      onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { reloads++; log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
     },
   });
 
@@ -91,7 +91,21 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     };
   }
 
-  sabr.on('streamProtectionStatusUpdate', (sps) => { if (sps?.status !== 1) debug(`${tag}: SPS ${sps?.status}`); });
+  // what the server last said, for the session's stall report (2026-11-06: runs that stop at 60 s)
+  let sps = 0, spsAt = 0, redirects = 0, reloads = 0;
+  sabr.on('streamProtectionStatusUpdate', (s) => {
+    sps = s?.status ?? 0; spsAt = Date.now();
+    if (sps !== 1) debug(`${tag}: SPS ${sps}`);
+  });
+  const setUrl = sabr.setStreamingURL.bind(sabr);
+  sabr.setStreamingURL = (url: string | URL) => { redirects++; setUrl(url); };
+  /** The server's last word on this run: protection status, requested backoff, the player time we report. */
+  const diag = (): string => {
+    const backoff = sabr['nextRequestPolicy']?.backoffTimeMs || 0;
+    const player = Number(sabr['runtime']?.playerTimeMs ?? -1);
+    return `[sps=${sps}${spsAt ? `@${((Date.now() - spsAt) / 1000).toFixed(0)}s` : ''} backoff=${backoff}ms`
+      + ` player=${(player / 1000).toFixed(1)}s reloads=${reloads} redirects=${redirects}]`;
+  };
   sabr.on('error', (e) => end(e instanceof Error ? e : new Error(String(e)), 'error'));
   // 'finish' closes both streams; the readers below report it once they drained every chunk
 
@@ -147,5 +161,6 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
       sabr.abort().catch(() => {});
       end(null, 'aborted');
     },
+    diag,
   };
 }
