@@ -91,6 +91,11 @@ static NSArray *videos(NSString *filter) {
     done(nil, SFError(@"Video nicht gefunden"));
 }
 
+// Session streams (an app service behind the URL, like YouTube's sidecar): tests make the Example
+// app's streams count as such (SOFA_EXAMPLE_SESSION=1) to exercise the player's session recovery.
++ (BOOL)playbackIsSession:(NSDictionary *)source { return SFDevEnv(@"SOFA_EXAMPLE_SESSION") != nil; }
++ (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why { SFLog(@"example: session failed (%@)", why); }
+
 + (SFPageLoader)showPageLoader:(NSString *)ref title:(NSString *)title {
     return ^(SFPageDone done) {
         done([SFPage page:title ?: @"Beispielsendung" theme:[self appIdentifier]

@@ -19,6 +19,9 @@
 #      tiles follow the timeline (also while paused), DOWN enters, arrows move, follow toggles,
 #      MENU leaves without touching playback, OK on a video plays it (a "downloaded" test video),
 #      the end of the video waits while the tiles have focus
+#   8b. a session stream (app service, e.g. YouTube's sidecar) that breaks again right after being
+#      reopened ends in a message - one reopen, no loop (2026-11-06: without the yt-dlp fallback the
+#      second failure would otherwise reopen forever)
 #   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
 #  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
 #      media) a YouTube live plays through the sidecar's HLS playlist
@@ -205,6 +208,17 @@ sleep 1.5; since $m | grep -q 'player: end ->' && bad "end flow ran while the ti
 m2=$(mark); cmd "key menu"; waitlog $m2 'player: end -> leaving' 12 && ok "leaving the tiles finishes the end" || bad "end flow did not run after MENU"
 stop
 unset SOFA_OFFLINE
+
+echo "==> 8b. session stream that keeps breaking: one reopen, then a message"
+export SOFA_EXAMPLE_SESSION=1 SOFA_EXAMPLE_MEDIA=http://127.0.0.1:1/gone.webm
+start
+m=$(mark); cmd "play example:3"; waitlog $m 'session stream failed again' 60   # not downloaded (section 5 has example:1)
+n=$(since $m | grep -c 'example: session failed')
+[ "$n" = 1 ] && ok "reopened once" || bad "reopens: $n"
+since $m | grep -q 'session stream failed again right after reopening' && ok "then a message instead of a loop" || bad "no final message: $(since $m | grep 'player:\|example:' | tail -3)"
+sleep 2; [ "$(since $m | grep -c 'example: session failed')" = 1 ] && ok "no further reopen" || bad "kept reopening"
+stop
+unset SOFA_EXAMPLE_SESSION SOFA_EXAMPLE_MEDIA
 
 if [ -n "${SOFA_YT_LIVE:-}" ]; then
   echo "==> 9. SABR playback + sidecar crash (YouTube media)"
