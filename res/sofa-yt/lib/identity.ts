@@ -46,6 +46,11 @@ export function identityFor(major: number): Identity {
   };
 }
 
+/** The browser fields a Chrome page puts in the InnerTube context (client.browserName/Version). */
+export function browserContext(id: Identity): { browserName: string; browserVersion: string } {
+  return { browserName: 'Chrome', browserVersion: `${id.chromeMajor}.0.0.0` };
+}
+
 /** The current stable Chrome major from the version history: {"versions":[{"version":"142.0.7444.60"}]} */
 export function majorFromVersionHistory(body: unknown): number | null {
   const v = (body as { versions?: { version?: unknown }[] } | null)?.versions?.[0]?.version;

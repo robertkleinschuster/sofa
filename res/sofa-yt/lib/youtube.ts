@@ -7,7 +7,7 @@
 // serverAbrStreamingUrl must be transformed with the SAME player whose signatureTimestamp went into
 // the player request, otherwise SABR answers 403. Hence the player object is captured before the
 // request and used for deciphering right after it; only the deciphered URL is cached.
-import { LANG, LOCATION, TIMEZONE, loadVisitor, saveVisitor } from './identity.ts';
+import { LANG, LOCATION, TIMEZONE, browserContext, loadVisitor, saveVisitor } from './identity.ts';
 import type { Identity } from './identity.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -344,6 +344,11 @@ export class YouTube {
           }), SESSION_TIMEOUT_MS, 'Innertube session');
           if (!yt.session.player) throw new Error('no player script');
           saveVisitor(this.stateDir, yt.session.context.client.visitorData ?? '');
+          // sw.js_data no longer names the browser (2026-11-06: undefined); the page's own context
+          // carries it - the identity's, not a guess
+          const bc = browserContext(this.identity);
+          yt.session.context.client.browserName ||= bc.browserName;
+          yt.session.context.client.browserVersion ||= bc.browserVersion;
           this.yt = yt;
           this.ytCreated = Date.now();
           this.ytState = 'ready';

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { identityFor, majorFromVersionHistory, loadIdentity, loadVisitor, saveVisitor, CookieJar, browserFetch } from '../../res/sofa-yt/lib/identity.ts';
+import { identityFor, browserContext, majorFromVersionHistory, loadIdentity, loadVisitor, saveVisitor, CookieJar, browserFetch } from '../../res/sofa-yt/lib/identity.ts';
 import { startApp, tempDir } from './helpers.ts';
 
 test('user agent is a complete current Chrome with matching client hints', () => {
@@ -12,6 +12,10 @@ test('user agent is a complete current Chrome with matching client hints', () =>
   assert.match(id.headers['sec-ch-ua']!, /"Google Chrome";v="142"/);
   assert.equal(id.headers['sec-ch-ua-platform'], '"macOS"');
   assert.match(id.headers['accept-language']!, /^de-AT/);
+});
+
+test('InnerTube browser fields match the user agent', () => {
+  assert.deepEqual(browserContext(identityFor(158)), { browserName: 'Chrome', browserVersion: '158.0.0.0' });
 });
 
 test('Chrome major from the version history, nonsense refused', () => {
