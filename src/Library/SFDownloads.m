@@ -348,7 +348,10 @@ static NSString *gb(unsigned long long b) {
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
     [self retryDueRepairs];   // due repairs go now, the others are scheduled for when they become due
-    // subscriptions: shortly after start, then every 3 h; cleanup on every check
+    // subscriptions: a follow with news (its own refresh plan), plus all of them locally shortly
+    // after start and every 3 h with the repairs
+    [[NSNotificationCenter defaultCenter] addObserverForName:SFFollowsNewItemsNotification object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *n) { NSMutableDictionary *s = self->_subs[n.object]; if (s) [self checkSub:s]; }];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
     _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
 }

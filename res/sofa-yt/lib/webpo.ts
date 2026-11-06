@@ -9,6 +9,7 @@ import type { DOMWindow } from 'jsdom';
 import { errorMessage } from './errors.ts';
 import { isRecord, optNumber, optString, parseJson } from './json.ts';
 import { log } from './log.ts';
+import type { Identity } from './identity.ts';
 
 /** What the provider needs from a minter (a test may pass a fake factory). */
 export type Minter = Pick<WebPoMinter, 'mint' | 'mintAsWebsafeString'>;
@@ -35,18 +36,19 @@ const FETCH_TIMEOUT_MS = 15000;
 const RETRY_MIN_MS = 60 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
 
-async function createMinter(): Promise<MinterSetup> {
+async function createMinter(identity: Identity): Promise<MinterSetup> {
   const { JSDOM } = await import('jsdom');
   const { BotGuardClient } = await import('bgutils-js/botguard');
   const { WebPoMinter } = await import('bgutils-js/webpo');
-  const { getHeaders, buildURL, USER_AGENT, parseLooseJSON } = await import('bgutils-js/utils');
+  const { getHeaders, buildURL, parseLooseJSON } = await import('bgutils-js/utils');
   const t0 = performance.now();
   const sig = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
-  const dom = new JSDOM('<!DOCTYPE html><html lang="en"><head><title></title></head><body></body></html>', {
-    url: 'https://www.youtube.com', referrer: 'https://www.youtube.com/', userAgent: USER_AGENT,
+  const dom = new JSDOM('<!DOCTYPE html><html lang="de-AT"><head><title></title></head><body></body></html>', {
+    url: 'https://www.youtube.com', referrer: 'https://www.youtube.com/', userAgent: identity.userAgent,
   });
+  // a page load: the browser's headers come from the process-wide fetch (identity.ts)
   const pageHtml = await (await fetch('https://www.youtube.com', {
-    headers: { accept: '*/*', 'accept-language': 'en-US,en;q=0.7', 'user-agent': USER_AGENT }, signal: sig(),
+    headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }, signal: sig(),
   })).text();
   const ytConfig = pageHtml.match(/ytcfg\.set\(({.+?})\);/s)?.[1];
   if (!ytConfig) throw new Error('webpo: ytcfg not found in page');
@@ -104,8 +106,9 @@ export class PoTokenProvider {
   nextTry: number;
   lastError: string | null;
 
-  constructor({ factory = createMinter }: { factory?: () => Promise<MinterSetup> } = {}) {
-    this.factory = factory;
+  constructor({ identity, factory }: { identity?: Identity; factory?: () => Promise<MinterSetup> } = {}) {
+    if (!factory && !identity) throw new Error('PoTokenProvider needs an identity (or a test factory)');
+    this.factory = factory ?? (() => createMinter(identity!));
     this.state = 'pending';
     this.current = null; // {minter, expiresAt}
     this.inflight = null;

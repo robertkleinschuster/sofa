@@ -18,6 +18,8 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 + (void)startMonitoring;
 + (void)getJSON:(NSString *)url headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
+// with the cache key given (a local service on a changing port: the key names what is asked, not where)
++ (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age done:(SFJSONDone)done;
 + (NSString *)userAgent;
 // Percent-encoding for path/query parts (everything except A-Z a-z 0-9 - . _ ~)
 + (NSString *)escape:(NSString *)s;

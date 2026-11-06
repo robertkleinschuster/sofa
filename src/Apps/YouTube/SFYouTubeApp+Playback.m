@@ -109,7 +109,9 @@ static NSString *sabrFinal(NSError *e) {
 }
 
 // First choice: SABR via the sofa-yt sidecar (looks like the web player: one request per video,
-// passes where yt-dlp gets bot checks). Needs mpv (local WebM/MP4 tracks). Any failure -> yt-dlp.
+// passes where yt-dlp gets bot checks). Needs mpv (local WebM/MP4 tracks). yt-dlp only where the
+// sidecar can't play the video - never as a second asker when YouTube did not answer (`unanswered`)
+// or refused (bot check): that would be another identity requesting the same video.
 static void playOnline(NSString *vid, SFURLDone done) {
     SFYTSabr *sabr = [SFYTSabr shared];
     if (![sabr usableFor:vid]) {
@@ -120,6 +122,7 @@ static void playOnline(NSString *vid, SFURLDone done) {
         if (!r) {
             NSString *msg = sabrFinal(e);
             if (msg) { SFCount([e.userInfo[@"bot"] boolValue] ? @"yt.play.bot-check" : @"yt.play.not-on-air"); done(nil, SFError(msg)); return; }
+            if ([e.userInfo[@"unanswered"] boolValue]) { SFCount(@"yt.play.unanswered"); done(nil, SFError(@"YouTube antwortet gerade nicht.")); return; }
             if ([e.userInfo[@"live"] boolValue]) [sabr markFailed:vid];   // live the sidecar can't play: yt-dlp directly next time
             SFLog(@"yt: SABR unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
             SFCount(@"yt.play.ytdlp.sidecar-error");
@@ -150,6 +153,7 @@ static void playLive(NSString *vid, SFURLDone done) {
         if (!r) {
             NSString *msg = sabrFinal(e);
             if (msg) { SFCount([e.userInfo[@"bot"] boolValue] ? @"yt.live.bot-check" : @"yt.live.not-on-air"); done(nil, SFError(msg)); return; }
+            if ([e.userInfo[@"unanswered"] boolValue]) { SFCount(@"yt.live.unanswered"); done(nil, SFError(@"YouTube antwortet gerade nicht.")); return; }
             SFLog(@"yt: SABR live unavailable for %@ (%@) -> yt-dlp", vid, e.localizedDescription);
             SFCount(@"yt.live.ytdlp.sidecar-error");
             ytdlpLive(vid, done); return;
@@ -274,6 +278,8 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
             // a bot check pauses both paths alike (SFYTSabr noted it in SFYTBreaker): no yt-dlp
             // request; the download is deferred without using up an attempt
             if ([e.userInfo[@"bot"] boolValue]) { SFCount(@"yt.download.bot-check"); done(nil, nil, nil, e); return; }
+            // YouTube did not answer: a normal failed attempt (retried later), not yt-dlp asking instead
+            if ([e.userInfo[@"unanswered"] boolValue]) { SFCount(@"yt.download.unanswered"); done(nil, nil, nil, e); return; }
             SFLog(@"yt: SABR download of %@ unavailable (%@) -> yt-dlp", vid, e.localizedDescription);
             SFCount(@"yt.download.ytdlp.sidecar-error");
             viaYTDLP(); return;

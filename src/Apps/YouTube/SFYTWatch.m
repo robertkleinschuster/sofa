@@ -25,30 +25,33 @@
     }];
 }
 
+// title, channel, description of a video known only by its ID (phone queue, dev): from the watch page
+// ("next", as a browser opening it) - never a player request of our own: that is the sidecar's job,
+// with a PO token, when the video actually plays (and brings the duration then)
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done {
     if (item.localPath || !item.externalID) { if (done) done(); return; }
-    SFYTCall(@"player", @{@"videoId": item.externalID, @"contentCheckOk": @YES, @"racyCheckOk": @YES}, 3600, ^(id j, NSError *e) {
-        NSDictionary *vd = dict(dict(j)[@"videoDetails"]);
-        if (vd) {
-            item.title = str(vd[@"title"]) ?: item.title;
-            item.channel = str(vd[@"author"]);
+    SFYTCall(@"next", @{@"videoId": item.externalID}, 1800, ^(id j, NSError *e) {
+        NSDictionary *d = [SFYTParser watchDetailsIn:j];
+        if (d.count) {
+            item.title = d[@"title"] ?: item.title;
+            item.channel = d[@"channel"] ?: item.channel;
             item.subtitle = item.channel;
-            item.plot = str(vd[@"shortDescription"]);
-            item.duration = [str(vd[@"lengthSeconds"]) doubleValue];
-            if ([vd[@"isLive"] boolValue] || ([vd[@"isLiveContent"] boolValue] && item.duration == 0)) {
+            item.plot = d[@"description"] ?: item.plot;
+            if ([d[@"channelID"] length]) item.showRef = [@"ytchannel:" stringByAppendingString:d[@"channelID"]];
+            if ([d[@"live"] boolValue]) {
                 item.kind = SFItemLive; item.badge = @"LIVE";
                 item.resolverRef = [@"ytlive:" stringByAppendingString:item.externalID];
             }
             item.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", item.externalID];
             item.backdrop = SFYTBackdrop(item.externalID);
         }
-        if (done) done();
+        SFMain(^{ if (done) done(); });
     });
 }
 
 + (void)channelOf:(NSString *)vid done:(void (^)(NSString *))done {
-    SFYTCall(@"player", @{@"videoId": vid}, 86400, ^(id j, NSError *e) {
-        NSString *cid = str(SFYTPath(j, @"videoDetails.channelId"));
+    SFYTCall(@"next", @{@"videoId": vid}, 1800, ^(id j, NSError *e) {   // the same cached answer as the info panel
+        NSString *cid = [SFYTParser watchDetailsIn:j][@"channelID"];
         SFMain(^{ done([cid hasPrefix:@"UC"] ? cid : nil); });
     });
 }

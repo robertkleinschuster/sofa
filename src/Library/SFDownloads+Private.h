@@ -56,7 +56,7 @@ static NSString *const kRepairPrefix = @"repair: ";
     NSMutableDictionary *_subs;      // id -> NSMutableDictionary
     NSTask *_task;
     NSString *_runningID;
-    BOOL _started, _checking;
+    BOOL _started;
     NSTimer *_checkTimer;
     NSTimeInterval _pauseWake;
     NSTimeInterval _repairWake;  // retryDueRepairs scheduled for this time (epoch)
@@ -84,6 +84,10 @@ static NSString *const kRepairPrefix = @"repair: ";
 - (NSString *)itemJSON:(SFItem *)item;
 + (NSString *)ffmpegToolPath;
 + (NSString *)root;
+@end
+
+@interface SFDownloads (SubscriptionsPrivate)
+- (void)checkSub:(NSMutableDictionary *)s;   // against its follow's list (no request)
 @end
 
 // Worker (SFDownloads+Worker.m): next download, ffmpeg run, install, outcome

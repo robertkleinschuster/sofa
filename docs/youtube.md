@@ -8,9 +8,9 @@ identity, and every request to YouTube is counted and justified.**
 
 | Layer | What | Runs |
 |---|---|---|
-| Browsing | InnerTube `browse`/`search`/`next` from ObjC (`SFYTInnerTube` request, `SFYTParser` meaning, `SFYTPages`; modules: `SFYouTubeApp.h`) | in the app |
+| Browsing | InnerTube `browse`/`search`/`next`/`navigation/resolve_url` built and parsed in ObjC (`SFYTInnerTube` request, `SFYTParser` meaning, `SFYTPages`; modules: `SFYouTubeApp.h`), **sent by the sidecar's session** (`POST /yt/<endpoint>`); search suggestions via `GET /suggest` | in the app, transport in the sidecar |
 | **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted); **PO tokens for the fallback** (`GET /pot`) | always (node, ~50 MB) |
-| yt-dlp fallback (`res/ytresolver.py`, `SFYTResolver`) | only when the sidecar could not serve a video (error other than a bot check, video marked failed after two SABR failures, no mpv); one client per request; tokens from the sidecar via Sofa's own provider plugin (`res/yt-dlp-plugins`, provider "Sofa") | **on demand**, ends after 10 min idle |
+| yt-dlp fallback (`res/ytresolver.py`, `SFYTResolver`) | only when the sidecar could not serve a video (video marked failed after two SABR failures, a live it can't play, no mpv) - never after a bot check or when YouTube did not answer (`unanswered`: network, timeout, no session/PO token; asking again as another client would be a second identity); one client per request; tokens from the sidecar via Sofa's own provider plugin (`res/yt-dlp-plugins`, provider "Sofa") | **on demand**, ends after 10 min idle |
 | Breaker (`SFYTBreaker`, shared file `Caches/Sofa/yt-dlp/youtube-block.json`) | a bot check pauses background work (preloads, downloads) 5 min → 1 h; playback never falls back to the other path after a bot check | both paths read/write it |
 | Counters (`SFStats`, table `stats`) | `yt.play.sabr`, `yt.play.ytdlp.<reason>`, `yt.download.*`, `yt.live.*`, `yt.ytdlp.ok/failed`, `player.<fallback step>` per day | dev command `stats [days]` |
 
@@ -20,6 +20,26 @@ BotGuard library; the resolver warm-up (the sidecar warms up, and yt-dlp is no l
 path); yt-dlp preloading. **Fallbacks stay as long as the counters show they are needed** (user
 2026-11-05): yt-dlp is an independent implementation that is updated daily (signed), the sidecar's
 libraries only with Sofa updates.
+
+### One identity, human cadence (2026-11-06)
+
+Diagnosis of the recurring bot checks (first 2026-11-05 16:30, production logs): Sofa looked like two
+machines on one IP - native requests with a Safari UA over libcurl, no cookies/visitorData, a
+hard-coded clientVersion, `player` requests without PO token; the sidecar with a truncated UA without
+browser version and `en-US` - plus a dead RSS feed asked 135× per cycle, every followed channel
+refreshed back to back every 30 min around the clock, and yt-dlp asking as three more clients when
+the sidecar got no answer. Fixed causes:
+- **One browser** (`res/sofa-yt/lib/identity.ts`): a current desktop Chrome on a Mac (major from
+  Chrome's public version history, weekly), its client hints, `de-AT`/`AT`/`Europe/Vienna`, and a
+  cookie jar (`<state>/cookies.json`, 0600, never logged) - set on the global fetch, so InnerTube,
+  BotGuard/WebPO, captions and SABR all send it. The app sends **no** request to youtube.com itself:
+  every InnerTube call goes through `POST /yt/<endpoint>` (`player` refused there - only the sidecar
+  asks it, with a PO token; the watch details come from `next`).
+- **Cadence like a person** (`SFRefreshPlan`, `SFFollows`): each followed channel is checked on its
+  own schedule - a quarter of its median upload gap, 45 min .. 6 h (2 h with fewer than 3 dates),
+  ±20 % jitter, doubled at night (0-6 h), at least 20-40 s between two checks; `follows.checked`
+  persists it across launches. Subscriptions use the followed lists (no requests of their own).
+- No RSS (gone since 2026-11-05 ~21:30, HTTP 404), no table `feed_cache`.
 
 Everything ships in the app bundle (user requirement): node, Python, yt-dlp, the sidecar's
 node_modules - nothing to install.
@@ -71,6 +91,10 @@ All numbers below are measurements from this machine.
 ## 1. Transport basics
 
 ### 1.1 Endpoint & headers
+
+Since 2026-11-06 Sofa sends these requests only through the sidecar's youtubei.js session (one
+identity, see the concept above); the headers and clientVersion below are the research record, the
+session sets its own (current clientVersion from the page, Chrome UA, cookies).
 
 ```
 POST https://www.youtube.com/youtubei/v1/<endpoint>?prettyPrint=false
@@ -432,11 +456,11 @@ continuation item that is the *last element of the item list*.
 InnerTube lists (browse, search, channel tabs, lockups) carry only relative text
 (`publishedTimeText` / metadata parts: "vor 11 Tagen", "vor 1 Jahr") – no timestamp anywhere in
 the entry (checked 2026-11-05). Exact sources, in Sofa's order of use:
-- **Feeds** (follows, "Neue Folgen", auto downloads): RSS of the uploads-without-Shorts playlist,
-  `https://www.youtube.com/feeds/videos.xml?playlist_id=UULF<channel id without UC>` – 15 newest
-  entries, `<published>` ISO 8601 to the second, ~0.5 s, outside InnerTube. Also Sofa's change
-  detector: while the RSS video list is unchanged, the last InnerTube feed answer is reused (up to
-  a week), so most follow refreshes cost no InnerTube request.
+- **Feeds** (follows, "Neue Folgen", auto downloads): until 2026-11-05 the RSS of the
+  uploads-without-Shorts playlist (`feeds/videos.xml?playlist_id=UULF…`, `<published>` to the
+  second); it answers HTTP 404 since then and was removed. Feeds are now InnerTube `browse` of
+  `VLUULF<channel id without UC>` (relative dates only), one per follow on its own schedule
+  (`SFRefreshPlan`).
 - **Player response**: `microformat.playerMicroformatRenderer.publishDate` / `uploadDate`
   ("2019-01-09T06:03:03-08:00"); the sidecar returns it as `published` (epoch s) from `/open`,
   yt-dlp as `timestamp`. Downloads store this exact time (SFDownloadURLDone info).

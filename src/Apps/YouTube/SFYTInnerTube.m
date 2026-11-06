@@ -1,15 +1,25 @@
 #import "SFYTInnerTube.h"
+#import "SFYTSabr.h"
+#import "SFStore.h"
 
-static NSString *const kClientVersion = @"2.20261030.02.00";
-static NSString *const kOrigin = @"https://www.youtube.com";
-
-void SFYTCall(NSString *endpoint, NSDictionary *body, NSTimeInterval cacheAge, SFJSONDone done) {
-    NSMutableDictionary *b = [body mutableCopy];
-    b[@"context"] = @{@"client": @{@"clientName": @"WEB", @"clientVersion": kClientVersion, @"hl": @"de", @"gl": @"AT"}};
-    NSDictionary *h = @{@"X-Youtube-Client-Name": @"1", @"X-Youtube-Client-Version": kClientVersion, @"Origin": kOrigin};
-    NSString *url = [NSString stringWithFormat:@"https://www.youtube.com/youtubei/v1/%@?prettyPrint=false", endpoint];
-    [SFNet postJSON:url body:b headers:h cacheAge:cacheAge done:done];
+static void call(NSString *endpoint, NSDictionary *body, NSTimeInterval age, BOOL bg, SFJSONDone done) {
+    NSData *b = [NSJSONSerialization dataWithJSONObject:body ?: @{} options:0 error:nil];
+    NSString *key = [NSString stringWithFormat:@"yt %@ %@", endpoint, b ? [[NSString alloc] initWithData:b encoding:NSUTF8StringEncoding] : @""];
+    id hit = age > 0 ? [[SFStore shared] cachedJSON:key maxAge:age] : nil;
+    if (hit) { SFMain(^{ done(hit, nil); }); return; }
+    SFMain(^{ [[SFYTSabr shared] whenReady:^(NSInteger port) {
+        if (!port) {   // no sidecar (yet): an older answer rather than none, never a request of our own
+            id stale = [[SFStore shared] cachedJSON:key maxAge:30 * 86400];
+            SFMain(^{ done(stale, stale ? nil : SFError(@"YouTube startet gerade.")); });
+            return;
+        }
+        NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:%ld/yt/%@%@", (long)port, endpoint, bg ? @"?bg=1" : @""];
+        [SFNet postJSON:url body:body ?: @{} headers:nil cacheKey:key cacheAge:age done:done];
+    }]; });   // SFYTSabr lives on the main thread
 }
+
+void SFYTCall(NSString *endpoint, NSDictionary *body, NSTimeInterval age, SFJSONDone done) { call(endpoint, body, age, NO, done); }
+void SFYTCallBackground(NSString *endpoint, NSDictionary *body, NSTimeInterval age, SFJSONDone done) { call(endpoint, body, age, YES, done); }
 
 id SFYTPath(id root, NSString *p) {
     id cur = root;

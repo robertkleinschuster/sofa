@@ -6,6 +6,8 @@
 //   GET /s/<sid>/subs/<key>.vtt
 //   GET /s/<sid>/status       (diagnostics)
 //   GET /close?sid=<sid>
+//   POST /yt/<endpoint>?bg=0|1   (browse, next, search, navigation/resolve_url: InnerTube for the app)
+//   GET /suggest?q=<prefix>     (search suggestions, as the web page's search box asks)
 import type http from 'node:http';
 import { PlaybackSession } from './session.ts';
 import type { PumpHandle, PumpRequest, SessionConfig } from './session.ts';
@@ -18,14 +20,15 @@ import { errorMessage, toError } from './errors.ts';
 import { log } from './log.ts';
 import type { Breaker } from './breaker.ts';
 import type { PoTokenProvider } from './webpo.ts';
-import type { EndscreenElement, HlsInfo, VodInfo, YouTube, YouTubeErrorFlags } from './youtube.ts';
+import type { AppEndpoint, EndscreenElement, HlsInfo, VodInfo, YouTube, YouTubeErrorFlags } from './youtube.ts';
+import { APP_ENDPOINTS } from './youtube.ts';
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 export const SESSION_IDLE_MS = 10 * 60 * 1000;
 export const MAX_SESSIONS = 4;
 
 /** What the app uses of YouTube / the PO token minter / the breaker (tests pass fakes). */
-export type AppYouTube = Pick<YouTube, 'sessionState' | 'info' | 'refresh' | 'forget' | 'webHeaders'> & Partial<Pick<YouTube, 'prune'>>;
+export type AppYouTube = Pick<YouTube, 'sessionState' | 'info' | 'refresh' | 'forget' | 'webHeaders'> & Partial<Pick<YouTube, 'prune' | 'innertube'>>;
 export type AppPo = Pick<PoTokenProvider, 'state' | 'mintString'>;
 export type AppBreaker = Pick<Breaker, 'blockedUntil'>;
 
@@ -43,6 +46,7 @@ export interface AppOptions {
   sweepMs?: number;
   fetchFn?: PlaylistFetch;
   liveCfg?: Partial<HlsConfig>;
+  suggestFetch?: typeof fetch;   // default: the process-wide (identity) fetch
 }
 
 export type Session = PlaybackSession | LiveSession;
@@ -119,6 +123,7 @@ export interface OpenFailure {
   id?: string;
   error: string;
   bot: boolean;
+  unanswered?: true;   // YouTube did not answer (YouTubeErrorFlags.unanswered): no other path should ask instead
   blocked_until: number;
   live?: true;
   upcoming?: true;
@@ -159,7 +164,7 @@ export function parseRange(header: string | undefined, total: number): { start: 
 const IN_USE_MS = 60000;   // read within this time = in use (mpv reconnects, pauses between reads)
 
 export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS, sweepMs = 30000,
-  fetchFn = fetch, liveCfg = {} }: AppOptions): App {
+  fetchFn = fetch, liveCfg = {}, suggestFetch = fetch }: AppOptions): App {
   const sessions = new Map<string, Session>();
   let port = 0;
   const fetchedTotal = { ms: 0, bytes: 0, runs: 0 }; // media pulled by closed sessions
@@ -304,7 +309,8 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
         return sendOpen(res, 200, { id: vid, error: String(e.message).slice(0, 300), live: true, bot: false, blocked_until: breaker.blockedUntil() });
       }
       log(`open ${vid}${bg ? ' (bg)' : ''} failed: ${e.message}`);
-      return sendOpen(res, 200, { id: vid, error: String(e.message).slice(0, 300), bot: !!e.bot, blocked_until: breaker.blockedUntil() });
+      return sendOpen(res, 200, { id: vid, error: String(e.message).slice(0, 300), bot: !!e.bot,
+        ...(e.unanswered ? { unanswered: true as const } : {}), blocked_until: breaker.blockedUntil() });
     }
     if (info.kind === 'hls') return sendOpen(res, 200, await openLive(info, { vid, bg, maxHeight, lang, cached, t0 }));
     // an existing healthy session for the same choice keeps its buffered media
@@ -396,6 +402,37 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     res.end(body);
   }
 
+  // InnerTube for the app (pages, feeds, watch page) in this process' one session; the app caches
+  async function appCall(endpoint: string, bg: boolean, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!(APP_ENDPOINTS as readonly string[]).includes(endpoint) || !youtube.innertube) return sendJson(res, 404, { error: 'unknown endpoint' });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req) { size += (c as Buffer).length; if (size > 64 * 1024) return sendJson(res, 413, { error: 'body too large' }); chunks.push(c as Buffer); }
+    let body: unknown;
+    try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return sendJson(res, 400, { error: 'body is not JSON' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'body must be an object' });
+    try {
+      return sendJson(res, 200, (await youtube.innertube(endpoint as AppEndpoint, body as Record<string, unknown>, { bg })) as object);
+    } catch (thrown) {
+      const e = toError(thrown) as Error & { bot?: boolean };
+      log(`yt ${endpoint}${bg ? ' (bg)' : ''} failed: ${e.message}`);
+      return sendJson(res, e.bot ? 503 : 502, { error: e.message, bot: !!e.bot, blocked_until: breaker.blockedUntil() });
+    }
+  }
+
+  // search suggestions in the browser identity (the process-wide fetch, identity.ts) - the request
+  // youtube.com's search box makes while typing
+  async function suggest(q: string, res: http.ServerResponse): Promise<void> {
+    if (!q || q.length > 200) return sendJson(res, 400, { error: 'q missing or too long' });
+    const u = new URL('https://suggestqueries-clients6.youtube.com/complete/search');
+    for (const [k, v] of Object.entries({ client: 'youtube', ds: 'yt', hl: 'de', gl: 'AT', oe: 'utf-8', xhr: 't', q })) u.searchParams.set(k, v);
+    try {
+      const r = await suggestFetch(u, { headers: { referer: 'https://www.youtube.com/' }, signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return sendJson(res, 502, { error: `suggestions: HTTP ${r.status}` });
+      return sendJson(res, 200, (await r.json()) as object);
+    } catch (e) { return sendJson(res, 502, { error: errorMessage(e) }); }
+  }
+
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // No keep-alive: on OS X 10.9 node's server misses requests arriving on an idle kept-alive socket
     // until keepAliveTimeout closes it (measured: 2.5 s with the default timeout, 27.5 s with 30 s).
@@ -403,6 +440,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
     res.setHeader('Connection', 'close');
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts[0] === 'yt' && req.method === 'POST') return appCall(parts.slice(1).join('/'), url.searchParams.get('bg') === '1', req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method not allowed' });
     if (url.pathname === '/health') {
       return sendJson(res, 200, { ok: true, session: youtube.sessionState, poToken: po.state, sessions: sessions.size,
@@ -410,6 +448,7 @@ export function createApp({ youtube, po, breaker, startPump, sessionCfg = {}, id
         bufferedMB: +([...sessions.values()].reduce((n, s) => n + s.bytes, 0) / 1048576).toFixed(1), fetched: fetchedNow() });
     }
     if (url.pathname === '/open') return open(url.searchParams, res);
+    if (url.pathname === '/suggest') return suggest(url.searchParams.get('q') || '', res);
     // PO token for yt-dlp (the fallback resolver): its token provider plugin (res/yt-dlp-plugins,
     // provider "sofa") asks here, so both YouTube paths use the one BotGuard identity of this
     // process. binding = yt-dlp's content binding (visitor data for GVS, video id for player).

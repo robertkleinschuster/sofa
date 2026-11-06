@@ -21,5 +21,5 @@ NSString *SFYTBackdrop(NSString *videoID);   // TV-sized picture of a video (fal
 // Watch page ("next"): related videos (no Shorts, not the video itself) and details (description,
 // channel, channelID, avatar, date) - keys only when found
 + (NSArray *)relatedIn:(id)next video:(NSString *)videoID;
-+ (NSDictionary *)watchDetailsIn:(id)next;
++ (NSDictionary *)watchDetailsIn:(id)next;   // title, description, channel, channelID, avatar, date, live (only what the page has)
 @end

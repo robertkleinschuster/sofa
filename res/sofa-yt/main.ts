@@ -56,6 +56,12 @@ if (!stateDir) { log('missing --state <dir>'); process.exit(2); }
 fs.mkdirSync(stateDir, { recursive: true });
 const blockFile = String(opt('block-file', path.join(stateDir, 'youtube-block.json')));
 
+// One browser identity for every request of this process (identity.ts): youtubei.js, BotGuard,
+// SABR and captions all use the global fetch - it carries the identity's headers and cookies.
+const { loadIdentity, CookieJar, browserFetch } = await import('./lib/identity.ts');
+const identity = await loadIdentity(stateDir);
+globalThis.fetch = browserFetch(identity, new CookieJar(path.join(stateDir, 'cookies.json')), globalThis.fetch);
+
 const { Breaker } = await import('./lib/breaker.ts');
 const { PoTokenProvider } = await import('./lib/webpo.ts');
 const { YouTube, PlayerBudget } = await import('./lib/youtube.ts');
@@ -63,14 +69,14 @@ const { startSabrPump } = await import('./lib/sabrpump.ts');
 const { createApp } = await import('./lib/app.ts');
 
 const breaker = new Breaker(blockFile);
-const po = new PoTokenProvider();
+const po = new PoTokenProvider({ identity });
 const maxReq = Number(opt('max-player-requests', 60));
 const budget = new PlayerBudget({
   file: String(opt('budget-file', path.join(stateDir, 'player-requests.json'))),
   max: maxReq > 0 ? maxReq : Infinity,
   windowS: Number(opt('budget-window', 3600)),
 });
-const youtube = new YouTube({ stateDir, breaker, po, budget });
+const youtube = new YouTube({ stateDir, identity, breaker, po, budget });
 
 /** Pump factory: real SABR with this process' PO tokens and reload path. */
 async function preMint(videoId: string): Promise<string | undefined> {

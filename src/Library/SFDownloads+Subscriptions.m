@@ -70,7 +70,7 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     SFLog(@"downloads: auto-download on: %@ (%@)", folder.title, folder.identifier);
     [[SFFollows shared] follow:folder];   // auto-download requires following
     [self changed:folder.identifier];
-    [self checkSub:s initial:YES done:nil];
+    [self checkSub:s];   // a follow it already had: now; a new one: when its first check brings the list
 }
 
 - (void)unsubscribe:(NSString *)fid {
@@ -89,62 +89,43 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     return writes;
 }
 
-- (void)checkSub:(NSMutableDictionary *)s initial:(BOOL)initial done:(dispatch_block_t)done {
-    if (!SFHasFeed(s[@"id"])) { if (done) done(); return; }
-    SFFetchFeed(s[@"id"], ^(NSArray *items, NSError *e) {
-        SFMain(^{
-            if (self->_subs[s[@"id"]] != s) { if (done) done(); return; }   // unsubscribed/replaced meanwhile
-            if (!items) { SFLog(@"downloads: subscription %@: %@", s[@"title"], e.localizedDescription); if (done) done(); return; }
-            NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-            double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
-            double since = [s[@"since"] doubleValue];   // set once, on the first check
-            NSInteger added = 0, n = 0;
-            for (SFItem *it in items) {
-                if (it.kind != SFItemVideo) continue;
-                n++;
-                if (initial && n > 3) {                              // new subscription: the 3 newest, never backfill older ones
-                    double pub3 = it.date ? [it.date timeIntervalSince1970] : now;
-                    if ([s[@"since"] doubleValue] <= 0) s[@"since"] = @(pub3);
-                    break;
-                }
-                double pub = it.date ? [it.date timeIntervalSince1970] : 0;
-                if (pub && pub < now - keep) break;                   // older than the download window: not fetched
-                if (since > 0 && pub && pub <= since) break;         // migrated subscriptions: only new ones
-                if ([[SFStore shared] watched:it.identifier]) continue;
-                if (added >= 5) break;                               // at most 5 per check
-                if ([self enqueue:it sub:s[@"id"]]) added++;
-            }
-            if ([s[@"since"] doubleValue] != since) [self saveSub:s];   // the only thing a check changes
-            if (added) SFLog(@"downloads: subscription %@: %ld new", s[@"title"], (long)added);
-            if (done) done();
-        });
-    });
+// What a subscription downloads comes from its follow's list (following is a prerequisite of
+// auto-download): no feed request of its own - the follow's spread refresh plan (SFRefreshPlan)
+// is the only one asking the source, and its news triggers the check (SFFollowsNewItemsNotification).
+// A subscription never checked before (`since` unset) takes the 3 newest, never a backfill.
+- (void)checkSub:(NSMutableDictionary *)s {
+    if (_subs[s[@"id"]] != s) return;
+    NSArray *items = [[SFFollows shared] itemsOf:s[@"id"]];
+    if (!items.count) return;   // not checked yet: its follow's news brings it here
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    double keep = ([s[@"keepDays"] doubleValue] ?: 90) * 86400;
+    double since = [s[@"since"] doubleValue];   // set once, on the first check
+    BOOL initial = since <= 0;
+    NSInteger added = 0, n = 0;
+    for (SFItem *it in items) {
+        if (it.kind != SFItemVideo) continue;
+        n++;
+        if (initial && n > 3) {                              // new subscription: the 3 newest, never backfill older ones
+            double pub3 = it.date ? [it.date timeIntervalSince1970] : now;
+            if ([s[@"since"] doubleValue] <= 0) s[@"since"] = @(pub3);
+            break;
+        }
+        double pub = it.date ? [it.date timeIntervalSince1970] : 0;
+        if (pub && pub < now - keep) break;                   // older than the download window: not fetched
+        if (since > 0 && pub && pub <= since) break;         // migrated subscriptions: only new ones
+        if ([[SFStore shared] watched:it.identifier]) continue;
+        if (added >= 5) break;                               // at most 5 per check
+        if ([self enqueue:it sub:s[@"id"]]) added++;
+    }
+    if ([s[@"since"] doubleValue] != since) [self saveSub:s];   // the only thing a check changes
+    if (added) SFLog(@"downloads: subscription %@: %ld new", s[@"title"], (long)added);
 }
 
+// all subscriptions against their follows' lists - local, no request (start, every 3 h with the repairs)
 - (void)checkSubscriptionsNow {
     [self retryDueRepairs];
-    if (_checking || ![SFNet isOnline]) return;
-    _checking = YES;
-    NSArray *all = [_subs.allValues copy];
-    __block NSUInteger i = 0;
-    __block void (^next)(void);
-    __weak SFDownloads *ws = self;
-    next = ^{
-        SFDownloads *me = ws;
-        if (!me) return;
-        if (i >= all.count) { me->_checking = NO; next = nil; SFLog(@"downloads: subscription check done"); return; }
-        NSMutableDictionary *s = all[i++];
-        // one after another, with a short pause (spares the sources)
-        __block BOOL called = NO;
-        dispatch_block_t step = ^{
-            if (called) return;
-            called = YES;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
-        };
-        [me checkSub:s initial:NO done:step];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), step);   // time limit per feed
-    };
-    next();
+    for (NSMutableDictionary *s in [_subs.allValues copy]) [self checkSub:s];
+    SFLog(@"downloads: subscription check done");
 }
 
 @end

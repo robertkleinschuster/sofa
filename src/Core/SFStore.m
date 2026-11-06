@@ -105,6 +105,12 @@
                         "WHERE s.k LIKE 'search.recent.%' AND json_valid(s.v) AND j.type = 'text'"];
             [self exec:@"DELETE FROM settings WHERE k LIKE 'search.recent.%'"];
         },
+        // 7: when each followed show/channel was last checked (SFFollows' spread refresh plan: a
+        // restart continues the plan instead of checking everything again)
+        ^{ [self exec:@"ALTER TABLE follows ADD COLUMN checked REAL"]; },
+        // 8: feed_cache goes - it held YouTube's parsed upload lists for the RSS change detector
+        // (RSS gone since 2026-11-05); a follow keeps its own newest items (follow_items)
+        ^{ [self exec:@"DROP TABLE IF EXISTS feed_cache"]; },
     ];
 }
 
@@ -151,8 +157,6 @@ static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
 - (void)trimCacheNow {
     double now = [NSDate date].timeIntervalSince1970;
     [self runNow:@"DELETE FROM jcache WHERE t < ?" args:@[@(now - kCacheKeep)]];
-    // feeds of shows no longer followed (or quiet for months: then fetched once more)
-    [self runNow:@"DELETE FROM feed_cache WHERE updated < ?" args:@[@(now - 90 * 86400)]];
     // size cap in one pass: newest first, everything from the entry that crosses the cap on goes
     long long bytes = 0;
     for (NSDictionary *r in [self rowsNow:@"SELECT t, LENGTH(v) AS n FROM jcache ORDER BY t DESC" args:nil]) {

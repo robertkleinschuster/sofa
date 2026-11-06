@@ -245,7 +245,7 @@ static id SabrClean(id v) {
                     if ([j[@"bot"] boolValue]) [[SFYTBreaker shared] noteBlockedUntil:[j[@"blocked_until"] doubleValue]];
                     NSError *err = [NSError errorWithDomain:@"SFYTSabr" code:1 userInfo:@{
                         NSLocalizedDescriptionKey: [j[@"error"] description] ?: @"no video",
-                        @"bot": @([j[@"bot"] boolValue]), @"live": @([j[@"live"] boolValue]),
+                        @"bot": @([j[@"bot"] boolValue]), @"unanswered": @([j[@"unanswered"] boolValue]), @"live": @([j[@"live"] boolValue]),
                         @"upcoming": @([j[@"upcoming"] boolValue]), @"startTime": @([j[@"startTime"] doubleValue]),
                         @"blocked_until": @([j[@"blocked_until"] doubleValue])}];
                     done(nil, err); return;

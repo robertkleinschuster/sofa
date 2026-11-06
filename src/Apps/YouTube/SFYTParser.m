@@ -294,6 +294,9 @@ static NSSet *skipKeys(void) {
             f.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
             NSDate *date = [f dateFromString:SFYTText(pri[@"publishDate"]) ?: @""];
             if (date) d[@"date"] = date;
+            NSString *title = SFYTText(pri[@"title"]);
+            if (title.length) d[@"title"] = title;
+            if ([nn(SFYTPath(pri, @"viewCount.videoViewCountRenderer.isLive")) boolValue]) d[@"live"] = @YES;
         }
         if (secr) {
             NSString *desc = str(SFYTPath(secr, @"attributedDescription.content")) ?: SFYTText(secr[@"description"]);

@@ -1,4 +1,5 @@
 #import "SFYTPages.h"
+#import "SFYTSabr.h"
 #import "SFFollowAction.h"
 #import "SFApp.h"
 #import "SFYTInnerTube.h"
@@ -98,17 +99,20 @@
     };
 }
 
+// what youtube.com's search box shows while typing - asked by the sidecar, in its browser identity
 + (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *))done {
-    NSString *u = [NSString stringWithFormat:@"https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&ds=yt&hl=de&gl=AT&oe=utf-8&xhr=t&q=%@",
-                   [SFNet escape:prefix]];
-    [SFNet getJSON:u headers:nil cacheAge:0 done:^(id j, NSError *e) {
-        // ["q", [["suggestion", 0, [...]], ...], {...}]
-        NSMutableArray *out = [NSMutableArray new];
-        for (id s in arr(arr(j).count > 1 ? arr(j)[1] : nil)) {
-            NSString *t = str(arr(s).firstObject) ?: str(s);
-            if (t.length) [out addObject:t];
-        }
-        done(out);
+    [[SFYTSabr shared] whenReady:^(NSInteger port) {
+        if (!port || !prefix.length) { done(@[]); return; }
+        NSString *u = [NSString stringWithFormat:@"http://127.0.0.1:%ld/suggest?q=%@", (long)port, [SFNet escape:prefix]];
+        [SFNet getJSON:u headers:nil cacheAge:0 done:^(id j, NSError *e) {
+            // ["q", [["suggestion", 0, [...]], ...], {...}]
+            NSMutableArray *out = [NSMutableArray new];
+            for (id s in arr(arr(j).count > 1 ? arr(j)[1] : nil)) {
+                NSString *t = str(arr(s).firstObject) ?: str(s);
+                if (t.length) [out addObject:t];
+            }
+            done(out);
+        }];
     }];
 }
 

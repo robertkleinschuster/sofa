@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { identityFor } from '../../res/sofa-yt/lib/identity.ts';
 import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, tempDir } from './helpers.ts';
 import type { FakeStart } from './helpers.ts';
 import type { AppYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/app.ts';
@@ -117,7 +118,7 @@ function makeYouTube(raws: RawPlayerResponse[]) {
       return stub as unknown as Innertube;
     }
   }
-  return new StubbedYouTube({ stateDir: dir, breaker: { blockedUntil: () => 0, note: (b) => { notes.push(b); } },
+  return new StubbedYouTube({ stateDir: dir, identity: identityFor(142), breaker: { blockedUntil: () => 0, note: (b) => { notes.push(b); } },
     po: { mintString: async () => 'POTOKEN' } });
 }
 

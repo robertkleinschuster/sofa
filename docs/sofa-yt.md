@@ -70,7 +70,7 @@ node Contents/Resources/sofa-yt/main.ts --port 0 --state <dir> --block-file <yt-
 | Option | Default | |
 |---|---|---|
 | `--port N` | 0 | 0 = ephemeral; the port is reported in the ready line |
-| `--state DIR` | required | persistent: `ytjs-cache/` (visitorData, user agent, player.js), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
+| `--state DIR` | required | persistent: `identity.json` (Chrome major, weekly), `cookies.json` (YouTube's cookies, 0600, never logged), `ytjs-cache/` (visitorData, player.js), `players/<id>.json` (deciphered player responses until expiry), `player-requests.json` (budget) |
 | `--block-file PATH` | `<state>/youtube-block.json` | bot-check breaker, same file + format as ytresolver.py: `{"until": epoch, "backoff": secs}` |
 | `--ahead-low S` / `--ahead-high S` | 30 / 90 | pacing window in seconds of media ahead of the reader |
 | `--max-player-requests N`, `--budget-window S`, `--budget-file P` | 60 / 3600 / state | hard cap on player requests (safety net against loops; persisted) |
@@ -142,7 +142,11 @@ Failure (HTTP 200):
 ```json
 {"id":"...","error":"Sign in to confirm you're not a bot","bot":true,"blocked_until":1793880000}
 {"id":"...","error":"upcoming","live":true,"upcoming":true,"startTime":1793900000,"bot":false,"blocked_until":0}
+{"id":"...","error":"player request failed: fetch failed","bot":false,"unanswered":true,"blocked_until":0}
 ```
+`unanswered:true`: YouTube did not answer at all (network, timeout, session or PO token unavailable) -
+the app shows an error / retries the download later and does **not** ask yt-dlp instead (a second
+client asking for the same video is exactly what a bot looks like).
 `error` texts: YouTube's playability reason (e.g. `Video unavailable`), `upcoming` (scheduled live or
 premiere; `startTime` epoch seconds or `null`; the answer is reused for 60 s without a request),
 `offline` (`LIVE_STREAM_OFFLINE` without a schedule), other errors with `live:true` (no HLS manifest,
@@ -172,6 +176,17 @@ Diagnostics (tracks, demands, pumps, fetched media); `/close` frees a session at
 expire after 10 min without reads (and no open response); at most 4 sessions exist (least recently
 used without readers is closed).
 
+### `POST /yt/<endpoint>?bg=0|1`
+The app's InnerTube calls, sent by this process's session (one identity: `lib/identity.ts`). Endpoints:
+`browse`, `next`, `search`, `navigation/resolve_url` (others, `player` included, 404 - player requests are
+this process's own job, with a PO token). Body: the endpoint's JSON fields without `context` (≤ 64 KB,
+an object; 400 otherwise); answer: InnerTube's JSON unchanged. Errors: 503 `{error, bot, blocked_until}`
+for a bot check - with `bg=1` nothing is sent while the breaker is open -, 502 for anything else.
+
+### `GET /suggest?q=<text>`
+Search box suggestions (`suggestqueries-clients6.youtube.com`, `client=youtube`, `hl=de`/`gl=AT`) with
+the identity's headers; the answer passes through unchanged. 400 without `q`.
+
 ### `GET /pot?binding=<content binding>`
 PO token for the yt-dlp fallback: `{"poToken": "..."}` minted by this process's BotGuard (the same
 minter as the sidecar's own player requests), so both YouTube paths are one web identity. Called by
@@ -182,8 +197,10 @@ unavailable (yt-dlp then goes on without a token). No YouTube request unless the
 
 ## How it works
 
-**One web identity.** `Innertube.create` with a disk cache keeps visitorData, the user agent (set to
-bgutils' browser UA so BotGuard and Innertube look like the same browser) and player.js across restarts.
+**One web identity.** `lib/identity.ts` (docs/youtube.md "One identity"): a current desktop Chrome UA
+with matching client hints, `de-AT`, and YouTube's cookies, set on the global fetch before anything
+else loads - Innertube, BotGuard (jsdom gets the same UA), captions and SABR send the same browser.
+`Innertube.create` with a disk cache keeps visitorData and player.js across restarts.
 Player requests are WEB client with `signatureTimestamp` of the pinned player and a video-bound PO token
 (`serviceIntegrityDimensions.poToken`). The SABR URL's n-parameter is deciphered **with the same player
 object right after the request** (YouTube A/B-serves several player.js versions; a mismatch = SABR 403);

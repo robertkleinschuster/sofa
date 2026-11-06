@@ -126,6 +126,10 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
 }
 
 + (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheAge:(NSTimeInterval)age done:(SFJSONDone)done {
+    [self postJSON:url body:body headers:headers cacheKey:nil cacheAge:age done:done];
+}
+
++ (void)postJSON:(NSString *)url body:(id)body headers:(NSDictionary *)headers cacheKey:(NSString *)cacheKey cacheAge:(NSTimeInterval)age done:(SFJSONDone)done {
     NSURL *u = [NSURL URLWithString:url];
     NSData *b = body ? [NSJSONSerialization dataWithJSONObject:body options:0 error:nil] : nil;
     if (!u || (body && !b)) { SFMain(^{ done(nil, SFError(@"Ungültige Anfrage.")); }); return; }
@@ -134,7 +138,7 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
     r.HTTPBody = b;
     [r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [headers enumerateKeysAndObjectsUsingBlock:^(id k, id v, BOOL *stop) { [r setValue:v forHTTPHeaderField:k]; }];
-    NSString *key = [NSString stringWithFormat:@"POST %@ %@", url, b ? [[NSString alloc] initWithData:b encoding:NSUTF8StringEncoding] : @""];
+    NSString *key = cacheKey ?: [NSString stringWithFormat:@"POST %@ %@", url, b ? [[NSString alloc] initWithData:b encoding:NSUTF8StringEncoding] : @""];
     [self request:r cacheKey:key cacheAge:age done:done];
 }
 static NSString *regionKey(NSString *region) { return [@"geo.region." stringByAppendingString:region]; }

@@ -57,7 +57,7 @@ interface SetupOptions {
   fail?: string | null;
   stall?: boolean;
   cfg?: Partial<SessionConfig>;
-  infos?: Record<string, VideoInfo | 'live' | 'bot'>;
+  infos?: Record<string, VideoInfo | 'live' | 'bot' | 'unanswered'>;
   breaker?: InstanceType<typeof Breaker>;
   appOpts?: Partial<TestAppOptions>;
 }
@@ -251,6 +251,15 @@ test('idle sessions expire; /close frees a session', async () => {
     const r2 = await openJson(app, `v=${ID}&prefetch=0`);
     assert.equal(json<{ closed: boolean }>((await get(`${app.base}/close?sid=${r2.sid}`)).body).closed, true);
     assert.equal((await get(r2.video)).status, 404);
+  } finally { await app.close(); }
+});
+
+test('open: YouTube not answering is marked unanswered (the app then asks no one else), not bot', async () => {
+  const { app } = await setup({ infos: { bbbbbbbbbbb: 'unanswered', [ID]: 'bot' } });
+  try {
+    const r = await openJson<OpenFailure>(app, 'v=bbbbbbbbbbb');
+    assert.deepEqual([r.unanswered, r.bot], [true, false]);
+    assert.equal((await openJson<OpenFailure>(app, `v=${ID}`)).unanswered, undefined, 'a bot check is an answer');
   } finally { await app.close(); }
 });
 

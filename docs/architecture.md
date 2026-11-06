@@ -108,7 +108,8 @@ Mixed rows (`src/Core/SFHomeFeatures.h`): apps feature content on Home through t
 `SFHomeTopicHighlights`; topics are defined in Core, a topic is a promise about what the row
 means). ZDF/ARD/ORF read news from their news pages (lead cluster / "News" lane, ORF segments as
 `orfseg:`); YouTube contributes Highlights without a request: videos of followed channels far
-above the channel's usual views (RSS `media:statistics`, `SFItem.viewCount`). Most apps derive them
+above the channel's usual views (`SFItem.viewCount`; came from RSS `media:statistics`, empty since the
+RSS outage 2026-11-05 - open, NOTES). Most apps derive them
 structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
 `SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
 items), keeps each app's list (stored: Home shows them at once after a launch) and refreshes
@@ -134,15 +135,14 @@ ansehen + the Suche tile and header button.
   Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
   migrates a 0.3.8 database and checks every step - extend it with each new step.
 - Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
-  `downloads`, `subscriptions`, `follows`/`follow_items` (ordered by `pos`), `feed_cache` (an
-  app's last parsed feed per followed show + change signature), `watch_later`, `stats`, `recent_searches`. Items are
+  `downloads`, `subscriptions`, `follows` (with `checked`: the spread refresh plan) / `follow_items`
+  (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`. Items are
   stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).
 - WAL, `synchronous=NORMAL`, one connection on a serial queue; `auto_vacuum=INCREMENTAL`.
   The response cache is trimmed after launch and daily: 14 days, 64 MB at most, oldest first.
 - `settings` holds preferences and small state only (`setSetting:nil` removes a key). Raw
-  answers go to `jcache` (trimmed); data an app derives and must keep goes to its own table
-  (`feed_cache`, dropped 90 days after its last change).
+  answers go to `jcache` (trimmed); data a module derives and must keep goes to its own table.
 - Several writes that belong together go through `runAll:` (one transaction); write only what
   changed (follows compare the new list with the loaded one).
 

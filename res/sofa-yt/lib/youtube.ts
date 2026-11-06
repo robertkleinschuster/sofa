@@ -7,6 +7,8 @@
 // serverAbrStreamingUrl must be transformed with the SAME player whose signatureTimestamp went into
 // the player request, otherwise SABR answers 403. Hence the player object is captured before the
 // request and used for deciphering right after it; only the deciphered URL is cached.
+import { LANG, LOCATION, TIMEZONE } from './identity.ts';
+import type { Identity } from './identity.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ReloadPlaybackContext } from 'googlevideo/protos';
@@ -148,6 +150,9 @@ export function endscreenElements(raw: RawPlayerResponse | null | undefined): En
 
 export interface YouTubeErrorFlags {
   bot?: boolean;
+  /** YouTube did not answer (network, timeout, 5xx, no session/PO token) - not a refusal: asking
+   *  again through another path (yt-dlp) would only be a second identity for the same video */
+  unanswered?: boolean;
   live?: boolean;
   status?: string | null;
   upcoming?: boolean;
@@ -156,14 +161,16 @@ export interface YouTubeErrorFlags {
 
 export class YouTubeError extends Error {
   bot: boolean;
+  unanswered: boolean;
   live: boolean;
   status: string | null;
   upcoming: boolean;
   startTime: number | null;
 
-  constructor(message: string, { bot = false, live = false, status = null, upcoming = false, startTime = null }: YouTubeErrorFlags = {}) {
+  constructor(message: string, { bot = false, unanswered = false, live = false, status = null, upcoming = false, startTime = null }: YouTubeErrorFlags = {}) {
     super(message);
     this.bot = bot;
+    this.unanswered = unanswered;
     this.live = live;
     this.status = status;
     this.upcoming = upcoming;
@@ -251,8 +258,13 @@ export class PlayerBudget {
   }
 }
 
+/** What the app may call through innertube(): pages and the watch page - never `player` (that is this process' job, with a PO token). */
+export const APP_ENDPOINTS = ['browse', 'next', 'search', 'navigation/resolve_url'] as const;
+export type AppEndpoint = typeof APP_ENDPOINTS[number];
+
 export interface YouTubeOptions {
   stateDir: string;
+  identity: Identity;
   breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget?: PlayerBudget;
@@ -262,6 +274,7 @@ export type SessionState = 'pending' | 'ready' | 'error';
 
 export class YouTube {
   stateDir: string;
+  identity: Identity;
   breaker: Pick<Breaker, 'blockedUntil' | 'note'>;
   po: Pick<PoTokenProvider, 'mintString'>;
   budget: PlayerBudget;
@@ -279,8 +292,9 @@ export class YouTube {
   reloads: Map<string, number[]>;
   notYet: Map<string, { at: number; err: YouTubeError }>;
 
-  constructor({ stateDir, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
+  constructor({ stateDir, identity, breaker, po, budget = new PlayerBudget() }: YouTubeOptions) {
     this.stateDir = stateDir;
+    this.identity = identity;
     this.breaker = breaker;
     this.po = po;
     this.budget = budget;
@@ -307,20 +321,20 @@ export class YouTube {
     if (this.yt && Date.now() - this.ytCreated < SESSION_MAX_AGE_MS) return this.yt;   // fresh
     if (!this.ytInflight) {
       if (!this.yt && Date.now() < this.ytNextTry) {
-        throw new YouTubeError(`YouTube session unavailable (${this.ytError}); retry in ${Math.ceil((this.ytNextTry - Date.now()) / 1000)} s`);
+        throw new YouTubeError(`YouTube session unavailable (${this.ytError}); retry in ${Math.ceil((this.ytNextTry - Date.now()) / 1000)} s`, { unanswered: true });
       }
       this.ytInflight = (async () => {
         const t0 = performance.now();
         try {
           const { Innertube, UniversalCache, Platform, Log } = await import('youtubei.js');
-          const { USER_AGENT } = await import('bgutils-js/utils');
           Log.setLevel(Log.Level.ERROR);
           // youtubei.js 18 ships no JS evaluator for node; the n/sig transforms need one.
           Platform.shim.eval = async (data) => new Function(data.output)() as Record<string, unknown> | undefined; // eslint-disable-line no-new-func
           const yt = await withTimeout(Innertube.create({
             cache: new UniversalCache(true, path.join(this.stateDir, 'ytjs-cache')), // visitorData + player.js
             retrieve_player: true,
-            user_agent: USER_AGENT, // same browser identity as the BotGuard/WebPO side
+            user_agent: this.identity.userAgent, // the one browser identity (identity.ts), also BotGuard's
+            lang: LANG, location: LOCATION, timezone: TIMEZONE,
           }), SESSION_TIMEOUT_MS, 'Innertube session');
           if (!yt.session.player) throw new Error('no player script');
           this.yt = yt;
@@ -339,7 +353,7 @@ export class YouTube {
           if (!this.yt) this.ytState = 'error';
           log('session setup failed:', errorMessage(e));
           if (this.yt) return this.yt; // keep using the old session
-          throw new YouTubeError(`YouTube session unavailable: ${errorMessage(e)}`);
+          throw new YouTubeError(`YouTube session unavailable: ${errorMessage(e)}`, { unanswered: true });
         } finally {
           this.ytInflight = null;
         }
@@ -421,7 +435,7 @@ export class YouTube {
     try {
       poToken = await this.po.mintString(videoId);
     } catch (e) {
-      throw new YouTubeError(`PO token unavailable: ${errorMessage(e)}`);
+      throw new YouTubeError(`PO token unavailable: ${errorMessage(e)}`, { unanswered: true });
     }
     const n = this.budget.take(reloadContext ? `reload ${videoId}` : `player ${videoId}`);
     const payload: PlayerRequest = {
@@ -440,7 +454,7 @@ export class YouTube {
     } catch (e) {
       const bot = isBotCheck(errorMessage(e));
       if (bot) this.breaker.note(true);
-      throw new YouTubeError(`player request failed: ${errorMessage(e)}`, { bot });
+      throw new YouTubeError(`player request failed: ${errorMessage(e)}`, { bot, unanswered: !bot });
     }
     const ms = performance.now() - t0;
     const ps = raw.playabilityStatus || {};
@@ -585,13 +599,26 @@ export class YouTube {
     for (const [id, times] of this.reloads) if (!times.some((t) => Date.now() - t < RELOAD_WINDOW_S * 1000)) this.reloads.delete(id);
   }
 
+  // ---- InnerTube calls for the app -------------------------------------------------------------
+
+  /**
+   * One InnerTube call of the app (channel pages, feeds, search, watch page) in this session - the
+   * same identity, visitor data and cookies as playback, instead of a second client of its own.
+   * Raw JSON answer. `bg`: a background refresh, refused while the bot-check breaker is open.
+   */
+  async innertube(endpoint: AppEndpoint, body: Record<string, unknown>, { bg = false }: { bg?: boolean } = {}): Promise<unknown> {
+    if (bg && this.breaker.blockedUntil()) throw new YouTubeError("Sign in to confirm you're not a bot (paused, nothing sent)", { bot: true });
+    const yt = await this.session();
+    const r = await withTimeout(yt.actions.execute(`/${endpoint}`, { ...body, parse: false }), PLAYER_TIMEOUT_MS, endpoint);
+    return r.data;
+  }
+
   /** Headers that make a plain fetch (captions) look like this session's web player. */
   async webHeaders(): Promise<Record<string, string>> {
     const yt = await this.session();
     const c = yt.session.context.client;
     return {
-      'user-agent': c.userAgent,
-      'accept-language': 'en-US,en;q=0.9',
+      ...this.identity.headers,
       origin: 'https://www.youtube.com',
       referer: 'https://www.youtube.com/',
       ...(c.visitorData ? { 'x-goog-visitor-id': c.visitorData } : {}),

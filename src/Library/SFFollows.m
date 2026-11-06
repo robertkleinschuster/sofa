@@ -1,10 +1,12 @@
 #import "SFFollows.h"
+#import "SFRefreshPlan.h"
 #import "SFStore.h"
 #import "SFDownloads.h"
 #import "SFNet.h"
 #import "SFApp.h"
 
 NSString *const SFFollowsDidChangeNotification = @"SFFollowsDidChange";
+NSString *const SFFollowsNewItemsNotification = @"SFFollowsNewItems";
 
 SFShowRefLookup SFShowRefLookupFor(NSString *source) {
     Class<SFApp> a = [SFAppRegistry appNamed:source];
@@ -20,13 +22,14 @@ SFPageLoader SFShowPageLoader(NSString *ref, NSString *title) {
 
 
 static const NSInteger kPerShow = 12;              // keep this many newest episodes per show
-static const NSTimeInterval kRefresh = 30 * 60;
 
 @implementation SFFollows {
     NSMutableDictionary *_follows;   // id -> @{id, source, title, image, added}
     NSMutableDictionary *_items;     // id -> NSArray<SFItem> (newest first)
-    BOOL _started, _refreshing;
-    NSTimer *_timer;
+    BOOL _started;
+    NSTimer *_timer;                 // the next planned check (SFRefreshPlan)
+    NSMutableDictionary *_jitter;    // id -> r of its current plan (drawn at each check)
+    NSDate *_lastCheck;              // of any follow: the gap before the next one
 }
 
 + (instancetype)shared {
@@ -61,8 +64,9 @@ static const NSTimeInterval kRefresh = 30 * 60;
 }
 
 - (void)save:(NSDictionary *)f {
-    [[SFStore shared] run:@"INSERT OR REPLACE INTO follows (id,source,title,image,added) VALUES (?,?,?,?,?)"
-                     args:@[f[@"id"], f[@"source"] ?: @"", f[@"title"] ?: @"", f[@"image"] ?: [NSNull null], f[@"added"] ?: @([NSDate date].timeIntervalSince1970)]];
+    [[SFStore shared] run:@"INSERT OR REPLACE INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?)"
+                     args:@[f[@"id"], f[@"source"] ?: @"", f[@"title"] ?: @"", f[@"image"] ?: [NSNull null],
+                            f[@"added"] ?: @([NSDate date].timeIntervalSince1970), f[@"checked"] ?: [NSNull null]]];
 }
 
 #pragma mark Start / Migration
@@ -84,8 +88,9 @@ static const NSTimeInterval kRefresh = 30 * 60;
         [st setSetting:[@(n) stringValue] forKey:@"follows.migrated"];
         SFLog(@"follows: adopted %lu subscriptions", (unsigned long)n);
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self refreshNow]; });
-    _timer = [NSTimer scheduledTimerWithTimeInterval:kRefresh target:self selector:@selector(refreshNow) userInfo:nil repeats:YES];
+    _jitter = [NSMutableDictionary new];
+    _lastCheck = [NSDate date];   // the first check a gap after launch
+    [self planNext];
 }
 
 #pragma mark Follows
@@ -93,6 +98,7 @@ static const NSTimeInterval kRefresh = 30 * 60;
 - (BOOL)canFollow:(SFItem *)folder {
     return folder.kind == SFItemFolder && SFShowPageLoader(folder.identifier, nil) && SFHasFeed(folder.identifier);
 }
+- (NSArray *)itemsOf:(NSString *)identifier { return identifier ? [_items[identifier] copy] ?: @[] : @[]; }
 - (BOOL)isFollowing:(NSString *)identifier { return identifier && _follows[identifier] != nil; }
 
 - (void)addFollow:(SFItem *)folder {
@@ -108,18 +114,17 @@ static const NSTimeInterval kRefresh = 30 * 60;
     [self addFollow:folder];
     SFLog(@"follows: + %@", folder.title);
     [self changed];
-    [self refreshOne:_follows[folder.identifier] done:^{ [self changed]; }];
+    [self checkFollow:_follows[folder.identifier]];   // the viewer just chose it: its episodes now
 }
 
 - (void)unfollow:(NSString *)identifier {
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
-    // one transaction: the follow, its items, its stored feed and its auto-download (following is
+    // one transaction: the follow, its items and its auto-download (following is
     // a prerequisite of auto-download)
     NSArray *writes = @[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
-                        @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]],
-                        @[@"DELETE FROM feed_cache WHERE id=?", @[identifier]]];
+                        @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]]];
     [[SFStore shared] runAll:[writes arrayByAddingObjectsFromArray:[[SFDownloads shared] unsubscribeWrites:identifier]]];
     SFLog(@"follows: - %@", identifier);
     [self changed];
@@ -237,6 +242,9 @@ static NSArray *stable(NSArray *dicts) {
                                         @[f[@"id"], c.identifier, @(n), SFJSONString(dicts[n]) ?: @"{}"]]];
                 }];
                 [[SFStore shared] runAll:writes];   // one transaction: never a half-written list
+                SFLog(@"follows: %@ has news", f[@"title"]);
+                [self changed];
+                [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f[@"id"]];
             }
             finish();
         });
@@ -244,31 +252,54 @@ static NSArray *stable(NSArray *dicts) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), finish);   // time limit per feed
 }
 
-- (void)refreshNow {
-    if (_refreshing || ![SFNet isOnline] || !_follows.count) return;
-    _refreshing = YES;
-    NSArray *all = [_follows.allValues copy];
-    NSDate *t0 = [NSDate date];
-    __block NSUInteger i = 0;
-    __block void (^next)(void);
+// One follow at a time, each at its own time (SFRefreshPlan: its upload rhythm, variation, night),
+// with a gap between any two - spread over the day instead of all follows every 30 min in a burst
+// (until 2026-11-06: 135 requests within a minute, part of what made YouTube suspect a bot).
+- (NSDate *)dueOf:(NSDictionary *)f {
+    double checked = [f[@"checked"] doubleValue];
+    if (checked <= 0) return [NSDate distantPast];   // never checked: first in line
+    if (!_jitter[f[@"id"]]) _jitter[f[@"id"]] = @(arc4random_uniform(1000) / 1000.0);
+    NSArray *dates = [_items[f[@"id"]] valueForKey:@"date"];
+    return SFRefreshNextDue([dates filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self != nil"]],
+                            [NSDate dateWithTimeIntervalSince1970:checked], [_jitter[f[@"id"]] doubleValue], nil);
+}
+
+- (void)planNext {
+    [_timer invalidate]; _timer = nil;
+    NSDictionary *next = nil; NSDate *due = nil;
+    for (NSDictionary *f in _follows.allValues) {
+        if (!SFHasFeed(f[@"id"])) continue;
+        NSDate *d = [self dueOf:f];
+        if (!due || [d compare:due] == NSOrderedAscending) { due = d; next = f; }
+    }
+    if (!next) return;
+    NSDate *earliest = [_lastCheck dateByAddingTimeInterval:SFRefreshGap(arc4random_uniform(1000) / 1000.0)];
+    NSDate *when = [due laterDate:earliest];
+    NSString *fid = next[@"id"];
+    _timer = [NSTimer scheduledTimerWithTimeInterval:MAX(1, when.timeIntervalSinceNow) target:self selector:@selector(checkDue:) userInfo:fid repeats:NO];
+}
+
+- (void)checkDue:(NSTimer *)t {
+    NSMutableDictionary *f = _follows[t.userInfo];
+    _timer = nil;
+    if (!f) { [self planNext]; return; }
+    if (![SFNet isOnline]) {   // offline: look again in a while (the plan stays)
+        _timer = [NSTimer scheduledTimerWithTimeInterval:300 target:self selector:@selector(checkDue:) userInfo:t.userInfo repeats:NO];
+        return;
+    }
+    [self checkFollow:f];
+}
+
+- (void)checkFollow:(NSMutableDictionary *)f {
+    _lastCheck = [NSDate date];
+    f[@"checked"] = @(_lastCheck.timeIntervalSince1970);
+    [_jitter removeObjectForKey:f[@"id"]];   // a new variation for the next one
+    [[SFStore shared] run:@"UPDATE follows SET checked=? WHERE id=?" args:@[f[@"checked"], f[@"id"]]];
     __weak SFFollows *ws = self;
-    next = ^{
+    [self refreshOne:f done:^{
         SFFollows *me = ws;
-        if (!me) return;
-        if (i >= all.count) {
-            me->_refreshing = NO;
-            SFLog(@"follows: %lu refreshed in %.0fs", (unsigned long)all.count, -[t0 timeIntervalSinceNow]);
-            [me changed];
-            void (^n2)(void) = next; next = nil; (void)n2;
-            return;
-        }
-        NSDictionary *f = all[i++];
-        [me refreshOne:f done:^{
-            [me renewImage:f[@"id"]];
-            if (i % 20 == 0) [me changed];   // make intermediate state visible
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ if (next) next(); });
-        }];
-    };
-    next();
+        [me renewImage:f[@"id"]];
+        [me planNext];
+    }];
 }
 @end

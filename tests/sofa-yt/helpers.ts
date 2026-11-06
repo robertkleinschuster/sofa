@@ -186,7 +186,7 @@ export function ytError(message: string, flags: YouTubeErrorFlags): Error & YouT
 export type FakeYouTube = AppYouTube & { requests: number; cache: Map<string, VideoInfo> };
 
 /** Fake YouTube client: serves fixture infos, counts "player requests". */
-export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot'>, { breaker }: { breaker?: { blockedUntil(): number; note(bot: boolean): void } } = {}): FakeYouTube {
+export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | 'unanswered'>, { breaker }: { breaker?: { blockedUntil(): number; note(bot: boolean): void } } = {}): FakeYouTube {
   const y: FakeYouTube = {
     requests: 0, sessionState: 'ready', cache: new Map(),
     async info(id, { bg = false } = {}) {
@@ -199,6 +199,7 @@ export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot'>, {
       const i = infos[id];
       if (!i) { const e = new Error('Video unavailable'); throw e; }
       if (i === 'live') throw ytError('live', { live: true });
+      if (i === 'unanswered') throw ytError('player request failed: fetch failed', { unanswered: true });
       if (i === 'bot') { const e = ytError("Sign in to confirm you're not a bot", { bot: true }); breaker?.note(true); throw e; }
       y.cache.set(id, i);
       return { info: i, cached: false };

@@ -7,6 +7,7 @@
 #import "SFModel.h"
 
 extern NSString *const SFFollowsDidChangeNotification;
+extern NSString *const SFFollowsNewItemsNotification;   // object = the follow's id: its list changed (new episodes/videos)
 
 // build the page of a show/channel from its identifier (registered per provider)
 SFPageLoader SFShowPageLoader(NSString *ref, NSString *title);   // nil if no page is registered for the type
@@ -16,7 +17,7 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 
 @interface SFFollows : NSObject
 + (instancetype)shared;
-- (void)start;                                         // migration + background refresh
+- (void)start;                                         // migration + the spread refresh plan (SFRefreshPlan)
 - (BOOL)canFollow:(SFItem *)folder;                    // is there a feed + page for this type?
 - (BOOL)isFollowing:(NSString *)identifier;
 - (void)follow:(SFItem *)folder;
@@ -24,5 +25,5 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
-- (void)refreshNow;
+- (NSArray *)itemsOf:(NSString *)identifier;           // a follow's newest episodes (newest first) as last checked
 @end

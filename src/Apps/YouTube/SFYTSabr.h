@@ -14,7 +14,8 @@ extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process end
 // result: the dash dict of ytresolver.py (video, audio, height, fps, vcodec, acodec, alang,
 // audios, subs) plus id, sid, title, duration; all URLs local. Lives and post-live DVR recordings
 // instead carry `hls` (a local HLS playlist, muxed audio, no `video`/`audio`) and `live`.
-// Error: userInfo[@"bot"] = @YES when YouTube answered with a bot check; @"live" for streams the
+// Error: userInfo[@"bot"] = @YES when YouTube answered with a bot check; @"unanswered" when YouTube
+// did not answer at all (network, timeout) - then no other path (yt-dlp) asks instead; @"live" for streams the
 // sidecar can't play (scheduled: @"upcoming" + @"startTime" epoch or 0; offline: message "offline").
 - (void)open:(NSString *)videoID background:(BOOL)bg done:(void (^)(NSDictionary *r, NSError *e))done;
 // Download variant: the same choice as playback (mpv plays everything, so no format limit any more -
@@ -35,6 +36,8 @@ extern NSString *const SFYTSabrDidExitNotification;   // the sidecar process end
 - (BOOL)usableFor:(NSString *)videoID;
 // http://127.0.0.1:<port> while the sidecar runs (PO tokens for the yt-dlp fallback: /pot), else nil
 @property (nonatomic, readonly) NSString *baseURL;
+// the sidecar's port once it listens (started if needed); 0 = not available / not ready in time. Main thread.
+- (void)whenReady:(void (^)(NSInteger port))block;
 // Preload on focus: the player response into the sidecar's cache, within a request budget and never
 // while the bot-check breaker is open. Returns NO if nothing was sent.
 - (BOOL)preloadOnFocus:(NSString *)videoID;
