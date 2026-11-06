@@ -149,7 +149,8 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
   migrates a 0.3.8 database and checks every step - extend it with each new step.
 - Tables: `progress` (positions, history), `settings`, `jcache` (SFNet response cache),
-  `downloads`, `subscriptions`, `follows` (with `checked`: the spread refresh plan) / `follow_items`
+  `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
+  picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
   (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`. Items are
   stored as their JSON (`SFItem dictionaryRepresentation`) and loaded into memory at launch;
   indexes exist only where a query pages or sorts on disk (`progress(updated)`, `jcache(t)`).

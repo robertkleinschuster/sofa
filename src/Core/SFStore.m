@@ -111,6 +111,18 @@
         // 8: feed_cache goes - it held YouTube's parsed upload lists for the RSS change detector
         // (RSS gone since 2026-11-05); a follow keeps its own newest items (follow_items)
         ^{ [self exec:@"DROP TABLE IF EXISTS feed_cache"]; },
+        // 9: a subscription is its follow's auto-download - title, picture and source live in
+        // follows only (the copies here went stale: 70 of 127 on 2026-11-06). A subscription
+        // without a follow (never seen, but the old adoption ran in code) becomes one first.
+        ^{
+            [self exec:@"INSERT OR IGNORE INTO follows (id, source, title, image, added) "
+                        "SELECT id, source, title, image, added FROM subscriptions WHERE id NOT IN (SELECT id FROM follows)"];
+            [self exec:@"CREATE TABLE subscriptions_new (id TEXT PRIMARY KEY, keepDays INTEGER, since REAL, added REAL)"];
+            [self exec:@"INSERT INTO subscriptions_new (id, keepDays, since, added) SELECT id, keepDays, since, added FROM subscriptions"];
+            [self exec:@"DROP TABLE subscriptions"];
+            [self exec:@"ALTER TABLE subscriptions_new RENAME TO subscriptions"];
+            [self exec:@"DELETE FROM settings WHERE k = 'follows.migrated'"];   // that adoption is this step now
+        },
     ];
 }
 

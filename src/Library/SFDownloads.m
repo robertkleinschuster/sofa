@@ -260,7 +260,7 @@ static NSString *gb(unsigned long long b) {
     }
     if (subID && r && !r[@"sub"]) subID = nil;   // downloaded manually once = manual (no retention)
     // subscription episodes belong to the subscription's show (ZDF/ARD often name the series differently)
-    NSString *subTitle = subID ? _subs[subID][@"title"] : nil;
+    NSString *subTitle = subID ? [[SFFollows shared] recordOf:subID][@"title"] : nil;
     if (subTitle.length) { item = [item copy]; item.channel = subTitle; }
     r = r ?: [NSMutableDictionary new];
     r[@"id"] = item.identifier;

@@ -6,6 +6,8 @@
 #   3  jcache trimmed by age (index)                   5  feed_cache, follow_items.pos, no lastCheck
 #   6  recent searches as rows, newest first          7  follows.checked (spread refresh plan)
 #   8  feed_cache dropped again (RSS change detector gone)
+#   9  subscriptions keep only their own fields (title/picture/source are the follow's); one
+#      without a follow becomes one
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
@@ -48,14 +50,16 @@ CREATE TABLE follow_items (follow TEXT, id TEXT, item TEXT, date REAL, PRIMARY K
 CREATE TABLE dev_progress (id TEXT);
 INSERT INTO progress VALUES ('example:1', 30, 60, 0, $NOW, 'example', '{"id":"example:1","kind":0,"title":"Eins","source":"example"}');
 INSERT INTO downloads (id, source, state) VALUES ('example:2', 'example', 2);
-INSERT INTO subscriptions VALUES ('exampleshow:a', 'example', 'Show A', NULL, 90, 5, $NOW, $NOW);
+INSERT INTO subscriptions VALUES ('exampleshow:a', 'example', 'Show A (stale copy)', NULL, 90, 5, $NOW, $NOW);
+-- a subscription whose follow is missing (the old in-code adoption never ran): step 9 makes the follow
+INSERT INTO subscriptions VALUES ('exampleshow:b', 'example', 'Show B', 'https://img.example/b.jpg', 30, 7, $NOW, $NOW);
 INSERT INTO follows VALUES ('exampleshow:a', 'example', 'Show A', NULL, $NOW);
 -- written newest first; the dates of the two older ones are equal (relative dates from a feed)
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:3', '{"id":"example:3","kind":0,"title":"Neu"}', 300);
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:2', '{"id":"example:2","kind":0,"title":"Mitte"}', 100);
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:1', '{"id":"example:1","kind":0,"title":"Alt"}', 100);
 INSERT INTO settings VALUES ('dev.keyboard.layout', 'qwertz'), ('lounge.dev.token', 'x'), ('lounge.token', 'keep'),
-  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json');
+  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json'), ('follows.migrated', '0');
 INSERT INTO jcache VALUES ('yt.feed.UCabcdefghijklmnopqrstuv', $NOW, CAST('{"sig":"a,b","items":[{"id":"yt:aaaaaaaaaaa","kind":0}]}' AS BLOB));
 INSERT INTO jcache VALUES ('yt.feed.UCbroken0000000000000000', $NOW, CAST('{"sig":' AS BLOB));   -- cut off: must not block step 5
 INSERT INTO jcache VALUES ('GET https://old.example/', $NOW - 30 * 86400, CAST('{}' AS BLOB));
@@ -64,7 +68,7 @@ ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 8
+check "schema version" "$(Q 'pragma user_version')" 9
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
@@ -80,7 +84,12 @@ check "6: recent searches newest first" "$(Q "select group_concat(query, '|') fr
 check "6: broken entry dropped, settings cleared" "$(Q "select count(*) from settings where k like 'search.recent.%'") $(Q "select count(*) from recent_searches where source='all'")" "0 0"
 check "7: follows.checked" "$(Q "select count(*) from pragma_table_info('follows') where name='checked'")" 1
 check "8: feed_cache gone (steps 5 + 8 ran: no broken entry blocked them)" "$(Q "select count(*) from sqlite_master where name='feed_cache'")" 0
-check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1111"
+check "9: subscriptions columns" "$(Q "select group_concat(name) from pragma_table_info('subscriptions')")" "id,keepDays,since,added"
+check "9: the follow's title wins over the stale copy" "$(Q "select title from follows where id='exampleshow:a'")" "Show A"
+check "9: subscription without follow became one" "$(Q "select title || ' ' || image from follows where id='exampleshow:b'")" "Show B https://img.example/b.jpg"
+check "9: its own fields kept" "$(Q "select keepDays || ' ' || since from subscriptions where id='exampleshow:b'")" "30 7.0"
+check "9: old adoption marker gone" "$(Q "select count(*) from settings where k='follows.migrated'")" 0
+check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "1122"
 
 echo "==> restart (no step runs twice)"
 run
@@ -91,7 +100,7 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 8
+check "schema version" "$(Q 'pragma user_version')" 9
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
   "downloads follow_items follows jcache progress recent_searches settings stats subscriptions watch_later"

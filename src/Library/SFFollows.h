@@ -22,6 +22,10 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (BOOL)isFollowing:(NSString *)identifier;
 - (void)follow:(SFItem *)folder;
 - (void)unfollow:(NSString *)identifier;               // also ends "Automatisch herunterladen"
+- (NSDictionary *)recordOf:(NSString *)identifier;     // id, source, title, image of a follow; nil = not followed
+// follow without checking now (imports: many at once would be a burst of requests) - the spread
+// refresh plan checks it in its turn. record: id, source, title, image
+- (void)adopt:(NSDictionary *)record;
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows

@@ -74,20 +74,6 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 - (void)start {
     if (_started) return;
     _started = YES;
-    // One-time: all "Automatisch laden" subscriptions (128 from ytdl-sub) become follows – download stays on
-    SFStore *st = [SFStore shared];
-    if (![st setting:@"follows.migrated"]) {
-        NSUInteger n = 0;
-        for (NSDictionary *s in [[SFDownloads shared] subscriptions]) {
-            if (_follows[s[@"id"]]) continue;
-            NSMutableDictionary *f = [@{@"id": s[@"id"], @"source": s[@"source"] ?: @"", @"title": s[@"title"] ?: @"",
-                                        @"added": @([NSDate date].timeIntervalSince1970)} mutableCopy];
-            if ([s[@"image"] length]) f[@"image"] = s[@"image"];
-            _follows[f[@"id"]] = f; [self save:f]; n++;
-        }
-        [st setSetting:[@(n) stringValue] forKey:@"follows.migrated"];
-        SFLog(@"follows: adopted %lu subscriptions", (unsigned long)n);
-    }
     _jitter = [NSMutableDictionary new];
     _lastCheck = [NSDate date];   // the first check a gap after launch
     [self planNext];
@@ -107,6 +93,19 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     if (folder.image.length) f[@"image"] = folder.image;
     _follows[folder.identifier] = f;
     [self save:f];
+}
+
+- (NSDictionary *)recordOf:(NSString *)identifier { return identifier ? [_follows[identifier] copy] : nil; }
+
+- (void)adopt:(NSDictionary *)record {
+    if (![record[@"id"] length] || _follows[record[@"id"]]) return;
+    NSMutableDictionary *f = [@{@"id": record[@"id"], @"source": record[@"source"] ?: @"", @"title": record[@"title"] ?: @"",
+                                @"added": @([NSDate date].timeIntervalSince1970)} mutableCopy];
+    if ([record[@"image"] length]) f[@"image"] = record[@"image"];
+    _follows[f[@"id"]] = f;
+    [self save:f];
+    SFLog(@"follows: + %@ (adopted)", f[@"title"]);
+    [self changed];
 }
 
 - (void)follow:(SFItem *)folder {

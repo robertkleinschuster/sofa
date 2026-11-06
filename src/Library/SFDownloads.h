@@ -88,10 +88,9 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 // the same, but its database writes are returned for the caller's transaction (SFStore runAll:)
 - (NSArray *)unsubscribeWrites:(NSString *)folderIdentifier;
 - (BOOL)canSubscribe:(SFItem *)folder;           // is there a feed for this folder type?
-- (NSArray *)subscriptions;                      // Dictionaries (id, source, title, image, keepDays = download window)
 - (void)checkSubscriptionsNow;
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
 
 // Migration (one-time): adopt a subscription
-- (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image, keepDays
+- (void)addSubscriptionRecord:(NSDictionary *)rec;   // id, source, title, image (-> its follow), keepDays, since
 @end
