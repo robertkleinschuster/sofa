@@ -509,6 +509,26 @@ export class PlaybackSession {
     }
   }
 
+  /**
+   * Why nothing feeds a waiting reader, in one line (the stall log): the session's pumps (start,
+   * tracks, segments delivered, frontier, idle time), the track's demands with what is buffered
+   * ahead of them, and what holds back new pumps (backoff, start throttle, failures).
+   */
+  stallState(t: Track, now: number): string {
+    const sec = (ms: number) => (ms / 1000).toFixed(1);
+    const pumps = [...this.pumps].map((p) => {
+      const fr = [...p.frontier].map(([tr, ms]) => `${tr.key}@${sec(ms)}`).join('/') || '-';
+      return `@${sec(p.startMs)} ${p.video ? 'video+' : ''}${p.audio.key} seg=${p.delivered} to=${fr} idle=${sec(now - p.lastDataAt)}s`;
+    });
+    const demands = t.demands(now).map((d) => {
+      const sat = t.satisfied(d);
+      return `${d.off ?? 'hint'}@${sec(d.ms)}${d.linger ? ' linger' : ''} ${sat ? `ahead=${sat.aheadMs === Infinity ? 'eof/init' : sec(sat.aheadMs)}` : 'missing'}`;
+    });
+    const recent = this.starts.filter((x) => now - x < this.cfg.START_WINDOW_MS).length;
+    return `pumps: ${pumps.join('; ') || 'none'} | demands: ${demands.join('; ') || 'none'} | runs=${this.runs ?? 0} recent=${recent}`
+      + `${now < this.backoffUntil ? ` backoff=${sec(this.backoffUntil - now)}s` : ''} failures=${this.failures}${this.failed ? ' FAILED' : ''}`;
+  }
+
   get tag(): string { return `session ${this.sid.slice(0, 6)} ${this.info.id}`; }
 
   get bytes(): number { let n = 0; for (const t of this.tracks.values()) n += t.file.bytes; return n; }
@@ -546,7 +566,7 @@ export class PlaybackSession {
             await t.file.waitFor(reader.pos, this.cfg.WAIT_MS, ac.signal);
           } catch (e) {
             why = errorMessage(e);
-            if (why === 'timeout') log(`${this.tag}: ${t.key}: no data at ${reader.pos} within ${this.cfg.WAIT_MS / 1000} s - ending response`);
+            if (why === 'timeout') log(`${this.tag}: ${t.key}: no data at ${reader.pos} within ${this.cfg.WAIT_MS / 1000} s - ending response (${this.stallState(t, Date.now())})`);
             break;
           }
           continue;
