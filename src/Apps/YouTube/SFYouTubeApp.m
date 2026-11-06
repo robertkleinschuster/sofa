@@ -60,6 +60,9 @@
                           [SFAppSupportDir() stringByAppendingPathComponent:@"yt-dlp.old"], [SFCacheDir() stringByAppendingPathComponent:@"yt-dlp"],
                           [SFSharedCacheDir() stringByAppendingPathComponent:@"yt-dlp"], [SFCacheDir() stringByAppendingPathComponent:@"yt-resolved.json"]])
         if ([fm fileExistsAtPath:p] && [fm removeItemAtPath:p error:nil]) SFLog(@"yt: removed yt-dlp leftover %@", p.lastPathComponent);
+    // the PO token server's own log (bgutil, before the sidecar): only the real app wrote it
+    NSString *potLog = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/Sofa-potserver.log"];
+    if (!SFDevInstanceName() && [fm fileExistsAtPath:potLog] && [fm removeItemAtPath:potLog error:nil]) SFLog(@"yt: removed yt-dlp leftover %@", potLog.lastPathComponent);
     if ([[SFStore shared] setting:@"ytdlp.updated"]) [[SFStore shared] setSetting:nil forKey:@"ytdlp.updated"];
 }
 

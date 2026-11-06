@@ -166,7 +166,9 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
 directory is decided once at launch (`SFSetDevInstance`) - `~/Library/Application
 Support/Sofa-dev/NAME` (database, sidecar state, downloads under `Downloads/`), or
 `$SOFA_DATA_DIR`. Every test suite runs with a fresh temporary `SOFA_DATA_DIR`, so tests start
-from an empty database, leave nothing behind and can run side by side. Caches
+from an empty database, leave nothing behind and can run side by side: with `SOFA_DATA_DIR` the
+log (`sofa.log`) and the dev FIFO (`dev.fifo`) live in it too (`SFDevPrivateDir`), otherwise in
+`~/Library/Logs/Sofa-dev-NAME.log` and the shared cache. Caches
 (`SFCacheDir`: images, the updater's work dir) live in `<data dir>/Caches`, and
 settings in the defaults domain `de.sofa.dev.<instance>`. Shared on purpose
 (`SFSharedCacheDir`, `~/Library/Caches/Sofa`): only the YouTube bot-check pause (one IP for every

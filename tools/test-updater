@@ -15,8 +15,9 @@ DEV="$SRC/build/SofaDev.app"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-updtest.XXXXXX")"
 PORT=47986 INST=updtest   # release server port (47995 is test-downloads' app)
 export SOFA_DATA_DIR="$T/data"   # fresh instance state per run
+# the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
+mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 export SOFA_ONLY_APPS=example    # no Mediathek requests: the update path is all this tests
-FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
 CUR=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SRC/res/Info.plist")
 NEW=$(echo "$CUR" | awk -F. '{print $1"."$2"."$3+1}')   # fictitious next version
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
@@ -47,7 +48,9 @@ defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings o
 SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
 APP=$!
 keep=0
-trap 'kill $APP $SRV 2>/dev/null; rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"; [ $keep = 1 ] || rm -rf "$T"' EXIT
+# settings deleted after the app is gone (its last write would bring them back)
+trap 'kill $APP $SRV 2>/dev/null; wait $APP 2>/dev/null; defaults delete de.sofa.dev.$INST >/dev/null 2>&1
+      rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"; [ $keep = 1 ] || rm -rf "$T"' EXIT
 for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
 cmd() { echo "$*" > "$FIFO"; }
 mark() { wc -l < "$LOG" | tr -d ' '; }

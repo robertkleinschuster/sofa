@@ -2,7 +2,7 @@
 //
 // Dev mode (`Sofa --dev [--size WxH]`): window outside the visible
 // screen, no Dock presence, no focus, muted. Controlled via the FIFO
-// ~/Library/Caches/Sofa/dev.fifo (lines: "key <up|down|left|right|select|menu|play|
+// the dev FIFO (SFAppDelegate+Dev fifoPath; lines: "key <up|down|left|right|select|menu|play|
 // selecthold|menuhold|next|prev>", "shot <path.png>", "home", "quit").
 #import "SFCore.h"
 #import "SFLibraryPages.h"
@@ -299,8 +299,7 @@ int main(int argc, const char *argv[]) {
             }
         }
         if (SFDevMode) {
-            SFLogFileName = [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstance];
-            SFSetDevInstance(gInstance);   // own data directory (docs/architecture.md, Dev instances)
+            SFSetDevInstance(gInstance);   // own data directory and log (docs/architecture.md, Dev instances)
         }
         BOOL autostart = NO;
         for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--autostart")) autostart = YES;

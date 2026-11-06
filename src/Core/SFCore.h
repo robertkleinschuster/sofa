@@ -18,7 +18,9 @@ static inline CGFloat U(CGFloat v) { return round(v * SFScale); }
 
 void SFLogFlush(void);   // wait until queued log lines are written (before _exit)
 void SFLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
-extern NSString *SFLogFileName;   // "Sofa.log"; dev instances: "Sofa-dev-<instance>.log"
+// The log: ~/Library/Logs/Sofa.log; a dev instance ~/Library/Logs/Sofa-dev-<instance>.log, or
+// <SOFA_DATA_DIR>/sofa.log (tests: gone with their temporary directory). Fixed once SFLog ran.
+NSString *SFLogPath(void);
 
 static inline void SFMain(dispatch_block_t b) {
     if ([NSThread isMainThread]) b(); else dispatch_async(dispatch_get_main_queue(), b);
@@ -54,6 +56,9 @@ id SFJSONParse(NSString *text);
 // fresh temporary directory per run). Set once at launch, before anything is stored.
 void SFSetDevInstance(NSString *instance);
 NSString *SFDevInstanceName(void);   // "view" by default; nil in the real app
+// dev: files of this instance that live beside the shared ones (log, dev FIFO): the data
+// directory when SOFA_DATA_DIR chose it, else nil (then ~/Library/Logs, the shared cache)
+NSString *SFDevPrivateDir(void);
 NSString *SFAppSupportDir(void);
 // Caches: the real app ~/Library/Caches/Sofa, a dev instance <data dir>/Caches (images, the
 // updater's work dir - nothing a test does reaches the real app's).

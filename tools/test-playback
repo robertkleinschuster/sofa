@@ -35,9 +35,10 @@ unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=${PLAYTEST_INSTANCE:-playtest} PORT=${PLAYTEST_PORT:-47994}
-FIFO="$HOME/Library/Caches/Sofa/dev-$INST.fifo" LOG="$HOME/Library/Logs/Sofa-dev-$INST.log"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
+# the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
+mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 export SOFA_ONLY_APPS=example,youtube   # YouTube only for the offline end screen (section 8)
@@ -75,8 +76,9 @@ keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS
 mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {
-  [ -n "$APP" ] && kill $APP 2>/dev/null
-  defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings (section 6)
+  [ -n "$APP" ] && { kill $APP 2>/dev/null; wait $APP 2>/dev/null; }
+  # this instance's settings (section 6) - after the app is gone, or its last write brings them back
+  defaults delete de.sofa.dev.$INST >/dev/null 2>&1
   rm -rf "$T"
 }
 trap cleanup EXIT

@@ -32,7 +32,9 @@
 #pragma mark Dev FIFO
 
 static NSString *fifoPath(void) {
-    return [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
+    NSString *own = SFDevPrivateDir();   // tests: inside their temporary data directory
+    return own ? [own stringByAppendingPathComponent:@"dev.fifo"]
+               : [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
 }
 
 - (void)startFifo {

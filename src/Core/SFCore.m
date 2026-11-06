@@ -2,7 +2,6 @@
 
 CGFloat SFScale = 1.0;
 
-NSString *SFLogFileName = @"Sofa.log";
 static dispatch_queue_t gLogQueue;   // set by the first SFLog
 void SFLogFlush(void) { if (gLogQueue) dispatch_sync(gLogQueue, ^{}); }
 
@@ -15,8 +14,7 @@ void SFLog(NSString *fmt, ...) {
     dispatch_once(&once, ^{
         q = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
         gLogQueue = q;
-        NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"];
-        NSString *p = [dir stringByAppendingPathComponent:SFLogFileName ?: @"Sofa.log"];
+        NSString *p = SFLogPath();
         NSDictionary *a = [[NSFileManager defaultManager] attributesOfItemAtPath:p error:nil];
         if ([a fileSize] > 4 * 1024 * 1024) {
             NSString *old = [p stringByAppendingString:@".1"];
@@ -155,12 +153,21 @@ static NSString *ensureDir(NSString *p) {
     return p;
 }
 static NSString *gDataDir, *gInstanceName;   // dev instance only; nil = the real app
+static BOOL gDataDirFromEnv;
 
 NSString *SFDevInstanceName(void) { return gInstanceName; }
+NSString *SFDevPrivateDir(void) { return gDataDirFromEnv ? ensureDir(gDataDir) : nil; }
+
+NSString *SFLogPath(void) {
+    if (SFDevPrivateDir()) return [gDataDir stringByAppendingPathComponent:@"sofa.log"];
+    NSString *name = gInstanceName ? [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstanceName] : @"Sofa.log";
+    return [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"] stringByAppendingPathComponent:name];
+}
 
 void SFSetDevInstance(NSString *instance) {
     gInstanceName = instance.length ? instance : @"view";
     NSString *env = [NSProcessInfo processInfo].environment[@"SOFA_DATA_DIR"];
+    gDataDirFromEnv = env.length > 0;
     gDataDir = env.length ? env : [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa-dev"]
                                     stringByAppendingPathComponent:instance.length ? instance : @"view"];
 }
