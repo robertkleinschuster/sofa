@@ -7,6 +7,20 @@
 
 static NSUInteger gen_;   // later setPlaylist wins
 
+// Titles/channels of a phone queue come from each video's watch page ("next"). Only the playing
+// entry and the one after it, never the whole list: a 100-video playlist used to fetch 100 watch
+// pages within a minute (3 bursts on 2026-11-06, bot checks 50 min later) - a browser opens one
+// page per video watched. The rest follows as playback reaches it (SFYTRemoteFillAhead).
+static void fillAround(NSArray *items, NSUInteger idx) {
+    if (idx + 1 < items.count) [SFYTWatch fillDetails:items[idx + 1] done:nil];
+}
+
+void SFYTRemoteFillAhead(SFPlayerScreen *p) {
+    if (!p.remoteListID) return;   // only queues the phone sent
+    NSUInteger idx = [p.queue indexOfObjectIdenticalTo:p.item];
+    if (idx != NSNotFound) fillAround(p.queue, idx);
+}
+
 void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args) {
     if (!host) return;
     SFNavigator *nav = [host nav];
@@ -36,7 +50,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
             if (![p.remoteListID isEqualToString:list] || ![curIDs isEqualToArray:vids]) {
                 p.remoteListID = list;
                 [p adoptQueue:items index:idx];
-                for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYTWatch fillDetails:items[k] done:nil];
+                fillAround(items, idx);
             }
             if (t > 1 && fabs([p currentTime] - t) > 3) [p remoteSeekTo:t];
             [p remotePlay];
@@ -55,7 +69,7 @@ void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args)
                 if (t > 1) ps.startPosition = t; else ps.startFromBeginning = YES;
                 [host presentPlayer:ps];
             }
-            for (NSUInteger k = 0; k < items.count; k++) if (k != idx) [SFYTWatch fillDetails:items[k] done:nil];
+            fillAround(items, idx);
         }];
     } else if (!p) {
         return;

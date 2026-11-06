@@ -5,6 +5,7 @@
 #import "SFPlayerScreen.h"
 #import "SFVolume.h"
 #import "SFLoungeMessages.h"
+#import "SFYouTubeApp.h"
 #import <curl/curl.h>
 
 NSString *const SFLoungeRemotesDidChangeNotification = @"SFLoungeRemotesDidChangeNotification";
@@ -400,6 +401,7 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
     if (!vid && !_lastVideo) return;   // non-YouTube playback: nothing to report
     if (!(vid == _lastVideo || [vid isEqualToString:_lastVideo])) {
         _lastVideo = vid; _lastState = s; _cpn = [self newCPN];
+        SFYTRemoteFillAhead(p);   // the queue's next entry, now that this one plays
         [self send:@[@[@"nowPlaying", [self nowPlayingArgs:p]], @[@"onStateChange", [self stateArgs:p]],
                      @[@"onHasPreviousNextChanged", @{@"hasPrevious": p.hasPrevious ? @"true" : @"false", @"hasNext": p.hasNext ? @"true" : @"false"}],
                      [self subtitlesMessage:p state:p.subtitleState]]];   // new video: the old one's subtitles no longer apply

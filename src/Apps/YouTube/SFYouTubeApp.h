@@ -14,3 +14,6 @@
 
 // phone remote: one SFLounge command -> player host (SFYTRemote.m)
 void SFYTRemoteCommand(id<SFPlayerHost> host, NSString *cmd, NSDictionary *args);
+@class SFPlayerScreen;
+// a phone queue's next entry gets its details (one watch page) when the one before it starts
+void SFYTRemoteFillAhead(SFPlayerScreen *p);

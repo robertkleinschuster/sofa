@@ -19,6 +19,8 @@
 #      tiles follow the timeline (also while paused), DOWN enters, arrows move, follow toggles,
 #      MENU leaves without touching playback, OK on a video plays it (a "downloaded" test video),
 #      the end of the video waits while the tiles have focus
+#   8c. a phone queue (Lounge setPlaylist, offline) fetches watch pages only for the playing and the
+#      next video, never the whole list (2026-11-06: 100 pages in a minute -> bot checks)
 #   8b. a session stream (app service, e.g. YouTube's sidecar) that breaks again right after being
 #      reopened ends in a message - one reopen, no loop (2026-11-06: without the yt-dlp fallback the
 #      second failure would otherwise reopen forever)
@@ -207,6 +209,19 @@ waitlog $m 'endscreen: shown at' 20; cmd "key down"
 waitlog $m 'ended while in the end screen' 80 && ok "the end waits while the tiles have focus" || bad "end did not wait: $(since $m | grep 'player:\|endscreen' | tail -2)"
 sleep 1.5; since $m | grep -q 'player: end ->' && bad "end flow ran while the tiles had focus" || ok "no up-next/leave under the tiles"
 m2=$(mark); cmd "key menu"; waitlog $m2 'player: end -> leaving' 12 && ok "leaving the tiles finishes the end" || bad "end flow did not run after MENU"
+stop
+unset SOFA_OFFLINE
+
+echo "==> 8c. a phone queue: watch pages only for the playing and the next video"
+# 2026-11-06: a 100-video playlist from the phone fetched 100 watch pages within a minute (three
+# bursts, bot checks 50 min later). Offline: the requests fail, the log line counts the attempts.
+export SOFA_OFFLINE=1
+start
+Q=""; for i in $(seq 10 29); do Q="$Q${Q:+,}queueVid0$i"; done   # 20 well-formed (11 char) video ids
+m=$(mark); cmd "lounge setPlaylist {\"videoIds\":\"$Q\",\"currentIndex\":\"0\"}"
+waitlog $m 'youtube: details of queueVid011' 20; sleep 2
+asked=$(since $m | grep -o 'youtube: details of [A-Za-z0-9_-]*' | sed 's/.* //' | sort -u | tr '\n' ' ')
+[ "$asked" = "queueVid010 queueVid011 " ] && ok "only the playing and the next video asked ($asked)" || bad "watch pages asked: $asked"
 stop
 unset SOFA_OFFLINE
 

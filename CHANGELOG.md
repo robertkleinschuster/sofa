@@ -4,6 +4,13 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.11
+
+- **YouTube: keine Abruf-Schübe mehr beim Abspielen vom Handy.** Schickt das Handy eine lange
+  Playlist an Sofa, lädt Sofa die Infos jetzt nur für das laufende und das nächste Video – vorher
+  für die ganze Liste auf einmal (bei 100 Videos 100 Abrufe in einer Minute), was YouTube als
+  Bot-Verhalten werten kann.
+
 ## 0.3.10
 
 - **YouTube: weniger „Bist du ein Bot?“-Sperren.** Sofa tritt bei YouTube jetzt als ein einziger,

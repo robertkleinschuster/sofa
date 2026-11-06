@@ -30,6 +30,7 @@
 // with a PO token, when the video actually plays (and brings the duration then)
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done {
     if (item.localPath || !item.externalID) { if (done) done(); return; }
+    SFLog(@"youtube: details of %@", item.externalID);   // one watch page per video (test-playback 8c counts them)
     SFYTCall(@"next", @{@"videoId": item.externalID}, 1800, ^(id j, NSError *e) {
         NSDictionary *d = [SFYTParser watchDetailsIn:j];
         if (d.count) {
