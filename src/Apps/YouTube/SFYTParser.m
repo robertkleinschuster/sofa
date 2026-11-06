@@ -87,17 +87,33 @@ static NSString *tvAvatar(NSString *avatar) {
     NSString *type = str(l[@"contentType"]), *cid = str(l[@"contentId"]);
     NSDictionary *md = dict(SFYTPath(l, @"metadata.lockupMetadataViewModel"));
     NSString *title = SFYTText(md[@"title"]);
+    // Metadata rows: [channel] and [views, age]. A part's text can lean on an icon (the views'
+    // play arrow: "77.272") or abbreviate ("vor 2 Std."); its accessibilityLabel says it in full
+    // ("77.272 Aufrufe", "vor 2 Stunden") - shown where an icon stands in, parsed for the age.
+    // The channel part links to the channel (commandRuns -> browseEndpoint); where it is plain
+    // text (related videos), the channel is the byline row above the stats row.
     NSArray *rows = arr(SFYTPath(md, @"metadata.contentMetadataViewModel.metadataRows"));
-    NSMutableArray *rowTexts = [NSMutableArray new];
+    NSMutableArray *rowTexts = [NSMutableArray new], *labels = [NSMutableArray new];
+    NSString *linkedChannel = nil, *linkedID = nil;
     for (NSDictionary *row in rows) {
         NSMutableArray *parts = [NSMutableArray new];
-        for (NSDictionary *p in arr(dict(row)[@"metadataParts"])) { NSString *t = SFYTText(dict(p)[@"text"]); if (t.length) [parts addObject:t]; }
+        for (NSDictionary *p in arr(dict(row)[@"metadataParts"])) {
+            NSString *t = SFYTText(dict(p)[@"text"]), *label = str(dict(p)[@"accessibilityLabel"]);
+            NSString *cid = str(SFYTPath(dict(p)[@"text"], @"commandRuns.0.onTap.innertubeCommand.browseEndpoint.browseId"));
+            if ([cid hasPrefix:@"UC"] && t.length) { linkedChannel = t; linkedID = cid; }
+            if (label.length) [labels addObject:label];
+            NSString *shown = dict(p)[@"leadingIcon"] && label.length ? label : t;
+            if (shown.length) [parts addObject:shown];
+        }
         if (parts.count) [rowTexts addObject:parts];
     }
     if ([type isEqualToString:@"LOCKUP_CONTENT_TYPE_VIDEO"]) {
-        NSString *channel = rowTexts.count >= 2 ? [rowTexts[0] firstObject] : nil;
+        // a Short opens the Shorts player (reelWatchEndpoint): not a video for Sofa's lists
+        if (SFYTPath(l, @"rendererContext.commandContext.onTap.innertubeCommand.reelWatchEndpoint")) return nil;
+        NSString *channel = linkedChannel ?: (rowTexts.count >= 2 ? [rowTexts[0] firstObject] : nil);
+        if (linkedChannel && rowTexts.count >= 2) [rowTexts removeObjectAtIndex:0];
         NSString *meta = [rowTexts.lastObject componentsJoinedByString:@" · "];
-        NSString *chID = str(SFYTPath(md, @"image.decoratedAvatarViewModel.rendererContext.commandContext.onTap.innertubeCommand.browseEndpoint.browseId"));
+        NSString *chID = linkedID ?: str(SFYTPath(md, @"image.decoratedAvatarViewModel.rendererContext.commandContext.onTap.innertubeCommand.browseEndpoint.browseId"));
         NSDictionary *tv = dict(SFYTPath(l, @"contentImage.thumbnailViewModel"));
         NSString *thumb = SFYTLastURL(SFYTPath(tv, @"image.sources"));
         NSTimeInterval dur = 0; BOOL live = NO, upcoming = NO;
@@ -105,7 +121,8 @@ static NSString *tvAvatar(NSString *avatar) {
             for (NSDictionary *b in arr(SFYTPath(ov, @"thumbnailBottomOverlayViewModel.badges"))) {
                 NSDictionary *bv = dict(dict(b)[@"thumbnailBadgeViewModel"]);
                 NSString *t = str(bv[@"text"]), *style = str(bv[@"badgeStyle"]);
-                if ([style hasSuffix:@"LIVE"] || [t isEqualToString:@"LIVE"]) live = YES;
+                if ([style hasSuffix:@"_LIVE"]) live = YES;
+                // no recorded answer with an upcoming video yet: its badge is known by text only
                 else if ([t isEqualToString:@"Anstehend"] || [t.uppercaseString isEqualToString:@"UPCOMING"]) upcoming = YES;
                 else if (parseDuration(t) > 0) dur = parseDuration(t);
             }
@@ -113,7 +130,7 @@ static NSString *tvAvatar(NSString *avatar) {
         if (upcoming) return nil;   // not playable yet
         if (channel && meta) meta = [NSString stringWithFormat:@"%@ · %@", channel, meta];
         SFItem *vi = [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
-        for (NSString *part in rowTexts.lastObject) if ((vi.date = relativeDate(part))) break;
+        for (NSString *part in [labels arrayByAddingObjectsFromArray:rowTexts.lastObject ?: @[]]) if ((vi.date = relativeDate(part))) break;
         return vi;
     }
     if ([type isEqualToString:@"LOCKUP_CONTENT_TYPE_PLAYLIST"]) {
@@ -144,7 +161,7 @@ static NSString *tvAvatar(NSString *avatar) {
     NSString *channel = str(own[@"text"]);
     NSString *chID = str(SFYTPath(own, @"navigationEndpoint.browseEndpoint.browseId"));
     BOOL live = NO;
-    for (NSDictionary *b in arr(v[@"badges"])) if ([str(SFYTPath(b, @"metadataBadgeRenderer.label")) isEqualToString:@"LIVE"]) live = YES;
+    for (NSDictionary *b in arr(v[@"badges"])) if ([str(SFYTPath(b, @"metadataBadgeRenderer.style")) isEqualToString:@"BADGE_STYLE_TYPE_LIVE_NOW"]) live = YES;
     for (NSDictionary *o in arr(v[@"thumbnailOverlays"])) if ([str(SFYTPath(o, @"thumbnailOverlayTimeStatusRenderer.style")) isEqualToString:@"LIVE"]) live = YES;
     NSTimeInterval dur = [str(v[@"lengthSeconds"]) doubleValue] ?: parseDuration(SFYTText(v[@"lengthText"]));
     NSMutableArray *meta = [NSMutableArray new];
@@ -241,20 +258,16 @@ static NSSet *skipKeys(void) {
     return NO;
 }
 
-// chip text is language-dependent; otherwise the second of three
+// The sort chips carry nothing but their label and a continuation token: the label is the only
+// identification - "Beliebt" for the hl=de our requests ask for (SFYTCall).
 + (NSString *)popularTokenIn:(id)j {
-    NSString *tok = nil;
-    for (NSDictionary *tab in arr(SFYTPath(j, @"contents.twoColumnBrowseResultsRenderer.tabs"))) {
-        NSArray *chips = arr(SFYTPath(tab, @"tabRenderer.content.richGridRenderer.header.chipBarViewModel.chips"));
-        for (NSUInteger k = 0; k < chips.count && !tok; k++) {
-            NSDictionary *c = dict(dict(chips[k])[@"chipViewModel"]);
-            NSString *t = str(c[@"text"]);
-            if ([t isEqualToString:@"Beliebt"] || [t isEqualToString:@"Popular"] || (chips.count == 3 && k == 1 && !t.length))
-                tok = str(SFYTPath(c, @"tapCommand.innertubeCommand.continuationCommand.token"));
+    for (NSDictionary *tab in arr(SFYTPath(j, @"contents.twoColumnBrowseResultsRenderer.tabs")))
+        for (NSDictionary *chip in arr(SFYTPath(tab, @"tabRenderer.content.richGridRenderer.header.chipBarViewModel.chips"))) {
+            NSDictionary *c = dict(dict(chip)[@"chipViewModel"]);
+            if ([str(c[@"accessibilityLabel"]) ?: str(c[@"text"]) isEqualToString:@"Beliebt"])
+                return str(SFYTPath(c, @"tapCommand.innertubeCommand.continuationCommand.token"));
         }
-        if (!tok && chips.count == 3) tok = str(SFYTPath(dict(chips[1]), @"chipViewModel.tapCommand.innertubeCommand.continuationCommand.token"));
-    }
-    return tok;
+    return nil;
 }
 
 #pragma mark Watch page (docs/youtube.md §3.4)
@@ -263,8 +276,7 @@ static NSSet *skipKeys(void) {
     NSMutableArray *related = [NSMutableArray new];
     id sec = SFYTPath(j, @"contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results");
     for (SFItem *i in (sec ? [self itemsIn:sec continuation:NULL channels:nil] : @[])) {
-        if (i.kind != SFItemVideo || !i.identifier || [i.externalID isEqualToString:vid]) continue;
-        if (i.duration > 0 && i.duration < 90) continue;                 // no Shorts
+        if (i.kind != SFItemVideo || !i.identifier || [i.externalID isEqualToString:vid]) continue;   // Shorts are not videos (fromLockup)
         [related addObject:i];
     }
     return related;
@@ -276,15 +288,12 @@ static NSSet *skipKeys(void) {
     for (id c in arr(SFYTPath(j, @"contents.twoColumnWatchNextResults.results.results.contents")) ?: @[]) {
         NSDictionary *pri = dict(dict(c)[@"videoPrimaryInfoRenderer"]);
         NSDictionary *secr = dict(dict(c)[@"videoSecondaryInfoRenderer"]);
-        if (pri) {   // "02.11.2026", also "Premiere am 02.11.2026" / "Live übertragen am ..."
-            NSString *dt = SFYTText(pri[@"dateText"]);
-            NSRange r = dt ? [dt rangeOfString:@"[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{4}" options:NSRegularExpressionSearch] : NSMakeRange(NSNotFound, 0);
-            if (r.location != NSNotFound) {
-                NSDateFormatter *f = [NSDateFormatter new];
-                f.dateFormat = @"d.M.yyyy"; f.locale = [NSLocale localeWithLocaleIdentifier:@"de_AT"];
-                NSDate *date = [f dateFromString:[dt substringWithRange:r]];
-                if (date) d[@"date"] = date;
-            }
+        if (pri) {   // publishDate: the bare day, "dd.MM.yyyy" for the hl=de our requests ask for (SFYTCall)
+            NSDateFormatter *f = [NSDateFormatter new];
+            f.dateFormat = @"dd.MM.yyyy"; f.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+            f.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
+            NSDate *date = [f dateFromString:SFYTText(pri[@"publishDate"]) ?: @""];
+            if (date) d[@"date"] = date;
         }
         if (secr) {
             NSString *desc = str(SFYTPath(secr, @"attributedDescription.content")) ?: SFYTText(secr[@"description"]);
