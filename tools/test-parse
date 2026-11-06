@@ -33,14 +33,15 @@ for gz in "$SRC"/tests/fixtures/*/*.json.gz; do
   [ -n "$only" ] && [ "$app" != "$only" ] && continue
   out="$T/$app-$n.txt" want="${gz%.json.gz}.txt"
   gunzip -c "$gz" > "$T/$app-$n.json"
-  echo "parse $app ${n%%-*} $T/$app-$n.json $out" > "$FIFO"
-  for i in $(seq 1 100); do grep -qE "dev: parse (written $out|failed: $app )" "$LOG" && break; sleep 0.1; done
+  echo "parse $app ${n%%-*} $T/$app-$n.json $out" 1<>"$FIFO"
+  for i in $(seq 1 100); do grep -qE "dev: parse (written $out|failed: $app )" "$LOG" && break; kill -0 $APP 2>/dev/null || break; sleep 0.1; done
+  kill -0 $APP 2>/dev/null || { bad "$app/$n: the parser crashed the dev instance"; APP=; break; }
   [ -f "$out" ] || { bad "$app/$n: no output"; continue; }
   if [ $record = 1 ]; then cp "$out" "$want"; ok "$app/$n recorded ($(grep -c '^item' "$out") items)"
   elif diff -u "$want" "$out" > "$T/$app-$n.diff"; then ok "$app/$n ($(grep -c '^item' "$out") items)"
   else bad "$app/$n differs:"; head -20 "$T/$app-$n.diff" | sed 's/^/        /'; fi
 done
-echo quit > "$FIFO"; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=
+echo quit 1<>"$FIFO"; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=
 
 [ $fail = 0 ] && echo "==> test-parse ok" || echo "==> test-parse FAILED"
 exit $fail

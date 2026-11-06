@@ -5,7 +5,8 @@
 //   * forwards buttons to Sofa via Mach port (Sofa in the foreground),
 //   * launches Sofa with MENU when it isn't running (Front Row principle),
 //   * translates buttons into keyboard events when another app (e.g. Kodi) is in front,
-//   * swallows the first press while the display sleeps (only wakes it).
+//   * swallows the first press while the display sleeps (only wakes it),
+//   * relaunches Sofa after a crash (SRSupervisor).
 // Unknown HID usages are logged (calibration).
 #import <Cocoa/Cocoa.h>
 #import <IOKit/hid/IOHIDLib.h>
@@ -14,6 +15,7 @@
 #import "../src/Core/SFCore.h"
 #import "../src/Shell/SFRemote.h"
 #import "../src/Core/SFRuntime.h"
+#import "SRSupervisor.h"
 
 BOOL SFDevMode = NO;
 CGFloat SFScale = 1;
@@ -65,6 +67,7 @@ static NSString *ExternalUpdateDir(void) {
     BOOL _external;     // update in progress: swap done by tools/sofa-deploy (app folder not writable)
     ino_t _selfIno;     // file ID of our own executable at launch (Sofa.app replaced? -> restart)
     BOOL _replaced;     // "update" in progress: bundle was replaced from outside (new DMG), no swap
+    SRSupervisor *_supervisor;
 }
 
 
@@ -87,6 +90,26 @@ static NSString *ExternalUpdateDir(void) {
     _selfIno = [self selfInode];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
+}
+
+#pragma mark Crash supervision
+
+// left by Sofa while it runs, removed on every planned exit (main.m SFSetRunningMarker)
+static NSString *RunningMarker(void) {
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/Sofa/running"];
+}
+
+- (void)superviseSofa {
+    if (!_sofaPath) return;
+    if (!_supervisor) _supervisor = [SRSupervisor new];
+    BOOL wasGivenUp = _supervisor.gaveUp;
+    BOOL marker = [[NSFileManager defaultManager] fileExistsAtPath:RunningMarker()];
+    if ([_supervisor shouldRelaunchAt:[NSDate date] running:[self realSofaProcesses].count > 0 markerLeft:marker]) {
+        [self log:@"Sofa ended unexpectedly - relaunching"];
+        [self launchSofa];
+    } else if (_supervisor.gaveUp && !wasGivenUp) {
+        [self log:@"Sofa keeps ending right after launch - no more relaunches until it runs again"];
+    }
 }
 
 #pragma mark Update
@@ -113,6 +136,7 @@ static NSString *ExternalUpdateDir(void) {
 - (void)checkUpdate {
     if (_updating) return;
     [self syncRemote];
+    [self superviseSofa];
     // New version dragged over the old one in Finder: restart Sofa (saving state) and the helper,
     // otherwise the old helper would keep running until the next login.
     ino_t ino = [self selfInode];

@@ -17,7 +17,11 @@
     NSMutableArray *o = [NSMutableArray new];
     NSArray *items = @[]; NSMutableArray *channels = [NSMutableArray new]; NSString *cont = nil;
     if ([kind isEqualToString:@"feed"]) items = [SFYTFeeds videosInUploads:j];
-    else if ([kind isEqualToString:@"header"]) [o addObject:[NSString stringWithFormat:@"avatar %@", [SFYTParser channelHeaderIn:j][@"avatar"]]];
+    else if ([kind isEqualToString:@"header"]) {   // every header field, one line each (a missing one: no line)
+        NSDictionary *h = [SFYTParser channelHeaderIn:j];
+        for (NSString *k in [h.allKeys sortedArrayUsingSelector:@selector(compare:)])
+            [o addObject:[NSString stringWithFormat:@"%@ %@", k, [h[k] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]]];
+    }
     else if ([kind isEqualToString:@"list"]) items = [SFYTParser itemsIn:j continuation:&cont channels:channels];
     else return nil;
     for (SFItem *i in items) [o addObject:[@"item " stringByAppendingString:SFCanonicalItem(i, YES)]];

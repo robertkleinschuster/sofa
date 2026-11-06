@@ -59,6 +59,7 @@ long long SFYTViewCount(NSString *s) {
 
 // A channel avatar in TV size: its size is freely selectable (=s88-... -> =s400-...).
 static NSString *tvAvatar(NSString *avatar) {
+    if (!avatar.length) return avatar;   // nil would answer location 0, not NSNotFound
     NSRange r = [avatar rangeOfString:@"=s" options:NSBackwardsSearch];
     if (r.location == NSNotFound) return avatar;
     NSRange dash = [avatar rangeOfString:@"-" options:0 range:NSMakeRange(NSMaxRange(r), avatar.length - NSMaxRange(r))];
@@ -257,7 +258,12 @@ static NSSet *skipKeys(void) {
     NSMutableDictionary *h = [NSMutableDictionary new];
     // banner template is 2560x1440; without the fcrop crop = full TV image (16:9)
     NSString *bu = str(dict(arr(SFYTPath(vm, @"banner.imageBannerViewModel.image.sources")).lastObject)[@"url"]);
-    NSRange eq = [bu rangeOfString:@"=" options:NSBackwardsSearch];
+    // the image parameters start at the first "=" after the path ("<id>=w2560-fcrop64=1,..." - cut at
+    // the last one, the old size stayed in front of the new). A channel without a banner: no url
+    // (nil answers location 0, not NSNotFound: nil went into the dictionary, crash 2026-11-06 12:36)
+    NSRange slash = bu ? [bu rangeOfString:@"/" options:NSBackwardsSearch] : NSMakeRange(NSNotFound, 0);
+    NSRange eq = slash.location != NSNotFound ? [bu rangeOfString:@"=" options:0 range:NSMakeRange(NSMaxRange(slash), bu.length - NSMaxRange(slash))]
+                                              : NSMakeRange(NSNotFound, 0);
     if (eq.location != NSNotFound) h[@"banner"] = [[bu substringToIndex:eq.location] stringByAppendingString:@"=w1920-fcrop64=1,00000000ffffffff-k-c0xffffffff-no-nd-rj"];
     NSString *avatar = tvAvatar(str(dict(arr(SFYTPath(vm, @"image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources")).lastObject)[@"url"]));
     if (avatar.length) h[@"avatar"] = avatar;

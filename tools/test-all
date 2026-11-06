@@ -2,11 +2,11 @@
 # test-all -- every offline/dev regression suite; make-release refuses to build when one fails.
 # Each suite runs in its own invisible dev instance with its own fresh data directory
 # (SOFA_DATA_DIR, docs/architecture.md "Dev instances") and never touches the real app or its
-# data, and makes no network request - so the suites run side by side (~1.5 min). --serial: one after another.
+# data, and makes no network request - so the suites run side by side (~1 min). --serial: one after another.
 #   tools/check-arch      layer rules of docs/architecture.md (static)
 #   tools/test-units      pure core functions (tests/units, no app instance)
 #   tools/test-parse   every app's parser against recorded real answers
-#   tools/test-playback   render-context race, video self-heal, fallback chain, download -> online
+#   tools/test-playback   render-context race, video self-heal, failure message, end screen, download -> online
 #   tools/test-downloads  orphaned ffmpeg, verifier, quit during a download
 #   tools/test-home       mixed Home rows: only what plays here (drm, region), stored rows
 #   tools/test-schema     database migrations from a 0.3.8 database, integrity, nothing lost
@@ -35,7 +35,10 @@ wait
 fail=0
 for t in $SUITES; do
   if [ "$(cat "$OUT/$t.rc")" = 0 ]; then printf "  ok    %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
-  else printf "  FAIL  %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"; tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
+  else printf "  FAIL  %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
+    # the failing checks by name (shell suites: "FAIL ...", node: "not ok ..."), then the tail
+    grep -E '^ *(FAIL|not ok) ' "$OUT/$t.log" | head -n 10 | sed 's/^ */        > /'
+    tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
 done
 [ $fail = 0 ] && echo "==> all suites ok ($(( $(date +%s) - t0 ))s)" || echo "==> SOME SUITES FAILED"
 exit $fail

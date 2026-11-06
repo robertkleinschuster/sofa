@@ -28,7 +28,7 @@ run() {   # start the instance until its store is open, then quit
   : > "$LOG"
   "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
   for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.1; done
-  echo quit > "$FIFO" 2>/dev/null
+  echo quit 1<>"$FIFO" 2>/dev/null
   for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
   kill $APP 2>/dev/null; APP=
 }

@@ -22,6 +22,9 @@ Einstellungen → „Update installieren“.
 - **Kanalbilder kommen zurück:** Kanäle ohne Bild (etwa nach der Übernahme der alten
   Bibliothek) holen ihr Kanalbild nach und nach selbst – bis dahin steht das Bild des neuesten
   Videos auf der Kachel.
+- **Sofa startet nach einem Absturz von selbst wieder** (nach wenigen Sekunden). Behoben ist auch der
+  Absturz selbst: Kanäle ohne Titelbild brachten Sofa beim Nachladen der Kanalbilder zum Absturz.
+  Kanal-Titelbilder werden außerdem wieder in voller Größe geladen.
 - **Ein Player für alles:** Sofa spielt jetzt jedes Video mit demselben Player (mpv). Der alte
   Apple-Player, der nur noch als Reserve diente und dabei nie ein Video gerettet hat, ist
   entfernt. Kann ein Stream nicht geladen werden, sagt Sofa das sofort, statt erst mehrere

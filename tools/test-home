@@ -40,8 +40,8 @@ start() {   # start [env ...]
   for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.1; done
   echo "dev instance did not start"; exit 1
 }
-quit() { echo quit > "$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
-cmd() { echo "$*" > "$FIFO"; }
+quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
+cmd() { echo "$*" 1<>"$FIFO"; }
 waitlog() {   # waitlog PATTERN: until the pattern appears in the log (5 s)
   for i in $(seq 1 50); do grep -q "$1" "$LOG" && return 0; sleep 0.1; done; return 1
 }
