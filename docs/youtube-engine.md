@@ -118,8 +118,21 @@ route is kept), and the GPU process on (the firefox-x11 port's remote-X defaults
 Firefox disables WebGL without it). Those defaults (30 Hz, reduced motion, no animations, fission
 off) are visible to pages and must be reset in the engine's profile.
 
-Open suspect: the connection itself. Five bot checks from this IP on 2026-11-06; the node sidecar
-gets the same rejection. Control: a normal browser on another device behind the same IP.
+**The deciding signal is remote control** (measured 2026-11-06, control pairs):
+
+| Firefox on Xvfb, same profile, same IP | Result |
+|---|---|
+| remote agent (WebDriver BiDi) running | stops at 60.0 s - 6 of 6 runs, also with `webdriver` reported `false` and with `remote.prefs.recommended=false` |
+| started normally, no remote agent | plays on (2:15 from 0:00; 2:20 from 5:00), screenshots of the display |
+| another device behind the same IP (user) | plays on |
+
+So YouTube recognises a browser under remote control - not by `navigator.webdriver` alone, not by
+the agent's recommended prefs - and its stream protection then refuses after 60 s. Consequence for
+the design: **the engine must not be driven over WebDriver BiDi/Marionette.** Sofa talks to the page
+through a channel a normal browser has: a WebExtension in Sofa's profile (content script in the
+page's world at document_start = today's preload script; its background page reaches Sofa's
+loopback server). BiDi stays for tests only.
+
 The profile setup of the engine must answer the consent dialog once, like a user.
 
 ## Still open
