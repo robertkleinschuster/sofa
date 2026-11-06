@@ -38,7 +38,12 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     NSString *u = [@"https://www.youtube.com/feeds/videos.xml?playlist_id=UULF" stringByAppendingString:[cid substringFromIndex:2]];
     NSData *d = SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
     NSString *xml = st == 200 && d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
-    if (!xml) return nil;
+    if (!xml) {   // visible, but once per cycle - not once per channel
+        static NSTimeInterval logged;
+        NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+        if (now - logged > 1800) { logged = now; SFLog(@"yt: RSS of %@ failed (HTTP %ld) - stored lists, refreshed via InnerTube when older than 6 h", cid, (long)st); }
+        return nil;
+    }
     static NSRegularExpression *re, *vre;
     static dispatch_once_t o;
     dispatch_once(&o, ^{
@@ -70,7 +75,7 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
     SFBackground(^{
         [self migrateStorage];
         if ([SFYTBreaker shared].blockedUntil) {   // follows keep what they have
-            NSArray *last = [self stored:cid sig:NULL];
+            NSArray *last = [self stored:cid sig:NULL age:NULL];
             SFMain(^{ done(last.count ? last : nil, last.count ? nil : SFError(@"YouTube pausiert gerade (Bot-Prüfung).")); });
             return;
         }
@@ -99,15 +104,18 @@ static NSDictionary *rssPublished(NSString *cid, NSDictionary **viewsOut) {
         done(items, err);
     };
     NSString *stored = nil;
-    NSArray *last = [self stored:cid sig:&stored];
+    NSTimeInterval age = 0;
+    NSArray *last = [self stored:cid sig:&stored age:&age];
     NSArray *parts = [stored componentsSeparatedByString:@"@"];
     BOOL unchanged = sig && [parts.firstObject isEqualToString:sig] &&
                      (parts.count == 1 || [NSDate date].timeIntervalSince1970 - [parts.lastObject doubleValue] < 2 * 3600);
-    // RSS failed (no signature): nothing known to have changed - the stored list, signature kept
-    if ((unchanged || !sig) && last.count) { finish(last, nil); return; }
+    // RSS failed (no signature): nothing is known to have changed - the stored list, signature
+    // kept; but not for ever (2026-11-05/06: RSS failed for hours, no new video showed up): a list
+    // older than 6 h is renewed from InnerTube (within the budget)
+    if ((unchanged || (!sig && age < 6 * 3600)) && last.count) { finish(last, nil); return; }
     [self uploads:cid done:^(NSArray *online, NSError *e) {
         if (!online) { finish(last.count ? last : nil, last.count ? nil : e); return; }   // failed: the last known list
-        NSString *newSig = sig;
+        NSString *newSig = sig ?: stored;   // without RSS the last signature stays (no change known)
         if (sig) {
             NSMutableSet *ids = [NSMutableSet new];
             for (SFItem *i in online) [ids addObject:SFRefID(i.identifier)];
@@ -172,9 +180,10 @@ static NSArray *itemsFrom(NSArray *dicts) {
                      args:@[feedID(cid), sig ?: [NSNull null], j, @([NSDate date].timeIntervalSince1970)]];
 }
 
-+ (NSArray *)stored:(NSString *)cid sig:(NSString **)sig {
-    NSDictionary *r = [[SFStore shared] rows:@"SELECT sig, items FROM feed_cache WHERE id=?" args:@[feedID(cid)]].firstObject;
++ (NSArray *)stored:(NSString *)cid sig:(NSString **)sig age:(NSTimeInterval *)age {
+    NSDictionary *r = [[SFStore shared] rows:@"SELECT sig, items, updated FROM feed_cache WHERE id=?" args:@[feedID(cid)]].firstObject;
     if (sig) *sig = [r[@"sig"] isKindOfClass:[NSString class]] ? r[@"sig"] : nil;
+    if (age) *age = r ? [NSDate date].timeIntervalSince1970 - [r[@"updated"] doubleValue] : DBL_MAX;
     id list = SFJSONParse(r[@"items"]);
     return itemsFrom([list isKindOfClass:[NSArray class]] ? list : @[]);
 }

@@ -9,7 +9,9 @@
 #   Apps       src/Apps/<App>           one source each; never imports Shell or another app
 #   Shell      src/Shell                the product; app classes only in REGISTRATION files
 #
-# Also: no app identifiers / ref namespaces as string literals outside src/Apps.
+# Also: no app identifiers / ref namespaces as string literals outside src/Apps; no source file
+# above MAX_LINES (one responsibility per module - split by responsibility, docs/architecture.md
+# "Code rules"). Files still above it are listed in SPLIT_PENDING with their size: they may only shrink.
 # Exit 1 on any violation; prints file:line and the rule.
 import os, re, sys
 
@@ -19,6 +21,12 @@ FOUNDATION = {'SFCore', 'SFModel', 'SFStore', 'SFNet', 'SFCurl', 'SFRuntime', 'S
 CORE_DIRS = {'Core', 'Library', 'Player', 'Browse'}
 REGISTRATION = {'src/Shell/SFApps.m'}            # the one place that names app classes
 LEGACY = {'src/Shell/SFMigration.m'}             # documented exception: one-time Kodi import (YouTube library)
+MAX_LINES = 500
+SPLIT_PENDING = {   # existing files above MAX_LINES, to be split - ceiling = their size on 2026-11-06
+    'src/Browse/SFBrowseScreen.m': 960, 'src/Player/SFPlayerScreen.m': 890, 'src/Library/SFDownloads.m': 673,
+    'src/Player/SFPlayerScreen+Endscreen.m': 661, 'src/Player/SFMPVEngine.m': 566, 'src/Apps/YouTube/SFLounge.m': 523,
+    'src/Player/SFPlayerInfoScreen.m': 521, 'src/Framework/SFKeyboardScreen.m': 513,
+}
 LITERAL = re.compile(r'@"(youtube|zdf|ard|orf|ccc)"|@"(yt|zdf|ard|orf|ccc)[a-z]*:')
 
 def layer(rel):
@@ -45,6 +53,10 @@ for d, _, files in os.walk(SRC):
         if not f.endswith(('.h', '.m')): continue
         rel = os.path.relpath(os.path.join(d, f), ROOT)
         me, myapp = layer(rel)
+        lines = sum(1 for _ in open(os.path.join(d, f), encoding='utf-8'))
+        limit = SPLIT_PENDING.get(rel, MAX_LINES)
+        if lines > limit:
+            flag(rel, lines, '%d lines (limit %d%s) - split by responsibility' % (lines, limit, ', split pending' if rel in SPLIT_PENDING else ''))
         for n, line in enumerate(open(os.path.join(d, f), encoding='utf-8'), 1):
             code = line.split('//', 1)[0]
             m = re.match(r'\s*#import "([^"]+)\.h"', line)

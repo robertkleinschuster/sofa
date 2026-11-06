@@ -5,6 +5,25 @@ User requirement: adding a new app reuses almost all UI; it is obvious where app
 logic lives; integration happens through clearly defined APIs (including how the home page is
 composed). This document is the contract.
 
+## Code rules
+
+Binding for every change (user, 2026-11-06): **no guessing, no monster classes, clean interfaces,
+modularity.**
+
+- **No guessing on raw data.** Read the field the source provides for the purpose (InnerTube
+  `accessibilityLabel`, `commandRuns` links, endpoint types, `publishDate`; XML through a parser)
+  instead of positions, text heuristics, regular expressions over markup or thresholds ("shorter
+  than 90 s = a Short"). Where a source has no such field, the comment says so and the code is
+  the documented fallback.
+- **Pure parsers, tested on real answers.** Turning a provider's JSON into items needs no request
+  and no library state; recorded answers (cookies stripped) and their expected parse are the test
+  (`tools/test-yt-parse`).
+- **One responsibility per module.** No source file above 500 lines (`tools/check-arch`; the few
+  older ones above it are listed there and may only shrink). Split by responsibility - a request
+  client, a parser, pages, the `SFApp` adapter (categories for protocol parts such as playback).
+- **Clean interfaces.** Modules talk through small headers, apps and the core only through the
+  `SFApp` contract and the registry - an app never writes into a Library module directly.
+
 ## Layers
 
 ```
