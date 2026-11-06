@@ -35,6 +35,7 @@ void SFClearRunningMarker(void);   // autostart crash detection, see main()
 
 @interface SFAppDelegate (Dev)
 - (void)startFifo;
+- (void)stopFifo;
 - (void)devCommand:(NSString *)line;
 - (void)screenshot:(NSString *)path;
 @end

@@ -6,14 +6,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError } from './helpers.ts';
+import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, tempDir } from './helpers.ts';
 import type { FakeStart } from './helpers.ts';
 import type { AppYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/app.ts';
 import type { LiveStatus, PlaylistFetch } from '../../res/sofa-yt/lib/hls.ts';
 import type { RawPlayerResponse } from '../../res/sofa-yt/lib/ytraw.ts';
 import type { HlsInfo, VideoInfo, YouTubeErrorFlags } from '../../res/sofa-yt/lib/youtube.ts';
+
 
 const hls = await mod('lib/hls.ts');
 const { YouTube, classifyPlayer, publishedOf } = await mod('lib/youtube.ts');
@@ -99,7 +99,7 @@ type Innertube = Awaited<ReturnType<InstanceType<typeof YouTube>['session']>>;
 
 /** YouTube whose Innertube session is a stand-in answering /player with the given raw responses. */
 function makeYouTube(raws: RawPlayerResponse[]) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-live-'));
+  const dir = tempDir('sofa-yt-live-');
   const notes: boolean[] = [];
   const player = {
     player_id: 'ef321720', signature_timestamp: 20759,

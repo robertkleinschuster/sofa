@@ -178,6 +178,7 @@ static uint16_t gPort = 8765;
     [SFAppRegistry stopRemotes];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
+    [self stopFifo];
     // Everything is saved. exit()'s library cleanup (OpenSSL, frameworks) races with worker
     // threads still in a request -> crash on quit; leave without it, like the update path.
     SFLogFlush();

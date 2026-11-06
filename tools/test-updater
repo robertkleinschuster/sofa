@@ -7,7 +7,7 @@
 #   Einstellungen -> Nach Updates suchen -> "Update installieren X → X+0.0.1" -> release notes
 #   -> Jetzt installieren -> download, checksum, DMG, bundle check, handover (<App>.staged).
 # The swap itself is otherwise done by the helper (tested by every sofa-deploy).
-# Screenshots of the steps stay in the printed folder.
+# On a failure the screenshots of the steps stay in the printed folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,7 +46,8 @@ defaults delete de.sofa.dev.$INST >/dev/null 2>&1   # this instance's settings o
 : > "$LOG"
 SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
 APP=$!
-trap 'kill $APP $SRV 2>/dev/null; rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged" "$T/stage" "$T/www"' EXIT
+keep=0
+trap 'kill $APP $SRV 2>/dev/null; rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"; [ $keep = 1 ] || rm -rf "$T"' EXIT
 for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
 cmd() { echo "$*" > "$FIFO"; }
 mark() { wc -l < "$LOG" | tr -d ' '; }
@@ -77,6 +78,5 @@ else
   bad "no <App>.staged after 120 s"; grep 'update' "$LOG" | tail -5
 fi
 grep -E 'update: ' "$LOG" | sed 's/^/        /'
-echo "Screenshots: $T"
-[ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
+[ $fail = 0 ] && echo "==> all ok" || { keep=1; echo "Screenshots: $T"; echo "==> FAILED"; }
 exit $fail

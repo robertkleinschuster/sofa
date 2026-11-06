@@ -31,8 +31,12 @@
 
 #pragma mark Dev FIFO
 
+static NSString *fifoPath(void) {
+    return [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
+}
+
 - (void)startFifo {
-    NSString *p = [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
+    NSString *p = fifoPath();
     unlink(p.fileSystemRepresentation);
     mkfifo(p.fileSystemRepresentation, 0600);
     int fd = open(p.fileSystemRepresentation, O_RDWR | O_NONBLOCK);
@@ -53,6 +57,13 @@
     });
     dispatch_resume(self.fifoSrc);
     SFLog(@"dev: fifo ready at %@", p);
+}
+
+// on quit: the control pipe goes with the instance (the shared cache dir holds only live ones)
+- (void)stopFifo {
+    if (!self.fifoSrc) return;
+    dispatch_source_cancel(self.fifoSrc);
+    unlink(fifoPath().fileSystemRepresentation);
 }
 
 - (void)devCommand:(NSString *)line {
@@ -129,8 +140,6 @@
         SFItem *h = [SFLibraryPages historyTile]; SFOpenItem(self.nav, h, nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"app:"]) {   // Dev/screenshots: app page
         [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
-    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"downloads"]) {
-        SFOpenItem(self.nav, [SFLibraryPages downloadsTile:nil], nil, 0);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
         [SFHome showSettingsOn:self.nav];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
@@ -164,6 +173,10 @@
             for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@/%@", i.identifier ?: @"?", i.badge ?: @"-", [i broadcastAt:[NSDate date]].title ?: @"-"]];
             SFLog(@"dev: homerows %@ = %@", t, [ids componentsJoinedByString:@" "]);
         }
+    } else if ([cmd isEqualToString:@"follows"]) {           // Dev: each follow's tile picture and whether it needs a new one
+        for (SFItem *f in [[SFFollows shared] follows:nil])
+            SFLog(@"dev: follows %@ image=%@ needs=%d", f.identifier, f.image ?: @"-", [[SFFollows shared] needsImage:f.identifier]);
+        SFLog(@"dev: follows end");
     } else if ([cmd isEqualToString:@"region"] && arg) {     // Dev: "region XX 0|1|-" - pretend a geo check found the device outside/inside XX; - = forget
         NSArray *a = [arg componentsSeparatedByString:@" "];
         if (a.count == 2 && [a[1] isEqualToString:@"-"]) [[SFStore shared] setSetting:nil forKey:[@"geo.region." stringByAppendingString:a[0]]];

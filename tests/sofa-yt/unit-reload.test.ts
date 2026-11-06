@@ -1,10 +1,7 @@
 // Player reloads requested by SABR (review 2026-11-05): shared, reused, rate-limited, breaker-aware.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { mod, vodInfo } from './helpers.ts';
+import { mod, vodInfo, tempDir } from './helpers.ts';
 import type { VideoInfo } from '../../res/sofa-yt/lib/youtube.ts';
 
 const { YouTube } = await mod('lib/youtube.ts');
@@ -22,7 +19,7 @@ class CountingYouTube extends YouTube {
 }
 
 function make({ blocked = 0 } = {}): CountingYouTube {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-reload-'));
+  const dir = tempDir('sofa-yt-reload-');
   return new CountingYouTube({ stateDir: dir, breaker: { blockedUntil: () => blocked, note() {} },
     po: { mintString: () => Promise.reject(new Error('no PO token in reload tests')) } });
 }

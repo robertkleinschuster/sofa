@@ -1,9 +1,11 @@
 // Shared helpers for the sofa-yt tests: module loading from the assembled run dir (tools/test-sofa-yt),
 // fixtures, a deterministic fake SABR pump and a fake YouTube client (no network anywhere).
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
+import { after } from 'node:test';
 import type { App, AppOptions, AppYouTube } from '../../res/sofa-yt/lib/app.ts';
 import type { MediaIndex } from '../../res/sofa-yt/lib/mediaindex.ts';
 import type { PumpEnd, PumpHandle, PumpRequest, TrackKind } from '../../res/sofa-yt/lib/session.ts';
@@ -13,6 +15,15 @@ import type { VideoInfo, VodInfo, YouTubeErrorFlags } from '../../res/sofa-yt/li
 const dir = process.env.SOFA_YT_DIR;
 if (!dir) throw new Error('run via tools/test-sofa-yt (SOFA_YT_DIR unset)');
 export const DIR: string = dir;
+
+/** A fresh directory (state, cache) for one test case; all of them are removed when the test file is done. */
+const tempDirs: string[] = [];
+after(() => { for (const d of tempDirs) fs.rmSync(d, { recursive: true, force: true }); });
+export function tempDir(prefix: string): string {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(d);
+  return d;
+}
 export const FIX = path.join(path.dirname(new URL(import.meta.url).pathname), 'fixtures');
 
 /** googlevideo's protobuf codec for format xtags, as far as the tests use it. */
