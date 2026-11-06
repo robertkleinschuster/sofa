@@ -5,6 +5,7 @@
 #import "SFCurl.h"
 #import "SFRuntime.h"
 #import "SFUserAgent.h"
+#import "SFWebP.h"
 
 #pragma mark - SFLabel
 
@@ -239,7 +240,11 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             if ([src.pathExtension.lowercaseString isEqualToString:@"svg"]) {
                 NSData *png = rasterizeSVG([NSData dataWithContentsOfFile:src]);
                 s = png ? CGImageSourceCreateWithData((__bridge CFDataRef)png, NULL) : NULL;
-            } else s = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:src], NULL);
+            } else {
+                NSData *d = [NSData dataWithContentsOfFile:src options:NSDataReadingMappedIfSafe error:nil];
+                if (SFIsWebP(d)) { CGImageRef w = SFDecodeWebP(d, px); finish(w); if (w) CGImageRelease(w); return; }
+                s = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:src], NULL);
+            }
             CGImageRef img = decodeThumb(s, px);
             if (s) CFRelease(s);
             finish(img);
@@ -255,6 +260,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
                 data = rasterizeSVG(data);
                 if (data) [data writeToFile:disk atomically:YES];
             }
+            if (SFIsWebP(data)) { CGImageRef w = SFDecodeWebP(data, px); finish(w); if (w) CGImageRelease(w); return; }
             CGImageSourceRef s = data ? CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL) : NULL;
             CGImageRef img = decodeThumb(s, px);
             if (s) CFRelease(s);

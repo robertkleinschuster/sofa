@@ -15,6 +15,8 @@ Einstellungen → „Update installieren“.
   behielt jede Liste ihren alten Stand.
 - **Updates unterbrechen Downloads nicht mehr als Fehler.** Lief beim Update gerade ein Download,
   galt er als fehlgeschlagen und wartete 15 Minuten. Jetzt läuft er nach dem Neustart sofort weiter.
+- **YouTube-Vorschaubilder sind wieder da.** YouTube schickt sie jetzt im WebP-Format, das macOS 10.9
+  nicht kennt – Sofa liest es jetzt selbst.
 
 ## 0.3.10
 

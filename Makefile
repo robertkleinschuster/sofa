@@ -20,8 +20,10 @@ HBIN    := $(APP)/Contents/MacOS/SofaRemote
 SRCDIRS := $(filter-out src/Apps/,$(wildcard src/*/)) $(wildcard src/Apps/*/)
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
+# linked libraries and their MacPorts ports (declared in the port's depends_lib):
+#   mpv (+libmpv) -lmpv, sqlite3 -lsqlite3, curl -lcurl, webp -lwebp (WebP thumbnails, SFWebP)
 LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework OpenGL \
-           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl
+           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lwebp
 # libmpv (overlay port multimedia/mpv) is the player engine: required
 SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))
