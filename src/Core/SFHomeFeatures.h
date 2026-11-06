@@ -2,7 +2,8 @@
 //
 // An app contributes through SFApp homeFeatures: (items per topic, in the app's own order of
 // importance). Sofa keeps each app's list (stored, so Home shows them at once after a launch;
-// refreshed every 30 min, when the network comes back and when a live programme changes) and
+// refreshed every 30 min while the screen is awake, on waking up, when the network comes back and
+// when a live programme changes; nothing while the screen sleeps) and
 // merges them when a row is shown: first what can't play here is left out, then the lists are
 // interleaved in registry order so every app gets a fair place at the front. Rows of SFHome read
 // itemsForTopic: synchronously.

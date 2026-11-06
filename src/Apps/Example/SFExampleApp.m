@@ -112,6 +112,7 @@ static NSArray *videos(NSString *filter) {
 // start page (SFHomeFeaturesFromPage) and sets `drm` / `geoRegion` from the source's raw data -
 // Home then leaves out what can't play here. The three channels exercise exactly that (tools/test-home).
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
+    SFLog(@"example: home features asked");
     NSMutableArray *live = [NSMutableArray new];
     for (NSArray *e in @[@[@"live1", @"Testkanal", @""], @[@"live2", @"Testkanal DRM", @"drm"], @[@"live3", @"Testkanal XX", @"XX"]]) {
         SFItem *i = video(@[e[0], e[1], @""]);

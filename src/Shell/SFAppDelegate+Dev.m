@@ -183,6 +183,9 @@ static NSString *fifoPath(void) {
             for (SFItem *i in [[SFHomeFeatures shared] itemsForTopic:t]) [ids addObject:[NSString stringWithFormat:@"%@/%@/%@", i.identifier ?: @"?", i.badge ?: @"-", [i broadcastAt:[NSDate date]].title ?: @"-"]];
             SFLog(@"dev: homerows %@ = %@", t, [ids componentsJoinedByString:@" "]);
         }
+    } else if ([cmd isEqualToString:@"screens"] && arg) {    // Dev: "screens sleep|wake" - as if the display slept / woke up
+        [[[NSWorkspace sharedWorkspace] notificationCenter] postNotificationName:[arg isEqualToString:@"sleep"]
+            ? NSWorkspaceScreensDidSleepNotification : NSWorkspaceScreensDidWakeNotification object:nil];
     } else if ([cmd isEqualToString:@"follows"]) {           // Dev: each follow's tile picture and whether it needs a new one
         for (SFItem *f in [[SFFollows shared] follows:nil])
             SFLog(@"dev: follows %@ image=%@ needs=%d", f.identifier, f.image ?: @"-", [[SFFollows shared] needsImage:f.identifier]);

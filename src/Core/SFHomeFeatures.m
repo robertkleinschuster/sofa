@@ -3,6 +3,7 @@
 #import "SFStore.h"
 #import "SFNet.h"
 #import "SFFollows.h"
+#import <AppKit/AppKit.h>
 
 NSString *const SFHomeTopicLive = @"live";
 NSString *const SFHomeTopicNews = @"news";
@@ -10,7 +11,12 @@ NSString *const SFHomeTopicHighlights = @"highlights";
 NSString *const SFHomeFeaturesDidChangeNotification = @"SFHomeFeaturesDidChange";
 
 static NSString *const kStoreKey = @"home.features.v2";   // v2: per app, merged when shown
-static const NSTimeInterval kRefreshEvery = 30 * 60;
+// while the screen is awake (the TV in use); tests shorten it (SOFA_HOME_REFRESH)
+static NSTimeInterval refreshEvery(void) {
+    static NSTimeInterval t; static dispatch_once_t once;
+    dispatch_once(&once, ^{ t = SFDevSeconds(@"SOFA_HOME_REFRESH", 30 * 60); });
+    return t;
+}
 static const NSTimeInterval kAppTimeout = 45;   // an app that never answers must not hold the others back
 
 // per topic: how many items one app may place in the merged row, and the row's length
@@ -51,6 +57,7 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
     BOOL _refreshing;
     NSTimer *_timer, *_boundary;
     NSDate *_lastRefresh;
+    BOOL _asleep;               // the screen sleeps: nobody sees Home, nothing is asked
 }
 
 + (instancetype)shared {
@@ -63,7 +70,10 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
     [self restore];
     [self scheduleBoundaryRefresh];
     [self refresh];
-    _timer = [NSTimer scheduledTimerWithTimeInterval:kRefreshEvery target:self selector:@selector(refresh) userInfo:nil repeats:YES];
+    _timer = [NSTimer scheduledTimerWithTimeInterval:refreshEvery() target:self selector:@selector(refreshIfSeen) userInfo:nil repeats:YES];
+    NSNotificationCenter *ws = [[NSWorkspace sharedWorkspace] notificationCenter];
+    [ws addObserver:self selector:@selector(screensSlept) name:NSWorkspaceScreensDidSleepNotification object:nil];
+    [ws addObserver:self selector:@selector(screensWoke) name:NSWorkspaceScreensDidWakeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onlineChanged) name:SFNetOnlineDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(regionChanged) name:SFNetRegionDidChangeNotification object:nil];
 }
@@ -72,7 +82,17 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
 
 - (void)regionChanged { [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil]; }
 
-- (void)onlineChanged { if ([SFNet isOnline]) [self refresh]; }
+- (void)onlineChanged { if ([SFNet isOnline]) [self refreshIfSeen]; }
+
+// Asked like a person uses a TV (2026-11-06: 50-95 requests/h to ZDF/ARD/ORF around the clock,
+// nights included): while the screen is awake; asleep nothing - waking up asks once when the rows
+// are older than a few minutes. Without sleep notifications it is the plain periodic refresh.
+- (void)refreshIfSeen { if (!_asleep) [self refresh]; }
+- (void)screensSlept { _asleep = YES; SFLog(@"home features: screen asleep, refresh paused"); }
+- (void)screensWoke {
+    _asleep = NO;
+    if (!_lastRefresh || -[_lastRefresh timeIntervalSinceNow] > MIN(300, refreshEvery())) [self refresh];
+}
 
 // Filter first, then merge: an app whose first items can't play here moves its playable ones up
 // instead of losing its places at the front. A TV channel offered by two apps (3sat, phoenix, KiKA
@@ -172,6 +192,7 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
 
 // A live channel's programme changes: ask the apps again when the first current broadcast ends
 // (new stream ref, drm, geo right per broadcast - ORF), at most every 5 min; the 30 min timer stays.
+// Not while the screen sleeps (waking up refreshes).
 - (void)scheduleBoundaryRefresh {
     [_boundary invalidate]; _boundary = nil;
     NSDate *now = [NSDate date], *first = nil;
@@ -182,8 +203,8 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
         }
     if (!first) return;
     NSTimeInterval at = MAX([first timeIntervalSinceNow] + 5, (_lastRefresh ? [_lastRefresh timeIntervalSinceNow] : 0) + 300);
-    if (at > kRefreshEvery) return;
-    _boundary = [NSTimer scheduledTimerWithTimeInterval:MAX(at, 5) target:self selector:@selector(refresh) userInfo:nil repeats:NO];
+    if (at > refreshEvery()) return;
+    _boundary = [NSTimer scheduledTimerWithTimeInterval:MAX(at, 5) target:self selector:@selector(refreshIfSeen) userInfo:nil repeats:NO];
 }
 
 #pragma mark Store (Home shows the last rows at once after a launch)

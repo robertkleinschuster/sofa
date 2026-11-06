@@ -16,6 +16,8 @@
 #   5. a follow due while its source pauses background requests (incident 2026-11-06: during a
 #      YouTube bot-check pause every follow was "checked" in turn without a request, then waited
 #      its full interval) waits for the end of the pause, then is checked
+#   6. Home is asked while the screen is awake only (incident 2026-11-06: 50-95 requests/h to the
+#      Mediathek APIs around the clock): asleep nothing, waking up asks once
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -103,6 +105,16 @@ grep -q "example: feed" "$LOG" && bad "feed asked during the pause" || ok "nothi
 [ -z "$(/opt/local/bin/sqlite3 "$SOFA_DATA_DIR/sofa.db" "SELECT checked FROM follows WHERE id='exampleshow:demo'")" ] && ok "turn not used up" || bad "marked checked during the pause"
 for i in $(seq 1 60); do grep -q "example: feed exampleshow:demo" "$LOG" && break; sleep 0.1; done
 grep -q "example: feed exampleshow:demo" "$LOG" && ok "checked after the pause" || bad "not checked after the pause"
+
+echo "==> 6. Home refresh only while the screen is awake"
+quit
+start SOFA_OFFLINE= SOFA_HOME_REFRESH=1
+asks() { grep -c "example: home features asked" "$LOG"; }
+sleep 2.5; a=$(asks); [ "$a" -ge 2 ] && ok "awake: refreshed periodically ($a)" || bad "awake: $a asks"
+cmd "screens sleep"; waitlog "screen asleep"; sleep 0.3; a=$(asks); sleep 2.5
+[ "$(asks)" = "$a" ] && ok "asleep: nothing asked" || bad "asleep: $(( $(asks) - a )) asks"
+cmd "screens wake"; sleep 0.5
+[ "$(asks)" -gt "$a" ] && ok "waking up asks at once" || bad "no ask after waking up"
 
 [ $fail = 0 ] && echo "==> test-home ok" || echo "==> test-home FAILED"
 exit $fail

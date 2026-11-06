@@ -113,7 +113,7 @@ RSS outage 2026-11-05 - open, NOTES). Most apps derive them
 structurally from their start page with `SFHomeFeaturesFromPage(page, leadShelf)`.
 `SFHomeFeatures` asks every app (45 s timeout each; an app that fails keeps its previous
 items), keeps each app's list (stored: Home shows them at once after a launch) and refreshes
-every 30 min, when the network returns and when a live programme ends. A row is merged when
+every 30 min while the screen is awake (the TV in use; nothing while it sleeps, once on waking up), when the network returns and when a live programme ends. A row is merged when
 shown: first what can't play here is left out, then round-robin in registry order (fair: every
 app gets a place at the front; max 6 per app in Highlights). Live channels may carry their
 programme (`SFItem.schedule` of `SFBroadcast`, from the source's EPG: ARD programm-api, ORF
