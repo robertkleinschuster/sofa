@@ -47,12 +47,15 @@ export interface RunningFirefox {
   stop(): Promise<void>;
 }
 
-/** Prefs of a profile the engine runs in: no updates, telemetry or remote settings from it. */
+/**
+ * Prefs of a test profile: no updates, telemetry or remote settings from it, and silent - a test
+ * that lets YouTube's player run must not play sound on the machine's speakers (user 2026-11-06).
+ */
 export function writeProfile(profile: string, extra: Record<string, string | number | boolean> = {}): void {
   fs.mkdirSync(profile, { recursive: true });   // must exist: a missing profile opens a modal dialog and hangs
   const prefs: Record<string, string | number | boolean> = {
     'services.settings.server': '', 'app.update.enabled': false, 'toolkit.telemetry.enabled': false,
-    'datareporting.policy.dataSubmissionEnabled': false, ...extra,
+    'datareporting.policy.dataSubmissionEnabled': false, 'media.volume_scale': '0.0', ...extra,
   };
   fs.writeFileSync(path.join(profile, 'user.js'), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});\n`).join(''));
 }

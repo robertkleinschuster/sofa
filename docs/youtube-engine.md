@@ -95,9 +95,16 @@ user's Firefox in two measured points:
   (`Navigator::Webdriver()`), no pref changes it (`dom.webdriver.enabled` measured: no effect).
 - No WebGL in headless mode (`getContext('webgl')` is null).
 
-Not yet known which of these (or something else, e.g. the visitor of the player request vs. the
-page's cookie) causes the rejection. Next: find out which signal it is, then fix it natively (for
-`webdriver` a documented patch in the firefox-x11 port; for WebGL a display instead of headless).
+A/B with YouTube's own player in the same browser (`live-player.test.ts`, nothing injected): after
+answering the EU consent dialog (a fresh profile has no `SOCS` cookie; the dialog pauses the
+player) it plays, buffers exactly 60.0 s, then fails with "Ein Fehler ist aufgetreten". The engine
+behaves exactly like YouTube's player - **the browser environment is refused, not the engine**.
+Also measured: no `VISITOR_INFO1_LIVE` cookie in this profile, before or after consent ("Alle
+ablehnen").
+
+Next: which environment signal decides - headless/no WebGL (testable with a display instead of
+headless; no X server installed yet) or `navigator.webdriver` (changing it is the user's call).
+The profile setup of the engine must answer the consent dialog once, like a user.
 
 ## Still open
 
