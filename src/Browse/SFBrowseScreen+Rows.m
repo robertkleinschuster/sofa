@@ -77,15 +77,18 @@ static NSString *SFRowKey(SFRow *r) {
         }
         si++;
     }
+    NSUInteger reused = 0;
     for (SFRow *r in _rows) {
         NSString *key = SFRowKey(r);
         SFRow *old = keep[key];
         if (!old) continue;
         [keep removeObjectForKey:key];
+        reused++;
         r.layer = old.layer; r.strip = old.strip; r.tiles = old.tiles;
         r.focusCol = old.focusCol; r.scrollCol = old.scrollCol;
         SFNoAnimate(^{ r.layer.position = CGPointMake(0, r.y); });
     }
+    if (reused + keep.count) SFLog(@"rows: rebuilt %@ - %lu kept, %lu new", _page.title ?: @"(Start)", (unsigned long)reused, (unsigned long)(_rows.count - reused));
     SFNoAnimate(^{ for (SFRow *gone in keep.allValues) [gone.layer removeFromSuperlayer]; });
     if (!_rows.count) {
         _empty = [SFLabel labelWithFont:[t regular:32] color:t.textDim];

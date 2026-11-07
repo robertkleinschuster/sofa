@@ -72,10 +72,16 @@ N=$(rows news)
 case "$N" in "example:4/-/- example:3/-/-"*) ok "news newest first" ;; *) bad "news order: $N" ;; esac
 
 echo "==> 2. geo findings"
+m=$(log_mark "$LOG")
 cmd "region XX 0"; waitlog "geo: device outside XX" || bad "outside not logged"
 L=$(rows live)
 case "$L" in *example:live3*) bad "region channel still shown outside XX: $L" ;; *) ok "outside XX: region channel left out" ;; esac
 has "$L" "example:live1/LIVE/Testsendung" && ok "normal channel stays" || bad "normal channel gone: $L"
+# the reload rebuilds only the changed row: the others keep their layers and tiles (a page torn
+# down at every update blinked - the player's info panel, user 2026-11-07)
+rb=; for i in $(seq 1 20); do rb=$(log_since $m "$LOG" | grep -m1 'rows: rebuilt'); [ -n "$rb" ] && break; sleep 0.25; done
+kept=$(echo "$rb" | sed -n 's/.* \([0-9]*\) kept, \([0-9]*\) new.*/\1 \2/p')
+[ -n "$kept" ] && [ "${kept% *}" -ge 1 ] && [ "${kept#* }" -ge 1 ] && ok "only the changed row rebuilt (${kept% *} kept, ${kept#* } new)" || bad "rebuild kept nothing: ${rb:-no rebuild line}"
 cmd "region XX 1"; waitlog "geo: device inside XX" || bad "inside not logged"
 L=$(rows live)
 has "$L" "example:live3/LIVE/Testsendung" && ok "inside XX: region channel back" || bad "region channel not back: $L"

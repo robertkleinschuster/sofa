@@ -201,8 +201,8 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   Screenshots via `renderInContext` (the window server does not capture offscreen windows;
   video layer, masks and 3D transforms do not appear in them → solve effects image-based,
   e.g. backdrop gradients are baked into the image).
-- Live viewer: http://<tailscale-host>:8765/ (Tailscale IP + localhost only),
-  MJPEG 1280x720 @6fps + remote control in the browser (`SFDevServer`).
+- Dev server: http://127.0.0.1:8765/ (localhost only since 2026-11-07; the user views the
+  screen via RustDesk): MJPEG 1280x720 @6fps, keys (`/key?k=`), frame meter (`/framemeter?on=1`).
 - Log `~/Library/Logs/Sofa.log`, stderr `~/Library/Caches/Sofa/dev.stderr`, crash reports
   are reported by `sofa-dev check`.
 - CA pitfall: `actionForKey:` must return nil (not NSNull).

@@ -5,7 +5,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
-#include <ifaddrs.h>
 
 @interface SFDevClient : NSObject
 @property (nonatomic) int fd;
@@ -33,24 +32,10 @@
     return self;
 }
 
-// Tailscale assigns addresses from 100.64.0.0/10.
-static NSArray *bindAddresses(void) {
-    NSMutableArray *a = [NSMutableArray arrayWithObject:@"127.0.0.1"];
-    struct ifaddrs *ifs = NULL;
-    if (getifaddrs(&ifs) == 0) {
-        for (struct ifaddrs *i = ifs; i; i = i->ifa_next) {
-            if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
-            uint32_t ip = ntohl(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr);
-            if ((ip & 0xFFC00000) == 0x64400000) {
-                char buf[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &((struct sockaddr_in *)i->ifa_addr)->sin_addr, buf, sizeof buf);
-                [a addObject:@(buf)];
-            }
-        }
-        freeifaddrs(ifs);
-    }
-    return a;
-}
+// Local only: tools on this machine (frame meter, keys while measuring). It listened on the
+// Tailscale address too, for a browser live viewer the user no longer uses (RustDesk instead,
+// 2026-11-07) - a remote control reachable from the tailnet for nothing.
+static NSArray *bindAddresses(void) { return @[@"127.0.0.1"]; }
 
 - (void)start {
     for (NSString *addr in bindAddresses()) {
