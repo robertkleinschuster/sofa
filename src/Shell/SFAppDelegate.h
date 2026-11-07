@@ -3,7 +3,7 @@
 #import "SFCore.h"
 #import "SFScreen.h"
 #import "SFPlayerHost.h"
-@class SFPlayerScreen, SFRemote, SFDevServer;
+@class SFPlayerScreen, SFRemote;
 
 extern NSString *gInstance;   // dev instance name (--instance)
 void SFClearRunningMarker(void);   // autostart crash detection, see main()

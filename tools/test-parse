@@ -12,7 +12,7 @@ unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 . "$SRC/tools/lib/dev-instance.sh"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=parse PORT=47999
+INST=parse
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-parse.XXXXXX")"
 export SOFA_DATA_DIR="$T/data" SOFA_OFFLINE=1
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -25,7 +25,7 @@ make -C "$SRC" >/dev/null || exit 1
 APP=
 trap '[ -n "$APP" ] && kill $APP 2>/dev/null; { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1; rm -rf "$T"' EXIT
 : > "$LOG"
-"$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
+"$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
 dev_wait_ready $APP "$LOG"
 
 for gz in "$SRC"/tests/fixtures/*/*.json.gz; do

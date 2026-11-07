@@ -21,10 +21,9 @@ unset DYLD_INSERT_LIBRARIES
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/build/SofaDev.app/Contents/MacOS/Sofa"   # Bundle-ID de.sofa.dev
 CACHE="$HOME/Library/Caches/Sofa"
-# Instances: "test" (default, automated tests, port 8766) and "view" (live preview
-# for the user, port 8765). SOFA_INSTANCE=view sofa-dev start ...
+# Instances: "test" (default, automated tests), "view" or any name (SOFA_INSTANCE=view sofa-dev
+# start ...); each has its own data, log and command FIFO.
 INST="${SOFA_INSTANCE:-test}"
-case "$INST" in view) PORT=8767 ;; test) PORT=8766 ;; *) PORT="${SOFA_PORT:-8770}" ;; esac   # 8765 = real app; further instances (agents): SOFA_INSTANCE=name SOFA_PORT=877x
 FIFO="$CACHE/dev-$INST.fifo"
 PIDF="$CACHE/dev-$INST.pid"
 STARTF="$CACHE/dev-$INST.start"
@@ -57,12 +56,12 @@ cmd_start() {
   rm -f "$FIFO"
   date +%s > "$STARTF"
   echo "----- dev start [$INST] $(date) $size" >> "$LOG"
-  "$BIN" --dev --instance "$INST" --port "$PORT" --size "$size" >> "$CACHE/dev-$INST.stderr" 2>&1 &
+  "$BIN" --dev --instance "$INST" --size "$size" >> "$CACHE/dev-$INST.stderr" 2>&1 &
   echo $! > "$PIDF"
   for i in $(seq 1 50); do [ -p "$FIFO" ] && break; sleep 0.2; done
   [ -p "$FIFO" ] || { echo "start: FIFO missing"; cmd_check; return 1; }
   sleep 1.5
-  echo "started [$INST] pid $(cat "$PIDF") ($size) http://127.0.0.1:$PORT/"
+  echo "started [$INST] pid $(cat "$PIDF") ($size)"
 }
 
 cmd_key() { for k in "$@"; do send "key $k" || return 1; sleep 0.35; done; }

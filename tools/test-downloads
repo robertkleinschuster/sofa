@@ -36,7 +36,7 @@ if [ -z "$PART" ]; then   # both parts at once; output part by part
 fi
 want() { [ "$PART" = "$1" ]; }
 INST=dltest-$PART
-if want a; then PORT=47995 MEDIA_PORT=47982; else PORT=47984 MEDIA_PORT=47983; fi
+if want a; then MEDIA_PORT=47982; else MEDIA_PORT=47983; fi
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -58,7 +58,7 @@ make -C "$SRC" >/dev/null || exit 1
 APP=
 start() {
   : > "$LOG"
-  "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
+  "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
   dev_wait_ready $APP "$LOG"
 }
 quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }

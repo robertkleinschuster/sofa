@@ -32,7 +32,7 @@ PID=
 trap '[ -n "$PID" ] && kill $PID 2>/dev/null; rm -rf "$TMP"' EXIT
 start() {
   : > "$LOG"
-  "$APP/Contents/MacOS/Sofa" --dev --instance "$INST" --port 47990 >/dev/null 2>&1 & PID=$!
+  "$APP/Contents/MacOS/Sofa" --dev --instance "$INST" >/dev/null 2>&1 & PID=$!
   for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.5; done
   echo "dev instance does not start"; exit 1
 }

@@ -15,7 +15,6 @@
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
-#import "SFDevServer.h"
 #import "SFMigration.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
@@ -36,7 +35,6 @@
 
 BOOL SFDevMode = NO;
 NSString *gInstance = @"view";
-static uint16_t gPort = 8765;
 
 #import "SFAppDelegate.h"
 #include <sys/file.h>
@@ -49,7 +47,6 @@ static uint16_t gPort = 8765;
 
 @implementation SFAppDelegate {
     SFRemote *_remote;
-    SFDevServer *_dev;
     id _noNap;   // App Nap opt-out for the app's lifetime
 }
 
@@ -110,10 +107,6 @@ static uint16_t gPort = 8765;
         [self.window orderFront:nil];      // visible to the window server, but off-screen
         SFLog(@"dev: window %ld", (long)self.window.windowNumber);   // for screencapture -l (incl. OpenGL content)
         [self startFifo];
-        _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:gPort];
-        __weak SFAppDelegate *ws = self;
-        _dev.keyHandler = ^(NSString *k) { [ws devCommand:[@"key " stringByAppendingString:k]]; };
-        [_dev start];
     } else {
         [NSApp setPresentationOptions:NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar];
         self.window.level = NSMainMenuWindowLevel + 1;
@@ -132,10 +125,9 @@ static uint16_t gPort = 8765;
         [_remote start];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(screensChanged:)
                                                      name:NSApplicationDidChangeScreenParametersNotification object:nil];
-        // browser viewer + remote control (Tailscale IP/localhost only), renders only while watched
-        _dev = [[SFDevServer alloc] initWithNavigator:self.nav port:8765];
-        _dev.keyHandler = ^(NSString *k) { [ws devCommand:[@"key " stringByAppendingString:k]]; };
-        [_dev start];
+        // measuring on the real screen (frame meter, scripted keys): a local FIFO, no network port
+        // (the HTTP viewer it replaces was not needed any more: the user tests via RustDesk, 2026-11-07)
+        [self startFifo];
     }
 }
 
@@ -317,7 +309,6 @@ int main(int argc, const char *argv[]) {
         for (int i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "--dev")) SFDevMode = YES;
             else if (!strcmp(argv[i], "--instance") && i + 1 < argc) gInstance = @(argv[++i]);
-            else if (!strcmp(argv[i], "--port") && i + 1 < argc) gPort = (uint16_t)atoi(argv[++i]);
             else if (!strcmp(argv[i], "--size") && i + 1 < argc) {
                 int w = 0, h = 0;
                 if (sscanf(argv[++i], "%dx%d", &w, &h) == 2) del.devSize = NSMakeSize(w, h);

@@ -26,7 +26,7 @@ unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 . "$SRC/tools/lib/dev-instance.sh"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=hometest PORT=47993
+INST=hometest
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-hometest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # fresh state per run: no region findings or rows from earlier runs
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -38,7 +38,7 @@ make -C "$SRC" >/dev/null || exit 1
 APP=
 start() {   # start [env ...]
   : > "$LOG"
-  env SOFA_ONLY_APPS=example "$@" "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!
+  env SOFA_ONLY_APPS=example "$@" "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
   dev_wait_ready $APP "$LOG"
 }
 quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }

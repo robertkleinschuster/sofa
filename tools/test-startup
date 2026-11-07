@@ -12,7 +12,7 @@ unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 . "$SRC/tools/lib/dev-instance.sh"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
-INST=starttest PORT=47970   # + 47971 for the second start
+INST=starttest
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-starttest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data" SOFA_ONLY_APPS=example
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -26,14 +26,14 @@ cleanup() {
   rm -rf "$T"
 }
 trap cleanup EXIT
-start() { : > "$LOG"; "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!; dev_wait_ready $APP "$LOG"; }
+start() { : > "$LOG"; "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!; dev_wait_ready $APP "$LOG"; }
 quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
 
 echo "==> 1. one instance per data directory"
 start
 # the second start: same data directory, another remote port; a short lock wait (an update's
 # handover gets 10 s)
-SOFA_INSTANCE_LOCK_WAIT=0.5 "$BIN" --dev --instance $INST --port $((PORT + 1)) >/dev/null 2>&1 & SECOND=$!
+SOFA_INSTANCE_LOCK_WAIT=0.5 "$BIN" --dev --instance $INST >/dev/null 2>&1 & SECOND=$!
 for i in $(seq 1 50); do kill -0 $SECOND 2>/dev/null || break; sleep 0.1; done
 if kill -0 $SECOND 2>/dev/null; then bad "a second instance on the same data directory keeps running"; kill $SECOND 2>/dev/null
 else wait $SECOND; rc=$?; [ $rc = 0 ] && ok "the second start quits (exit 0: launchd does not relaunch it)" || bad "the second start exited $rc"; fi

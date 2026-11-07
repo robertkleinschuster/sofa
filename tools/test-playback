@@ -33,7 +33,7 @@
 #                                  (part a: 1-7, 8c, 8b; part b: 8 and the opt-in ones - they wait
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
-#   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
+#   PLAYTEST_INSTANCE=x            own dev instance (parallel runs)
 #   PLAYTEST_SHOTS=dir             keep the screenshots there (and the logs of a failed run)
 # Exit code 0 = all ok.
 set -u
@@ -45,15 +45,15 @@ PART=${PLAYTEST_PART:-}
 if [ -z "$PART" ]; then   # both parts at once, each with its own instance; output part by part
   make -C "$SRC" >/dev/null || exit 1
   O="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playparts.XXXXXX")"
-  PLAYTEST_PART=a PLAYTEST_INSTANCE=playtest-a PLAYTEST_PORT=47997 "$0" > "$O/a" 2>&1 & A=$!
-  PLAYTEST_PART=b PLAYTEST_INSTANCE=playtest-b PLAYTEST_PORT=47998 "$0" > "$O/b" 2>&1 & B=$!
+  PLAYTEST_PART=a PLAYTEST_INSTANCE=playtest-a "$0" > "$O/a" 2>&1 & A=$!
+  PLAYTEST_PART=b PLAYTEST_INSTANCE=playtest-b "$0" > "$O/b" 2>&1 & B=$!
   wait $A; ra=$?; wait $B; rb=$?
   grep -v '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b" -h
   rm -rf "$O"
   [ $ra = 0 ] && [ $rb = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
 fi
 want() { [ "$PART" = "$1" ]; }
-INST=${PLAYTEST_INSTANCE:-playtest-$PART} PORT=${PLAYTEST_PORT:-47997}
+INST=${PLAYTEST_INSTANCE:-playtest-$PART}
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
@@ -73,7 +73,7 @@ make -C "$SRC" >/dev/null || exit 1
 APP=
 start() {
   : > "$LOG"
-  SOFA_STALL_LIMIT=6 "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!; dead=
+  SOFA_STALL_LIMIT=6 "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!; dead=
   dev_wait_ready $APP "$LOG"
 }
 # FIFO opened read-write: never blocks (a crashed app used to hang the test forever on open)

@@ -14,7 +14,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 . "$SRC/tools/lib/dev-instance.sh"
 DEV="$SRC/build/SofaDev.app"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-updtest.XXXXXX")"
-PORT=47986 INST=updtest   # release server port (47995 is test-downloads' app)
+PORT=47986 INST=updtest   # release server port
 export SOFA_DATA_DIR="$T/data"   # fresh instance state per run
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -46,7 +46,7 @@ SRV=$!
 rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"
 { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # this instance's settings only
 : > "$LOG"
-SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST --port 47996 >/dev/null 2>&1 &
+SOFA_UPDATE_API="http://127.0.0.1:$PORT/release.json" "$DEV/Contents/MacOS/Sofa" --dev --instance $INST >/dev/null 2>&1 &
 APP=$!
 keep=0
 # settings deleted after the app is gone (its last write would bring them back)

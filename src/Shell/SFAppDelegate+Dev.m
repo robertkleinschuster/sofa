@@ -6,7 +6,6 @@
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
-#import "SFDevServer.h"
 #import "SFMigration.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
@@ -32,11 +31,17 @@
 
 #pragma mark Dev FIFO
 
+// The real app's own (it takes only kRealAppCommands); a dev instance's per instance name.
 static NSString *fifoPath(void) {
+    if (!SFDevMode) return [SFSharedCacheDir() stringByAppendingPathComponent:@"sofa.fifo"];
     NSString *own = SFDevPrivateDir();   // tests: inside their temporary data directory
     return own ? [own stringByAppendingPathComponent:@"dev.fifo"]
                : [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
 }
+
+// What the real app takes over its FIFO: measuring on the real screen, nothing that plays,
+// downloads or changes data.
+static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] || [cmd isEqualToString:@"framemeter"]; }
 
 - (void)startFifo {
     NSString *p = fifoPath();
@@ -80,6 +85,7 @@ static NSString *fifoPath(void) {
     NSArray *parts = [line componentsSeparatedByString:@" "];
     NSString *cmd = parts[0];
     NSString *arg = parts.count > 1 ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "] : nil;
+    if (!SFDevMode && !realAppCommand(cmd)) { SFLog(@"control: '%@' only in dev instances", cmd); return; }
     SFLog(@"dev: %@", line);
     if ([SFAppRegistry handleDevCommand:cmd arg:arg host:self]) return;   // app-specific commands (docs: each app's handleDevCommand)
     if ([cmd isEqualToString:@"parse"] && arg) {   // parser golden test: parse <app> <kind> <in.json> <out.txt>
