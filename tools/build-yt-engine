@@ -2,16 +2,17 @@
 # build-yt-engine -- bundle Sofa's YouTube engine for Firefox (docs/youtube-engine.md):
 # res/sofa-yt/web + its npm dependencies -> build/sofa-yt-web/extension (Sofa's Firefox extension:
 # manifest, page.js, bridge.js) and build/sofa-yt-web/engine.js (offline tests). IIFEs, minified.
-# esbuild-wasm (exact pin, devDependency in res/sofa-yt/package.json): the native esbuild binary needs
-# macOS 10.15, the WebAssembly build runs in node on 10.9. Node is a build tool only here.
+# esbuild-wasm (exact pin in res/sofa-yt/package.json): the native esbuild binary needs macOS 10.15,
+# the WebAssembly build runs in node on 10.9. Node is a build tool only. Dependencies: the build
+# install of tools/fetch-sofa-yt (no dev tools; the MacPorts port unpacks it from a distfile).
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="${SOFA_NODE:-/opt/local/bin/node}"
-DEV="$SRC/build/vendor/sofa-yt-dev"
+DEP="$SRC/build/vendor/sofa-yt"
 OUT="$SRC/build/sofa-yt-web"
 LOCK=$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)
-[ -f "$DEV/STAMP" ] && [ "$(cat "$DEV/STAMP")" = "$LOCK" ] || "$SRC/tools/fetch-sofa-yt" --dev
+[ -f "$DEP/STAMP" ] && [ "$(cat "$DEP/STAMP")" = "$LOCK" ] || "$SRC/tools/fetch-sofa-yt"
 mkdir -p "$OUT"
 # up to date: newer than every engine source and the lockfile (the sources it bundles from res/sofa-yt/lib
 # count too)
@@ -19,7 +20,7 @@ if [ -f "$OUT/STAMP" ] && [ -z "$(find "$SRC/res/sofa-yt/web" "$SRC/res/sofa-yt/
      -newer "$OUT/STAMP" -type f 2>/dev/null | head -1)" ]; then
   echo "yt engine up to date ($OUT)"; exit 0
 fi
-# three bundles (one esbuild run), dependencies resolved from the dev install (the sources stay free of
+# bundles (one esbuild run), dependencies resolved from the build install (the sources stay free of
 # node_modules):
 #   extension/page.js    the engine in the youtube.com page (content script, page world)
 #   extension/bridge.js  joins the page to the extension (content script, isolated world)
@@ -27,7 +28,7 @@ fi
 #   engine.js            offline tests only: the engine as a global for a BiDi preload script
 W="$SRC/res/sofa-yt/web"
 rm -rf "$OUT.tmp" && mkdir -p "$OUT.tmp/extension"
-NODE_PATH="$DEV/node_modules" "$NODE" "$DEV/node_modules/esbuild-wasm/bin/esbuild" \
+NODE_PATH="$DEP/node_modules" "$NODE" "$DEP/node_modules/esbuild-wasm/bin/esbuild" \
   "extension/page=$W/page-main.ts" "extension/bridge=$W/bridge.ts" "extension/background=$W/background.ts" "engine=$W/bidi-main.ts" \
   --bundle --format=iife --platform=browser --target=firefox140 --minify --legal-comments=none \
   --log-level=warning --outdir="$OUT.tmp"

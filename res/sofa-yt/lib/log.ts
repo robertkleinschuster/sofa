@@ -1,7 +1,5 @@
-// Logging, every line prefixed "sofa-yt:". Where it goes depends on the runtime: in node stderr
-// (Sofa forwards the sidecar's stderr into its log; stdout is reserved for the readiness line), in the
-// browser engine the console (Sofa reads it over WebDriver BiDi, docs/youtube-engine.md). No node
-// types here: the module runs in both.
+// Logging, every line prefixed "sofa-yt:". The browser engine sets the sink: Sofa's channel (its log),
+// docs/youtube-engine.md; without one (tests) stderr/console. No node types here.
 
 /** The bits of node's `process` this module uses, when it exists. */
 interface NodeProcessLike {

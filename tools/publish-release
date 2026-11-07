@@ -1,5 +1,5 @@
 #!/bin/bash
-# publish-release -- publish dist/Sofa-<version>.dmg (+ .sig, .sha256, and the sidecar's npm
+# publish-release -- publish dist/Sofa-<version>.dmg (+ .sig, .sha256, and the engine's npm
 # dependencies sofa-yt-modules-<lock>.tar.gz, a distfile of the MacPorts port) as GitHub release v<version>.
 # Release text = section "## <version>" from CHANGELOG.md (shown in Sofa on a manual update).
 # Before: version bumped in res/Info.plist, CHANGELOG updated, everything committed,

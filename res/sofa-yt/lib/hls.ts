@@ -1,6 +1,6 @@
 // Live streams and post-live DVR recordings: the WEB player response's HLS manifest, deciphered
 // with the same player as the request (n in the URL *path*), PO token as `/pot/<token>` path segment
-// (yt-dlp's recipe), proxied through the sidecar as ONE media playlist per session.
+// (yt-dlp's recipe), served by the engine as ONE media playlist per session.
 //
 // Why HLS and not live SABR (research 2026-11-05, docs/sofa-yt.md "Lives"): googlevideo 5.0.1 can
 // pull live SABR, but its segments are self-initializing fragments without byte positions or a
@@ -9,7 +9,7 @@
 // playlists keep the deciphered n and the token in every segment URL. mpv fetches the segments
 // directly from googlevideo; only the small playlists pass through here.
 //
-// The sidecar keeps the playlist alive: the variant playlist is fetched fresh on every mpv reload
+// The engine keeps the playlist alive: the variant playlist is fetched fresh on every mpv reload
 // (with a 1 s micro cache), the manifest URL is renewed through the guarded player request path
 // (YouTube#refresh: breaker, reload limit, budget) shortly before it expires or when YouTube
 // rejects it, and the session fails after MAX_FAILURES consecutive failed fetches (Sofa then
@@ -180,7 +180,7 @@ export interface LiveSessionOptions {
 }
 
 /**
- * One opened live/post-live stream. Shares the fields app.ts uses for sessions of either kind
+ * One opened live/post-live stream. Shares the fields the engine uses for sessions of either kind
  * (sid, info, closed, failed, lastActivity, everRead, lastReadAt, activeReaders, fetched, runs,
  * bytes, subs, subCache, close(), status()).
  */

@@ -22,7 +22,7 @@ static NSString *SFFriendlyPlaybackError(NSError *e) {
     return MAX(_openResume, _engine.currentTime > 5 ? _engine.currentTime : 0);
 }
 
-// The opened stream comes from an app session (e.g. YouTube SABR via the sidecar)?
+// The opened stream comes from an app session (e.g. YouTube SABR via its engine)?
 - (BOOL)sessionSource {
     Class<SFApp> app = [SFAppRegistry appForItem:_item];
     return [app respondsToSelector:@selector(playbackIsSession:)] && [app playbackIsSession:SFMPVSourceFor(_openURL)];

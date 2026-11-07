@@ -1,7 +1,7 @@
-// The YouTube engine core: open/close sessions, serve their media, subtitles, InnerTube for the app,
-// suggestions, health. Runtime-neutral (no node, no DOM): the node HTTP server (app.ts) and the
-// Firefox page (web/engine.ts, docs/youtube-engine.md) are thin adapters over it. Failures are
-// EngineError with the status and JSON body the adapters answer with.
+// The YouTube engine core: open/close sessions, read their media, subtitles, InnerTube for the app,
+// suggestions, health. Runtime-neutral (no node, no DOM): the Firefox page (web/engine.ts,
+// docs/youtube-engine.md) is a thin adapter over it, the tests drive it directly. Failures are
+// EngineError with the status and JSON body Sofa gets (as an HTTP server would answer).
 import { PlaybackSession } from './session.ts';
 import type { PumpHandle, PumpRequest, ServeTarget, SessionConfig } from './session.ts';
 import { LiveSession, codecShort } from './hls.ts';
@@ -91,7 +91,7 @@ export interface OpenMeta {
   blocked_until: number;
 }
 
-/** open of a VOD: the dash pair + choices (docs/sofa-yt.md "HTTP API"). */
+/** open of a VOD: the dash pair + choices (the media routes: SFYTEngine+Media.m). */
 export interface VodAnswer extends OpenMeta {
   id: string;
   sid: string;
@@ -149,8 +149,8 @@ export interface OpenFailure {
 
 export type OpenAnswer = VodAnswer | LiveAnswer | OpenFailure;
 
-/** One servable media track of a VOD session. */
-export interface MediaTrack {
+/** One media track of a VOD session. */
+interface MediaTrack {
   total: number;
   mimeType: string;
   /** Write bytes [start, end) to `to` as they arrive; resolves with the count written (short = premature end). */
@@ -179,8 +179,6 @@ export interface Engine {
   readonly sessions: Map<string, Session>;
   open(req: OpenRequest): Promise<OpenAnswer>;
   close(sid: string): boolean;
-  /** `key`: 'video', 'audio' (the main audio track) or an audio format key. */
-  track(sid: string, key: string): MediaTrack;
   /**
    * Bytes from `offset` of a track, like a stream read: what is buffered there now (up to maxBytes,
    * at most READ_MAX); only when nothing is, it waits for SABR's first piece. Waiting for the whole
@@ -486,7 +484,6 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       if (s) { s.close('closed by client'); forget(s); }
       return !!s;
     },
-    track,
     read,
     playlist,
     subtitles,

@@ -2,7 +2,7 @@
 // youtube.com page (SFYTBrowser) - the one identity every request to YouTube comes from (playback,
 // lives, downloads, InnerTube, suggestions). Sofa talks to it over the extension's channel
 // (SFYTChannel) and serves its media to mpv/ffmpeg as local Range-capable URLs from the same
-// loopback server (SFYTEngine+Media). Replaces the node sidecar (docs/sofa-yt.md).
+// loopback server (SFYTEngine+Media). Replaced the node sidecar (docs/sofa-yt.md, retired 2026-11-07).
 // Main thread API.
 #import "SFCore.h"
 

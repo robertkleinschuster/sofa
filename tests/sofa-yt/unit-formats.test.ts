@@ -2,11 +2,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mod, fixturePlayer, must, nth } from './helpers.ts';
+import { parseRange } from './mediaserver.ts';
 import type { RawEndscreenElement, RawFormat } from '../../res/sofa-yt/lib/ytraw.ts';
 
 const F = await mod('lib/formats.ts');
 const { FormatXTags } = await mod('node_modules/googlevideo/dist/src/exports/protos.js');
-const { parseRange } = await mod('lib/app.ts');
 
 const oz = fixturePlayer('OzCYsIrrRyw');
 const jnq = fixturePlayer('jNQXAC9IVRw');

@@ -1,4 +1,4 @@
-// Lives, post-live DVR and upcoming streams (docs/sofa-yt.md "Lives"). Fixtures: the WEB player
+// Lives, post-live DVR and upcoming streams (docs/sofa-yt.md "Lives", history). Fixtures: the WEB player
 // response of a running 24/7 live (DW News, LuKwFajn37U, recorded 2026-11-05, trimmed, IPs and
 // signatures replaced) plus its master and one variant playlist. Upcoming / offline / post-live
 // responses are synthetic variations of it (field names as yt-dlp / youtubei.js read them).
@@ -226,7 +226,7 @@ function fakeYT(info: VideoInfo, { refreshInfo }: { refreshInfo?: () => VideoInf
 
 const breaker = { blockedUntil: () => 0, heldUntil: () => 0, note() {} };
 const noPump: FakeStart = () => { throw new Error('no SABR for lives'); };
-/** GET a JSON answer of the sidecar (the test states its shape). */
+/** GET a JSON answer of the media server (mediaserver.ts) (the test states its shape). */
 const j = async <T = LiveAnswer>(url: string): Promise<T> => (await fetch(url)).json() as Promise<T>;
 
 test('/open of a live: local HLS playlist URL, live flag, chosen variant; playlist proxied with absolute URLs', async () => {

@@ -1,13 +1,10 @@
-// lib/store.ts + lib/filestore.ts: the engine's state behind one interface (docs/youtube-engine.md);
-// the file layout of the node sidecar stays as it was. Plus what YouTube keeps there: the visitor.
+// lib/store.ts: the engine's state behind one interface (docs/youtube-engine.md) - the page's
+// localStorage in the browser engine. Plus what YouTube keeps there: the visitor.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import { MemoryStore, WebStorageStore } from '../../res/sofa-yt/lib/store.ts';
 import type { StateStore, WebStorageLike } from '../../res/sofa-yt/lib/store.ts';
-import { FileStore } from '../../res/sofa-yt/lib/filestore.ts';
-import { mod, tempDir, noSessions } from './helpers.ts';
+import { mod, noSessions } from './helpers.ts';
 
 const { YouTube } = await mod('lib/youtube.ts');
 
@@ -28,15 +25,14 @@ function fakeStorage(quota = Infinity): WebStorageLike & { data: Map<string, str
   };
 }
 
-for (const [name, make] of [['MemoryStore', () => new MemoryStore()], ['FileStore', () => new FileStore(tempDir('sofa-yt-store-'))],
-  ['WebStorageStore', () => new WebStorageStore(fakeStorage(), 'sofa:')]] as const) {
+for (const [name, make] of [['MemoryStore', () => new MemoryStore()], ['WebStorageStore', () => new WebStorageStore(fakeStorage(), 'sofa:')]] as const) {
   test(`${name}: get/set/delete, keys of one directory`, () => {
     const s: StateStore = make();
     assert.equal(s.get('visitor.json'), null);
     s.set('visitor.json', '{"visitorData":"x"}');
     s.set('players/a.json', '1'); s.set('players/b.json', '2'); s.set('players/sub/c.json', '3');
     assert.equal(s.get('visitor.json'), '{"visitorData":"x"}');
-    assert.deepEqual(s.keys('players/').sort(), name === 'FileStore' ? ['players/a.json', 'players/b.json', 'players/sub'] : ['players/a.json', 'players/b.json']);
+    assert.deepEqual(s.keys('players/').sort(), ['players/a.json', 'players/b.json'], `${name}: one directory`);
     s.delete('players/a.json');
     assert.equal(s.get('players/a.json'), null);
     s.delete('nothing.json');   // no error
@@ -55,13 +51,6 @@ test('WebStorageStore: own prefix only, a full storage loses the write without t
   assert.deepEqual(failed, ['players/b.json']);
   assert.equal(s.get('players/b.json'), null);
   assert.equal(storage.getItem('yt-player-volume'), '{"volume":100}');
-});
-
-test('FileStore keeps the sidecar layout, private files', () => {
-  const dir = tempDir('sofa-yt-store-');
-  new FileStore(dir).set('players/abc.json', '{}');
-  assert.ok(fs.existsSync(path.join(dir, 'players', 'abc.json')));
-  assert.equal(fs.statSync(path.join(dir, 'players', 'abc.json')).mode & 0o777, 0o600);
 });
 
 test('visitor: kept across restarts, empty answers and garbage ignored', () => {

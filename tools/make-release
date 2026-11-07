@@ -7,13 +7,14 @@
 #
 #   Contents/MacOS/{Sofa,SofaRemote}
 #   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
-#   Contents/Runtime/bin/{ffmpeg,node,rsvg-convert}
-#   Contents/Resources/sofa-yt            YouTube SABR sidecar (TypeScript run by node + node_modules, docs/sofa-yt.md)
+#   Contents/Runtime/bin/{ffmpeg,rsvg-convert}
+#   Contents/Resources/youtube-engine     the YouTube engine's Firefox extension (docs/youtube-engine.md)
 #   Contents/Runtime/etc/{cert.pem,fonts/}
 #
 # Prerequisite (build machine): ports for the sofa dependencies installed.
 # Usage: tools/make-release            -> dist/Sofa-<version>.dmg (+ .sig, .sha256,
-#                                          sofa-yt-modules-<lock>.tar.gz for the MacPorts port)
+#                                          sofa-yt-modules-<lock>.tar.gz: the engine's build
+#                                          dependencies, a distfile of the MacPorts port)
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,20 +34,12 @@ cp -R "$SRC/build/Sofa.app" "$APP"
 mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
 
 echo "==> tools"
-for t in ffmpeg node rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
+for t in ffmpeg rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 
-echo "==> YouTube SABR sidecar (Contents/Resources/sofa-yt, run with Contents/Runtime/bin/node)"
-SY="$APP/Contents/Resources/sofa-yt"
-[ -f "$SY/main.ts" ] && [ -f "$SY/node_modules/.sofa-stamp" ] || { echo "ERROR: sofa-yt missing in the build"; exit 1; }
-# only the current sources ship: an older build dir may still hold renamed/removed files (e.g. the .mjs
-# sources from before the TypeScript port)
-(cd "$SY" && find . -path ./node_modules -prune -o -type f -print) | while read -r f; do
-  [ -f "$SRC/res/sofa-yt/$f" ] || { echo "   removing stale sofa-yt/${f#./}"; rm -f "$SY/$f"; }
-done
-# source maps and type declarations are not needed at runtime (~half of node_modules)
-find "$SY/node_modules" -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -delete
-# every dependency must load with the bundled node (no network)
-"$RT/bin/node" "$SY/main.ts" --check || { echo "ERROR: sofa-yt does not load with the bundled node"; exit 1; }
+echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa)"
+[ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] || { echo "ERROR: engine extension missing in the build"; exit 1; }
+# the browser must come along relocatable (docs/youtube-engine.md "Still open"): no release without YouTube
+echo "ERROR: the engine's browser is not bundled yet"; exit 1
 
 echo "==> CA certificates, fontconfig, empty module/config paths (against MacPorts modules, see SFRuntime)"
 mkdir -p "$RT/lib/gio/modules"
@@ -78,7 +71,7 @@ strip -x "$RT"/bin/* "$APP"/Contents/Frameworks/*.dylib 2>/dev/null || true
 echo "==> checking: only system and bundle dependencies left, no rpaths"
 "$PY" -I "$SRC/tools/relink.py" --check "$APP"
 # runtime scripts: no /opt/local paths
-LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.mjs' --include='*.ts' --include='*.json' "$MP/" "$APP/Contents/Resources/sofa-yt" || true)
+LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.json' "$MP/" "$APP/Contents/Resources/youtube-engine" || true)
 [ -z "$LEFT" ] || { echo "ERROR: $MP paths in runtime scripts:"; echo "$LEFT"; exit 1; }
 
 echo "==> DMG"
@@ -99,7 +92,7 @@ KEY="${SOFA_SIGNING_KEY:-$HOME/.config/sofa/release-signing-key.pem}"
 "$MP/bin/openssl" dgst -sha256 -verify "$SRC/res/sofa-release-public.pem" -signature "$DIST/Sofa-$VER.dmg.sig" "$DIST/Sofa-$VER.dmg" >/dev/null \
   || { echo "ERROR: signature does not match the public key in the bundle"; exit 1; }
 (cd "$DIST" && shasum -a 256 "Sofa-$VER.dmg" > "Sofa-$VER.dmg.sha256")
-# the sidecar's npm dependencies as a distfile for the MacPorts port (no network while building)
+# the engine's build dependencies as a distfile for the MacPorts port (no network while building)
 "$SRC/tools/fetch-sofa-yt" --pack "$DIST" >/dev/null
 du -sh "$APP" "$DIST/Sofa-$VER.dmg"
 cat "$DIST/Sofa-$VER.dmg.sha256"

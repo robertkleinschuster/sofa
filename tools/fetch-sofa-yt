@@ -1,6 +1,7 @@
 #!/bin/bash
-# fetch-sofa-yt -- install the npm dependencies of the YouTube SABR sidecar (res/sofa-yt) exactly as
-# pinned in res/sofa-yt/package-lock.json into build/vendor/sofa-yt/node_modules.
+# fetch-sofa-yt -- install what building Sofa's YouTube engine needs (res/sofa-yt "dependencies": the
+# libraries bundled into the engine extension + esbuild-wasm, tools/build-yt-engine) exactly as pinned
+# in res/sofa-yt/package-lock.json into build/vendor/sofa-yt/node_modules. Nothing of it ships as is.
 # `npm ci` verifies every tarball against the lockfile's integrity hash; install scripts are disabled
 # (no dependency needs one - pure JS). Called by the Makefile when the lockfile is newer.
 #   build/vendor/sofa-yt/node_modules/...
@@ -8,8 +9,8 @@
 # SOFA_DISTFILES=dir: unpack $dir/sofa-yt-modules-<lockfile sha256, 12 chars>.tar.gz instead of running
 # npm (MacPorts port: no network while building; the tarball is a checksummed distfile, a release asset).
 #   tools/fetch-sofa-yt --pack DIR    write that tarball for the current lockfile into DIR (make-release)
-#   tools/fetch-sofa-yt --dev         the dev install with devDependencies (typescript, esbuild-wasm,
-#                                     @types/*) -> build/vendor/sofa-yt-dev (type checks, engine bundle)
+#   tools/fetch-sofa-yt --dev         the dev install, devDependencies too (typescript, @types/node)
+#                                     -> build/vendor/sofa-yt-dev (type checks, the engine's tests)
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,7 +28,7 @@ if [ "${1:-}" = --dev ]; then   # npm ci verifies every tarball against the lock
   cp "$SRC/res/sofa-yt/package.json" "$SRC/res/sofa-yt/package-lock.json" "$T/"
   (cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --ignore-scripts --no-audit --no-fund \
      --no-update-notifier --loglevel=error)
-  for f in typescript/bin/tsc esbuild-wasm/bin/esbuild; do
+  for f in typescript/bin/tsc esbuild-wasm/bin/esbuild youtubei.js/package.json; do
     [ -f "$T/node_modules/$f" ] || { echo "fetch-sofa-yt: $f missing after npm ci"; exit 1; }
   done
   echo "$LOCK" > "$T/STAMP"
@@ -45,7 +46,7 @@ else
   (cd "$T" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" ci --omit=dev --ignore-scripts --no-audit --no-fund \
      --no-update-notifier --loglevel=error)
 fi
-for p in googlevideo youtubei.js bgutils-js jsdom; do
+for p in googlevideo youtubei.js bgutils-js esbuild-wasm; do
   [ -f "$T/node_modules/$p/package.json" ] || { echo "fetch-sofa-yt: $p missing after npm ci"; exit 1; }
 done
 echo "$LOCK" > "$T/STAMP"

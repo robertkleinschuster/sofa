@@ -3,8 +3,7 @@
 // bridge) or, in offline tests, by a BiDi preload script (bidi-main.ts). connect() gets the channel
 // back to Sofa (ready, log lines, breaker changes).
 //
-// The engine core (lib/engine.ts) is the one the node sidecar serves over HTTP; here it runs on the
-// page's own environment: youtubei.js' web build with the page's context (pagesession.ts), BotGuard in
+// The engine core (lib/engine.ts) runs here on the page's own environment: youtubei.js' web build with the page's context (pagesession.ts), BotGuard in
 // the real document (pagebotguard.ts), state in the profile's localStorage, the breaker state Sofa's.
 import { Innertube } from 'youtubei.js/web';
 import { SabrStream } from 'googlevideo/sabr-stream';
@@ -47,7 +46,7 @@ export type EngineEvent =
   | { type: 'log'; line: string }
   | { type: 'block'; state: BlockState };
 
-/** Every call's answer: a value or the status + body the HTTP sidecar would have answered with. */
+/** Every call's answer: a value or the status + body an HTTP server would answer with. */
 export type Reply<T> = { ok: true; value: T } | { ok: false; status: number; body: { error: string } & Record<string, unknown> };
 
 export interface MediaChunk {

@@ -30,14 +30,9 @@ void SFRuntimeSetup(void) {
     NSString *rt = SFRuntimeDir();
     NSString *bin = [(rt ?: kPrefix) stringByAppendingPathComponent:@"bin"];
     setenv("PATH", [bin stringByAppendingString:@":/usr/bin:/bin:/usr/sbin:/sbin"].UTF8String, 1);
-    setenv("SOFA_NODE", SFTool(@"node").UTF8String, 1);
-    // node (the sofa-yt sidecar) without TLS certificate verification like all data fetches of the app
-    // (user decision 2026-11-04; code is signed separately, see SFCurlNew)
-    setenv("NODE_TLS_REJECT_UNAUTHORIZED", "0", 1);
     if (!rt) return;
-    // CA list from the bundle for anything that does verify (OpenSSL/curl, node)
+    // CA list from the bundle for anything that does verify (OpenSSL/curl)
     setenv("SSL_CERT_FILE", SFCABundle().UTF8String, 1);
-    setenv("NODE_EXTRA_CA_CERTS", SFCABundle().UTF8String, 1);
     // fontconfig (librsvg/pango): system fonts, cache in the user cache
     setenv("FONTCONFIG_FILE", [rt stringByAppendingPathComponent:@"etc/fonts/fonts.conf"].UTF8String, 1);
     setenv("FONTCONFIG_PATH", [rt stringByAppendingPathComponent:@"etc/fonts"].UTF8String, 1);

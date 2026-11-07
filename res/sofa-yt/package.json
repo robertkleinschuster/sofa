@@ -1,25 +1,21 @@
 {
   "name": "sofa-yt",
   "version": "1.0.0",
-  "description": "Sofa YouTube SABR sidecar: Innertube player requests, WebPO tokens and SABR media served as local HTTP files for mpv",
+  "description": "Sofa's YouTube engine (runs in Firefox, docs/youtube-engine.md): sources bundled into the engine extension by tools/build-yt-engine",
   "private": true,
   "type": "module",
-  "main": "main.ts",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=22.18"
   },
   "dependencies": {
     "bgutils-js": "4.0.3",
+    "esbuild-wasm": "0.25.12",
     "googlevideo": "5.0.1",
-    "jsdom": "25.0.1",
-    "undici": "8.12.4",
     "youtubei.js": "18.3.0"
   },
   "devDependencies": {
-    "@types/jsdom": "21.1.7",
     "@types/node": "26.6.5",
-    "esbuild-wasm": "0.25.12",
     "typescript": "6.0.3"
   }
 }

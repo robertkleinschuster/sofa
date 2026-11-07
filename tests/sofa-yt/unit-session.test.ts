@@ -3,9 +3,6 @@
 // failure handling, expiry, breaker.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import {
   mod, fixtureInit, fixtureInfo, segmentTable, expectedBytes, fakePumps, fakeYouTube, startApp, get, sleep, until,
   xtags, FakeRes, json, must, nth,
@@ -19,8 +16,7 @@ import type { VideoInfo, VodInfo } from '../../res/sofa-yt/lib/youtube.ts';
 const { parseIndex } = await mod('lib/mediaindex.ts');
 const { PlaybackSession } = await mod('lib/session.ts');
 const { describeFormats, pickVideo, pickAudio, audioTracks } = await mod('lib/formats.ts');
-const { Breaker } = await mod('lib/breaker.ts');
-const { FileBlocks } = await mod('lib/filestore.ts');
+const { Breaker, MemoryBlocks } = await mod('lib/breaker.ts');
 
 const ID = 'OzCYsIrrRyw';
 const VINIT = fixtureInit(ID, 248);
@@ -297,16 +293,18 @@ test('open: YouTube not answering is marked unanswered (the app then asks no one
 });
 
 test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is refused', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sofa-yt-test-'));
-  const file = path.join(dir, 'youtube-block.json');
-  const breaker = new Breaker(new FileBlocks(file));
+  // as in the browser engine: the state in memory, every change reported to Sofa (which writes the file)
+  const reported: BlockState[] = [];
+  const blocks = new MemoryBlocks(null, (b) => reported.push(b));
+  const breaker = new Breaker(blocks);
   const { app, youtube } = await setup({ breaker, infos: { [ID]: info, jNQXAC9IVRw: 'bot', aaaaaaaaaaa: 'live' } });
   try {
     const bot = await openJson<OpenFailure>(app, 'v=jNQXAC9IVRw');
     assert.equal(bot.bot, true);
     assert.ok(bot.blocked_until > Date.now() / 1000 + 3500, 'breaker opened (1 h)');
-    const state = json<BlockState>(fs.readFileSync(file, 'utf8'));
-    assert.deepEqual(state.backoff, 3600, 'the file format SFYTBreaker reads');
+    const state = must(reported.at(-1));
+    assert.deepEqual(Object.keys(state).sort(), ['backoff', 'until'], 'the state SFYTBreaker writes to its file');
+    assert.equal(state.backoff, 3600);
     const before = youtube.requests;
     const bg = await openJson<OpenFailure>(app, `v=${ID}&bg=1`);
     assert.equal(bg.bot, true);
@@ -314,14 +312,14 @@ test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is re
     const held = await openJson<OpenFailure>(app, `v=${ID}`);
     assert.equal(held.bot, true, 'right after the check even user playback waits');
     assert.equal(youtube.requests, before, 'no request into a fresh block');
-    fs.writeFileSync(file, JSON.stringify({ ...state, until: state.until - 200 }));   // the check was 200 s ago
+    blocks.state = { ...state, until: state.until - 200 };   // Sofa: the check was 200 s ago (engine block())
     const fg = await openJson(app, `v=${ID}`);
     assert.ok(fg.sid, 'user playback tries again after the hold');
     const live = await openJson<OpenFailure>(app, 'v=aaaaaaaaaaa');
     assert.deepEqual([live.error, live.live], ['live', true]);
     breaker.note(false);
-    assert.deepEqual(json<BlockState>(fs.readFileSync(file, 'utf8')), { until: 0, backoff: 0 });
-  } finally { await app.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.deepEqual(reported.at(-1), { until: 0, backoff: 0 }, 'a success closes it and is reported');
+  } finally { await app.close(); }
 });
 
 test('resume hint survives mpv probing the first cluster, is consumed at the resume position', async () => {

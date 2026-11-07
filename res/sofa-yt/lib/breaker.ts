@@ -4,9 +4,8 @@
 // reset by the first success - a probe every few minutes met the same block and kept it alive
 // (2026-11-06: 27 refused requests, probes after 5/10/20/40 min). Playback the user starts still
 // tries, except within FG_HOLD_S of the check: retries from the phone went straight into the block
-// (7 player requests in 15 min). The file is re-read on every check because another instance
-// (another sidecar, Sofa) may update it too. Where the state lives is a BlockStore: the shared file in
-// node (filestore.ts), memory in the browser engine (seeded by Sofa, changes reported back to it).
+// (7 player requests in 15 min). Sofa keeps the state in one file every instance reads; the
+// engine holds it in memory (a BlockStore: seeded by Sofa, every change reported back to it).
 import { log } from './log.ts';
 
 export const BLOCK_MIN = 3600;

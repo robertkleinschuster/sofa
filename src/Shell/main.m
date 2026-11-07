@@ -79,7 +79,7 @@ static uint16_t gPort = 8765;
     self.nav = [[SFNavigator alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
     self.window.contentView = self.nav;
 
-    [SFAppRegistry startAll];   // app services (YouTube sidecar warm-up)
+    [SFAppRegistry startAll];   // app services (YouTube engine warm-up)
     [SFTileLayer setStatusSource:[SFTileStatus new]];   // download chips + progress on tiles - before the first page builds
     [self.nav push:[SFHome homeScreen]];
     __weak SFNavigator *wnav = self.nav;

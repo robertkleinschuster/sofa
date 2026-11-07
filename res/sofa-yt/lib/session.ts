@@ -288,7 +288,7 @@ export class PlaybackSession {
   reqs?: number;
   everRead?: boolean;
   lastReadAt?: number;
-  // the choice this session was opened with (app.ts: reuse for the same /open)
+  // the choice this session was opened with (engine.ts: reuse for the same open)
   audioList?: AudioTrackChoice[];
   maxHeight?: number;
   lang?: string;

@@ -1,6 +1,6 @@
 // SABR pumps for the engine's sessions: a pre-minted video-bound PO token per video (reused for
 // restarts within 30 min, dropped when SABR rejects it), and the reload path through YouTube (breaker,
-// budget). Runtime-neutral: the node sidecar and the browser engine wire the same factory.
+// budget). Runtime-neutral: the browser engine and the tests wire the same factory.
 import type { ReloadPlaybackContext } from 'googlevideo/protos';
 import { errorMessage, toError } from './errors.ts';
 import { log } from './log.ts';

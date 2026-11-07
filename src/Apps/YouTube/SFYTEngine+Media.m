@@ -85,13 +85,17 @@ static NSString *ErrorJSON(NSError *e) {
 - (void)serveTrack:(NSString *)key sid:(NSString *)sid to:(SFHTTPExchange *)x {
     NSString *range = [x.request header:@"range"];
     // where the first read starts: the range's start; a suffix range or none starts at 0 (its total decides)
-    long long first = 0;
+    long long first = 0, want = kPiece;
     if ([range hasPrefix:@"bytes="]) {
-        NSString *a = [[[range substringFromIndex:6] componentsSeparatedByString:@"-"] firstObject];
+        NSArray *ab = [[range substringFromIndex:6] componentsSeparatedByString:@"-"];
+        NSString *a = ab.firstObject, *b = ab.count == 2 ? ab[1] : nil;
         if (a.length) first = MAX(0, a.longLongValue);
+        // never read past an explicit end: bytes beyond a header probe are a reader there for the
+        // engine, which then starts a SABR run at that position (a request to YouTube)
+        if (a.length && b.length) want = MAX(1, MIN((long long)kPiece, b.longLongValue + 1 - first));
     }
     BOOL head = [x.request.method isEqualToString:@"HEAD"];
-    [self read:sid track:key at:first max:head ? 1 : kPiece done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
+    [self read:sid track:key at:first max:head ? 1 : (NSUInteger)want done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
         if (e) {
             NSInteger st = e.code == 416 ? 416 : (e.code >= 400 && e.code < 600 ? e.code : 502);
             [x respondJSON:st object:@{@"error": ErrorJSON(e)}];

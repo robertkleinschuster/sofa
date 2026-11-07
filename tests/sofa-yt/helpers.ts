@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
+import { serveEngine } from './mediaserver.ts';
 import { EventEmitter } from 'node:events';
 import { after } from 'node:test';
 import type { Engine, EngineOptions, EngineYouTube } from '../../res/sofa-yt/lib/engine.ts';
@@ -32,16 +32,13 @@ interface FormatXTagsCodec {
 }
 
 /**
- * The sidecar modules, loaded at run time from the assembled run dir (its node_modules = what ships);
+ * The engine's modules, loaded at run time from res/sofa-yt (SOFA_YT_DIR, tools/test-sofa-yt);
  * the types come from the sources (type-only imports, erased at run time).
  */
 interface Modules {
   'lib/engine.ts': typeof import('../../res/sofa-yt/lib/engine.ts');
-  'lib/app.ts': typeof import('../../res/sofa-yt/lib/app.ts');
   'lib/breaker.ts': typeof import('../../res/sofa-yt/lib/breaker.ts');
   'lib/bytes.ts': typeof import('../../res/sofa-yt/lib/bytes.ts');
-  'lib/filestore.ts': typeof import('../../res/sofa-yt/lib/filestore.ts');
-  'lib/transport.ts': typeof import('../../res/sofa-yt/lib/transport.ts');
   'lib/formats.ts': typeof import('../../res/sofa-yt/lib/formats.ts');
   'lib/hls.ts': typeof import('../../res/sofa-yt/lib/hls.ts');
   'lib/mediaindex.ts': typeof import('../../res/sofa-yt/lib/mediaindex.ts');
@@ -235,20 +232,17 @@ const unused = (what: string) => (): never => { throw new Error(`test double: ${
 /** Start createApp on an ephemeral port. */
 export async function startApp(opts: TestAppOptions): Promise<TestApp> {
   const { createEngine } = await mod('lib/engine.ts');
-  const { createApp } = await mod('lib/app.ts');
   // the doubles carry what a test exercises; a member a test leaves out must never be reached
   const youtube: EngineYouTube = { sessionState: 'ready', refresh: unused('youtube.refresh'), forget: unused('youtube.forget'),
     webHeaders: unused('youtube.webHeaders'), ...opts.youtube };
   let port = 0;
   const engine = createEngine({ ...opts, youtube, po: { state: 'ready', mintString: unused('po.mintString'), ...opts.po },
     base: () => `http://127.0.0.1:${port}` });
-  const server = http.createServer(createApp(engine).handler);
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  const addr = server.address();
-  port = addr !== null && typeof addr === 'object' ? addr.port : 0;
+  const server = await serveEngine(engine);   // Sofa's media routes (SFYTEngine+Media) for the tests
+  port = server.port;
   return {
-    engine, port, base: `http://127.0.0.1:${port}`,
-    async close() { engine.shutdown(); server.closeAllConnections?.(); await new Promise((r) => server.close(r)); },
+    engine, port, base: server.base,
+    async close() { engine.shutdown(); await server.close(); },
   };
 }
 
@@ -337,7 +331,7 @@ export function vodInfo(over: Partial<VodInfo> & { id: string }): VodInfo {
     fetchedAt: 0, ...over };
 }
 
-/** A JSON body the test knows the shape of (the sidecar's own answers). */
+/** A JSON body the test knows the shape of (the engine's own answers). */
 export function json<T>(body: Buffer | string): T {
   return JSON.parse(body.toString()) as T;
 }

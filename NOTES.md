@@ -49,15 +49,17 @@ component only because it already exists.
    Sofa (ObjC: UI, library, libmpv, ffmpeg, the loopback HTTP server mpv/ffmpeg read from) and
    Firefox (one hidden youtube.com page running Sofa's YouTube engine: youtubei.js web build,
    googlevideo SABR, BotGuard in the real DOM - no jsdom - plus the session/pacing logic of
-   today's `res/sofa-yt/lib/session.ts`). Sofa drives Firefox and pulls media bytes over
-   WebDriver BiDi (WebSocket via libcurl). **No Node at runtime**: Node/TypeScript only at build
-   time (bundle the engine to one JS file; port depends_build), the engine's unit tests stay.
+   today's `res/sofa-yt/lib/session.ts`). Sofa talks to the engine through its WebExtension
+   (not WebDriver: YouTube refuses a browser under remote control, measured 2026-11-06) and pulls
+   media bytes over that channel. **No Node at runtime**: Node/TypeScript only at build time
+   (bundle the engine to one JS file; port depends_build), the engine's unit tests stay.
+   Built 2026-11-07: `SFYTEngine` (docs/youtube-engine.md); Firefox on its own Xvfb display.
 4. **Human cadence.** Few requests at a viewer's pace (downloads 20-30 min apart, no bursts,
    preloads only on real focus changes); no retries into a fresh block.
 5. **Dependencies explicit** (user): every library/tool Sofa uses is declared (Makefile/port
    depends_lib/package.json), never only reached through another package.
-6. Until the Firefox client is done, the interim measures stay: throttling, longer breaker pause,
-   Chrome-like Node transport (lib/transport.ts).
+6. Until the Firefox client is installed, the interim measures stay in the installed app
+   (0.3.10: node sidecar): throttling, longer breaker pause.
 
 ## Technology
 - Objective-C + ARC, AppKit, Core Animation (layer-hosting, redraw only on
@@ -231,6 +233,19 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   showsSourceMark not copied (leaked into "Später ansehen"), badges stored. Regression: tools/test-home.
 
 ## Backlog (user requests — queue, tick off when done)
+- [~] 2026-11-07 **YouTube engine in Firefox: roll out** (goals above). DONE: engine in the page via
+      the extension (stream protection accepts it, `sps=1`), `SFYTEngine`/`SFYTBrowser`/`SFYTChannel`/
+      `SFLocalHTTP` replace the node sidecar in Sofa, live-verified (test-playback 9); node sidecar,
+      jsdom, identity/transport removed from the repo. OPEN, in order:
+      1. Release bundle: Firefox + Xvfb + Mesa relocatable in Contents/Runtime (port patches: libGL
+         path relative to the firefox binary, xkbcomp relative to Xvfb; env for Mesa DRI, fonts,
+         GTK in SFYTBrowser - SFRuntimeSetup's neutralised paths must not reach Firefox).
+         make-release and sofa-deploy refuse until then (the installed 0.3.10 keeps the sidecar).
+      2. EU consent dialog in a fresh profile: answer once, like a user.
+      3. Live HLS segments through the engine (mpv fetches googlevideo itself today: a second client).
+      4. "Platz schaffen" availability (oEmbed over libcurl) through the engine.
+      5. Port multimedia/sofa with the release: nodejs26 -> depends_build, firefox-x11 +
+         xorg-server-xvfb as dependencies, distfile = the engine's build dependencies.
 - [x] 2026-11-05 **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05; done: SFDownloads+Storage.m, SFHome+Downloads.m "Platz schaffen", test-downloads 6+7):
       videos disappear from YouTube (deleted, private, region-locked) - then the local copy is the
       only one. Today `SFDownloads -cleanup` deletes subscription episodes after `keepDays` (default

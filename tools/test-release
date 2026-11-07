@@ -1,8 +1,8 @@
 #!/bin/bash
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
-#   bundle dependencies, ffmpeg/node/rsvg-convert, no Python/yt-dlp left, SABR sidecar (session +
-#   PO tokens, the one browser identity handed over in its ready line).
+#   bundle dependencies, ffmpeg/rsvg-convert, nothing of the retired YouTube paths left (Python,
+#   yt-dlp, node sidecar), the engine extension.
 # Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -20,8 +20,7 @@ trap cleanup EXIT
 printf '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/local"))\n' > "$T/nomp.sb"
 np() { sandbox-exec -f "$T/nomp.sb" "$@"; }
 # the same environment SFRuntimeSetup() sets
-export PATH="$RT/bin:/usr/bin:/bin:/usr/sbin:/sbin" SOFA_NODE="$RT/bin/node" \
-       SSL_CERT_FILE="$RT/etc/cert.pem" NODE_EXTRA_CA_CERTS="$RT/etc/cert.pem" \
+export PATH="$RT/bin:/usr/bin:/bin:/usr/sbin:/sbin" SSL_CERT_FILE="$RT/etc/cert.pem" \
        FONTCONFIG_FILE="$RT/etc/fonts/fonts.conf" FONTCONFIG_PATH="$RT/etc/fonts" \
        GIO_MODULE_DIR="$RT/lib/gio/modules" GDK_PIXBUF_MODULE_FILE="$RT/etc/gdk-pixbuf-loaders.cache" \
        OPENSSL_CONF="$RT/etc/openssl.cnf"
@@ -31,30 +30,16 @@ np /bin/ls /opt/local >/dev/null 2>&1 && { echo "sandbox has no effect"; exit 1;
 /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" --check "$APP" >/dev/null && ok "dependencies only system + bundle" || bad "relink --check"
 
 np "$RT/bin/ffmpeg" -hide_banner -version >/dev/null 2>&1 && ok ffmpeg || bad ffmpeg
-np "$RT/bin/node" -e 'process.exit(0)' && ok node || bad node
 echo '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><text x="0" y="15">ARD</text></svg>' > "$T/t.svg"
 np "$RT/bin/rsvg-convert" -o "$T/t.png" "$T/t.svg" 2>/dev/null && [ -s "$T/t.png" ] && ok rsvg-convert || bad rsvg-convert
 
-# YouTube has one path since 2026-11-06 (the sidecar): nothing of the yt-dlp fallback may ship
-left=; for x in "$RT/Python.framework" "$APP/Contents/Resources/yt-dlp" "$APP/Contents/Resources/ytresolver.py" "$RT/bgutil"; do
+# YouTube has one path (the engine in Firefox, 2026-11-07): nothing of the retired ones may ship
+left=; for x in "$RT/Python.framework" "$APP/Contents/Resources/yt-dlp" "$APP/Contents/Resources/ytresolver.py" "$RT/bgutil" \
+                "$RT/bin/node" "$APP/Contents/Resources/sofa-yt"; do
   [ -e "$x" ] && left="$left ${x##*/}"
 done
-[ -z "$left" ] && ok "no Python / yt-dlp / PO token server in the bundle" || bad "obsolete parts still in the bundle:$left"
-
-# SABR sidecar with the bundled node only: dependencies load, it gets ready, and its warm-up
-# (youtube.com session + BotGuard PO token, no player request) works with the bundle's TLS setup
-SY="$APP/Contents/Resources/sofa-yt"
-np "$RT/bin/node" "$SY/main.ts" --check >/dev/null 2>&1 && ok "sofa-yt loads (bundled node)" || bad "sofa-yt --check"
-mkdir -p "$T/sy"
-( sleep 120 | np "$RT/bin/node" "$SY/main.ts" --port 0 --state "$T/sy" --block-file "$T/sy/block.json" >"$T/sy.out" 2>"$T/sy.log" ) &
-SYJOB=$!
-for i in $(seq 1 30); do SYPORT=$(sed -n 's/.*"port":\([0-9]*\).*/\1/p' "$T/sy.out" | head -1); [ -n "$SYPORT" ] && break; sleep 0.5; done
-H=; for i in $(seq 1 40); do [ -n "${SYPORT:-}" ] || break; H=$(curl -s "127.0.0.1:$SYPORT/health"); echo "$H" | /usr/bin/grep -q '"poToken":"\(ready\|error\)"' && break; sleep 1; done
-echo "$H" | /usr/bin/grep -q '"session":"ready".*"poToken":"ready"\|"poToken":"ready".*"session":"ready"' && ok "sofa-yt session + PO token ready" \
-  || bad "sofa-yt not ready: ${H:-no port} $(tail -2 "$T/sy.log")"
-/usr/bin/grep -q '"userAgent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/[0-9]*\.0\.0\.0 Safari/537.36"' "$T/sy.out" \
-  && ok "sofa-yt hands over its browser identity" || bad "no identity in the ready line: $(head -1 "$T/sy.out")"
-pkill -f "sleep 120" 2>/dev/null; wait $SYJOB 2>/dev/null
+[ -z "$left" ] && ok "no Python / yt-dlp / PO token server / node sidecar in the bundle" || bad "obsolete parts still in the bundle:$left"
+[ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] && ok "engine extension in the bundle" || bad "engine extension missing"
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

@@ -2,7 +2,7 @@
 // videos, a playlist, channels, a follow button), at the creator's positions over the picture.
 //
 // Data: generic end cards (format: SFApp.h "endCards") in the stream description of the open URL -
-// the app converts its own data (YouTube: the SABR sidecar's /open answer). No request of its own
+// the app converts its own data (YouTube: its engine's open answer). No request of its own
 // here, only the thumbnails are loaded (and only once a tile is about to show). Opening goes
 // through the app that owns the card's ref.
 //

@@ -1,33 +1,25 @@
 #!/bin/bash
-# test-sofa-yt -- tests of the YouTube SABR sidecar (res/sofa-yt).
+# test-sofa-yt -- tests of Sofa's YouTube engine (res/sofa-yt, docs/youtube-engine.md).
 #   tools/test-sofa-yt              type check (tsc, mandatory), then the offline unit tests
-#                                   (fixtures in tests/sofa-yt, no network)
+#                                   (fixtures in tests/sofa-yt, no network): the engine core driven
+#                                   directly and through tests/sofa-yt/mediaserver.ts (Sofa's media
+#                                   routes, same data path), mpv on those URLs, the bundle in Firefox
 #   SOFA_YT_LIVE=1 tools/test-sofa-yt
-#                                   + live smoke test: one /open (at most one player request, none
-#                                     when the state dir still holds a valid response), 10 s of
-#                                     playback in mpv from 60 s, one seek; live engine test: the browser
-#                                     engine on youtube.com in headless Firefox (one player request,
-#                                     ~100 s of media, stream protection measured). Uses YouTube - opt-in only.
-#   SOFA_YT_FILES="unit-store.test.ts live-engine.test.ts" tools/test-sofa-yt
+#                                   + the live tests (youtube.com in Firefox: YouTube's own player as a
+#                                     baseline, the engine through its extension). Uses YouTube - opt-in only.
+#   SOFA_YT_FILES="unit-store.test.ts live-extension.test.ts" tools/test-sofa-yt
 #                                   only these test files (type check as always)
-# The sidecar runs from build/sofa-yt-run (res/sofa-yt + the node_modules of tools/fetch-sofa-yt, i.e.
-# exactly the runtime dependencies that ship). Type checking uses a separate dev install of the same
-# lockfile (devDependencies included: typescript, @types/*) in build/vendor/sofa-yt-dev, reachable for
-# tsc and editors through the git-ignored symlink res/sofa-yt/node_modules.
+# Sources and tests run from res/sofa-yt with the dev install of the lockfile (build/vendor/sofa-yt-dev,
+# reachable for node, tsc and editors through the git-ignored symlink res/sofa-yt/node_modules).
 set -eu
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="${SOFA_NODE:-/opt/local/bin/node}"
-VENDOR="$SRC/build/vendor/sofa-yt"
 DEV="$SRC/build/vendor/sofa-yt-dev"
-RUN="$SRC/build/sofa-yt-run"
 LOCK=$(shasum -a 256 "$SRC/res/sofa-yt/package-lock.json" | cut -d' ' -f1)
-if [ ! -f "$VENDOR/STAMP" ] || [ "$(cat "$VENDOR/STAMP")" != "$LOCK" ]; then
-  "$SRC/tools/fetch-sofa-yt"
-fi
 
 # ---- type check -------------------------------------------------------------------------------
-# dev install (devDependencies too: typescript, esbuild-wasm, @types/*), see tools/fetch-sofa-yt --dev
+# dev install (devDependencies too: typescript, @types/node), see tools/fetch-sofa-yt --dev
 if [ ! -f "$DEV/STAMP" ] || [ "$(cat "$DEV/STAMP")" != "$LOCK" ]; then "$SRC/tools/fetch-sofa-yt" --dev; fi
 LINK="$SRC/res/sofa-yt/node_modules"
 if [ "$(readlink "$LINK" 2>/dev/null)" != "../../build/vendor/sofa-yt-dev/node_modules" ]; then
@@ -40,17 +32,13 @@ TSC_OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-tsc.XXXXXX")"
   && "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt/web" --pretty false >> "$TSC_OUT" 2>&1 ) & TSC=$!
 
 # ---- tests ------------------------------------------------------------------------------------
-rm -rf "$RUN"; mkdir -p "$RUN"
-# the sources as they ship (no dev node_modules, no tsconfig), plus the shipped dependencies
-(cd "$SRC/res/sofa-yt" && cp package.json *.ts "$RUN/" && mkdir -p "$RUN/lib" && cp lib/*.ts "$RUN/lib/")
-ln -s "$VENDOR/node_modules" "$RUN/node_modules"
-# the browser engine bundle (docs/youtube-engine.md), loaded by unit-engine in headless Firefox
+# the browser engine bundle (docs/youtube-engine.md): unit-engine loads it in Firefox, the live tests install the extension
 "$SRC/tools/build-yt-engine" >/dev/null || exit 1
-export SOFA_YT_DIR="$RUN" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js" SOFA_YT_EXTENSION="$SRC/build/sofa-yt-web/extension"
+export SOFA_YT_DIR="$SRC/res/sofa-yt" SOFA_NODE="$NODE" SOFA_YT_ENGINE="$SRC/build/sofa-yt-web/engine.js" SOFA_YT_EXTENSION="$SRC/build/sofa-yt-web/extension"
 cd "$SRC/tests/sofa-yt"
 FILES=(unit-*.test.ts)
 [ "${SOFA_YT_LIVE:-0}" = 1 ] && FILES+=(live-*.test.ts)
-# SOFA_YT_FILES="live-engine.test.ts": only these (one live test without the others' requests)
+# SOFA_YT_FILES="live-extension.test.ts": only these (one live test without the others' requests)
 [ -n "${SOFA_YT_FILES:-}" ] && read -r -a FILES <<< "$SOFA_YT_FILES"
 set +e
 "$NODE" --test --test-reporter=spec "${FILES[@]}" > "$TSC_OUT.tests" 2>&1; tests=$?

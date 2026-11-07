@@ -4,7 +4,7 @@
 // user agent macOS gives every native app (CFNetwork's own, byte for byte - tests/units/useragent.m
 // compares it with what NSURLSession sends): "Sofa/<build> CFNetwork/673.6 Darwin/13.4.0 (x86_64)
 // (<model>)". A source that speaks to its service as a browser registers that browser for its
-// domains (YouTube: the sidecar's one Chrome identity for youtube.com, ytimg.com, ...).
+// domains (YouTube: its engine's Firefox for youtube.com, ytimg.com, ...).
 #import <Foundation/Foundation.h>
 
 NSString *SFNativeUserAgent(void);

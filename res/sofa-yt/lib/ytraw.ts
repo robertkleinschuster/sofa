@@ -1,4 +1,4 @@
-// The parts of YouTube's raw WEB player response (camelCase Innertube JSON) this sidecar reads.
+// The parts of YouTube's raw WEB player response (camelCase Innertube JSON) the engine reads.
 // Every field is optional: YouTube changes the response at will, and every reader coerces (Number,
 // String) and guards (?.) what it uses. asPlayerResponse() is the one boundary where untrusted JSON
 // becomes this type: the containers we descend into are checked to be objects/arrays of objects.

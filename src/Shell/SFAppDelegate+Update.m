@@ -98,8 +98,8 @@ static id gHandover;   // activity token of the update handover (released = acti
     }
     if ([st[@"item"] isKindOfClass:[NSDictionary class]]) {
         SFItem *it = [SFItem itemWithDictionary:st[@"item"]];
-        // Don't reuse the old process's stream address (local proxy / sidecar, gone with it: -1102)
-        // -> resolve afresh (the sidecar keeps player responses on disk: no new YouTube request)
+        // Don't reuse the old process's stream address (local proxy / YouTube engine, gone with it: -1102)
+        // -> resolve afresh (the YouTube engine keeps player responses in its profile: no new YouTube request)
         if (it.playURL && !it.playURL.isFileURL && it.resolverRef.length) it.playURL = nil;
         NSMutableArray *queue = [NSMutableArray new];
         for (NSDictionary *d in ([st[@"queue"] isKindOfClass:[NSArray class]] ? st[@"queue"] : @[])) {

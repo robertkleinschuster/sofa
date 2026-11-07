@@ -44,7 +44,7 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
 }
 
 // Playback that should run but makes no progress for this long counts as failed, so the player's
-// fallback chain takes over. 2026-11-05: the SABR sidecar died during playback; mpv's HTTP
+// fallback chain takes over. 2026-11-05: the YouTube SABR service died during playback; mpv's HTTP
 // reconnects hit "connection refused" and a seek then hung forever with no error event.
 static NSTimeInterval SFStallLimit(void) {
     static NSTimeInterval t; static dispatch_once_t o;

@@ -40,23 +40,19 @@ LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard r
 # Sofa's own update key (SFSignature.h)
 KEYFILES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/sofa-release-public.pem)
 
-# YouTube SABR sidecar (docs/sofa-yt.md): its sources + the npm dependencies pinned in
-# res/sofa-yt/package-lock.json (tools/fetch-sofa-yt, npm ci) -> Contents/Resources/sofa-yt
-# (TypeScript run directly by node's type stripping: the .ts sources are what ships, docs/sofa-yt.md)
-SYSRC   := res/sofa-yt/package.json $(wildcard res/sofa-yt/*.ts res/sofa-yt/lib/*.ts)
+# npm dependencies of the YouTube engine's build, pinned in res/sofa-yt/package-lock.json
+# (tools/fetch-sofa-yt, npm ci; the port unpacks them from a distfile)
 SYVEND  := $(BUILD)/vendor/sofa-yt
-SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources/%,$(SYSRC)) \
-             $(b)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp)
 
 # YouTube engine extension (docs/youtube-engine.md): res/sofa-yt/web bundled by tools/build-yt-engine
-# (esbuild-wasm, a build-time dependency) -> Contents/Resources/youtube-engine (SFYTBrowser installs it)
+# (esbuild-wasm) -> Contents/Resources/youtube-engine (SFYTBrowser installs it into the engine profile)
 YESRC   := $(wildcard res/sofa-yt/web/*.ts res/sofa-yt/web/extension/* res/sofa-yt/lib/*.ts) res/sofa-yt/package-lock.json
 YEFILES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/youtube-engine/STAMP)
 
 # user-facing changelog: Einstellungen -> "Neu in Version …"
 NOTES_RES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/CHANGELOG.md)
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(SYFILES) $(YEFILES) $(NOTES_RES) compile_commands.json
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(YEFILES) $(NOTES_RES) compile_commands.json
 
 # clangd (editor / Claude Code LSP) compilation database from the build's own CC + CFLAGS
 # (tools/gen-compile-commands). Machine-local absolute paths -> git-ignored. Depends on the
@@ -83,12 +79,7 @@ $(DEVAPP)/Contents/Resources/%: res/%
 $(SYVEND)/STAMP: res/sofa-yt/package-lock.json
 	tools/fetch-sofa-yt
 
-$(APP)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp $(DEVAPP)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp: $(SYVEND)/STAMP
-	@rm -rf $(dir $@) && mkdir -p $(dir $@)
-	cp -R $(SYVEND)/node_modules/ $(dir $@)
-	cp $(SYVEND)/STAMP $@
-
-$(BUILD)/sofa-yt-web/STAMP: $(YESRC) tools/build-yt-engine
+$(BUILD)/sofa-yt-web/STAMP: $(YESRC) $(SYVEND)/STAMP tools/build-yt-engine
 	tools/build-yt-engine
 
 $(APP)/Contents/Resources/youtube-engine/STAMP $(DEVAPP)/Contents/Resources/youtube-engine/STAMP: $(BUILD)/sofa-yt-web/STAMP

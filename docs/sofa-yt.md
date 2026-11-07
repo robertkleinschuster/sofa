@@ -1,4 +1,9 @@
-# sofa-yt — YouTube SABR sidecar
+# sofa-yt — YouTube SABR sidecar (retired 2026-11-07)
+
+> **History.** Replaced by the YouTube engine in Firefox ([youtube-engine.md](youtube-engine.md)):
+> the same engine core (`res/sofa-yt/lib`) now runs in a real youtube.com page; the node process,
+> its HTTP server, jsdom, identity and transport emulation are gone. Kept for the research it
+> records (SABR, lives/HLS, pacing, PO tokens) - the process and HTTP API described below no longer exist.
 
 A long-lived node process that looks like YouTube's own web player (one persistent Innertube session,
 WEB-client player requests with a BotGuard/WebPO token, SABR streaming) and hands mpv plain local HTTP

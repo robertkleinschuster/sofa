@@ -50,7 +50,7 @@ NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id element));
 // JSON text <-> objects (stored items, feeds): nil when not representable / not parseable
 NSString *SFJSONString(id obj);
 id SFJSONParse(NSString *text);
-// Where Sofa keeps its state (database, sidecar state, a dev instance's downloads). The real app:
+// Where Sofa keeps its state (database, the YouTube engine's browser profile, a dev instance's downloads). The real app:
 // ~/Library/Application Support/Sofa. A dev instance never shares it - isolated by construction,
 // not by per-file checks: Application Support/Sofa-dev/<instance>, or $SOFA_DATA_DIR (tests: a
 // fresh temporary directory per run). Set once at launch, before anything is stored.
