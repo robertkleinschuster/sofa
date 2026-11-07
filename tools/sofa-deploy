@@ -12,7 +12,7 @@
 # restores the port state.
 #
 # Usage: tools/sofa-deploy                 the current build, with the installed app's runtime
-#        tools/sofa-deploy --bundle <App>  a complete bundle (tools/make-release [--local]), e.g.
+#        tools/sofa-deploy --bundle <App>  a complete bundle (tools/make-release), e.g.
 #                                          when the installed runtime lacks a part the build needs
 set -eu
 BUNDLE=

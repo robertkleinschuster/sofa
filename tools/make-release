@@ -17,14 +17,8 @@
 # Usage: tools/make-release            -> dist/Sofa-<version>.dmg (+ .sig, .sha256,
 #                                          sofa-yt-modules-<lock>.tar.gz: the engine's build
 #                                          dependencies, a distfile of the MacPorts port)
-#        tools/make-release --local    -> dist/Sofa.app for THIS Mac only (tools/sofa-deploy
-#                                          --bundle): parts of it may still use MacPorts (a
-#                                          firefox-x11 without the relative libGL path), so no
-#                                          DMG, no signature - it cannot be published by mistake
 set -eu
 unset DYLD_INSERT_LIBRARIES
-LOCAL=0
-case "${1:-}" in --local) LOCAL=1 ;; "") ;; *) echo "usage: make-release [--local]"; exit 2 ;; esac
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 MP=/opt/local
 PY="$MP/bin/python3.14"
@@ -47,10 +41,10 @@ for t in ffmpeg rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa; SFYTBrowser finds them in Runtime)"
 [ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] || { echo "ERROR: engine extension missing in the build"; exit 1; }
 # WebGL: Firefox opens Mesa's libGL by a path relative to itself (firefox-x11 patch) - a build that
-# still names the MacPorts path would lose WebGL in the bundle (a signal YouTube can see)
+# still names the MacPorts path loses WebGL in the bundle (a signal YouTube can see), on this Mac
+# too: MacPorts' libGL brings its own libX11/xcb next to the bundle's, and GLX fails (measured)
 if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/firefox/libxul.dylib" "$MP/lib/firefox/glxtest"; then
-  if [ $LOCAL = 1 ]; then echo "    note: firefox-x11 opens libGL from $MP - WebGL on this Mac only (--local)"
-  else echo "ERROR: firefox-x11 still opens libGL from $MP (needs its relative-path patch)"; exit 1; fi
+  echo "ERROR: firefox-x11 still opens libGL from $MP (needs its relative-path patch)"; exit 1
 fi
 mkdir -p "$RT/lib/dri" "$RT/share/X11" "$RT/share/fonts"
 cp -RL "$MP/lib/firefox" "$RT/lib/firefox"
@@ -93,12 +87,6 @@ echo "==> checking: only system and bundle dependencies left, no rpaths"
 # runtime scripts: no /opt/local paths
 LEFT=$(/usr/bin/grep -rlI --include='*.js' --include='*.json' "$MP/" "$APP/Contents/Resources/youtube-engine" || true)
 [ -z "$LEFT" ] || { echo "ERROR: $MP paths in runtime scripts:"; echo "$LEFT"; exit 1; }
-
-if [ $LOCAL = 1 ]; then
-  du -sh "$APP"
-  echo "==> $APP: for this Mac only (tools/sofa-deploy --bundle $APP) - not a release"
-  exit 0
-fi
 
 echo "==> DMG"
 STAGE="$DIST/dmg"; mkdir -p "$STAGE"
