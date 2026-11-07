@@ -120,6 +120,8 @@ kill -0 $O 2>/dev/null && bad "orphan still alive" || ok "orphan killed at start
 grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
 [ -n "$S" ] && ! kill -0 $S 2>/dev/null && grep -q "ffmpeg $S ignored SIGTERM - SIGKILL" "$LOG" && ok "SIGTERM-ignoring orphan escalated to SIGKILL" \
   || bad "SIGTERM-ignoring orphan survived (pid ${S:-none})"
+# the sweep walks the download tree in the background (off the main thread): wait for its line
+for i in $(seq 1 40); do grep -q 'removed [0-9]* stale partial file' "$LOG" && break; sleep 0.25; done
 [ -e "$ROOT/orphan-test.part999.mp4" ] && bad "stale part file left" || ok "stale part file swept"
 
 echo "==> 2. verifier"

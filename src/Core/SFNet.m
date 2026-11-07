@@ -75,10 +75,17 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
 
 + (void)request:(NSMutableURLRequest *)req cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age done:(SFJSONDone)done {
     void (^finish)(id, NSError *) = ^(id j, NSError *e) { SFMain(^{ done(j, e); }); };
-    if (key && age > 0) {
+    if (!key || age <= 0) { [self send:req cacheKey:key cacheAge:age finish:finish]; return; }
+    // the cache is a disk read (and a JSON parse): never on the caller's thread - from the main
+    // thread it stalled navigation 91 ms in pread (hitch monitor 2026-11-07); done comes on main
+    SFBackground(^{
         id hit = [[SFStore shared] cachedJSON:key maxAge:age];
-        if (hit) { finish(hit, nil); return; }
-    }
+        if (hit) finish(hit, nil); else [self send:req cacheKey:key cacheAge:age finish:finish];
+    });
+}
+
+// The request itself; on failure an older cached answer (up to 30 days) rather than none.
++ (void)send:(NSMutableURLRequest *)req cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age finish:(void (^)(id, NSError *))finish {
     [req setValue:SFUserAgentForHost(req.URL.host) forHTTPHeaderField:@"User-Agent"];
     NSDate *t0 = [NSDate date];
     void (^handle)(NSData *, NSInteger, NSError *) = ^(NSData *data, NSInteger code, NSError *err) {

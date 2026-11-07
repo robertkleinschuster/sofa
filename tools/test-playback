@@ -75,7 +75,15 @@ start() {
   dev_wait_ready $APP "$LOG"
 }
 # FIFO opened read-write: never blocks (a crashed app used to hang the test forever on open)
+# closing a player waited ~300 ms on the main thread for mpv's threads (hitch monitor 2026-11-07,
+# -[SFMPVEngine shutdown] / freeRenderContext): teardown runs on its own queue - no stall of this
+# instance may be spent in it. (Property reads are not checked here: the tests' mpvprop reads on purpose.)
+mpvstalls() {
+  local s; s=$(grep 'hitch: main thread blocked' "$LOG" | grep -E 'SFMPVEngine shutdown|SFMPVLayer retire' | head -3)
+  [ -z "$s" ] && ok "closing players never stalled the main thread" || bad "main thread stalled in mpv teardown: $s"
+}
 stop() {   # quit, then wait for the process (up to 5 s) instead of a fixed pause
+  mpvstalls
   echo quit 1<>"$FIFO" 2>/dev/null
   for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
   kill $APP 2>/dev/null; APP=
@@ -90,7 +98,7 @@ mark() { wc -l < "$LOG" | tr -d ' '; }
 waitlog() { for i in $(seq 1 ${3:-40}); do since $1 | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
 # shot FILE: screenshot, waits until it is written (a fixed sleep was flaky under load)
 shot() { local m; m=$(mark); cmd "shot $1"; waitlog $m "dev: shot written $1" 40; }
-keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS/"; return 0; }
+keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS/$INST-$(basename "$1")"; return 0; }   # per part: both keep a sofa.log
 mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
 pos() { local n; n=$(mark); cmd "mpvprop time-pos"; waitlog $n 'mpv time-pos = ' 12; mpvtime $n; }   # asks mpv, waits for the answer
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)

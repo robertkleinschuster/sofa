@@ -26,7 +26,39 @@ NSString *SFMPVDevFrameShotPath = nil;
 
 #pragma mark Engine
 
-enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kPropCacheTime };
+enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kPropCacheTime,
+       kPropTracks, kPropVOConfigured, kPropWidth, kPropHeight };
+
+// mpv's track-list node -> [{type, id, selected, lang?, title?, url? (external file), albumart}]
+static NSArray *SFTracksFromNode(const mpv_node *list) {
+    NSMutableArray *out = [NSMutableArray new];
+    if (!list || list->format != MPV_FORMAT_NODE_ARRAY) return out;
+    for (int i = 0; i < list->u.list->num; i++) {
+        const mpv_node *m = &list->u.list->values[i];
+        if (m->format != MPV_FORMAT_NODE_MAP) continue;
+        NSMutableDictionary *t = [NSMutableDictionary new];
+        NSString *externalFile = nil; BOOL external = NO;
+        for (int j = 0; j < m->u.list->num; j++) {
+            const char *k = m->u.list->keys[j];
+            const mpv_node *v = &m->u.list->values[j];
+            if (v->format == MPV_FORMAT_STRING) {
+                NSString *str = @(v->u.string);
+                if (!strcmp(k, "type")) t[@"type"] = str;
+                else if (!strcmp(k, "lang") && str.length) t[@"lang"] = str;
+                else if (!strcmp(k, "title") && str.length) t[@"title"] = str;
+                else if (!strcmp(k, "external-filename") && str.length) externalFile = str;
+            } else if (v->format == MPV_FORMAT_INT64 && !strcmp(k, "id")) t[@"id"] = @(v->u.int64);
+            else if (v->format == MPV_FORMAT_FLAG) {
+                if (!strcmp(k, "selected")) t[@"selected"] = @(v->u.flag != 0);
+                else if (!strcmp(k, "external")) external = v->u.flag != 0;
+                else if (!strcmp(k, "albumart")) t[@"albumart"] = @(v->u.flag != 0);
+            }
+        }
+        if (external && externalFile) t[@"url"] = externalFile;
+        if (t[@"type"]) [out addObject:t];
+    }
+    return out;
+}
 
 @implementation SFMPVEngine {
     mpv_handle *_mpv;
@@ -42,6 +74,11 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
     double _stallTime;                // stall watchdog: position at _stallSince
     NSDate *_stallSince;
     BOOL _stallFired;
+    // observed, never read synchronously on the main thread: a property read takes mpv's core lock,
+    // which a loading/seeking core holds - the 0.5-s tick then blocked the main thread up to 600 ms
+    // (hitch monitor 2026-11-07, -[SFMPVEngine prop:] in __psynch_cvwait)
+    BOOL _hasVideo, _voConfigured;   // the file has a real video track (not album art); vo is up
+    int64_t _width, _height;         // displayed video size
 }
 
 // Playback that should run but makes no progress for this long counts as failed, so the player's
@@ -88,6 +125,10 @@ static void onWakeup(void *ctx) {
         mpv_observe_property(_mpv, kPropCacheWait, "paused-for-cache", MPV_FORMAT_FLAG);
         mpv_observe_property(_mpv, kPropEOF, "eof-reached", MPV_FORMAT_FLAG);
         mpv_observe_property(_mpv, kPropCacheTime, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
+        mpv_observe_property(_mpv, kPropTracks, "track-list", MPV_FORMAT_NODE);
+        mpv_observe_property(_mpv, kPropVOConfigured, "vo-configured", MPV_FORMAT_FLAG);
+        mpv_observe_property(_mpv, kPropWidth, "dwidth", MPV_FORMAT_INT64);
+        mpv_observe_property(_mpv, kPropHeight, "dheight", MPV_FORMAT_INT64);
         mpv_request_log_messages(_mpv, "warn");   // mpv warnings/errors into the Sofa log
         mpv_set_wakeup_callback(_mpv, onWakeup, (__bridge void *)self);
         _layer.mpv = _mpv;
@@ -146,21 +187,15 @@ static void onWakeup(void *ctx) {
     return s;
 }
 
+// Read now, not from the observed copy: callers act right after their own sub-add/audio-add (menus,
+// duplicate check), which the observation reports only later. One read of the whole list.
 - (NSArray *)tracksOfType:(NSString *)type {
-    NSMutableArray *out = [NSMutableArray new];
-    NSInteger n = [[self prop:@"track-list/count"] integerValue];
-    for (NSInteger i = 0; i < n; i++) {
-        NSString *(^p)(NSString *) = ^NSString *(NSString *k) { return [self prop:[NSString stringWithFormat:@"track-list/%ld/%@", (long)i, k]]; };
-        if (![p(@"type") isEqualToString:type]) continue;
-        NSMutableDictionary *t = [NSMutableDictionary new];
-        t[@"id"] = @([p(@"id") integerValue]);
-        t[@"selected"] = @([p(@"selected") isEqualToString:@"yes"]);
-        if (p(@"lang").length) t[@"lang"] = p(@"lang");
-        if (p(@"title").length) t[@"title"] = p(@"title");
-        if ([p(@"external") isEqualToString:@"yes"] && p(@"external-filename").length) t[@"url"] = p(@"external-filename");
-        [out addObject:t];
-    }
-    return out;
+    if (!_mpv) return @[];
+    mpv_node list;
+    if (mpv_get_property(_mpv, "track-list", MPV_FORMAT_NODE, &list) < 0) return @[];
+    NSArray *all = SFTracksFromNode(&list);
+    mpv_free_node_contents(&list);
+    return [all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"type == %@", type]];
 }
 
 - (void)selectTrack:(NSString *)type trackID:(NSInteger)tid {
@@ -210,12 +245,7 @@ static void onWakeup(void *ctx) {
     // only once playback runs: before it, mpv has simply not decoded a first frame yet - a slow
     // stream start looked "missing" and re-selecting the track restarted its decoding (2026-11-07)
     if (!_started) { _voDownTicks = 0; return; }
-    BOOL hasVideo = NO;
-    NSInteger n = [[self prop:@"track-list/count"] integerValue];
-    for (NSInteger i = 0; i < n && !hasVideo; i++)
-        hasVideo = [[self prop:[NSString stringWithFormat:@"track-list/%ld/type", (long)i]] isEqualToString:@"video"]
-                   && ![[self prop:[NSString stringWithFormat:@"track-list/%ld/albumart", (long)i]] isEqualToString:@"yes"];
-    if (!hasVideo || [[self prop:@"vo-configured"] isEqualToString:@"yes"]) { _voDownTicks = 0; return; }
+    if (!_hasVideo || _voConfigured) { _voDownTicks = 0; return; }
     if (++_voDownTicks < 3) return;   // allow ~1.5 s for normal vo start-up
     _voDownTicks = 0; _voHeals++;
     SFLog(@"mpv: video output missing although the file has video - re-selecting video track (attempt %ld)", (long)_voHeals);
@@ -260,6 +290,15 @@ static void onWakeup(void *ctx) {
                     case kPropTime: _time = has ? *(double *)p->data : 0; break;
                     case kPropDuration: _dur = has ? *(double *)p->data : 0; break;
                     case kPropCacheTime: _cacheTime = has ? *(double *)p->data : 0; break;
+                    case kPropVOConfigured: _voConfigured = has && *(int *)p->data; break;
+                    case kPropWidth: _width = has ? *(int64_t *)p->data : 0; break;
+                    case kPropHeight: _height = has ? *(int64_t *)p->data : 0; break;
+                    case kPropTracks: {
+                        _hasVideo = NO;
+                        for (NSDictionary *t in has ? SFTracksFromNode(p->data) : @[])
+                            if ([t[@"type"] isEqualToString:@"video"] && ![t[@"albumart"] boolValue]) _hasVideo = YES;
+                        break;
+                    }
                     case kPropPause: _paused = has && *(int *)p->data; [self.delegate engineRateChanged]; break;
                     case kPropCacheWait: _waiting = has && *(int *)p->data; [self.delegate engineBufferingChanged]; [self.delegate engineRateChanged]; break;
                     case kPropEOF: {
@@ -290,10 +329,7 @@ static void onWakeup(void *ctx) {
 - (NSTimeInterval)currentTime { return _time > 0 ? _time : 0; }
 - (NSTimeInterval)duration { return _dur > 0 ? _dur : 0; }
 - (NSTimeInterval)bufferedUntil { return _cacheTime; }
-- (CGSize)videoSize {
-    double w = [[self prop:@"dwidth"] doubleValue], h = [[self prop:@"dheight"] doubleValue];
-    return w > 0 && h > 0 ? CGSizeMake(w, h) : CGSizeZero;
-}
+- (CGSize)videoSize { return _width > 0 && _height > 0 ? CGSizeMake(_width, _height) : CGSizeZero; }
 - (void)setMuted:(BOOL)m { _muted = m; if (_mpv) mpv_set_property_string(_mpv, "mute", m ? "yes" : "no"); }
 
 - (void)play { if (_mpv) mpv_set_property_string(_mpv, "pause", "no"); }
@@ -327,10 +363,9 @@ static void onWakeup(void *ctx) {
     if (!_mpv) return;
     [self logPlaybackStats];
     mpv_set_wakeup_callback(_mpv, NULL, NULL);
-    _layer.mpv = NULL;
-    [_layer freeRenderContext];          // before terminate (the layer's GL context)
-    mpv_terminate_destroy(_mpv);
+    mpv_handle *mpv = _mpv;
     _mpv = NULL;
+    [_layer retireWithMPV:mpv];   // render context, then core - off the main thread
 }
 
 - (void)dealloc { [self shutdown]; }

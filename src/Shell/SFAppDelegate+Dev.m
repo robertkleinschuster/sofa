@@ -68,6 +68,12 @@ static NSString *fifoPath(void) {
     unlink(fifoPath().fileSystemRepresentation);
 }
 
+// Busy on the main thread for `seconds`, in a frame of its own: the hitch monitor must name it.
+- (void)devStall:(NSTimeInterval)seconds {
+    NSTimeInterval end = [NSDate timeIntervalSinceReferenceDate] + seconds;
+    while ([NSDate timeIntervalSinceReferenceDate] < end) {}
+}
+
 - (void)devCommand:(NSString *)line {
     if (!line.length) return;
     NSArray *parts = [line componentsSeparatedByString:@" "];
@@ -89,6 +95,8 @@ static NSString *fifoPath(void) {
         SFKey k = SFKeyFromName(arg);
         if ((NSInteger)k >= 0) [self.nav sendKey:k];
         else SFLog(@"dev: unknown key %@", arg);
+    } else if ([cmd isEqualToString:@"stall"] && arg) {   // Dev: block the main thread for <ms> (tests the hitch monitor's stacks)
+        [self devStall:arg.doubleValue / 1000];
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
     } else if ([cmd isEqualToString:@"mpvset"] && arg) {   // dev: set an mpv property, e.g. "mpvset vid no" (tests self-healing)

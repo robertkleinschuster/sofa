@@ -83,18 +83,20 @@ static NSArray *SFProcessArgs(pid_t pid) {
     return reaped;
 }
 
+// Walks the whole download tree: off the main thread (1.5 s of the startup stall on the real
+// library, hitch monitor 2026-11-07). Safe at any time - our own part files carry our pid.
 - (void)sweepStaleParts {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *root = [SFDownloads root];
-    NSString *mine = [self partSuffix];
-    NSUInteger n = 0;
-    NSDirectoryEnumerator *en = [fm enumeratorAtPath:root];
-    for (NSString *rel in en) {
-        if ([rel rangeOfString:@".part"].location == NSNotFound || ![rel hasSuffix:@".mp4"]) continue;
-        if ([rel hasSuffix:mine]) continue;
-        if ([fm removeItemAtPath:[root stringByAppendingPathComponent:rel] error:nil]) n++;
-    }
-    if (n) SFLog(@"downloads: removed %lu stale partial file(s)", (unsigned long)n);
+    NSString *root = [SFDownloads root], *mine = [self partSuffix];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        NSFileManager *fm = [NSFileManager new];
+        NSUInteger n = 0;
+        for (NSString *rel in [fm enumeratorAtPath:root]) {
+            if ([rel rangeOfString:@".part"].location == NSNotFound || ![rel hasSuffix:@".mp4"]) continue;
+            if ([rel hasSuffix:mine]) continue;
+            if ([fm removeItemAtPath:[root stringByAppendingPathComponent:rel] error:nil]) n++;
+        }
+        if (n) SFLog(@"downloads: removed %lu stale partial file(s)", (unsigned long)n);
+    });
 }
 
 // Part files are unique per app process: an orphan of an earlier run can never share a file with us.

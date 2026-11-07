@@ -193,13 +193,30 @@ static void onUpdate(void *ctx) {
     if (rendered) mpv_render_context_report_swap(_rc);
 }
 
-// Must run before mpv_terminate_destroy, with the layer's GL context active
-- (void)freeRenderContext {
-    if (!_rc) return;
-    mpv_render_context_set_update_callback(_rc, NULL, NULL);
-    if (_ctx) CGLSetCurrentContext(_ctx);
-    mpv_render_context_free(_rc);
+// Closing a player blocked the main thread ~300 ms in mpv_render_context_free and
+// mpv_terminate_destroy, which wait for the vo and core threads (hitch monitor 2026-11-07, "menu").
+// Here the main thread only detaches: _rc goes NULL first, so drawing (main thread, under the
+// context lock) never touches it again. The render context is freed on a serial queue with the
+// layer's GL context current and locked, before the core it belongs to is destroyed.
+- (void)retireWithMPV:(mpv_handle *)mpv {
+    static dispatch_queue_t teardown;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ teardown = dispatch_queue_create("sofa.mpv-teardown", DISPATCH_QUEUE_SERIAL); });
+    self.mpv = NULL;
+    self.onRenderContext = nil;
+    mpv_render_context *rc = _rc;
     _rc = NULL;
+    if (rc) mpv_render_context_set_update_callback(rc, NULL, NULL);
+    CGLContextObj ctx = rc && _ctx ? CGLRetainContext(_ctx) : NULL;
+    if (!rc && !mpv) return;
+    dispatch_async(teardown, ^{
+        if (rc) {
+            if (ctx) { CGLLockContext(ctx); CGLSetCurrentContext(ctx); }
+            mpv_render_context_free(rc);
+            if (ctx) { CGLSetCurrentContext(NULL); CGLUnlockContext(ctx); CGLReleaseContext(ctx); }
+        }
+        if (mpv) mpv_terminate_destroy(mpv);
+    });
 }
 @end
 

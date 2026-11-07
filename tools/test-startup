@@ -4,6 +4,8 @@
 #      to the one the autostart agent started; both used the database and the YouTube engine's
 #      profile): a second start on the same data directory quits before touching anything, says
 #      so in the log; once the first instance has ended, the next start runs.
+#   2. the hitch monitor (home micro-stutter, user 2026-11-07): a main-thread stall is logged with
+#      its length and the Sofa function it was spent in, sampled from the stalled thread's stack.
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -40,6 +42,21 @@ kill -0 $APP 2>/dev/null && ok "the first instance keeps running" || bad "the fi
 quit
 start   # the lock went with the first instance
 [ -n "$APP" ] && kill -0 $APP 2>/dev/null && ok "after the first has ended, the next start runs" || bad "the next start did not run"
+
+echo "==> 2. hitch monitor"
+# the stall's own line (startup stalls log too); at most one hitch line per second: a startup stall
+# just logged swallows the next one - try again
+line=; for try in 1 2 3; do
+  n=$(wc -l < "$LOG"); echo 'stall 300' 1<>"$FIFO"
+  for i in $(seq 1 15); do line=$(tail -n +$((n + 1)) "$LOG" | grep -m1 'hitch: main thread blocked.*devStall'); [ -n "$line" ] && break 2; sleep 0.1; done
+done
+ms=$(echo "$line" | sed -n 's/.*blocked \([0-9]*\) ms.*/\1/p')
+[ -n "$ms" ] && [ "$ms" -ge 250 ] && [ "$ms" -le 600 ] && ok "a 300-ms stall is logged ($ms ms)" || bad "stall not logged as such: ${line:-no line}"
+# the stall is spent in devStall: it leads the list and holds most samples (NSDate's commpage
+# code keeps no standard frame - the walk must get past it)
+hits=$(echo "$line" | sed -n 's/.* in -\[SFAppDelegate(Dev) devStall:\] \([0-9]*\)x.* of \([0-9]*\) samples.*/\1 \2/p')
+[ -n "$hits" ] && [ $(( ${hits% *} * 10 )) -ge $(( ${hits#* } * 8 )) ] && ok "it names the function it was spent in (${hits% *} of ${hits#* } samples)" || bad "no stack attribution: $line"
+kill -0 $APP 2>/dev/null && ok "sampling the main thread leaves Sofa running" || bad "Sofa ended while sampled"
 quit
 
 [ $fail = 0 ] && echo "==> test-startup ok" || echo "==> test-startup FAILED"

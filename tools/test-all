@@ -17,6 +17,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 SUITES="check-arch test-units test-parse test-playback test-downloads test-home test-schema test-startup test-sofa-yt"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
+# what a failed suite leaves for diagnosis (its instance's log, screenshots) survives the run here;
+# a flake under parallel load is then readable afterwards instead of gone with its temp directory
+KEPT="${TMPDIR:-/tmp}/sofa-testall-failed"
+mkdir -p "$OUT/kept/test-playback"; export PLAYTEST_SHOTS="$OUT/kept/test-playback"
 serial=0; [ "${1:-}" = "--serial" ] && serial=1
 
 # build once: the suites' own make is then a no-op (parallel makes in one tree would race)
@@ -41,5 +45,6 @@ for t in $SUITES; do
     grep -E '^ *(FAIL|not ok) ' "$OUT/$t.log" | head -n 10 | sed 's/^ */        > /'
     tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
 done
-[ $fail = 0 ] && echo "==> all suites ok ($(( $(date +%s) - t0 ))s)" || echo "==> SOME SUITES FAILED"
+if [ $fail = 0 ]; then echo "==> all suites ok ($(( $(date +%s) - t0 ))s)"
+else rm -rf "${KEPT:?}"; mv "$OUT/kept" "$KEPT"; echo "==> SOME SUITES FAILED (kept logs: $KEPT)"; fi
 exit $fail
