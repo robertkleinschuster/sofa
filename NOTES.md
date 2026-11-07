@@ -242,8 +242,8 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
          with /opt/local denied - starts, system fonts, WebGL probe). Missing: firefox-x11 rev 3
          (libGL by a relative path, backport-toolkit 1f40bcb) - rebuild running 2026-11-07; then
          a bundle passes the WebGL check. make-release and sofa-deploy refuse until then.
-      2. EU consent dialog in a fresh profile: answer once, like a user (overlay on www.youtube.com,
-         measured 2026-11-07; proposal: trusted click via XTest on Xvfb - awaiting the user).
+      2. EU consent dialog in a fresh profile: accepted with a trusted XTest click (2026-11-07,
+         consent.ts + SFYTPointer, offline-tested; first live run = the real profile's first start).
       3. ~~Live HLS segments through the engine~~ (2026-11-07: local `/s/<sid>/seg/<n>`, live-verified
          1080p60; header emulation removed - the browser sends its own, a custom header meant CORS).
       4. ~~"Platz schaffen" availability (oEmbed over libcurl)~~ through the engine (2026-11-07,
