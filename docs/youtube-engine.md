@@ -7,29 +7,44 @@ from one real browser; Sofa needs two runtimes, itself and Firefox. Node is only
 ## Processes
 
 ```
-Sofa.app (ObjC)                                    Firefox 153 ESR (headless, own profile)
-├─ UI, library, downloads, follows                 └─ one hidden tab on https://www.youtube.com/
-├─ SFYTEngine: starts/stops Firefox,                  └─ engine.js (bundled TypeScript):
-│   WebDriver BiDi client (libcurl WebSocket)  ◄──►     youtubei.js (web build), googlevideo SABR,
-├─ loopback HTTP server (Range) for mpv/ffmpeg ──┐      BotGuard/WebPO in the real DOM,
-├─ libmpv, ffmpeg                                │      sessions, pacing, segment files
-└─ breaker file (bot-check pause)                └── bytes pulled from the page per request
+Sofa.app (ObjC)                                      Xvfb (own display, 1920x1080, -terminate)
+├─ UI, library, downloads, follows                   └─ Firefox 153 ESR (firefox-x11), engine profile,
+├─ SFYTEngine: lifecycle + API (main thread)              started as a user starts it (no remote agent)
+│   ├─ SFYTBrowser: Xvfb + Firefox, profile setup        └─ one tab on https://www.youtube.com/
+│   ├─ SFYTChannel: /engine/poll + /engine/post  ◄──────     extension youtube-engine@sofa:
+│   └─ +Media: /s/<sid>/... for mpv/ffmpeg               background.js ↔ bridge.js ↔ page.js (the engine:
+├─ SFLocalHTTP: loopback server (127.0.0.1, free port)       youtubei.js web build, SABR, BotGuard in the
+├─ libmpv, ffmpeg                                            real DOM, sessions, pacing)
+└─ SFYTBreaker: the bot-check pause file (written on the engine's `block` events)
 ```
 
-- **Firefox is the identity.** It sends its own user agent, TLS (NSS), HTTP/2/3 and cookies, and
-  its profile keeps them (`~/Library/Application Support/Sofa/firefox-profile`). No header,
-  cookie or TLS emulation is left: `identity.ts`, `transport.ts` and jsdom go away.
-- **The page is a real youtube.com document.** Same-origin requests, like YouTube's own player.
-  The engine is injected with BiDi `script.addPreloadScript` (no extension, no file access).
+- **Firefox is the identity.** Its own user agent, TLS (NSS), HTTP/2/3 and cookies; the profile
+  keeps them (`<Application Support>/Sofa/youtube-engine/profile`; dev instances have their own).
+  No header, cookie or TLS emulation is left.
+- **The page is a real youtube.com document**, the engine runs in it (same-origin requests, like
+  YouTube's own player). The extension injects it - not WebDriver: YouTube refuses a browser under
+  remote control (measured below).
 - **Sofa owns the local plumbing.** mpv and ffmpeg read `http://127.0.0.1:<port>/s/<sid>/<track>`
-  from Sofa's loopback server (as today's ORF proxy), which pulls the bytes from the page.
+  from Sofa's loopback server, which pulls the bytes from the page (`read`, 1 MB pieces, as the
+  reader consumes them; a reader that goes away stops the reading).
+- **Lifecycle.** Started early by the real app (dev instances on first use, never with
+  `SOFA_OFFLINE`). Ready = the youtube.com page reported `ready`, its ytcfg is there
+  (`health().onYouTube`) and `start()` answered; then waiting calls go out. A page reload or a
+  browser exit loses every session (`SFYTEngineSessionsLostNotification`: the player reopens);
+  failed runs restart after a backoff (5 s doubling to 10 min; reset after 5 min of healthy run).
+- **No orphans.** Sofa ends browser and display when it quits. After a crash: the extension closes
+  Firefox once Sofa stays unreachable for 30 s (`background.ts`), Xvfb ends with its last client,
+  and the next launch ends whatever is recorded in `profile-processes.json` (checked by name).
+  Children are spawned with a clean signal mask (a GCD thread's blocked mask made them ignore
+  SIGTERM).
 
-## Engine API (page side, `globalThis.sofaEngine`, called with BiDi `script.callFunction`)
+## Engine API (page side, `sofaEngine` in `web/engine.ts`)
 
-Injection: `script.addPreloadScript` on the engine tab with the bundle as the function body and a
-BiDi channel argument; the function hands the channel to `connect()`. Every call answers a `Reply`:
-`{ok: true, value}` or `{ok: false, status, body}` - the status and JSON body the node sidecar
-answers over HTTP, so Sofa's handling stays the same.
+Called over the channel (below): `{id, method, args}` dispatched by `web/protocol.ts`; the page's
+`connect()` gets the channel's send function (offline tests inject the same bundle over BiDi,
+`web/bidi-main.ts`). Every call answers a `Reply`: `{ok: true, value}` or `{ok: false, status,
+body}` - the status and JSON body the node sidecar answered over HTTP, so Sofa's handling stays
+the same.
 
 | Call | Node sidecar (HTTP) | Value |
 |---|---|---|
@@ -157,9 +172,17 @@ Sofa loopback server  <-- long poll / POST (token) --  background.js   (extensio
   grant in `extension-preferences.json` (MV3 grants are the user's; recorded as an "allow"), prefs
   `xpinstall.signatures.required=false` (ESR) and `extensions.autoDisableScopes=0`.
 
-The profile setup of the engine must answer the consent dialog once, like a user.
+Prefs (`SFYTBrowser.m`): the extension's (above); the firefox-x11 port's remote-X defaults that a
+page can see go back to stock Firefox (frame rate, reduced motion, animations, autoplay, WebGL with
+the GPU process, fission); no first-run pages or prompts; `intl.accept_languages` the TV's;
+`media.volume_scale` 0.
 
 ## Still open
+
+- The EU consent dialog in a fresh profile (no `SOCS` cookie): answer it once, like a user.
+- Release: the bundle's Runtime has no Firefox/Xvfb yet (`SFTool` falls back to MacPorts).
+- `availabilityOfItem` (Platz schaffen) asks oEmbed over libcurl - a second client; move it into
+  the engine.
 
 - Live HLS: today mpv fetches segments from googlevideo itself - a second client. Segments go
   through the engine (`read`-like) so every request is the browser's.

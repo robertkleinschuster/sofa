@@ -1,4 +1,7 @@
-# Sofa – YouTube part: InnerTube browsing (native ObjC) + streams via the sofa-yt sidecar
+# Sofa – YouTube part: InnerTube browsing (native ObjC) + streams via the YouTube engine
+
+Since 2026-11-07 the engine runs in a real Firefox (`SFYTEngine`, [youtube-engine.md](youtube-engine.md));
+where this document says "sidecar" (the node process it replaces) the engine now does the same job.
 
 ## Current concept (2026-11-05) – read this first
 
@@ -9,7 +12,7 @@ identity, and every request to YouTube is counted and justified.**
 | Layer | What | Runs |
 |---|---|---|
 | Browsing | InnerTube `browse`/`search`/`next`/`navigation/resolve_url` built and parsed in ObjC (`SFYTInnerTube` request, `SFYTParser` meaning, `SFYTPages`; modules: `SFYouTubeApp.h`), **sent by the sidecar's session** (`POST /yt/<endpoint>`); search suggestions via `GET /suggest` | in the app, transport in the sidecar |
-| **sofa-yt sidecar** (`res/sofa-yt`, `SFYTSabr`, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted). What it can't serve gets a clear message (bot check, not on air, `unanswered`, no mpv), never a second client | always (node, ~50 MB) |
+| **YouTube engine** (`res/sofa-yt`, `SFYTEngine`, [youtube-engine.md](youtube-engine.md); before: the node sidecar, [sofa-yt.md](sofa-yt.md)) | the web player: one session, WEB player request with a video-bound PO token, SABR streaming as local URLs for mpv; lives/DVR as local HLS; downloads; focus preloads (budgeted). What it can't serve gets a clear message (bot check, not on air, `unanswered`, no mpv), never a second client | always (node, ~50 MB) |
 | Breaker (`SFYTBreaker`, shared file `Caches/Sofa/youtube-block.json`) | a bot check pauses background work (follow checks, preloads, downloads) 1 h → 8 h; user playback waits 3 min right after the check | the sidecar writes it, every instance reads it |
 | Counters (`SFStats`, table `stats`) | `yt.play.<outcome>`, `yt.live.*`, `yt.download.*`, `player.<fallback step>` per day | dev command `stats [days]` |
 

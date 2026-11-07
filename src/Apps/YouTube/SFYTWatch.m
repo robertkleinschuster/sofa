@@ -26,7 +26,7 @@
 }
 
 // title, channel, description of a video known only by its ID (phone queue, dev): from the watch page
-// ("next", as a browser opening it) - never a player request of our own: that is the sidecar's job,
+// ("next", as a browser opening it) - never a player request of our own: that is the engine's job,
 // with a PO token, when the video actually plays (and brings the duration then)
 + (void)fillDetails:(SFItem *)item done:(dispatch_block_t)done {
     if (item.localPath || !item.externalID) { if (done) done(); return; }

@@ -21,12 +21,13 @@
 #      the end of the video waits while the tiles have focus
 #   8c. a phone queue (Lounge setPlaylist, offline) fetches watch pages only for the playing and the
 #      next video, never the whole list (2026-11-06: 100 pages in a minute -> bot checks)
-#   8b. a session stream (app service, e.g. YouTube's sidecar) that breaks again right after being
+#   8b. a session stream (app service, e.g. YouTube's engine) that breaks again right after being
 #      reopened ends in a message - one reopen, no loop (2026-11-06: without the yt-dlp fallback the
 #      second failure would otherwise reopen forever)
-#   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback and self-healing when the sidecar dies
+#   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback through the engine's Firefox and
+#      self-healing when that browser dies
 #  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
-#      media) a YouTube live plays through the sidecar's HLS playlist
+#      media) a YouTube live plays through the engine's HLS playlist
 #
 #   tools/test-playback            all checks: two parts side by side, each in its own dev instance
 #                                  (part a: 1-7, 8c, 8b; part b: 8 and the opt-in ones - they wait
@@ -262,14 +263,18 @@ unset SOFA_EXAMPLE_SESSION SOFA_EXAMPLE_MEDIA
 fi   # part a (8c, 8b)
 if want b; then
 if [ -n "${SOFA_YT_LIVE:-}" ]; then
-  echo "==> 9. SABR playback + sidecar crash (YouTube media)"
+  echo "==> 9. SABR playback through the engine (Firefox) + the browser dies"
   start
-  m=$(mark); cmd "play yt:OzCYsIrrRyw"; sleep 10
-  since $m | grep -q 'sabr: opened OzCYsIrrRyw' && ok "opened via SABR" || bad "not via SABR: $(since $m | grep 'sabr\|yt:' | tail -2)"
-  cmd "mpvprop vo-configured"; sleep 1
+  m=$(mark); cmd "play yt:OzCYsIrrRyw"
+  for i in $(seq 1 240); do since $m | grep -q 'yt-engine: opened OzCYsIrrRyw\|yt-engine: open OzCYsIrrRyw failed' && break; sleep 0.5; done
+  since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && ok "opened via the engine" || bad "not via the engine: $(since $m | grep 'yt-engine\|yt-browser\|yt:' | tail -3)"
+  sleep 6; cmd "mpvprop vo-configured"; sleep 1
   since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"
-  pkill -f "sofa-yt/main.ts.*$SOFA_DATA_DIR/sofa-yt"; sleep 8
-  since $m | grep -q 'SABR stream failed (sidecar exited) -> reopening via SABR' && ok "sidecar crash noticed" || bad "crash not noticed"
+  m=$(mark); pkill -f "firefox.*--profile $SOFA_DATA_DIR/"
+  for i in $(seq 1 240); do since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && break; sleep 0.5; done
+  since $m | grep -q 'SABR stream failed (.*) -> reopening via SABR' && ok "browser exit noticed" || bad "exit not noticed: $(since $m | grep 'yt-engine\|yt-browser\|player:' | tail -3)"
+  since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && ok "reopened after the browser restart" || bad "not reopened"
+  sleep 6
   m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 3; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"
   stop
@@ -277,12 +282,12 @@ fi
 
 if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then
   L=$SOFA_YT_LIVE_STREAM
-  echo "==> 10. YouTube live via the sidecar (HLS)"
+  echo "==> 10. YouTube live via the engine (HLS)"
   start
   m=$(mark); cmd "play ytlive:$L"
-  for i in $(seq 1 60); do since $m | grep -q "sabr: opened $L\|SABR live unavailable\|resolve failed" && break; sleep 0.5; done
-  since $m | grep -q "sabr: opened $L -> live HLS" && ok "opened via the sidecar: $(since $m | grep "sabr: opened $L" | tail -1 | sed 's/.*-> //')" \
-    || bad "not via the sidecar: $(since $m | grep 'sabr\|yt:\|player:' | tail -3)"
+  for i in $(seq 1 60); do since $m | grep -q "yt-engine: opened $L\|yt-engine: open $L failed\|resolve failed" && break; sleep 0.5; done
+  since $m | grep -q "yt-engine: opened $L -> live HLS" && ok "opened via the engine: $(since $m | grep "yt-engine: opened $L" | tail -1 | sed 's/.*-> //')" \
+    || bad "not via the engine: $(since $m | grep 'yt-engine\|yt:\|player:' | tail -3)"
   sleep 6
   cmd "mpvprop vo-configured"; sleep 1
   since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"

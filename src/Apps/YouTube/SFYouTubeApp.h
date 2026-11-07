@@ -1,9 +1,10 @@
 // YouTube: pages built and parsed natively from InnerTube (WEB client), without sign-in; every
-// request and all playback through the sofa-yt sidecar (one browser identity, SABR). Following channels = Sofa's own list (SFFollows).
+// request and all playback through the YouTube engine in Firefox (one browser identity, SABR). Following channels = Sofa's own list (SFFollows).
 // Reference: docs/youtube.md. The app's modules:
 //   SFYTInnerTube  request + JSON shapes       SFYTParser  JSON -> items (pure, tools/test-parse)
 //   SFYTPages      pages (home, channel, …)    SFYTWatch   one video: watch page, details, channel
-//   SFYTFeeds      followed channels' feeds    SFYTSabr / SFYTBreaker  sidecar + bot-check pause
+//   SFYTFeeds      followed channels' feeds    SFYTEngine / SFYTBreaker  engine + bot-check pause
+//   SFYTBrowser / SFYTChannel  the engine's Firefox + Sofa's end of its channel
 //   SFLounge / SFYTRemote / SFPairScreen  phone remote
 // This class is the SFApp adapter (SFYouTubeApp.m, +Playback.m, +Dev.m).
 #import "SFApp.h"

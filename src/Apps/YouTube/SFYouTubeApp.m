@@ -6,7 +6,7 @@
 #import "SFYTFeeds.h"
 #import "SFYTParser.h"
 #import "SFStore.h"
-#import "SFYTSabr.h"
+#import "SFYTEngine.h"
 #import "SFYTBreaker.h"
 #import "SFLounge.h"
 #import "SFFollows.h"
@@ -43,7 +43,7 @@
 
 + (void)start {
     [self removeYTDLPLeftovers];
-    if (!SFDevMode) [[SFYTSabr shared] start];   // warm session + BotGuard before the first click
+    if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
 }
 
 // yt-dlp was removed on 2026-11-06 (docs/youtube.md): what it kept on disk goes too - its updated

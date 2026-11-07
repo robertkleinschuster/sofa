@@ -2,11 +2,11 @@
 // (channels, playlists, search, recommendations) is public. docs/youtube.md §3.
 // The request and the shapes of its JSON; what the JSON means is SFYTParser's.
 //
-// One identity: the calls go through the sofa-yt sidecar's session (POST /yt/<endpoint>), the same
+// One identity: the calls go through the YouTube engine's page (SFYTEngine innertube), the same
 // browser, visitor data and cookies as playback - not as a second client of Sofa's own (until
 // 2026-11-06 a Safari user agent over libcurl without visitor data: one of the causes of the bot
-// checks). Endpoints: browse, next, search, navigation/resolve_url; never "player" (the sidecar's
-// job, with a PO token). Answers are cached here like any request (SFNet), keyed by endpoint + body.
+// checks). Endpoints: browse, next, search, navigation/resolve_url; never "player" (the engine's
+// own job, with a PO token). Answers are cached here like any request (SFNet), keyed by endpoint + body.
 #import "SFJSON.h"
 #import "SFNet.h"
 

@@ -1,7 +1,7 @@
 #import "SFYTBreaker.h"
 
 @implementation SFYTBreaker {
-    NSTimeInterval _noted;                 // from the last answer (sidecar) or the dev command
+    NSTimeInterval _noted;                 // from the last answer (engine) or the dev command
     NSTimeInterval _fromFile, _readAt;     // the shared file, re-read at most every 2 s
 }
 
@@ -30,6 +30,15 @@
 - (void)noteBlockedUntil:(NSTimeInterval)until {
     if (until > _noted) _noted = until;
     _readAt = 0;   // re-read the shared file on the next check
+}
+
+- (void)recordState:(NSDictionary *)state {
+    if (![state isKindOfClass:[NSDictionary class]]) return;
+    NSData *d = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+    if (![d writeToFile:[SFYTBreaker filePath] atomically:YES]) SFLog(@"yt: cannot write the bot-check pause");
+    _readAt = 0;
+    if ([state[@"until"] doubleValue] > [NSDate date].timeIntervalSince1970)
+        SFLog(@"yt: bot check - background requests paused until %@", [NSDate dateWithTimeIntervalSince1970:[state[@"until"] doubleValue]]);
 }
 
 - (void)simulateBlockForTesting:(NSTimeInterval)secs {

@@ -1,5 +1,5 @@
 #import "SFYTInnerTube.h"
-#import "SFYTSabr.h"
+#import "SFYTEngine.h"
 #import "SFStore.h"
 
 static void call(NSString *endpoint, NSDictionary *body, NSTimeInterval age, BOOL bg, SFJSONDone done) {
@@ -7,15 +7,12 @@ static void call(NSString *endpoint, NSDictionary *body, NSTimeInterval age, BOO
     NSString *key = [NSString stringWithFormat:@"yt %@ %@", endpoint, b ? [[NSString alloc] initWithData:b encoding:NSUTF8StringEncoding] : @""];
     id hit = age > 0 ? [[SFStore shared] cachedJSON:key maxAge:age] : nil;
     if (hit) { SFMain(^{ done(hit, nil); }); return; }
-    SFMain(^{ [[SFYTSabr shared] whenReady:^(NSInteger port) {
-        if (!port) {   // no sidecar (yet): an older answer rather than none, never a request of our own
-            id stale = [[SFStore shared] cachedJSON:key maxAge:30 * 86400];
-            SFMain(^{ done(stale, stale ? nil : SFError(@"YouTube startet gerade.")); });
-            return;
-        }
-        NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:%ld/yt/%@%@", (long)port, endpoint, bg ? @"?bg=1" : @""];
-        [SFNet postJSON:url body:body ?: @{} headers:nil cacheKey:key cacheAge:age done:done];
-    }]; });   // SFYTSabr lives on the main thread
+    SFMain(^{ [[SFYTEngine shared] innertube:endpoint body:body background:bg done:^(id json, NSError *e) {
+        if (json && !e) { if (age > 0) [[SFStore shared] cacheJSON:json forKey:key]; done(json, nil); return; }
+        // no engine (yet) or no answer: an older answer rather than none, never a request of our own
+        id stale = [[SFStore shared] cachedJSON:key maxAge:30 * 86400];
+        done(stale, stale ? nil : (e ?: SFError(@"YouTube antwortet nicht.")));
+    }]; });   // SFYTEngine lives on the main thread
 }
 
 void SFYTCall(NSString *endpoint, NSDictionary *body, NSTimeInterval age, SFJSONDone done) { call(endpoint, body, age, NO, done); }

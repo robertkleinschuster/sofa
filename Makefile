@@ -48,10 +48,15 @@ SYVEND  := $(BUILD)/vendor/sofa-yt
 SYFILES := $(foreach b,$(APP) $(DEVAPP),$(patsubst res/%,$(b)/Contents/Resources/%,$(SYSRC)) \
              $(b)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp)
 
+# YouTube engine extension (docs/youtube-engine.md): res/sofa-yt/web bundled by tools/build-yt-engine
+# (esbuild-wasm, a build-time dependency) -> Contents/Resources/youtube-engine (SFYTBrowser installs it)
+YESRC   := $(wildcard res/sofa-yt/web/*.ts res/sofa-yt/web/extension/* res/sofa-yt/lib/*.ts) res/sofa-yt/package-lock.json
+YEFILES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/youtube-engine/STAMP)
+
 # user-facing changelog: Einstellungen -> "Neu in Version …"
 NOTES_RES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/CHANGELOG.md)
 
-all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(SYFILES) $(NOTES_RES) compile_commands.json
+all: $(BIN) $(HBIN) $(APP)/Contents/Info.plist $(DEVBIN) $(LOGOS) $(KEYFILES) $(SYFILES) $(YEFILES) $(NOTES_RES) compile_commands.json
 
 # clangd (editor / Claude Code LSP) compilation database from the build's own CC + CFLAGS
 # (tools/gen-compile-commands). Machine-local absolute paths -> git-ignored. Depends on the
@@ -82,6 +87,14 @@ $(APP)/Contents/Resources/sofa-yt/node_modules/.sofa-stamp $(DEVAPP)/Contents/Re
 	@rm -rf $(dir $@) && mkdir -p $(dir $@)
 	cp -R $(SYVEND)/node_modules/ $(dir $@)
 	cp $(SYVEND)/STAMP $@
+
+$(BUILD)/sofa-yt-web/STAMP: $(YESRC) tools/build-yt-engine
+	tools/build-yt-engine
+
+$(APP)/Contents/Resources/youtube-engine/STAMP $(DEVAPP)/Contents/Resources/youtube-engine/STAMP: $(BUILD)/sofa-yt-web/STAMP
+	@rm -rf $(dir $@) && mkdir -p $(dir $@)
+	cp -R $(BUILD)/sofa-yt-web/extension/ $(dir $@)
+	cp $< $@
 
 # Dev bundle with its own bundle ID (de.sofa.dev): invisible test/preview
 # instances must never be confused with the real app (de.sofa.app)

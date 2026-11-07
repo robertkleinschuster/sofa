@@ -1,9 +1,11 @@
 #!/bin/bash
 # test-units -- unit tests of pure functions (no app instance): tests/units/*.m are linked against
 # SFCore.m plus the sources named in their first line ("// sources: src/Library/X.m ...") and must exit 0.
-# A "// flags: ..." line (second line) adds compiler/linker flags, e.g. a library the sources link.
+# A "// flags: ..." line (second line) adds compiler/linker flags, e.g. a library the sources link
+# (paths relative to the repository).
 set -u
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SRC"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-units.XXXXXX")"; trap 'rm -rf "$OUT"' EXIT
 fail=0
 for t in "$SRC"/tests/units/*.m; do

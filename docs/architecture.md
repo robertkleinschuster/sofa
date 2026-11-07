@@ -38,8 +38,8 @@ src/Library       (SFApp), store (progress/history), library (downloads, storage
 src/Player        watch later, search merge), player + engines, generic media screens
 src/Browse        (SFBrowseScreen, library pages: shows, history, downloads, Platz schaffen).
 src/Apps/<App>  Everything specific to one source: API client, JSON → SFItem mapping,
-                resolving, feeds, search, theme tokens, app-only services (YouTube: SABR
-                sidecar, bot breaker, phone pairing + remote commands).
+                resolving, feeds, search, theme tokens, app-only services (YouTube: the
+                engine in Firefox, bot breaker, phone pairing + remote commands).
 src/Shell       The Sofa product: AppDelegate (player host, dev FIFO, update relaunch), launch
                 order, app registration (SFApps.m), home composition, settings, migration.
 ```
@@ -136,7 +136,7 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   tests/units/useragent.m) - on NSURLSession, curl, images and mpv. Until 2026-11-06 it was a Safari 17
   string over a TLS stack no Safari has, with app credentials (ZDF, ORF) next to it. A source that
   speaks to its service as a browser registers that browser for its domains: YouTube takes the
-  sidecar's Chrome identity (`identity.ts`, handed over in its ready line) for youtube.com, ytimg.com,
+  engine's Firefox user agent (reported when its page starts, `SFYTEngine`) for youtube.com, ytimg.com,
   ggpht.com, googlevideo.com, googleusercontent.com.
 - **Cadence**: follows on their own schedule (`SFRefreshPlan`), Home rows only while the screen is
   awake, a source's background pause (`backgroundPausedUntil`) respected by follows and downloads.

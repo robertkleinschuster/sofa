@@ -1,13 +1,13 @@
 // SFApp playback and download hooks of YouTube.
 //
-// YouTube concept (docs/youtube.md): the sofa-yt sidecar is the one way to YouTube (playback,
+// YouTube concept (docs/youtube.md): the YouTube engine (SFYTEngine: a real Firefox) is the one way to YouTube (playback,
 // lives, downloads, preloads) - one browser identity. What it can't serve gets a clear message,
 // never a second client asking for the same video (yt-dlp was that fallback until 2026-11-06:
 // 1 success in 25 uses, 54 failed requests as three other clients). Every outcome is counted
 // (SFCount, "yt.<what>.<outcome>").
 #import "SFYouTubeApp.h"
 #import "SFJSON.h"
-#import "SFYTSabr.h"
+#import "SFYTEngine.h"
 #import "SFStats.h"
 #import "SFDownloads.h"
 #import "SFEngine.h"
@@ -15,9 +15,9 @@
 
 static NSString *const kBotMsg = @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
 
-static NSString *const kNoSidecarMsg = @"Die YouTube-Wiedergabe ist in dieser Installation nicht verfügbar.";
+static NSString *const kNoEngineMsg = @"Die YouTube-Wiedergabe ist in dieser Installation nicht verfügbar.";
 
-// The sidecar's end screen elements (res/sofa-yt/lib/youtube.ts endscreenElements) as generic end
+// The engine's end screen elements (res/sofa-yt/lib/youtube.ts endscreenElements) as generic end
 // cards (SFApp.h "endCards")
 static NSArray *endCards(NSArray *elements) {
     NSMutableArray *out = [NSMutableArray new];
@@ -38,8 +38,8 @@ static NSArray *endCards(NSArray *elements) {
     return out;
 }
 
-// Result of the sofa-yt sidecar -> what the player opens. VOD: the DASH pair of local tracks;
-// lives and post-live DVR recordings: the sidecar's local HLS playlist (muxed, opened as is).
+// Result of the engine -> what the player opens. VOD: the DASH pair of local tracks;
+// lives and post-live DVR recordings: the engine's local HLS playlist (muxed, opened as is).
 static void sabrPlay(NSString *vid, NSDictionary *r, SFURLDone done) {
     NSMutableDictionary *d = [r mutableCopy];
     d[@"endCards"] = endCards(r[@"endscreen"]);
@@ -49,7 +49,7 @@ static void sabrPlay(NSString *vid, NSDictionary *r, SFURLDone done) {
     if ([r[@"hls"] isKindOfClass:[NSString class]]) {
         u = [NSURL URLWithString:r[@"hls"]];
         [d removeObjectsForKeys:@[@"video", @"audio", @"audios"]];   // no DASH pair: playURL opens `u` itself
-        d[@"hls"] = @YES;   // flag (the URL is `u`): SFPlayerScreen asks the sidecar whether a live really ended
+        d[@"hls"] = @YES;   // flag (the URL is `u`): SFPlayerScreen asks the engine whether a live really ended
     } else {
         u = [NSURL URLWithString:r[@"video"]];
     }
@@ -57,9 +57,9 @@ static void sabrPlay(NSString *vid, NSDictionary *r, SFURLDone done) {
     done(u, nil);
 }
 
-// What the viewer is told when the sidecar could not open a video.
+// What the viewer is told when the engine could not open a video.
 static NSString *sabrMessage(NSError *e) {
-    if ([e.userInfo[@"bot"] boolValue])   // SFYTSabr took the pause into SFYTBreaker
+    if ([e.userInfo[@"bot"] boolValue])   // SFYTEngine took the pause into SFYTBreaker
         return kBotMsg;
     if ([e.userInfo[@"upcoming"] boolValue]) {
         double t = [e.userInfo[@"startTime"] doubleValue];
@@ -85,12 +85,12 @@ static NSString *outcome(NSError *e) {
     return @"error";
 }
 
-// SABR via the sofa-yt sidecar (looks like the web player: one request per video): local WebM/MP4
+// SABR via the engine (like the web player: one request per video): local WebM/MP4
 // tracks for mpv; a video that turned out to be live comes back as HLS.
 static void playOnline(NSString *vid, SFURLDone done) {
-    SFYTSabr *sabr = [SFYTSabr shared];
-    if (!sabr.available) { SFCount(@"yt.play.no-sidecar"); done(nil, SFError(kNoSidecarMsg)); return; }
-    [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+    SFYTEngine *engine = [SFYTEngine shared];
+    if (!engine.available) { SFCount(@"yt.play.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
+    [engine open:vid background:NO done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.play." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
@@ -100,11 +100,11 @@ static void playOnline(NSString *vid, SFURLDone done) {
     }];
 }
 
-// Lives: the web player's HLS manifest from the sidecar's own session, as a local playlist.
+// Lives: the web player's HLS manifest from the engine's own session, as a local playlist.
 static void playLive(NSString *vid, SFURLDone done) {
-    SFYTSabr *sabr = [SFYTSabr shared];
-    if (!sabr.available) { SFCount(@"yt.live.no-sidecar"); done(nil, SFError(kNoSidecarMsg)); return; }
-    [sabr open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+    SFYTEngine *engine = [SFYTEngine shared];
+    if (!engine.available) { SFCount(@"yt.live.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
+    [engine open:vid background:NO done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.live." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
@@ -114,7 +114,7 @@ static void playLive(NSString *vid, SFURLDone done) {
     }];
 }
 
-// exact publication time from the sidecar (microformat), epoch seconds
+// exact publication time from the engine (microformat), epoch seconds
 static NSDictionary *publishedInfo(NSDictionary *r) {
     NSNumber *p = [r[@"published"] isKindOfClass:[NSNumber class]] ? r[@"published"] : nil;
     return p.doubleValue > 0 ? @{@"published": [NSDate dateWithTimeIntervalSince1970:p.doubleValue]} : nil;
@@ -122,7 +122,7 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 @implementation SFYouTubeApp (Playback)
 
-// yt:<id> plays a local download when there is one; ytlive:<id> = live/DVR via the sidecar
+// yt:<id> plays a local download when there is one; ytlive:<id> = live/DVR via the engine
 + (void)resolve:(NSString *)ref done:(SFURLDone)done {
     NSString *p = SFRefPrefix(ref), *vid = SFRefID(ref);
     if ([p isEqualToString:@"ytlive"]) { playLive(vid, done); return; }
@@ -140,30 +140,30 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 + (void)preloadOnFocus:(SFItem *)item {
     NSString *ref = item.resolverRef ?: item.identifier;
-    if ([ref hasPrefix:@"yt:"]) [[SFYTSabr shared] preloadOnFocus:[ref substringFromIndex:3]];
+    if ([ref hasPrefix:@"yt:"]) [[SFYTEngine shared] preloadOnFocus:[ref substringFromIndex:3]];
 }
 
-#pragma mark Player hooks (SABR sessions of the sofa-yt sidecar)
+#pragma mark Player hooks (SABR sessions of the engine)
 
 + (BOOL)playbackIsSession:(NSDictionary *)source { return [source[@"sabr"] boolValue]; }
 
-// SABR (sofa-yt sidecar) failed: the player reopens via SABR (a crashed sidecar restarts and has
-// the player response cached on disk - no new YouTube request) with a fresh session
+// a SABR session failed: the player reopens it via the engine (its player response is cached
+// there - no new YouTube request) as a fresh session
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why {
     SFLog(@"player: SABR stream failed (%@) -> reopening via SABR", why);
     SFCount(@"player.sabr-reopen");
-    [[SFYTSabr shared] closeSession:source[@"sid"]];   // the reopen gets a fresh session, not the broken one
+    [[SFYTEngine shared] closeSession:source[@"sid"]];   // the reopen gets a fresh session, not the broken one
 }
 
-// the SABR sidecar died: its local URLs are gone - the player reopens right away instead of waiting
+// the engine's page went away: its local URLs are gone - the player reopens right away instead of waiting
 // for mpv's reconnects and the stall watchdog
-+ (NSString *)playbackSessionLostNotification { return SFYTSabrDidExitNotification; }
++ (NSString *)playbackSessionLostNotification { return SFYTEngineSessionsLostNotification; }
 
-// live via the sidecar: the end of the playlist is either the end of the broadcast (upstream
-// EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the sidecar knows
+// live via the engine: the end of the playlist is either the end of the broadcast (upstream
+// EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the engine knows
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL))done {
     if (!([source[@"sabr"] boolValue] && [source[@"hls"] boolValue] && [source[@"live"] boolValue])) return NO;
-    [[SFYTSabr shared] sessionStatus:source[@"sid"] done:^(NSDictionary *st) { done([st[@"ended"] boolValue]); }];
+    [[SFYTEngine shared] sessionStatus:source[@"sid"] done:^(NSDictionary *st) { done([st[@"ended"] boolValue]); }];
     return YES;
 }
 
@@ -189,9 +189,9 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     // SABR: the playback format (up to 1080p60 VP9/AV1 + Opus, original audio track) as two local
     // streams, muxed by ffmpeg into MP4 without re-encoding (ffmpeg's -readrate 3 also paces what
     // SABR pulls)
-    SFYTSabr *sabr = [SFYTSabr shared];
-    if (!sabr.available) { SFCount(@"yt.download.no-sidecar"); done(nil, nil, nil, SFError(kNoSidecarMsg)); return; }
-    [sabr openForDownload:vid done:^(NSDictionary *r, NSError *e) {
+    SFYTEngine *engine = [SFYTEngine shared];
+    if (!engine.available) { SFCount(@"yt.download.no-engine"); done(nil, nil, nil, SFError(kNoEngineMsg)); return; }
+    [engine openForDownload:vid done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             // a bot check defers the download without using up an attempt (backgroundPausedUntil);
             // anything else is a failed attempt, retried later

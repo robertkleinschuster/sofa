@@ -1,0 +1,134 @@
+// The engine's sessions as local URLs for mpv and ffmpeg (the URLs open() answers, under the
+// loopback server's base):
+//   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
+//   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the HLS media playlist)
+//   GET /s/<sid>/subs/<key>.vtt
+//   GET /s/<sid>/status       (diagnostics)
+// Media bytes come from the page in pieces (engine read(): waits for SABR like a reader) and go out
+// as they arrive; a reader that goes away (a seek) stops the reading.
+#import "SFModel.h"
+#import "SFYTEngine+Private.h"
+#import "SFJSON.h"
+
+static const NSUInteger kPiece = 1 << 20;              // bytes per engine read
+static const NSTimeInterval kReadTimeout = 120;        // a read waits for SABR; longer = the page is gone
+
+// A single "bytes=" range against `total`: NO when unsatisfiable. No header / unsupported syntax: all.
+static BOOL ParseRange(NSString *h, long long total, long long *start, long long *end, BOOL *partial) {
+    *start = 0; *end = total; *partial = NO;
+    h = [h stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (![h hasPrefix:@"bytes="] || [h rangeOfString:@","].location != NSNotFound) return YES;
+    NSArray *p = [[h substringFromIndex:6] componentsSeparatedByString:@"-"];
+    if (p.count != 2) return YES;
+    NSString *a = p[0], *b = p[1];
+    if (!a.length && !b.length) return YES;
+    if (!a.length) {   // suffix: the last N bytes
+        long long n = b.longLongValue;
+        if (n <= 0) return NO;
+        *start = MAX(0, total - n);
+    } else {
+        *start = a.longLongValue;
+        if (b.length) *end = MIN(total, b.longLongValue + 1);
+    }
+    *partial = YES;
+    return *start < total && *end > *start;
+}
+
+static NSString *ErrorJSON(NSError *e) {
+    return [NSString stringWithFormat:@"engine: %@", e.localizedDescription];
+}
+
+@implementation SFYTEngine (Media)
+
+- (void)serveSession:(SFHTTPExchange *)x {
+    NSArray *p = x.request.pathParts;   // s, sid, what[, sub]
+    NSString *m = x.request.method;
+    if (![m isEqualToString:@"GET"] && ![m isEqualToString:@"HEAD"]) { [x respondJSON:405 object:@{@"error": @"method not allowed"}]; return; }
+    if (p.count < 3 || p.count > 4) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
+    NSString *sid = p[1], *what = p[2], *sub = p.count == 4 ? p[3] : nil;
+    if (!sub && ([what isEqualToString:@"video"] || [what isEqualToString:@"audio"])) { [self serveTrack:what sid:sid to:x]; return; }
+    if (sub && [what isEqualToString:@"audio"]) { [self serveTrack:sub sid:sid to:x]; return; }
+    if (!sub && [what isEqualToString:@"live.m3u8"]) {
+        [self text:@"playlist" args:@[sid] type:@"application/vnd.apple.mpegurl" to:x]; return;
+    }
+    if (sub && [what isEqualToString:@"subs"] && [sub hasSuffix:@".vtt"]) {
+        [self text:@"subtitles" args:@[sid, [sub substringToIndex:sub.length - 4]] type:@"text/vtt; charset=utf-8" to:x]; return;
+    }
+    if (!sub && [what isEqualToString:@"status"]) {
+        [self request:@"status" args:@[sid] timeout:5 done:^(id v, NSError *e) {
+            if (e) [x respondJSON:e.code ?: 500 object:@{@"error": ErrorJSON(e)}]; else [x respondJSON:200 object:v ?: @{}];
+        }];
+        return;
+    }
+    [x respondJSON:404 object:@{@"error": @"not found"}];
+}
+
+- (void)text:(NSString *)method args:(NSArray *)args type:(NSString *)type to:(SFHTTPExchange *)x {
+    [self request:method args:args timeout:30 done:^(id v, NSError *e) {
+        if (e || !str(v)) { [x respondJSON:e.code ?: 502 object:@{@"error": e ? ErrorJSON(e) : @"no text"}]; return; }
+        [x respond:200 type:type body:[(NSString *)v dataUsingEncoding:NSUTF8StringEncoding]];
+    }];
+}
+
+// One piece of a track: done(bytes, total, mimeType) or an error. Engine queue.
+- (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
+        done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
+    [self request:@"read" args:@[sid, key, @(offset), @(max)] timeout:kReadTimeout done:^(id v, NSError *e) {
+        NSDictionary *r = dict(v);
+        NSData *bytes = str(r[@"data"]) ? [[NSData alloc] initWithBase64EncodedString:r[@"data"] options:0] : nil;
+        if (e || !bytes || ![r[@"total"] isKindOfClass:[NSNumber class]]) { done(nil, 0, nil, e ?: SFError(@"engine: malformed read")); return; }
+        done(bytes, [r[@"total"] longLongValue], str(r[@"mimeType"]) ?: @"application/octet-stream", nil);
+    }];
+}
+
+// The first piece tells the track's size and type; the answer's head follows from it.
+- (void)serveTrack:(NSString *)key sid:(NSString *)sid to:(SFHTTPExchange *)x {
+    NSString *range = [x.request header:@"range"];
+    // where the first read starts: the range's start; a suffix range or none starts at 0 (its total decides)
+    long long first = 0;
+    if ([range hasPrefix:@"bytes="]) {
+        NSString *a = [[[range substringFromIndex:6] componentsSeparatedByString:@"-"] firstObject];
+        if (a.length) first = MAX(0, a.longLongValue);
+    }
+    BOOL head = [x.request.method isEqualToString:@"HEAD"];
+    [self read:sid track:key at:first max:head ? 1 : kPiece done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
+        if (e) {
+            NSInteger st = e.code == 416 ? 416 : (e.code >= 400 && e.code < 600 ? e.code : 502);
+            [x respondJSON:st object:@{@"error": ErrorJSON(e)}];
+            return;
+        }
+        long long start, end; BOOL partial;
+        if (!ParseRange(range, total, &start, &end, &partial)) {
+            [x begin:416 headers:@{@"Content-Range": [NSString stringWithFormat:@"bytes */%lld", total], @"Content-Length": @"0"}];
+            [x finish];
+            return;
+        }
+        NSMutableDictionary *h = [@{@"Content-Type": mime, @"Accept-Ranges": @"bytes",
+                                    @"Content-Length": [NSString stringWithFormat:@"%lld", end - start]} mutableCopy];
+        if (partial) h[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", start, end - 1, total];
+        [x begin:partial ? 206 : 200 headers:h];
+        if (head) { [x finish]; return; }
+        if (start != first) { [self pump:key sid:sid from:start to:end into:x]; return; }   // suffix range: read again from its start
+        NSData *piece = (long long)bytes.length > end - start ? [bytes subdataWithRange:NSMakeRange(0, (NSUInteger)(end - start))] : bytes;
+        [x write:piece done:^(BOOL ok) {
+            if (ok) [self pump:key sid:sid from:start + (long long)piece.length to:end into:x]; else [x finish];
+        }];
+    }];
+}
+
+// Pieces [from, to) to the reader, one engine read at a time, until done or the reader is gone.
+- (void)pump:(NSString *)key sid:(NSString *)sid from:(long long)from to:(long long)to into:(SFHTTPExchange *)x {
+    if (from >= to || x.closed) { [x finish]; return; }
+    [self read:sid track:key at:from max:(NSUInteger)MIN((long long)kPiece, to - from) done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
+        if (e || !bytes.length) {   // short body: the reader sees the premature end and reconnects
+            if (e) SFLog(@"yt-engine: read %@/%@ at %lld failed: %@", sid, key, from, e.localizedDescription);
+            [x finish];
+            return;
+        }
+        NSData *piece = (long long)bytes.length > to - from ? [bytes subdataWithRange:NSMakeRange(0, (NSUInteger)(to - from))] : bytes;
+        [x write:piece done:^(BOOL ok) {
+            if (ok) [self pump:key sid:sid from:from + (long long)piece.length to:to into:x]; else [x finish];
+        }];
+    }];
+}
+@end
