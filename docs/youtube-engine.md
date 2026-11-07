@@ -53,7 +53,8 @@ the same.
 | `start({base, block, maxPlayerRequests?, budgetWindowS?, aheadLowS?, aheadHighS?, debug?})` | process start | `{userAgent}`; 412 off youtube.com |
 | `open({v, bg, maxHeight, lang, start, prefetch, vcodec, acodec})` | `GET /open` | `VodAnswer`/`LiveAnswer`/`OpenFailure`, URLs under `base` |
 | `read(sid, track, offset, maxBytes)` | Range GET on a track | `{total, mimeType, data: base64}` (at most 8 MB); waits for SABR like a reader |
-| `playlist(sid)` | `GET /s/<sid>/live.m3u8` | HLS media playlist |
+| `playlist(sid)` | `GET /s/<sid>/live.m3u8` | HLS media playlist (local segment URLs) |
+| `segment(sid, n)` | (mpv fetched googlevideo itself) | `{mimeType, data: base64}`: one live segment |
 | `subtitles(sid, key)` | `GET /s/<sid>/subs/<key>.vtt` | WebVTT text |
 | `status(sid)` | `GET /s/<sid>/status` | diagnostics |
 | `close(sid)` | `GET /close` | closed or not |
@@ -180,10 +181,13 @@ page can see go back to stock Firefox (frame rate, reduced motion, animations, a
 the GPU process, fission); no first-run pages or prompts; `intl.accept_languages` the TV's;
 `media.volume_scale` 0.
 
+Lives (HLS): the engine serves the media playlist with local segment URLs
+(`/s/<sid>/seg/<n>.<ext>`, one stable number per upstream URL, the extension kept for ffmpeg) and
+fetches each segment itself (`segment(sid, n)`) - every googlevideo request is the browser's.
+The engine adds no headers of its own (a custom one made googlevideo refuse the CORS preflight).
+
 ## Still open
 
 - The EU consent dialog in a fresh profile (no `SOCS` cookie): answer it once, like a user.
-- Release: the bundle's Runtime has no Firefox/Xvfb yet (`SFTool` falls back to MacPorts).
-
-- Live HLS: today mpv fetches segments from googlevideo itself - a second client. Segments go
-  through the engine (`read`-like) so every request is the browser's.
+- Release: the bundle's Runtime has no Firefox/Xvfb yet (`SFTool` falls back to MacPorts);
+  make-release and sofa-deploy refuse until it has.
