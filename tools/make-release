@@ -8,7 +8,7 @@
 #   Contents/MacOS/{Sofa,SofaRemote}
 #   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
 #   Contents/Runtime/bin/{ffmpeg,rsvg-convert,Xvfb,xkbcomp}
-#   Contents/Runtime/lib/{firefox/,libGL.1.dylib,dri/}   the engine's browser + Mesa
+#   Contents/Runtime/lib/{firefox/,libGL.1.dylib,libepoxy.0.dylib,dri/}   the engine's browser + Mesa
 #   Contents/Runtime/share/{X11/xkb,fonts/misc}         Xvfb's keymaps and fonts
 #   Contents/Resources/youtube-engine     the YouTube engine's Firefox extension (docs/youtube-engine.md)
 #   Contents/Runtime/etc/{cert.pem,fonts/}
@@ -46,11 +46,17 @@ echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa; SFYTBrow
 if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/firefox/libxul.dylib" "$MP/lib/firefox/glxtest"; then
   echo "ERROR: firefox-x11 still opens libGL from $MP (needs its relative-path patch)"; exit 1
 fi
+# GTK's GL loader libepoxy opens libGL next to itself (backport-toolkit libepoxy patch): it goes
+# beside libGL here, as in MacPorts - relink links GTK to this copy instead of one in Frameworks
+if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/libepoxy.0.dylib"; then
+  echo "ERROR: libepoxy still opens libGL from $MP (needs its relative-path patch)"; exit 1
+fi
 mkdir -p "$RT/lib/dri" "$RT/share/X11" "$RT/share/fonts"
 cp -RL "$MP/lib/firefox" "$RT/lib/firefox"
 rm -rf "$RT/lib/firefox/"{nsinstall,certutil,xpcshell,gmp-fake,gmp-fakeopenh264,dependentlibs.list.gtest}   # build/test tools
 for t in Xvfb xkbcomp; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 cp -L "$MP/lib/libGL.1.dylib" "$RT/lib/"                       # opened by Firefox (dlopen)
+cp -L "$MP/lib/libepoxy.0.dylib" "$RT/lib/"                    # opens libGL beside itself (GTK)
 cp -L "$MP"/lib/dri/*_dri.dylib "$RT/lib/dri/"                  # LIBGL_DRIVERS_PATH (Xvfb GLX, Firefox WebGL)
 cp -RL "$MP/share/X11/xkb" "$RT/share/X11/xkb"                  # Xvfb -xkbdir
 cp -RL "$MP/share/fonts/misc" "$RT/share/fonts/misc"            # Xvfb -fp ("fixed", "cursor")

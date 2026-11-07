@@ -240,9 +240,9 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       1. ~~Release bundle: Firefox + Xvfb + Mesa relocatable in Contents/Runtime~~ (2026-11-07:
          firefox-x11 rev 3 opens libGL relative to itself; test-release all ok with /opt/local
          denied, WebGL included; DEPLOYED 08:27 via sofa-deploy --bundle - the installed app runs
-         the engine, no node). Leftovers: libepoxy (GTK's GL loader) still names
-         /opt/local/lib/libGL.1.dylib (a stat under the sandbox; on a Mac WITH MacPorts GTK could
-         load MacPorts' libGL next to the bundle's libX11 - port patch like firefox-x11's);
+         the engine, no node). Leftovers: ~~libepoxy (GTK's GL loader) named
+         /opt/local/lib/libGL.1.dylib~~ (backport-toolkit libepoxy rev 5 opens @loader_path/libGL.1.dylib;
+         make-release puts it beside libGL in Runtime/lib - next release build);
          ~~relink.py copied libmozglue + libnss3 into Frameworks~~ (gmp-clearkey reached them through
          MacPorts rpaths; now linked to the copies in Runtime/lib/firefox - next release build).
       2. ~~EU consent dialog in a fresh profile~~: accepted with a trusted XTest click (2026-11-07,
