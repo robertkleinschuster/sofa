@@ -136,10 +136,20 @@ export class VirtualFile {
 
   /** Byte offset where the media for time `ms` starts according to the index (or null). */
   offsetAtTime(ms: number): number | null {
-    if (!this.index) return null;
-    let best: { off: number } | null = null;
+    return this.indexEntryAt(ms)?.off ?? null;
+  }
+
+  /** Start time of the segment containing `ms` according to the index (or null): where a SABR run
+   *  asked for `ms` begins delivering - whole segments. */
+  segmentStartAt(ms: number): number | null {
+    return this.indexEntryAt(ms)?.ms ?? null;
+  }
+
+  private indexEntryAt(ms: number): { off: number; ms: number } | null {
+    if (!this.index || !this.index.length) return null;
+    let best: { off: number; ms: number } | null = null;
     for (const e of this.index) { if (e.ms <= ms) best = e; else break; }
-    return best ? best.off : this.index[0]!.off;
+    return best ?? this.index[0]!;
   }
 
   /**

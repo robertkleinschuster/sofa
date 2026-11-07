@@ -241,7 +241,10 @@ class Pump {
 
   covers(t: Track, ms: number, slack: number): boolean {
     if (!this.alive || !this.feeds(t)) return false;
-    const from = Math.min(this.startMs, this.first.get(t) ?? Infinity) - 1000;
+    // SABR delivers from the start of the segment containing startMs: a run started at an estimate
+    // (extra language track before its index arrived) covers that whole segment, no second run
+    const begin = t.file.segmentStartAt(this.startMs) ?? this.startMs;
+    const from = Math.min(begin, this.first.get(t) ?? Infinity) - 1000;
     const to = Math.max(this.startMs, this.frontier.get(t) ?? 0) + slack;
     return ms >= from && ms <= to;
   }

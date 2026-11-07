@@ -48,7 +48,8 @@ if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/firefox/libxul.dylib" "$MP/lib/fire
 fi
 # GTK's GL loader libepoxy opens libGL next to itself (backport-toolkit libepoxy patch): it goes
 # beside libGL here, as in MacPorts - relink links GTK to this copy instead of one in Frameworks
-if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/libepoxy.0.dylib"; then
+# (its GLES paths stay MacPorts ones: GTK on X11 uses GLX only)
+if /usr/bin/grep -q "$MP/lib/libGL.1.dylib" "$MP/lib/libepoxy.0.dylib"; then
   echo "ERROR: libepoxy still opens libGL from $MP (needs its relative-path patch)"; exit 1
 fi
 mkdir -p "$RT/lib/dri" "$RT/share/X11" "$RT/share/fonts"

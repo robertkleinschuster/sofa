@@ -212,7 +212,12 @@ test('language switch: another audio track is fed by an audio-only SABR run', as
     const b = await get(fr.url, { range: `bytes=${off}-${off + 199999}` });
     assert.equal(b.status, 206);
     assert.ok(b.body.equals(expectedBytes(AINIT, off, off + 200000)));
-    assert.ok(pumps.log.starts.some((x) => x.video === null && x.audio === '251-fr.3' && x.startMs === A(30).startMs));
+    // one audio-only run, inside segment 30: before the track's index arrives its start is an
+    // estimate within that segment, and SABR delivers whole segments - a second run at the exact
+    // segment start would be a wasted request to YouTube (seen 2026-11-07, test-all flake)
+    const fr3 = pumps.log.starts.filter((x) => x.audio === '251-fr.3' && x.video === null);
+    assert.equal(fr3.length, 1, JSON.stringify(pumps.log.starts));
+    assert.ok(nth(fr3, 0).startMs >= A(30).startMs && nth(fr3, 0).startMs < A(31).startMs, JSON.stringify(fr3));
     // the next video run carries the language read most recently
     const vo = V(200).start;
     await get(r.video, { range: `bytes=${vo}-${vo + 99999}` });
