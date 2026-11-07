@@ -32,21 +32,3 @@ NSString *SFNativeUserAgent(void) {
     });
     return ua;
 }
-
-static NSMutableDictionary *gByDomain;   // domain -> user agent
-
-void SFSetUserAgentForDomains(NSString *ua, NSArray *domains) {
-    @synchronized ([NSProcessInfo class]) {
-        if (!gByDomain) gByDomain = [NSMutableDictionary new];
-        for (NSString *d in domains) { if (ua) gByDomain[d.lowercaseString] = ua; else [gByDomain removeObjectForKey:d.lowercaseString]; }
-    }
-}
-
-NSString *SFUserAgentForHost(NSString *host) {
-    NSString *h = host.lowercaseString;
-    @synchronized ([NSProcessInfo class]) {
-        for (NSString *d in gByDomain)
-            if ([h isEqualToString:d] || [h hasSuffix:[@"." stringByAppendingString:d]]) return gByDomain[d];
-    }
-    return SFNativeUserAgent();
-}

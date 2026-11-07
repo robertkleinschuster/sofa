@@ -11,7 +11,7 @@ extern NSString *const SFNetRegionDidChangeNotification;
 
 // Session delegate without TLS certificate verification (user decision 2026-11-04: Sofa only loads data
 // unverified; code – app updates – is signed separately). For every NSURLSession of the app.
-// Every request carries SFUserAgentForHost (SFUserAgent.h).
+// Every request carries SFNativeUserAgent (SFUserAgent.h).
 id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void);
 
 @interface SFNet : NSObject

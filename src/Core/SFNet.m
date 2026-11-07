@@ -87,7 +87,7 @@ id<NSURLSessionDelegate> SFTrustAllSessionDelegate(void) {
 
 // The request itself; on failure an older cached answer (up to 30 days) rather than none.
 + (void)send:(NSMutableURLRequest *)req cacheKey:(NSString *)key cacheAge:(NSTimeInterval)age finish:(void (^)(id, NSError *))finish {
-    [req setValue:SFUserAgentForHost(req.URL.host) forHTTPHeaderField:@"User-Agent"];
+    [req setValue:SFNativeUserAgent() forHTTPHeaderField:@"User-Agent"];
     NSDate *t0 = [NSDate date];
     void (^handle)(NSData *, NSInteger, NSError *) = ^(NSData *data, NSInteger code, NSError *err) {
         if (err || code >= 400 || !data.length) {
@@ -195,7 +195,7 @@ static NSString *regionKey(NSString *region) { return [@"geo.region." stringByAp
     // without expected text: media URL -> HEAD only (don't download the whole file)
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:u];
     if (!expect) req.HTTPMethod = @"HEAD";
-    [req setValue:SFUserAgentForHost(u.host) forHTTPHeaderField:@"User-Agent"];
+    [req setValue:SFNativeUserAgent() forHTTPHeaderField:@"User-Agent"];
     [[[self session] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
         NSInteger code = [(NSHTTPURLResponse *)r statusCode];
         NSString *body = d ? [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : nil;

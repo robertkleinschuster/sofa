@@ -231,8 +231,6 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
             self->_state = SFYTEngineReady;
             NSString *ua = str(dict(v)[@"userAgent"]) ?: str(dict(h)[@"userAgent"]);
             SFLog(@"yt-engine: ready (%@)", ua);
-            // the app's own requests to YouTube (thumbnails, avatars) as the same browser
-            if (ua) SFSetUserAgentForDomains(ua, @[@"youtube.com", @"ytimg.com", @"ggpht.com", @"googlevideo.com", @"googleusercontent.com"]);
             [self tellWaiting:YES];
         }); }];
     }); }];

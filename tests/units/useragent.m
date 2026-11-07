@@ -1,5 +1,5 @@
 // sources: src/Core/SFUserAgent.m
-// SFUserAgent: the native user agent is exactly what NSURLSession sends; per-domain overrides.
+// SFUserAgent: the native user agent is exactly what NSURLSession sends.
 #import "SFCore.h"
 #import "../../src/Core/SFUserAgent.h"
 #include <sys/socket.h>
@@ -36,13 +36,6 @@ int main(void) {
     @autoreleasepool {
         NSString *sent = sentByURLSession();
         expect([sent isEqualToString:SFNativeUserAgent()], [NSString stringWithFormat:@"native UA = NSURLSession's: sent '%@', built '%@'", sent, SFNativeUserAgent()]);
-        expect([SFUserAgentForHost(@"api.zdf.de") isEqualToString:SFNativeUserAgent()], @"no override: native");
-        SFSetUserAgentForDomains(@"Chrome-ish", @[@"youtube.com", @"ytimg.com"]);
-        expect([SFUserAgentForHost(@"i.ytimg.com") isEqualToString:@"Chrome-ish"], @"subdomain takes the domain's");
-        expect([SFUserAgentForHost(@"WWW.YouTube.com") isEqualToString:@"Chrome-ish"], @"case-insensitive");
-        expect([SFUserAgentForHost(@"notyoutube.com") isEqualToString:SFNativeUserAgent()], @"suffix only at a dot");
-        SFSetUserAgentForDomains(nil, @[@"ytimg.com"]);
-        expect([SFUserAgentForHost(@"i.ytimg.com") isEqualToString:SFNativeUserAgent()], @"removed");
     }
     if (!fails) printf("ok\n");
     return fails ? 1 : 0;

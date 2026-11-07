@@ -135,9 +135,10 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   CFNetwork's own (`Sofa/<build> CFNetwork/673.6 Darwin/13.4.0 (x86_64) (<model>)`, checked by
   tests/units/useragent.m) - on NSURLSession, curl, images and mpv. Until 2026-11-06 it was a Safari 17
   string over a TLS stack no Safari has, with app credentials (ZDF, ORF) next to it. A source that
-  speaks to its service as a browser registers that browser for its domains: YouTube takes the
-  engine's Firefox user agent (reported when its page starts, `SFYTEngine`) for youtube.com, ytimg.com,
-  ggpht.com, googlevideo.com, googleusercontent.com.
+  must speak to its service as a browser does it from that browser (YouTube: the engine's Firefox,
+  for InnerTube and media); Sofa's own requests to the same service (thumbnails, avatars, the lounge)
+  stay the native app. They borrowed the engine's Firefox user agent until 2026-11-07 - a Firefox whose
+  TLS handshake was libcurl's or SecureTransport's, next to the real Firefox on the same IP.
 - **Cadence**: follows on their own schedule (`SFRefreshPlan`), Home rows only while the screen is
   awake, a source's background pause (`backgroundPausedUntil`) respected by follows and downloads.
 

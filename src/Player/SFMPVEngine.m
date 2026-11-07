@@ -155,7 +155,7 @@ static void onWakeup(void *ctx) {
     mpv_set_property_string(_mpv, "hr-seek", exact ? "yes" : "default");
     mpv_set_property_string(_mpv, "pause", paused ? "yes" : "no");
     mpv_set_property_string(_mpv, "mute", _muted ? "yes" : "no");
-    if (!url.isFileURL) mpv_set_property_string(_mpv, "user-agent", SFUserAgentForHost(url.host).UTF8String);   // the app's identity, not "libmpv"
+    if (!url.isFileURL) mpv_set_property_string(_mpv, "user-agent", SFNativeUserAgent().UTF8String);   // the app's identity, not "libmpv"
     [self command:@[@"change-list", @"audio-files", @"clr", @""]];
     if (audioURL) [self command:@[@"change-list", @"audio-files", @"append", audioURL.absoluteString]];
     _voHeals = 0; _voDownTicks = 0;
