@@ -57,7 +57,7 @@ ms=$(echo "$line" | sed -n 's/.*blocked \([0-9]*\) ms.*/\1/p')
 hits=$(echo "$line" | sed -n 's/.* in -\[SFAppDelegate(Dev) devStall:\] \([0-9]*\)x.* of \([0-9]*\) samples.*/\1 \2/p')
 [ -n "$hits" ] && [ $(( ${hits% *} * 10 )) -ge $(( ${hits#* } * 8 )) ] && ok "it names the function it was spent in (${hits% *} of ${hits#* } samples)" || bad "no stack attribution: $line"
 # and the call inside it the time went to (devStall spins on the clock: NSDate)
-via=$(echo "$line" | sed -n 's/.*devStall:\] [0-9]*x via \([^,(]*\).*/\1/p')
+via=$(echo "$line" | sed -nE 's/.*devStall:\] [0-9]+x via (.*) of [0-9]+ samples.*/\1/p' | sed 's/, .*//')
 echo "$via" | grep -qi 'date\|time' && ok "it names the call inside ($via)" || bad "no callee: $line"
 kill -0 $APP 2>/dev/null && ok "sampling the main thread leaves Sofa running" || bad "Sofa ended while sampled"
 quit

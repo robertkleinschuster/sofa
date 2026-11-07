@@ -20,7 +20,9 @@ static const NSTimeInterval kSample = 0.010;     // stack sampling interval duri
 static const NSTimeInterval kKeyWindow = 1.0;    // a stall this soon after a key press is "after" it
 enum { kMaxSamples = 256, kMaxDepth = 64, kTopFunctions = 3 };
 
-typedef struct { uintptr_t pc[kMaxDepth]; int depth; } SFStack;
+// leafRet: the word at the stack pointer - the return address when the sampled code keeps no
+// frame (objc_msgSend, small leaves); checked after the thread runs again (isReturnAddress)
+typedef struct { uintptr_t pc[kMaxDepth]; int depth; uintptr_t leafRet; } SFStack;
 
 static mach_port_t gMain;
 static uintptr_t gStackLo, gStackHi;
@@ -46,12 +48,14 @@ static uintptr_t scanForFrame(uintptr_t from) {
 
 // One stack of the (suspended) main thread: pc, then return addresses up the rbp chain.
 static void captureMain(SFStack *s) {
-    s->depth = 0;
+    s->depth = 0; s->leafRet = 0;
     if (thread_suspend(gMain) != KERN_SUCCESS) return;
     x86_thread_state64_t st;
     mach_msg_type_number_t n = x86_THREAD_STATE64_COUNT;
     if (thread_get_state(gMain, x86_THREAD_STATE64, (thread_state_t)&st, &n) == KERN_SUCCESS) {
         s->pc[s->depth++] = (uintptr_t)st.__rip;
+        uintptr_t sp = (uintptr_t)st.__rsp;
+        s->leafRet = sp >= gStackLo && sp + 8 <= gStackHi && !(sp & 7) ? *(uintptr_t *)sp : 0;
         uintptr_t fp = isFrame((uintptr_t)st.__rbp) ? (uintptr_t)st.__rbp : scanForFrame((uintptr_t)st.__rsp);
         while (fp && s->depth < kMaxDepth) {
             s->pc[s->depth++] = ((uintptr_t *)fp)[1];
@@ -62,6 +66,16 @@ static void captureMain(SFStack *s) {
         }
     }
     thread_resume(gMain);
+}
+
+// A return address: inside a loaded image, right after a call instruction (call rel32; call
+// [rip+disp32]; call reg; call [reg+disp8]). Code pages are mapped and readable.
+static BOOL isReturnAddress(uintptr_t a) {
+    Dl_info info;
+    if (a < 8 || !dladdr((const void *)a, &info) || (uintptr_t)info.dli_fbase > a - 8) return NO;
+    const uint8_t *c = (const uint8_t *)a;
+    return c[-5] == 0xE8 || (c[-6] == 0xFF && c[-5] == 0x15) || (c[-2] == 0xFF && (c[-1] & 0xF8) == 0xD0)
+        || (c[-3] == 0xFF && (c[-2] & 0xF8) == 0x50);
 }
 
 // "-[SFTile refreshDownload]" for an address inside Sofa itself, nil elsewhere.
@@ -89,6 +103,14 @@ static NSString *describe(const SFStack *samples, int count) {
     for (int i = 0; i < count; i++) {
         const SFStack *s = &samples[i];
         if (!s->depth) continue;
+        // a frameless leaf: its caller is only in leafRet - the rbp chain starts one level up and
+        // would credit the caller's caller (devStall's samples went to devCommand under load)
+        SFStack full = *s;
+        if (s->leafRet && (s->depth < 2 || s->leafRet != s->pc[1]) && s->depth < kMaxDepth && isReturnAddress(s->leafRet)) {
+            memmove(&full.pc[2], &full.pc[1], (size_t)(full.depth - 1) * sizeof full.pc[0]);
+            full.pc[1] = s->leafRet; full.depth++;
+        }
+        s = &full;
         Dl_info info;
         if (dladdr((const void *)s->pc[0], &info) && info.dli_sname) [leaves addObject:@(info.dli_sname)];
         for (int d = 0; d < s->depth; d++) {

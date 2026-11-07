@@ -88,8 +88,11 @@ static id gHandover;   // activity token of the update handover (released = acti
 }
 
 - (void)restoreAfterUpdate {
-    NSData *d = [NSData dataWithContentsOfFile:[self resumePath]];
-    [[NSFileManager defaultManager] removeItemAtPath:[self resumePath] error:nil];
+    NSString *path = [self resumePath];
+    NSData *d = [NSData dataWithContentsOfFile:path];
+    // read once; the unlink waits on a disk busy with the fresh install (160 ms of the main thread
+    // right after an update, hitch monitor 2026-11-07)
+    if (d) SFBackground(^{ [[NSFileManager new] removeItemAtPath:path error:nil]; });
     NSDictionary *st = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
     if (![st isKindOfClass:[NSDictionary class]] || [NSDate date].timeIntervalSince1970 - [st[@"t"] doubleValue] > 300) return;
     SFLog(@"update: restoring %@", st[@"screens"]);

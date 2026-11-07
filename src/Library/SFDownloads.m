@@ -338,9 +338,18 @@ static NSString *gb(unsigned long long b) {
 
 
 - (void)start {
-    if (_started) return;
-    _started = YES;
-    [self reapOrphans];        // before anything writes: no second writer may survive from an earlier run
+    if (_started || _starting) return;
+    _starting = YES;
+    // orphans first, before anything writes: no second writer may survive from an earlier run. The
+    // process list is a sysctl walk (80 ms of the main thread at launch, hitch monitor 2026-11-07):
+    // off it - the worker waits for _started.
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [self reapOrphans];
+        SFMain(^{ self->_started = YES; [self startWorking]; });
+    });
+}
+
+- (void)startWorking {
     [self sweepStaleParts];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self retryDueRepairs];

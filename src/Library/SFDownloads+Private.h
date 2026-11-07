@@ -54,7 +54,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSMutableDictionary *_subs;      // id -> SFSubscription
     NSTask *_task;
     NSString *_runningID;
-    BOOL _started;
+    BOOL _started, _starting;   // _started: orphans reaped, the worker may write
     NSTimer *_checkTimer;
     NSTimeInterval _pauseWake;
     NSTimeInterval _repairWake;  // retryDueRepairs scheduled for this time (epoch)
