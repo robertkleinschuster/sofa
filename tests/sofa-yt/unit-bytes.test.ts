@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mod } from './helpers.ts';
 
-const { randomHex, fromBase64, toBase64, latin1 } = await mod('lib/bytes.ts');
+const { randomHex, fromBase64, latin1 } = await mod('lib/bytes.ts');
 
 test('randomHex: n bytes as lowercase hex, different each time', () => {
   const a = randomHex(8), b = randomHex(8);
@@ -16,15 +16,6 @@ test('fromBase64: base64 and base64url give the same bytes', () => {
   const bytes = Uint8Array.from([0xfb, 0xff, 0xfe, 0x00, 0x41]);
   assert.deepEqual(fromBase64(Buffer.from(bytes).toString('base64')), bytes);
   assert.deepEqual(fromBase64(Buffer.from(bytes).toString('base64url')), bytes);
-});
-
-test('toBase64: round trip, native encoder and fallback agree', () => {
-  const bytes = Uint8Array.from({ length: 70000 }, (_, i) => (i * 7) & 0xff);   // more than one fallback chunk
-  const want = Buffer.from(bytes).toString('base64');
-  assert.equal(toBase64(bytes), want);
-  const plain = Object.assign(new Uint8Array(bytes), { toBase64: undefined });   // no native encoder
-  assert.equal(toBase64(plain), want);
-  assert.deepEqual(fromBase64(toBase64(bytes)), bytes);
 });
 
 test('latin1: byte range as a type code', () => {

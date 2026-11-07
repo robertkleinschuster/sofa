@@ -1,4 +1,5 @@
 #import "SFLocalHTTP.h"
+#import "SFWebSocket+Server.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -91,10 +92,11 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     dispatch_queue_t _queue, _io;
     dispatch_source_t _watch;   // readable after the request = the reader closed (or sent garbage)
     BOOL _begun, _finished;
+    NSMutableDictionary *_fdOwner;   // @"keep": the socket was handed over (WebSocket) - the watch must not close it
 }
 
 - (instancetype)initWithFD:(int)fd request:(SFHTTPRequest *)r queue:(dispatch_queue_t)queue io:(dispatch_queue_t)io {
-    if ((self = [super init])) { _fd = fd; _request = r; _queue = queue; _io = io; }
+    if ((self = [super init])) { _fd = fd; _request = r; _queue = queue; _io = io; _fdOwner = [NSMutableDictionary new]; }
     return self;
 }
 
@@ -112,7 +114,8 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
         dispatch_source_cancel(x->_watch);
         dispatch_async(x->_queue, ^{ [x readerGone]; });
     });
-    dispatch_source_set_cancel_handler(_watch, ^{ close(fd); });
+    NSMutableDictionary *owner = _fdOwner;
+    dispatch_source_set_cancel_handler(_watch, ^{ if (!owner[@"keep"]) close(fd); });
     dispatch_resume(_watch);
 }
 
@@ -173,6 +176,30 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     [self begin:status headers:h];
     if (body.length && ![_request.method isEqualToString:@"HEAD"]) [self send:body done:nil];
     [self finish];
+}
+
+- (SFWebSocket *)acceptWebSocket:(NSUInteger)max {
+    SFHTTPRequest *r = _request;
+    NSString *key = [r header:@"sec-websocket-key"];
+    BOOL upgrade = [r.method isEqualToString:@"GET"] && [[r header:@"upgrade"] caseInsensitiveCompare:@"websocket"] == NSOrderedSame
+        && [[[r header:@"connection"] lowercaseString] rangeOfString:@"upgrade"].location != NSNotFound
+        && [[r header:@"sec-websocket-version"] isEqualToString:@"13"] && key.length;
+    if (!upgrade || _begun) { [self respond:400 type:nil body:nil]; return nil; }
+    _begun = _finished = YES;   // no HTTP answer after this
+    self.onClose = nil;
+    SFWebSocket *ws = [[SFWebSocket alloc] initWithFD:_fd queue:_queue io:_io maxMessage:max];
+    NSString *head = [NSString stringWithFormat:@"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %@\r\n\r\n", SFWSAccept(key)];
+    NSData *d = [head dataUsingEncoding:NSISOLatin1StringEncoding];
+    dispatch_source_t w = _watch;
+    NSMutableDictionary *owner = _fdOwner;
+    int fd = _fd;
+    dispatch_async(_io, ^{
+        owner[@"keep"] = @YES;
+        if (w) dispatch_source_cancel(w);   // the socket reads its frames from here on
+        writeAll(fd, d.bytes, d.length);
+        [ws startReading];   // a failed write: the read source sees the broken connection and ends it
+    });
+    return ws;
 }
 
 - (void)respondJSON:(NSInteger)status object:(id)object {

@@ -20,8 +20,10 @@ static const NSTimeInterval kOpenTimeout = 60;
 static const NSTimeInterval kCallTimeout = 30;
 // a run shorter than this counts as a failure for the restart backoff
 static const NSTimeInterval kHealthyRun = 300;
-// largest request body: a POST of answers carries media reads (8 MB base64 at most) and events
-static const NSUInteger kMaxPost = 16 * 1024 * 1024;
+// largest channel message: a media read (8 MB at most) with its answer and events
+static const NSUInteger kMaxMessage = 16 * 1024 * 1024;
+// the loopback server's own requests (media GETs of mpv/ffmpeg) carry no body worth the name
+static const NSUInteger kMaxRequestBody = 64 * 1024;
 // focus preloads: at most this many player requests per window
 static const NSUInteger kPreloadBudget = 8;
 static const NSTimeInterval kPreloadWindow = 600;
@@ -80,12 +82,12 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         NSData *cd = [NSData dataWithContentsOfFile:_channelFile];
         _savedChannel = dict(cd ? [NSJSONSerialization JSONObjectWithData:cd options:0 error:nil] : nil);
         NSString *token = str(_savedChannel[@"token"]);
-        _channel = [[SFYTChannel alloc] initWithQueue:_queue token:token.length == 32 ? token : SFYTChannelNewToken()];
+        _channel = [[SFYTChannel alloc] initWithQueue:_queue token:token.length == 32 ? token : SFYTChannelNewToken() maxMessage:kMaxMessage];
         _waiting = [NSMutableArray new];
         _preloads = [NSMutableArray new];
         __weak SFYTEngine *ws = self;
         _channel.onEvent = ^(NSDictionary *e) { SFMain(^{ [ws event:e]; }); };
-        _server = [[SFLocalHTTP alloc] initWithName:@"yt-engine" queue:_queue maxBody:kMaxPost handler:^(SFHTTPExchange *x) {
+        _server = [[SFLocalHTTP alloc] initWithName:@"yt-engine" queue:_queue maxBody:kMaxRequestBody handler:^(SFHTTPExchange *x) {
             SFYTEngine *s = ws;
             if (!s || [s.channel handle:x]) return;
             if ([x.request.pathParts.firstObject isEqualToString:@"s"]) [s serveSession:x];
@@ -406,8 +408,7 @@ static id Clean(id v) {
 - (void)image:(NSURL *)url done:(void (^)(NSData *, NSInteger))done {
     SFMain(^{
         [self call:@"image" args:@[url.absoluteString ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
-            NSString *b64 = str(dict(v)[@"data"]);
-            NSData *d = b64 ? [[NSData alloc] initWithBase64EncodedString:b64 options:0] : nil;
+            NSData *d = bin(dict(v)[@"data"]);
             // an engine error carries the host's status; unanswered/not ready: none
             NSInteger st = d ? 200 : (e && ![e.userInfo[@"unanswered"] boolValue] && e.code >= 400 && e.code < 500) ? e.code : 0;
             done(d, st);

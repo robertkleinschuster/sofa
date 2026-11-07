@@ -5,7 +5,6 @@
 // channel's frame lengths are Sofa's to count.
 import { EngineError } from './engine.ts';
 import { errorMessage } from './errors.ts';
-import { toBase64 } from './bytes.ts';
 
 export const LOUNGE_API = 'https://www.youtube.com/api/lounge/';
 /** The bind channel sends a noop about every 28 s: this long without bytes = a dead poll. */
@@ -14,7 +13,7 @@ const REQUEST_TIMEOUT_MS = 20000;
 
 /** What a poll streams to Sofa, in order: data chunks, then one end (status, or error without one). */
 export type LoungeEvent =
-  | { type: 'lounge'; id: string; data: string }
+  | { type: 'lounge'; id: string; data: Uint8Array }
   | { type: 'lounge'; id: string; end: true; status: number; error?: string };
 
 export interface LoungeOptions {
@@ -24,8 +23,8 @@ export interface LoungeOptions {
 }
 
 export interface Lounge {
-  /** One request (pairing, token, session open, send): its status and body (base64). */
-  request(method: string, url: string, body: string | null): Promise<{ status: number; data: string }>;
+  /** One request (pairing, token, session open, send): its status and body. */
+  request(method: string, url: string, body: string | null): Promise<{ status: number; data: Uint8Array }>;
   /** Starts the bind channel's long poll `id`; its bytes and end arrive as events. One poll at a
    * time - a new one ends the earlier (a restarted Sofa's poll replaces the old Sofa's). */
   poll(id: string, url: string): void;
@@ -52,7 +51,7 @@ export function createLounge({ fetch: pageFetch, emit, silenceMs = POLL_SILENCE_
       try {
         r = await pageFetch(u, { method, headers: body === null ? {} : FORM, body, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
-      return { status: r.status, data: toBase64(new Uint8Array(await r.arrayBuffer())) };
+      return { status: r.status, data: new Uint8Array(await r.arrayBuffer()) };
     },
 
     poll(id, url) {
@@ -76,7 +75,7 @@ export function createLounge({ fetch: pageFetch, emit, silenceMs = POLL_SILENCE_
             const { done, value } = await reader.read();
             if (done) break;
             quiet();
-            if (value?.length) emit({ type: 'lounge', id, data: toBase64(value) });
+            if (value?.length) emit({ type: 'lounge', id, data: value });
           }
           if (abort.signal.aborted) throw abort.signal.reason;   // a stream that stops on abort: still cut off
           emit({ type: 'lounge', id, end: true, status });

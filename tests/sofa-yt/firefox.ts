@@ -154,7 +154,7 @@ export async function injectEngine(b: Bidi, engineJs: string): Promise<string> {
   const context = tree.contexts[0]!.context;
   // as Sofa injects it: the bundle runs before the page's scripts and gets the channel
   await b.send('script.addPreloadScript', {
-    functionDeclaration: `(post) => {\n${engineJs}\n;globalThis.sofaEngine.connect(post);\n}`,
+    functionDeclaration: `(post) => {\n${engineJs}\n;globalThis.sofaEngine.connect((e) => post(JSON.stringify(e)));\n}`,
     arguments: [{ type: 'channel', value: { channel: 'sofa-engine' } }],
     contexts: [context],
   });

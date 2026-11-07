@@ -6,10 +6,9 @@ import assert from 'node:assert/strict';
 import { mod } from './helpers.ts';
 
 const { createLounge } = await mod('lib/lounge.ts');
-const { fromBase64 } = await mod('lib/bytes.ts');
 
-type Ev = { type: string; id: string; data?: string; end?: boolean; status?: number; error?: string };
-const text = (b64: string) => new TextDecoder().decode(fromBase64(b64));
+type Ev = { type: string; id: string; data?: Uint8Array; end?: boolean; status?: number; error?: string };
+const text = (b: Uint8Array | undefined) => new TextDecoder().decode(b);
 const API = 'https://www.youtube.com/api/lounge';
 
 /** A response whose body is fed by hand: push(chunk), end(), fail(reason) - what an aborted fetch does to its body. */

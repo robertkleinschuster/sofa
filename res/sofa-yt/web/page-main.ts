@@ -12,7 +12,7 @@ if (window === window.top && location.origin === 'https://www.youtube.com') {
     const refused = unknownCommand(e.data);
     if (refused) port.postMessage(refused);
   };
-  sofaEngine.connect((json) => port.postMessage({ event: json }));
+  sofaEngine.connect((event) => port.postMessage({ event }));
   // the bridge (isolated world, also document_start) takes the port; delivery is a later task, when
   // both scripts have run and before the page's own scripts can listen
   window.postMessage({ [HELLO]: true }, location.origin, [channel.port2]);

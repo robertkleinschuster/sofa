@@ -1,17 +1,13 @@
-// sources: src/Core/SFLocalHTTP.m src/Apps/YouTube/SFYTChannel.m
-// flags: -Isrc/Apps/YouTube -framework Security
+// sources: src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m
 // SFLocalHTTP: request parsing (path, query, headers, body), 413 above the body limit, streamed
-// answers, a reader that goes away (onClose, failed writes). SFYTChannel: the engine extension's
-// long poll and post (token, command out, answer in, events), call timeouts, failAll.
+// answers, a reader that goes away (onClose, failed writes). The WebSocket upgrade and the engine
+// channel on it: tests/units/websocket.m.
 #import "SFLocalHTTP.h"
-#import "SFYTChannel.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
 BOOL SFDevMode = NO;   // main.m's, for SFCore.m
-// SFModel's, without linking the model
-NSError *SFError(NSString *msg) { return [NSError errorWithDomain:@"Sofa" code:1 userInfo:@{NSLocalizedDescriptionKey: msg}]; }
 
 static int fails = 0;
 #define CHECK(c, msg) do { if (!(c)) { fprintf(stderr, "FAIL %s (%s:%d)\n", msg, __FILE__, __LINE__); fails++; } } while (0)
@@ -124,54 +120,9 @@ static void testServer(void) {
     [s stop];
 }
 
-static void testChannel(void) {
-    dispatch_queue_t q = dispatch_queue_create("test.channel", DISPATCH_QUEUE_SERIAL);
-    SFYTChannel *ch = [[SFYTChannel alloc] initWithQueue:q token:SFYTChannelNewToken()];
-    NSMutableArray *events = [NSMutableArray new];
-    ch.onEvent = ^(NSDictionary *e) { @synchronized (events) { [events addObject:e]; } };
-    SFLocalHTTP *s = [[SFLocalHTTP alloc] initWithName:@"test" queue:q maxBody:1 << 20 handler:^(SFHTTPExchange *x) {
-        if (![ch handle:x]) [x respond:404 type:nil body:nil];
-    }];
-    [s startPreferringPort:0];
-    uint16_t port = s.port;
-    CHECK(ch.token.length == 32, "token: 16 random bytes");
-    CHECK([roundTrip(port, @"GET /engine/poll?token=wrong HTTP/1.1\r\n\r\n", nil) hasPrefix:@"HTTP/1.1 403 "], "wrong token: 403");
-    CHECK([roundTrip(port, @"GET /other HTTP/1.1\r\n\r\n", nil) hasPrefix:@"HTTP/1.1 404 "], "other paths are not the channel's");
-
-    __block id value = nil; __block NSError *err = nil; __block BOOL done = NO;
-    [ch call:@"open" args:@[@{@"v": @"x"}] timeout:5 done:^(id v, NSError *e) { value = v; err = e; done = YES; }];
-    NSString *poll = [NSString stringWithFormat:@"GET /engine/poll?token=%@ HTTP/1.1\r\n\r\n", ch.token];
-    NSArray *cmds = [NSJSONSerialization JSONObjectWithData:[bodyOf(roundTrip(port, poll, nil)) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-    CHECK(cmds.count == 1 && [cmds[0][@"method"] isEqual:@"open"] && [cmds[0][@"args"] isEqual:(@[@{@"v": @"x"}])], "poll fetches the queued command");
-    NSData *up = [NSJSONSerialization dataWithJSONObject:@{@"answers": @[@{@"id": cmds[0][@"id"], @"value": @{@"ok": @YES}}],
-                                                           @"events": @[@"{\"type\":\"log\",\"line\":\"hi\"}"]} options:0 error:nil];
-    NSString *post = [NSString stringWithFormat:@"POST /engine/post?token=%@ HTTP/1.1\r\nContent-Length: %lu\r\n\r\n", ch.token, (unsigned long)up.length];
-    CHECK([roundTrip(port, post, up) hasPrefix:@"HTTP/1.1 204 "], "post: 204");
-    CHECK(waitFor(^{ return done; }, 3) && !err && [value isEqual:@{@"ok": @YES}], "the answer completes the call");
-    CHECK(waitFor(^{ @synchronized (events) { return (BOOL)(events.count == 1 && [events[0][@"line"] isEqual:@"hi"]); } }, 3), "events decoded");
-
-    // a held poll is answered as soon as a command arrives
-    __block NSString *held = nil;
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{ held = roundTrip(port, poll, nil); });
-    usleep(300000);
-    __block BOOL failed = NO;
-    [ch call:@"status" args:@[@"sid"] timeout:0.5 done:^(id v, NSError *e) {
-        failed = v == nil && [e.domain isEqualToString:SFYTChannelErrorDomain] && e.code == SFYTChannelTimedOut;
-    }];
-    CHECK(waitFor(^{ return (BOOL)(held != nil); }, 3) && [bodyOf(held) rangeOfString:@"\"status\""].location != NSNotFound, "held poll released by a call");
-    CHECK(waitFor(^{ return failed; }, 3), "no answer: the call times out (SFYTChannelTimedOut)");
-
-    __block BOOL dropped = NO;
-    [ch call:@"read" args:@[] timeout:30 done:^(id v, NSError *e) { dropped = e != nil && ![e.domain isEqualToString:SFYTChannelErrorDomain]; }];
-    [ch failAll:SFError(@"gone")];
-    CHECK(waitFor(^{ return dropped; }, 3), "failAll fails pending calls (not as a timeout)");
-    [s stop];
-}
-
 int main(void) {
     @autoreleasepool {
         testServer();
-        testChannel();
     }
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     printf("localhttp ok\n");

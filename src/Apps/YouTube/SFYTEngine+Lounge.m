@@ -40,8 +40,7 @@ static NSArray *TakePoll(NSString *pid) {
 - (void)loungeRequest:(NSString *)method url:(NSString *)url body:(NSString *)body done:(void (^)(NSData *, NSInteger))done {
     [self loungeCall:@"loungeRequest" args:@[method ?: @"GET", url ?: @"", body ?: [NSNull null]] timeout:kRequestTimeout done:^(id v, NSError *e) {
         NSDictionary *r = dict(v);
-        NSString *b64 = str(r[@"data"]);
-        done(b64 ? [[NSData alloc] initWithBase64EncodedString:b64 options:0] : nil, e ? 0 : num(r[@"status"]).integerValue);
+        done(bin(r[@"data"]), e ? 0 : num(r[@"status"]).integerValue);
     }];
 }
 
@@ -66,8 +65,7 @@ static NSArray *TakePoll(NSString *pid) {
     NSArray *p;
     NSMutableDictionary *polls = Polls();
     @synchronized (polls) { p = polls[pid]; }
-    NSString *b64 = str(e[@"data"]);
-    NSData *d = b64 ? [[NSData alloc] initWithBase64EncodedString:b64 options:0] : nil;
+    NSData *d = bin(e[@"data"]);
     if (p && d) ((void (^)(NSData *))p[0])(d);
 }
 

@@ -7,3 +7,5 @@ static inline NSString *str(id v) { v = nn(v); return [v isKindOfClass:[NSString
 static inline NSArray *arr(id v) { v = nn(v); return [v isKindOfClass:[NSArray class]] ? v : nil; }
 static inline NSDictionary *dict(id v) { v = nn(v); return [v isKindOfClass:[NSDictionary class]] ? v : nil; }
 static inline NSNumber *num(id v) { v = nn(v); return [v isKindOfClass:[NSNumber class]] ? v : nil; }
+// bytes in a decoded channel message (the YouTube engine's binary messages, SFYTChannel)
+static inline NSData *bin(id v) { v = nn(v); return [v isKindOfClass:[NSData class]] ? v : nil; }

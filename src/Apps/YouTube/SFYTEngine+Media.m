@@ -76,7 +76,7 @@ static NSString *ErrorJSON(NSError *e) {
 - (void)serveSegment:(NSInteger)n sid:(NSString *)sid to:(SFHTTPExchange *)x {
     [self request:@"segment" args:@[sid, @(n)] timeout:kReadTimeout done:^(id v, NSError *e) {
         NSDictionary *r = dict(v);
-        NSData *bytes = str(r[@"data"]) ? [[NSData alloc] initWithBase64EncodedString:r[@"data"] options:0] : nil;
+        NSData *bytes = bin(r[@"data"]);
         if (e || !bytes) { [x respondJSON:(e.code >= 400 && e.code < 600) ? e.code : 502 object:@{@"error": e ? ErrorJSON(e) : @"malformed segment"}]; return; }
         [x respond:200 type:str(r[@"mimeType"]) ?: @"video/mp2t" body:bytes];
     }];
@@ -87,7 +87,7 @@ static NSString *ErrorJSON(NSError *e) {
         done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
     [self request:@"read" args:@[sid, key, @(offset), @(max)] timeout:kReadTimeout done:^(id v, NSError *e) {
         NSDictionary *r = dict(v);
-        NSData *bytes = str(r[@"data"]) ? [[NSData alloc] initWithBase64EncodedString:r[@"data"] options:0] : nil;
+        NSData *bytes = bin(r[@"data"]);
         if (e || !bytes || ![r[@"total"] isKindOfClass:[NSNumber class]]) { done(nil, 0, nil, e ?: SFError(@"engine: malformed read")); return; }
         done(bytes, [r[@"total"] longLongValue], str(r[@"mimeType"]) ?: @"application/octet-stream", nil);
     }];

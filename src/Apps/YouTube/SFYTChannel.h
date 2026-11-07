@@ -1,9 +1,9 @@
 // Sofa's end of the YouTube engine's channel (docs/youtube-engine.md "Channel"): the engine
-// extension's background long-polls GET /engine/poll for commands and POSTs answers and events to
-// /engine/post, both with the channel's token (other local processes can't talk to the engine).
-// Commands are {id, method, args}; answers {id, value} or {id, error}; events are JSON strings
-// ({type: ready|log|block, ...}). Mirrors tests/sofa-yt/enginehost.ts, which plays this role in
-// the engine's own tests.
+// extension's background holds a WebSocket to /engine/ws with the channel's token (other local
+// processes can't talk to the engine). Sofa sends commands [{id, method, args}] as text; the
+// extension sends {answers: [{id, value} | {id, error}], events: [JSON strings]} as text, or as a
+// binary message when values carry bytes (media, pictures: no base64). Mirrors
+// tests/sofa-yt/enginehost.ts, which plays this role in the engine's own tests.
 #import "SFLocalHTTP.h"
 
 // Calls that got no answer (domain SFYTChannelErrorDomain): TimedOut = nothing within the call's
@@ -14,11 +14,15 @@ enum { SFYTChannelTimedOut = 1, SFYTChannelPageGone = 2 };
 
 // 128 random bits, hex.
 NSString *SFYTChannelNewToken(void);
+// A binary channel message -> its JSON with every {"$blob": n} replaced by the bytes (NSData); nil
+// when malformed (tests/units/localhttp.m).
+id SFYTChannelDecodeBinary(NSData *message);
 
 @interface SFYTChannel : NSObject
 // `queue` (serial, the HTTP server's) runs everything: requests, events, call completions.
-// `token`: the one the extension sends (SFYTChannelNewToken() for a new profile).
-- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token;
+// `token`: the one the extension sends (SFYTChannelNewToken() for a new profile); `max`: the largest
+// message the extension may send.
+- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token maxMessage:(NSUInteger)max;
 @property (nonatomic, readonly) NSString *token;
 @property (nonatomic, copy) void (^onEvent)(NSDictionary *event);
 // YES when the exchange was a channel request (answered or held); NO: not the channel's path.

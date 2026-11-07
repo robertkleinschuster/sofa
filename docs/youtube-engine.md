@@ -11,7 +11,7 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
 ├─ UI, library, downloads, follows                   └─ Firefox 153 ESR (firefox-x11), engine profile,
 ├─ SFYTEngine: lifecycle + API (main thread)              started as a user starts it (no remote agent)
 │   ├─ SFYTBrowser: Xvfb + Firefox, profile setup        └─ one tab on https://www.youtube.com/
-│   ├─ SFYTChannel: /engine/poll + /engine/post  ◄──────     extension youtube-engine@sofa:
+│   ├─ SFYTChannel: WebSocket /engine/ws  ◄─────────────     extension youtube-engine@sofa:
 │   └─ +Media: /s/<sid>/... for mpv/ffmpeg               background.js ↔ bridge.js ↔ page.js (the engine:
 ├─ SFLocalHTTP: loopback server (127.0.0.1, free port)       youtubei.js web build, SABR, BotGuard in the
 ├─ libmpv, ffmpeg                                            real DOM, sessions, pacing)
@@ -37,7 +37,7 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
   name, the installed extension this build's on the same channel) and asks the loaded page
   `health` + `start` (409 = already started) - the same document, no new BotGuard attestation, no
   youtube.com load. The extension's background finds the new Sofa by itself (same port and token,
-  poll retried every <= 2 s). A changed extension build is not taken over (Firefox would update it
+  reconnecting every <= 2 s). A changed extension build is not taken over (Firefox would update it
   into the loaded page: two engines) - that start ends the old browser and starts anew. Sessions of
   the earlier Sofa are not carried over (its player reopens after the update anyway).
 - **No orphans.** Sofa ends browser and display when it quits (`SFApp` `stop`). However else it
@@ -63,22 +63,22 @@ the same.
 |---|---|---|
 | `start({base, block, maxPlayerRequests?, budgetWindowS?, aheadLowS?, aheadHighS?, debug?})` | process start | `{userAgent}`; 412 off youtube.com |
 | `open({v, bg, maxHeight, lang, start, prefetch, vcodec, acodec})` | `GET /open` | `VodAnswer`/`LiveAnswer`/`OpenFailure`, URLs under `base` |
-| `read(sid, track, offset, maxBytes)` | Range GET on a track | `{total, mimeType, data: base64}` (at most 8 MB); waits for SABR like a reader |
+| `read(sid, track, offset, maxBytes)` | Range GET on a track | `{total, mimeType, data: bytes}` (at most 8 MB); waits for SABR like a reader |
 | `playlist(sid)` | `GET /s/<sid>/live.m3u8` | HLS media playlist (local segment URLs) |
-| `segment(sid, n)` | (mpv fetched googlevideo itself) | `{mimeType, data: base64}`: one live segment |
+| `segment(sid, n)` | (mpv fetched googlevideo itself) | `{mimeType, data: bytes}`: one live segment |
 | `subtitles(sid, key)` | `GET /s/<sid>/subs/<key>.vtt` | WebVTT text |
 | `status(sid)` | `GET /s/<sid>/status` | diagnostics |
 | `close(sid)` | `GET /close` | closed or not |
 | `innertube(endpoint, body, {bg})` | `POST /yt/<endpoint>` | raw InnerTube JSON |
 | `suggest(q)` | `GET /suggest` | suggestions |
 | `availability(v)` | (libcurl oEmbed in Sofa) | oEmbed HTTP status: 200 online, 400/404 gone, else unknown |
-| `image(url)` | (NSURLSession in Sofa) | `{mimeType, data: base64}`: a picture of i.ytimg.com / yt3.ggpht.com / yt3.googleusercontent.com, the page's fetch (status of the host on failure) |
-| `loungeRequest(method, url, body)` | (libcurl in Sofa) | `{status, data: base64}`: a request to www.youtube.com/api/lounge (docs/youtube-lounge.md) |
+| `image(url)` | (NSURLSession in Sofa) | `{mimeType, data: bytes}`: a picture of i.ytimg.com / yt3.ggpht.com / yt3.googleusercontent.com, the page's fetch (status of the host on failure) |
+| `loungeRequest(method, url, body)` | (libcurl in Sofa) | `{status, data: bytes}`: a request to www.youtube.com/api/lounge (docs/youtube-lounge.md) |
 | `loungePoll(id, url)` | (libcurl in Sofa) | `true`; the bind channel's bytes follow as `lounge {id, data}` events, then `lounge {id, end, status, error?}` (status 0 = cut off); a new poll ends the earlier |
 | `block(state)` | (breaker file) | Sofa's breaker file changed |
 | `health()` | `GET /health` | libraries, user agent, origin, on youtube.com, engine counters |
 
-Events over the channel (one JSON string each): `ready {userAgent, url}` once per document the
+Events over the channel (objects; bytes stay bytes): `ready {userAgent, url}` once per document the
 preload runs in (Sofa matches the URL; a transient initial document reports `url: ""`), `log {line}`,
 `block {state}` when a bot check opens the breaker or a success closes it - Sofa writes the file.
 
@@ -171,7 +171,7 @@ the design: **the engine is not driven over WebDriver BiDi/Marionette** but thro
 ## Channel: Sofa <-> engine (WebExtension, no remote control)
 
 ```
-Sofa loopback server  <-- long poll / POST (token) --  background.js   (extension origin)
+Sofa loopback server  <-- one WebSocket (token) -->  background.js   (extension origin)
                                                            |  runtime.Port (private)
                                                        bridge.js       (content script, isolated world)
                                                            |  MessagePort (private, handed over at document_start)
@@ -188,8 +188,18 @@ Sofa loopback server  <-- long poll / POST (token) --  background.js   (extensio
   `background.js` does all traffic to Sofa (host permission: no CORS, invisible to pages - a content
   script's request would be the page's and need Sofa to allow YouTube's origin).
 - Protocol (`web/protocol.ts`): commands `{id, method, args}` from Sofa, answers `{id, value|error}`,
-  events (`ready`, `log`, `block`) as JSON strings. Sofa: `GET /engine/poll?token=` (held up to 20 s)
-  and `POST /engine/post?token=` with `{answers, events}`.
+  events (`ready`, `log`, `block`, `consent`, `lounge`). One WebSocket (RFC 6455, `SFWebSocket`) to
+  `ws://127.0.0.1:<port>/engine/ws?token=`, held by the background while a page is connected
+  (reconnect 250 ms doubling to 2 s; the newest connection wins, Sofa closes an older one). Sofa ->
+  extension: a text message, a JSON array of commands (queued while no connection). Extension ->
+  Sofa: `{answers, events}` batched per task - JSON text, or, when a value carries bytes (media,
+  pictures, lounge data), binary: u32 BE length + that JSON, then per block u32 BE length + bytes,
+  `{"$blob": n}` in the JSON in its place (`encodeUpload` / `SFYTChannelDecodeBinary`; no base64 -
+  it cost 132 ms per 8 MB in Sofa). The background forwards commands under ids of its own, so an
+  answer reaches only the connection that asked (a restarted Sofa counts from 1 again); answers
+  pending at a disconnect are dropped, events (newest 500) wait for the next connection. Messages up
+  to 16 MB; the extension's hops (runtime.Port, MessagePort) carry the values structured, bytes as
+  Uint8Array.
 - Profile setup (Sofa, like `tests/sofa-yt/enginehost.ts`): the extension unpacked with
   `config.json` ({port, token} - the same on every start: the last port again, the token kept in
   `youtube-engine/channel.json`; a changed extension is an update to Firefox, which re-injects the

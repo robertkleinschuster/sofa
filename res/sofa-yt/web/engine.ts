@@ -17,7 +17,6 @@ import { PoTokenProvider } from '../lib/webpo.ts';
 import { Breaker, MemoryBlocks } from '../lib/breaker.ts';
 import type { BlockState } from '../lib/breaker.ts';
 import { WebStorageStore } from '../lib/store.ts';
-import { toBase64 } from '../lib/bytes.ts';
 import { errorMessage } from '../lib/errors.ts';
 import { log, setDebug, setLogSink } from '../lib/log.ts';
 import type { SessionConfig } from '../lib/session.ts';
@@ -44,7 +43,7 @@ export interface EngineConfig {
   debug?: boolean;
 }
 
-/** What the engine tells Sofa over the BiDi channel (each one JSON-encoded, one message per event). */
+/** What the engine tells Sofa on its own (the channel's events). */
 export type EngineEvent =
   // injected into a document (preload script ran); late: after document_start, navigation: how the
   // document was loaded (navigate, reload, back_forward) - both for the log of an unexpected new page
@@ -60,30 +59,30 @@ export type Reply<T> = { ok: true; value: T } | { ok: false; status: number; bod
 export interface MediaChunk {
   total: number;
   mimeType: string;
-  /** base64 of bytes [offset, offset + n) */
-  data: string;
+  /** bytes [offset, offset + n) */
+  data: Uint8Array;
 }
 
 /** What Sofa can ask the engine (docs/youtube-engine.md "Engine API"). */
 export interface SofaEngine {
   health(): { libraries: boolean; userAgent: string; origin: string; onYouTube: boolean; engine: EngineHealth | null };
-  /** The preload script hands over its BiDi channel: `send` posts one JSON string to Sofa. */
-  connect(send: (json: string) => void): void;
+  /** The page script (or a test's preload script) hands over the channel: `send` posts one event. */
+  connect(send: (e: EngineEvent) => void): void;
   start(cfg: EngineConfig): Reply<{ userAgent: string }>;
   block(state: BlockState): void;
   open(req: OpenRequest): Promise<Reply<OpenAnswer>>;
   read(sid: string, key: string, offset: number, maxBytes: number): Promise<Reply<MediaChunk>>;
   playlist(sid: string): Promise<Reply<string>>;
-  segment(sid: string, n: number): Promise<Reply<{ mimeType: string; data: string }>>;
+  segment(sid: string, n: number): Promise<Reply<{ mimeType: string; data: Uint8Array }>>;
   subtitles(sid: string, key: string): Promise<Reply<string>>;
   status(sid: string): Reply<object>;
   close(sid: string): Reply<boolean>;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
   availability(v: string): Promise<Reply<number>>;
-  image(url: string): Promise<Reply<{ mimeType: string; data: string }>>;
-  /** The lounge's requests from this page (lib/lounge.ts): status + body (base64). */
-  loungeRequest(method: string, url: string, body: string | null): Promise<Reply<{ status: number; data: string }>>;
+  image(url: string): Promise<Reply<{ mimeType: string; data: Uint8Array }>>;
+  /** The lounge's requests from this page (lib/lounge.ts): status + body. */
+  loungeRequest(method: string, url: string, body: string | null): Promise<Reply<{ status: number; data: Uint8Array }>>;
   /** Starts the bind channel's long poll; bytes and end come as `lounge` events. */
   loungePoll(id: string, url: string): Reply<boolean>;
   stop(): void;
@@ -93,8 +92,8 @@ const STORE_PREFIX = 'sofa-engine:';
 
 let core: Engine | null = null;
 let blocks: MemoryBlocks | null = null;
-let channel: ((json: string) => void) | null = null;
-const send = (e: EngineEvent): void => { channel?.(JSON.stringify(e)); };
+let channel: ((e: EngineEvent) => void) | null = null;
+const send = (e: EngineEvent): void => { channel?.(e); };
 const lounge = createLounge({ fetch: (input, init) => fetch(input, init), emit: send });
 
 function reply<T>(f: () => T): Reply<T> {
@@ -172,12 +171,12 @@ export const sofaEngine: SofaEngine = {
   open: (req) => replyAsync(() => core!.open(req)),
   read: (sid, key, offset, maxBytes) => replyAsync(async () => {
     const r = await core!.read(sid, key, offset, maxBytes);
-    return { total: r.total, mimeType: r.mimeType, data: toBase64(r.bytes) };
+    return { total: r.total, mimeType: r.mimeType, data: r.bytes };
   }),
   playlist: (sid) => replyAsync(() => core!.playlist(sid)),
   segment: (sid, n) => replyAsync(async () => {
     const r = await core!.segment(sid, n);
-    return { mimeType: r.mimeType, data: toBase64(r.bytes) };
+    return { mimeType: r.mimeType, data: r.bytes };
   }),
   subtitles: (sid, key) => replyAsync(() => core!.subtitles(sid, key)),
   status: (sid) => reply(() => core!.status(sid)),
@@ -187,7 +186,7 @@ export const sofaEngine: SofaEngine = {
   availability: (v) => replyAsync(() => core!.availability(v)),
   image: (url) => replyAsync(async () => {
     const r = await core!.image(url);
-    return { mimeType: r.mimeType, data: toBase64(r.bytes) };
+    return { mimeType: r.mimeType, data: r.bytes };
   }),
 
   loungeRequest: (method, url, body) => replyAsync(() => lounge.request(method, url, body)),

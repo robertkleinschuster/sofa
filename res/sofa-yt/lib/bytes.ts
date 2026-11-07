@@ -25,12 +25,3 @@ export function fromBase64(s: string): Uint8Array {
 export function latin1(buf: Uint8Array, start: number, end: number): string {
   return String.fromCharCode(...buf.subarray(start, end));
 }
-
-/** Bytes as base64 (media handed to Sofa over BiDi): the native encoder where there is one (Firefox 133+). */
-export function toBase64(buf: Uint8Array): string {
-  const native = (buf as Uint8Array & { toBase64?: () => string }).toBase64;
-  if (native) return native.call(buf);
-  let bin = '';
-  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  return btoa(bin);
-}

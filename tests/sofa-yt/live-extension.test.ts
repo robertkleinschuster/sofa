@@ -61,9 +61,9 @@ test('live: the engine through the extension (no remote control) passes stream p
     let off = 0; let status: SessionStatus | null = null;
     const deadline = Date.now() + 200000;
     while (Date.now() < deadline) {
-      const r = await host.call<Reply<{ total: number; data: string }>>('read', o.sid, 'video', off, 1 << 20);
+      const r = await host.call<Reply<{ total: number; data: Uint8Array }>>('read', o.sid, 'video', off, 1 << 20);
       if (!r.ok) { report('read failed', r); break; }
-      off += Buffer.from(r.value.data, 'base64').length;
+      off += r.value.data.length;
       status = value(await host.call<Reply<SessionStatus>>('status', o.sid), 'status');
       const front = Math.max(0, ...status.pumps.map((p) => p.frontier.video ?? p.frontier[String(o.vitag)] ?? 0));
       if (front >= MEDIA_MS || off >= r.value.total) break;

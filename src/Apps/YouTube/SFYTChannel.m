@@ -1,18 +1,16 @@
 #import "SFYTChannel.h"
 #import "SFModel.h"
+#import "SFWebSocket.h"
 #import <Security/Security.h>
-
-// A poll is held this long without commands, then answered empty (the background polls again).
-static const NSTimeInterval kPollHold = 20;
 
 NSString *const SFYTChannelErrorDomain = @"SFYTChannel";
 
 @implementation SFYTChannel {
     dispatch_queue_t _queue;
-    NSMutableArray *_queued;            // commands not yet fetched
+    NSMutableArray *_queued;            // commands not yet sent (no connection)
     NSMutableDictionary *_pending;      // id -> block(value, error), answered or timed out once
-    SFHTTPExchange *_poll;              // the held poll, if any
-    dispatch_source_t _pollTimer;
+    SFWebSocket *_socket;               // the extension's connection, if any
+    NSUInteger _maxMessage;
     long _nextID;
 }
 
@@ -24,9 +22,10 @@ NSString *SFYTChannelNewToken(void) {
     return t;
 }
 
-- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token {
+- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token maxMessage:(NSUInteger)max {
     if ((self = [super init])) {
         _queue = queue;
+        _maxMessage = max;
         _queued = [NSMutableArray new];
         _pending = [NSMutableDictionary new];
         _token = [token copy];
@@ -38,41 +37,94 @@ NSString *SFYTChannelNewToken(void) {
     NSArray *p = x.request.pathParts;
     if (p.count != 2 || ![p[0] isEqualToString:@"engine"]) return NO;
     if (![x.request.query[@"token"] isEqualToString:_token]) { [x respond:403 type:nil body:nil]; return YES; }
-    if ([p[1] isEqualToString:@"poll"] && [x.request.method isEqualToString:@"GET"]) { [self poll:x]; return YES; }
-    if ([p[1] isEqualToString:@"post"] && [x.request.method isEqualToString:@"POST"]) { [self post:x]; return YES; }
-    [x respond:404 type:nil body:nil];
+    if (![p[1] isEqualToString:@"ws"]) { [x respond:404 type:nil body:nil]; return YES; }
+    SFWebSocket *ws = [x acceptWebSocket:_maxMessage];
+    if (ws) [self connected:ws];
     return YES;
 }
 
-#pragma mark Commands out
+#pragma mark Connection
 
-- (void)poll:(SFHTTPExchange *)x {
-    if (_poll) [self answerPoll];   // a newer poll (another page, a retry) replaces the held one
-    _poll = x;
-    __weak SFYTChannel *ws = self;
-    __weak SFHTTPExchange *wx = x;
-    x.onClose = ^{ SFYTChannel *s = ws; if (s && s->_poll == wx) [s dropPoll]; };
-    if (_queued.count) { [self answerPoll]; return; }
-    _pollTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);
-    dispatch_source_set_timer(_pollTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kPollHold * NSEC_PER_SEC)), DISPATCH_TIME_FOREVER, NSEC_PER_SEC / 10);
-    dispatch_source_set_event_handler(_pollTimer, ^{ [ws answerPoll]; });
-    dispatch_resume(_pollTimer);
+// The newest connection is the extension's (a restarted background, a taken-over browser after a
+// Sofa restart); an older one is closed. Commands queued while there was none go out now.
+- (void)connected:(SFWebSocket *)ws {
+    [_socket close];
+    _socket = ws;
+    __weak SFYTChannel *wself = self;
+    __weak SFWebSocket *wws = ws;
+    ws.onMessage = ^(BOOL binary, NSData *payload) { [wself received:payload binary:binary]; };
+    ws.onClose = ^{ SFYTChannel *s = wself; if (s && s->_socket == wws) s->_socket = nil; };
+    [self flush];
 }
 
-- (void)dropPoll {
-    if (_pollTimer) dispatch_source_cancel(_pollTimer);
-    _pollTimer = nil;
-    _poll = nil;
-}
-
-- (void)answerPoll {
-    SFHTTPExchange *x = _poll;
-    [self dropPoll];
-    if (!x) return;
-    NSArray *batch = [_queued copy];
+- (void)flush {
+    if (!_socket || !_queued.count) return;
+    NSData *d = [NSJSONSerialization dataWithJSONObject:_queued options:0 error:nil];
     [_queued removeAllObjects];
-    [x respondJSON:200 object:batch];
+    [_socket sendText:[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]];
 }
+
+#pragma mark Answers and events in
+
+// A message of the extension: {answers, events} as JSON text, or binary - a 4-byte big-endian
+// length, that JSON, then blocks of bytes (each with its 4-byte length) that `{"$blob": n}` in the
+// JSON stand for (media and pictures without base64).
+- (void)received:(NSData *)payload binary:(BOOL)binary {
+    id up = binary ? SFYTChannelDecodeBinary(payload) : [NSJSONSerialization JSONObjectWithData:payload options:0 error:nil];
+    if (![up isKindOfClass:[NSDictionary class]]) { SFLog(@"yt-engine: unreadable channel message (%lu bytes)", (unsigned long)payload.length); return; }
+    for (id e in [up[@"events"] isKindOfClass:[NSArray class]] ? up[@"events"] : @[]) {
+        NSDictionary *ev = [e isKindOfClass:[NSString class]]
+            ? [NSJSONSerialization JSONObjectWithData:[e dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : e;
+        if ([ev isKindOfClass:[NSDictionary class]] && self.onEvent) self.onEvent(ev);
+    }
+    for (NSDictionary *a in [up[@"answers"] isKindOfClass:[NSArray class]] ? up[@"answers"] : @[]) {
+        if (![a isKindOfClass:[NSDictionary class]]) continue;
+        void (^f)(id, NSError *) = _pending[a[@"id"]];
+        if (!f) continue;   // timed out meanwhile
+        if (a[@"error"]) f(nil, SFError([NSString stringWithFormat:@"engine: %@", a[@"error"]]));
+        else f(a[@"value"] == [NSNull null] ? nil : a[@"value"], nil);
+    }
+}
+
+static id Substitute(id v, NSArray *blobs) {
+    if ([v isKindOfClass:[NSDictionary class]]) {
+        NSNumber *i = [v count] == 1 ? v[@"$blob"] : nil;
+        if ([i isKindOfClass:[NSNumber class]]) return i.unsignedIntegerValue < blobs.count ? blobs[i.unsignedIntegerValue] : [NSNull null];
+        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithCapacity:[v count]];
+        [(NSDictionary *)v enumerateKeysAndObjectsUsingBlock:^(id k, id o, BOOL *stop) { d[k] = Substitute(o, blobs); }];
+        return d;
+    }
+    if ([v isKindOfClass:[NSArray class]]) {
+        NSMutableArray *a = [NSMutableArray arrayWithCapacity:[v count]];
+        for (id o in v) [a addObject:Substitute(o, blobs)];
+        return a;
+    }
+    return v;
+}
+
+static BOOL ReadLength(NSData *d, NSUInteger *at, NSUInteger *len) {
+    if (d.length - *at < 4) return NO;
+    const uint8_t *p = (const uint8_t *)d.bytes + *at;
+    *len = ((NSUInteger)p[0] << 24) | ((NSUInteger)p[1] << 16) | ((NSUInteger)p[2] << 8) | p[3];
+    *at += 4;
+    return *len <= d.length - *at;
+}
+
+id SFYTChannelDecodeBinary(NSData *d) {
+    NSUInteger at = 0, len = 0;
+    if (!ReadLength(d, &at, &len)) return nil;
+    id json = [NSJSONSerialization JSONObjectWithData:[d subdataWithRange:NSMakeRange(at, len)] options:0 error:nil];
+    at += len;
+    NSMutableArray *blobs = [NSMutableArray new];
+    while (at < d.length) {
+        if (!ReadLength(d, &at, &len)) return nil;
+        [blobs addObject:[d subdataWithRange:NSMakeRange(at, len)]];
+        at += len;
+    }
+    return json ? Substitute(json, blobs) : nil;
+}
+
+#pragma mark Calls
 
 - (void)call:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id, NSError *))done {
     dispatch_async(_queue, ^{
@@ -92,7 +144,7 @@ NSString *SFYTChannelNewToken(void) {
             once(nil, [NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelTimedOut
                                       userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"engine: no answer to %@ within %.0f s", method, timeout]}]);
         });
-        if (self->_poll) [self answerPoll];
+        [self flush];
     });
 }
 
@@ -103,23 +155,4 @@ NSString *SFYTChannelNewToken(void) {
     });
 }
 
-#pragma mark Answers and events in
-
-- (void)post:(SFHTTPExchange *)x {
-    NSDictionary *up = [NSJSONSerialization JSONObjectWithData:x.request.body options:0 error:nil];
-    if (![up isKindOfClass:[NSDictionary class]]) { [x respond:400 type:nil body:nil]; return; }
-    [x respond:204 type:nil body:nil];
-    for (id e in [up[@"events"] isKindOfClass:[NSArray class]] ? up[@"events"] : @[]) {
-        NSDictionary *ev = [e isKindOfClass:[NSString class]]
-            ? [NSJSONSerialization JSONObjectWithData:[e dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
-        if ([ev isKindOfClass:[NSDictionary class]] && self.onEvent) self.onEvent(ev);
-    }
-    for (NSDictionary *a in [up[@"answers"] isKindOfClass:[NSArray class]] ? up[@"answers"] : @[]) {
-        if (![a isKindOfClass:[NSDictionary class]]) continue;
-        void (^f)(id, NSError *) = _pending[a[@"id"]];
-        if (!f) continue;   // timed out meanwhile
-        if (a[@"error"]) f(nil, SFError([NSString stringWithFormat:@"engine: %@", a[@"error"]]));
-        else f(a[@"value"] == [NSNull null] ? nil : a[@"value"], nil);
-    }
-}
 @end
