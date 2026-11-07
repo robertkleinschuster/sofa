@@ -189,5 +189,10 @@ The engine adds no headers of its own (a custom one made googlevideo refuse the 
 ## Still open
 
 - The EU consent dialog in a fresh profile (no `SOCS` cookie): answer it once, like a user.
-- Release: the bundle's Runtime has no Firefox/Xvfb yet (`SFTool` falls back to MacPorts);
-  make-release and sofa-deploy refuse until it has.
+- Release: make-release bundles Firefox, Xvfb (+ xkbcomp, xkb data, misc fonts) and Mesa (libGL,
+  DRI drivers) into Contents/Runtime, relinked to `@loader_path`; SFYTBrowser finds them through
+  `SFRuntimePath` and passes Xvfb its paths explicitly (`-xkbdir`, `-xkbbindir` - an
+  xorg-server-xvfb overlay patch - and `-fp`), Mesa via `LIBGL_DRIVERS_PATH`. test-release runs
+  both with /opt/local denied and probes fonts and WebGL. Missing: firefox-x11 still dlopens
+  libGL by its MacPorts path, so a bundle has no WebGL - make-release refuses until the port
+  opens it relative to the firefox binary (rebuild pending).
