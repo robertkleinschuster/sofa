@@ -39,6 +39,7 @@
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+. "$SRC/tools/lib/dev-instance.sh"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 PART=${PLAYTEST_PART:-}
 if [ -z "$PART" ]; then   # both parts at once, each with its own instance; output part by part
@@ -71,8 +72,7 @@ APP=
 start() {
   : > "$LOG"
   SOFA_STALL_LIMIT=6 "$BIN" --dev --instance $INST --port $PORT >/dev/null 2>&1 & APP=$!; dead=
-  for i in $(seq 1 100); do grep -q 'fifo ready' "$LOG" 2>/dev/null && return; sleep 0.1; done
-  echo "dev instance did not start"; exit 1
+  dev_wait_ready $APP "$LOG"
 }
 # FIFO opened read-write: never blocks (a crashed app used to hang the test forever on open)
 stop() {   # quit, then wait for the process (up to 5 s) instead of a fixed pause
