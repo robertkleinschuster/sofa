@@ -1,6 +1,7 @@
 #import "SFModel.h"
 #import "SFYTBrowser.h"
 #import "SFRuntime.h"
+#import "SFYTPointer.h"
 #include <spawn.h>
 #include <signal.h>
 #include <poll.h>
@@ -116,6 +117,7 @@ static void EndProcess(pid_t pid, NSString *name) {
     int _lifeline;              // Sofa's end of the watcher's pipe; -1 without a watcher
     dispatch_source_t _xvfbWatch, _firefoxWatch;
     BOOL _stopping;
+    SFYTPointer *_pointer;      // on the running display; set on the launch queue (@synchronized)
 }
 
 - (instancetype)initWithProfile:(NSString *)profileDir {
@@ -229,6 +231,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     if (display < 0 || !(n > 0 && buf[0] >= '0' && buf[0] <= '9')) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
     NSMutableDictionary *ffEnv = [MesaEnv() mutableCopy];
     ffEnv[@"DISPLAY"] = [NSString stringWithFormat:@":%d", display];
+    @synchronized (self) { _pointer = [[SFYTPointer alloc] initWithDisplay:ffEnv[@"DISPLAY"]]; }
     _firefox = Spawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
                                            @"--height", @(kScreenH).stringValue, @"https://www.youtube.com/"],
                      ffEnv, -1, log, -1);
@@ -287,8 +290,16 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     if (self.onExit) self.onExit(why);
 }
 
+- (void)clickInRect:(CGRect)rect done:(void (^)(BOOL))done {
+    SFYTPointer *pointer;
+    @synchronized (self) { pointer = _pointer; }
+    if (!pointer) { if (done) done(NO); return; }
+    [pointer clickInRect:rect done:done];
+}
+
 - (void)stop {
     _stopping = YES;
+    @synchronized (self) { _pointer = nil; }
     for (dispatch_source_t s in @[_xvfbWatch ?: [NSNull null], _firefoxWatch ?: [NSNull null]]) if ((id)s != [NSNull null]) dispatch_source_cancel(s);
     _xvfbWatch = _firefoxWatch = nil;
     EndProcess(_firefox, @"firefox");

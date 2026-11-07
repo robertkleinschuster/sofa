@@ -15,6 +15,9 @@
 - (void)launchWithChannelPort:(uint16_t)port token:(NSString *)token done:(void (^)(BOOL ok))done;
 // Ends browser and display (blocking up to a few seconds). No onExit for a stop.
 - (void)stop;
+// A user's click on the browser's display (SFYTPointer: trusted events), `rect` in screen pixels.
+// done(NO) when no display runs or the click could not be made. Main queue.
+- (void)clickInRect:(CGRect)rect done:(void (^)(BOOL ok))done;
 // The browser or its display ended on its own. Main queue.
 @property (nonatomic, copy) void (^onExit)(NSString *why);
 @end

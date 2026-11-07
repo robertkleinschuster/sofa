@@ -25,6 +25,8 @@ static const NSUInteger kMaxPost = 16 * 1024 * 1024;
 // focus preloads: at most this many player requests per window
 static const NSUInteger kPreloadBudget = 8;
 static const NSTimeInterval kPreloadWindow = 600;
+// the consent dialog is read for a moment before it is answered (seconds, uniform)
+static const double kConsentReadMin = 2.5, kConsentReadMax = 5.5;
 
 typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting, SFYTEngineReady };
 
@@ -40,6 +42,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     BOOL _startPending;           // a start waits for the backoff to end
     NSMutableArray *_waiting;     // ^(BOOL ready) blocks
     NSMutableArray *_preloads;    // times of recent focus preloads
+    BOOL _consentPending;         // a consent click is scheduled or in progress
 }
 
 + (instancetype)shared {
@@ -132,6 +135,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     NSString *type = str(e[@"type"]);
     if ([type isEqualToString:@"log"]) { SFLog(@"yt-engine: %@", e[@"line"]); return; }
     if ([type isEqualToString:@"block"]) { [[SFYTBreaker shared] recordState:dict(e[@"state"])]; return; }
+    if ([type isEqualToString:@"consent"]) { [self acceptConsent:e]; return; }
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
         if (_state == SFYTEngineReady) {   // a new document: the old page's sessions are gone
@@ -141,6 +145,28 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         _state = SFYTEngineStarting;
         [self startPage:++_page polls:kPagePolls];
     }
+}
+
+// The EU consent dialog of a fresh profile (consent.ts reports its accept button): accepted once,
+// as a user does - read for a moment, then clicked with the display's pointer, a trusted event.
+// Accept, not reject: a profile that accepted keeps a lasting visitor identity, one that rejected
+// starts from nothing on every visit (user decision 2026-11-07). The page reports the button again
+// while it stays; whatever follows (a reload) is handled as any reload.
+- (void)acceptConsent:(NSDictionary *)e {
+    NSNumber *x = num(e[@"x"]), *y = num(e[@"y"]), *w = num(e[@"width"]), *h = num(e[@"height"]);
+    if (_consentPending || !x || !y || w.doubleValue < 4 || h.doubleValue < 4) return;
+    CGRect rect = CGRectMake(x.doubleValue, y.doubleValue, w.doubleValue, h.doubleValue);
+    _consentPending = YES;
+    NSUInteger run = _run;
+    double read = kConsentReadMin + (kConsentReadMax - kConsentReadMin) * arc4random_uniform(1000) / 1000.0;
+    SFLog(@"yt-engine: consent dialog - accepting in %.1f s", read);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(read * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (run != self->_run) { self->_consentPending = NO; return; }
+        [self->_browser clickInRect:rect done:^(BOOL ok) {
+            self->_consentPending = NO;
+            SFLog(ok ? @"yt-engine: consent accepted (click)" : @"yt-engine: consent click failed");
+        }];
+    });
 }
 
 // Waits for the page's ytcfg (health.onYouTube), then starts the engine in it.
