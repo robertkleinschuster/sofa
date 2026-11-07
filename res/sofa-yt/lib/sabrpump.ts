@@ -45,6 +45,22 @@ interface SegmentHeader {
   durationMs: number;
 }
 
+/**
+ * The reload callback of one run: a reload must bring a new SABR URL. It can hand back a response
+ * still fresh in the cache (two runs asking at once) - the very URL SABR just refused; retrying that
+ * is a request loop against googlevideo every few seconds (2026-11-07 20:04, during a bot-check
+ * pause). Such a reload fails: the run ends and the session backs off.
+ */
+export function freshReloads(reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>, url: string): (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse> {
+  let current = url;
+  return async (ctx) => {
+    const r = await reload(ctx);
+    if (r.serverAbrStreamingUrl === current) throw new Error('no fresh player response (the refused SABR URL came back)');
+    current = r.serverAbrStreamingUrl;
+    return r;
+  };
+}
+
 /** Start a run; segments go to o.onSegment, the end (once) to o.onEnd. */
 export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
   const id = nextId++;
@@ -57,6 +73,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     o.onEnd(err, how);
   };
 
+  const reload = freshReloads(o.reload, o.info.sabrUrl);
   const sabr = new SabrStream({
     videoId: o.info.id,
     formats: o.formats.map((f) => f.sabr),
@@ -69,7 +86,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     fetchFunction: (input, init) => fetch(input, init),
     callbacks: {
       onMintPoToken: () => o.mintPoToken(),
-      onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { reloads++; log(`${tag}: SABR asks for a player reload`); return o.reload(ctx); },
+      onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { reloads++; log(`${tag}: SABR asks for a player reload`); return reload(ctx); },
     },
   });
 

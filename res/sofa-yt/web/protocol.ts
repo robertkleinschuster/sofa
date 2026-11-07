@@ -4,8 +4,14 @@
 import type { SofaEngine } from './engine.ts';
 
 /** The engine calls Sofa may make (everything of SofaEngine except connect). */
-export const METHODS = ['health', 'start', 'block', 'open', 'read', 'playlist', 'segment', 'subtitles', 'status', 'close', 'innertube', 'suggest', 'availability', 'stop'] as const;
+export const METHODS = ['health', 'start', 'block', 'open', 'read', 'playlist', 'segment', 'subtitles', 'status', 'close', 'innertube', 'suggest',
+  'availability', 'image', 'loungeRequest', 'loungePoll', 'stop'] as const;
 export type Method = typeof METHODS[number];
+// Every engine call must be listed - the compiler names a missing one here. (image and the lounge
+// calls were missing on 2026-11-07: the page dropped them unanswered, Sofa waited out its timeouts.)
+type Unlisted = Exclude<Exclude<keyof SofaEngine, 'connect'>, Method>;
+const everyCallListed: [Unlisted] extends [never] ? true : Unlisted = true;
+void everyCallListed;
 
 export interface Command { id: number; method: Method; args: unknown[] }
 export type Answer = { id: number; value: unknown } | { id: number; error: string };
@@ -14,6 +20,13 @@ export interface EventMessage { event: string }
 
 /** What the bridge sends Sofa in one POST. */
 export interface Upload { answers: Answer[]; events: string[] }
+
+/** A command with a method this page does not have: answered at once instead of dropped (no timeout). */
+export function unknownCommand(x: unknown): Answer | null {
+  if (typeof x !== 'object' || x === null) return null;
+  const c = x as Partial<Command>;
+  return typeof c.id === 'number' && !isCommand(x) ? { id: c.id, error: `unknown engine call: ${String(c.method)}` } : null;
+}
 
 export function isCommand(x: unknown): x is Command {
   if (typeof x !== 'object' || x === null) return false;

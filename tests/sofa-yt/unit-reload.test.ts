@@ -66,3 +66,14 @@ test('right after a bot check even user playback sends nothing (retries from the
   await assert.rejects(later.info('b', { bg: true }), /paused/);
   assert.equal(later.calls, 1, 'the background still waits');
 });
+
+test('a run\'s reload must bring a new SABR URL: the refused one coming back ends the run (no loop)', async () => {
+  const { freshReloads } = await mod('lib/sabrpump.ts');
+  const answers = ['https://rr1/new', 'https://rr1/new', 'https://rr1/newer'];
+  const reload = freshReloads(async () => ({ serverAbrStreamingUrl: answers.shift()!, videoPlaybackUstreamerConfig: 'u' }), 'https://rr1/old');
+  assert.equal((await reload()).serverAbrStreamingUrl, 'https://rr1/new', 'a fresh URL goes through');
+  await assert.rejects(reload(), /refused SABR URL came back/, 'the same URL again: failed, not retried');
+  assert.equal((await reload()).serverAbrStreamingUrl, 'https://rr1/newer');
+  const stale = freshReloads(async () => ({ serverAbrStreamingUrl: 'https://rr1/old', videoPlaybackUstreamerConfig: 'u' }), 'https://rr1/old');
+  await assert.rejects(stale(), /refused SABR URL/, 'a cached response with the run\'s own URL');
+});

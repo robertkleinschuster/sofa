@@ -2,13 +2,15 @@
 // page's world at document_start (extension/manifest.json). No global: the page's scripts cannot see
 // the engine; it is reached only through the MessagePort handed to the extension's bridge here.
 import { sofaEngine } from './engine.ts';
-import { HELLO, dispatch, isCommand } from './protocol.ts';
+import { HELLO, dispatch, isCommand, unknownCommand } from './protocol.ts';
 
 if (window === window.top && location.origin === 'https://www.youtube.com') {
   const channel = new MessageChannel();
   const port = channel.port1;
   port.onmessage = (e: MessageEvent) => {
-    if (isCommand(e.data)) void dispatch(sofaEngine, e.data).then((answer) => port.postMessage(answer));
+    if (isCommand(e.data)) { void dispatch(sofaEngine, e.data).then((answer) => port.postMessage(answer)); return; }
+    const refused = unknownCommand(e.data);
+    if (refused) port.postMessage(refused);
   };
   sofaEngine.connect((json) => port.postMessage({ event: json }));
   // the bridge (isolated world, also document_start) takes the port; delivery is a later task, when
