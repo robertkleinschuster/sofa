@@ -71,12 +71,21 @@ static NSString *ownSymbol(uintptr_t pc, const void *ownBase) {
     return @(info.dli_sname);
 }
 
-// "-[A b] 7x, -[C d] 3x of 10 samples (leaf CTFontCreate...)": per sample the innermost Sofa
-// frame, counted - the code that caused the stall, even when the time went into a framework.
+// "-[A b] 7x via -[NSFileManager removeItemAtPath:error:], -[C d] 3x of 10 samples (leaf __open)":
+// per sample the innermost Sofa frame, counted - the code that caused the stall, even when the time
+// went into a framework - and the call it was in most often (the frame just inside it).
+// " via X" for the callee seen most often, "" without one.
+static NSString *viaOf(NSCountedSet *callees) {
+    NSString *top = nil;
+    for (NSString *c in callees) if (!top || [callees countForObject:c] > [callees countForObject:top]) top = c;
+    return top ? [@" via " stringByAppendingString:top] : @"";
+}
+
 static NSString *describe(const SFStack *samples, int count) {
     if (!count) return nil;
     const void *ownBase = _dyld_get_image_header(0);
     NSCountedSet *own = [NSCountedSet new], *leaves = [NSCountedSet new];
+    NSMutableDictionary *via = [NSMutableDictionary new];   // own symbol -> callees
     for (int i = 0; i < count; i++) {
         const SFStack *s = &samples[i];
         if (!s->depth) continue;
@@ -84,14 +93,21 @@ static NSString *describe(const SFStack *samples, int count) {
         if (dladdr((const void *)s->pc[0], &info) && info.dli_sname) [leaves addObject:@(info.dli_sname)];
         for (int d = 0; d < s->depth; d++) {
             NSString *sym = ownSymbol(s->pc[d], ownBase);
-            if (sym) { [own addObject:sym]; break; }
+            if (!sym) continue;
+            [own addObject:sym];
+            Dl_info ci;
+            if (d > 0 && dladdr((const void *)(s->pc[d - 1] - (d - 1 ? 1 : 0)), &ci) && ci.dli_sname) {
+                if (!via[sym]) via[sym] = [NSCountedSet new];
+                [via[sym] addObject:@(ci.dli_sname)];
+            }
+            break;
         }
     }
     NSComparator byCount = ^(id a, id b) { return [@([own countForObject:b]) compare:@([own countForObject:a])]; };
     NSArray *top = [own.allObjects sortedArrayUsingComparator:byCount];
     NSMutableArray *parts = [NSMutableArray new];
     for (NSString *sym in [top subarrayWithRange:NSMakeRange(0, MIN(top.count, (NSUInteger)kTopFunctions))])
-        [parts addObject:[NSString stringWithFormat:@"%@ %lux", sym, (unsigned long)[own countForObject:sym]]];
+        [parts addObject:[NSString stringWithFormat:@"%@ %lux%@", sym, (unsigned long)[own countForObject:sym], viaOf(via[sym])]];
     NSString *leaf = [[leaves.allObjects sortedArrayUsingComparator:^(id a, id b) {
         return [@([leaves countForObject:b]) compare:@([leaves countForObject:a])]; }] firstObject];
     return [NSString stringWithFormat:@"%@ of %d samples%@", parts.count ? [parts componentsJoinedByString:@", "] : @"no Sofa frame",
