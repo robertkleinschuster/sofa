@@ -1,23 +1,24 @@
 #import "SFLogo.h"
 #import <ImageIO/ImageIO.h>
 
-static NSString *logoPath(NSString *name) {
-    NSString *p = [[NSBundle mainBundle] pathForResource:name ofType:@"png" inDirectory:@"logos"];
-    if (!p) {   // development build without bundle resources
+// The logos' directory: the bundle's, or res/logos of a development build without bundle resources.
+static NSString *logosDir(void) {
+    static NSString *dir; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *res = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"logos"];
+        if ([[NSFileManager new] fileExistsAtPath:res]) { dir = res; return; }
         NSString *exe = [[NSBundle mainBundle] executablePath];
         NSString *root = [[[[[exe stringByDeletingLastPathComponent] stringByDeletingLastPathComponent]
                             stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
-        p = [root stringByAppendingFormat:@"/res/logos/%@.png", name];
-    }
-    return p;
+        dir = [root stringByAppendingPathComponent:@"res/logos"];
+    });
+    return dir;
 }
 
-CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
-    static NSMutableDictionary *cache;
-    if (!cache) cache = [NSMutableDictionary new];
-    NSString *key = [NSString stringWithFormat:@"%@#%ld", name, (long)variant];
-    id hit = cache[key];
-    if (hit) return (__bridge CGImageRef)hit;
+static NSString *logoPath(NSString *name) { return [logosDir() stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"png"]]; }
+
+// The logo in its variant, decoded and recoloured: a fresh image (+1), NULL if there is none. Pure.
+static CGImageRef render(NSString *name, SFLogoVariant variant) {
     NSString *path = logoPath(name);
     CGImageSourceRef src = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], NULL);
     if (!src) return NULL;
@@ -49,7 +50,47 @@ CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
     CGImageRelease(img);
     CGImageRef out = CGBitmapContextCreateImage(c);
     CGContextRelease(c);
-    if (!out) return NULL;
-    cache[key] = (__bridge_transfer id)out;
-    return (__bridge CGImageRef)cache[key];
+    return out;
+}
+
+static NSMutableDictionary *cache(void) {
+    static NSMutableDictionary *c; static dispatch_once_t once;
+    dispatch_once(&once, ^{ c = [NSMutableDictionary new]; });
+    return c;
+}
+
+static NSString *keyOf(NSString *name, SFLogoVariant variant) { return [NSString stringWithFormat:@"%@#%ld", name, (long)variant]; }
+
+// Kept in the cache unless another thread got there first; the cached image either way.
+static CGImageRef keep(NSString *key, CGImageRef img) {
+    NSMutableDictionary *c = cache();
+    @synchronized (c) {
+        if (!c[key]) c[key] = (__bridge_transfer id)img; else CGImageRelease(img);
+        return (__bridge CGImageRef)c[key];
+    }
+}
+
+CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
+    NSString *key = keyOf(name, variant);
+    NSMutableDictionary *c = cache();
+    @synchronized (c) { id hit = c[key]; if (hit) return (__bridge CGImageRef)hit; }
+    CGImageRef img = render(name, variant);   // outside the lock: SFLogoPrepare may be rendering another
+    return img ? keep(key, img) : NULL;
+}
+
+// Every logo in every variant, off the main thread: decoding and recolouring them where the first
+// tiles asked for them took 310 ms of the main thread at launch (hitch monitor 2026-11-07).
+void SFLogoPrepare(void) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        for (NSString *f in [[NSFileManager new] contentsOfDirectoryAtPath:logosDir() error:nil]) {
+            if (![f.pathExtension isEqualToString:@"png"]) continue;
+            NSString *name = f.stringByDeletingPathExtension;
+            for (SFLogoVariant v = SFLogoOriginal; v <= SFLogoWhite; v++) {
+                NSString *key = keyOf(name, v);
+                @synchronized (cache()) { if (cache()[key]) continue; }
+                CGImageRef img = render(name, v);
+                if (img) keep(key, img);
+            }
+        }
+    });
 }

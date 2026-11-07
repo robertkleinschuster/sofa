@@ -29,6 +29,8 @@
 #import "SFRuntime.h"
 #import "SFSettings.h"
 #import "SFUpdater.h"
+#import "SFVolume.h"
+#import "SFLogo.h"
 
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
@@ -52,6 +54,8 @@ NSString *gInstance = @"view";
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
     SFCurlGlobalInit();   // before any worker thread uses curl/OpenSSL
+    [SFVolume start];     // volume/mute kept current off the main thread (SFVolume)
+    SFLogoPrepare();      // logos decoded off the main thread before the first tiles need them
     // Starting at login is the autostart agent's job (setting "Beim Anmelden starten"); macOS
     // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
     if (!SFDevMode) [NSApp disableRelaunchOnLogin];

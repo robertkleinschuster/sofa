@@ -7,4 +7,5 @@ typedef NS_ENUM(NSInteger, SFLogoVariant) {
     SFLogoWhite,        // fully white (single-colour logos on the brand colour)
 };
 
-CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant);   // cached, do not release
+CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant);   // cached, do not release; any thread
+void SFLogoPrepare(void);   // renders all of them in the background (at launch)

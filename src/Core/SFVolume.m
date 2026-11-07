@@ -1,53 +1,97 @@
 #import "SFVolume.h"
 #import <CoreAudio/CoreAudio.h>
 #import <AudioToolbox/AudioServices.h>
+#import <stdatomic.h>
+
+// CoreAudio calls wait on coreaudiod: while mpv opens the audio device they blocked the main thread
+// (the lounge's volume report at a player start: 700 ms, hitch monitor 2026-11-07). Volume and mute
+// are therefore kept here, read on the own queue and kept current by CoreAudio's change listeners
+// (default output device, its volume and mute); the getters return the kept values and never
+// block, the setters keep the new value at once and write it to the device on the queue.
 
 @implementation SFVolume
 
-static AudioDeviceID outputDevice(void) {
-    AudioDeviceID dev = kAudioObjectUnknown;
-    UInt32 size = sizeof dev;
-    AudioObjectPropertyAddress a = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
-    AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, NULL, &size, &dev);
-    return dev;
+static dispatch_queue_t gQueue;
+static _Atomic float gVolume = -1;   // -1: not adjustable (or not read yet)
+static _Atomic int gMuted = 0;
+static AudioDeviceID gDevice = kAudioObjectUnknown;   // on gQueue
+
+static const AudioObjectPropertyAddress kDefaultOutput = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress kVolume = {kAudioHardwareServiceDeviceProperty_VirtualMasterVolume, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress kMute = {kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
+
+// on gQueue: read the device's values into the kept ones
+static void refresh(void) {
+    Float32 v = -1; UInt32 size = sizeof v;
+    if (!AudioHardwareServiceHasProperty(gDevice, &kVolume) || AudioHardwareServiceGetPropertyData(gDevice, &kVolume, 0, NULL, &size, &v) != noErr) v = -1;
+    UInt32 m = 0; size = sizeof m;
+    if (AudioObjectGetPropertyData(gDevice, &kMute, 0, NULL, &size, &m) != noErr) m = 0;
+    atomic_store(&gVolume, v);
+    atomic_store(&gMuted, m != 0);
 }
 
-+ (float)volume {
-    AudioDeviceID d = outputDevice();
-    Float32 v = -1; UInt32 size = sizeof v;
-    AudioObjectPropertyAddress a = {kAudioHardwareServiceDeviceProperty_VirtualMasterVolume, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
-    if (!AudioHardwareServiceHasProperty(d, &a)) return -1;
-    if (AudioHardwareServiceGetPropertyData(d, &a, 0, NULL, &size, &v) != noErr) return -1;
-    return v;
+// volume changes come through AudioHardwareService (a C callback on CoreAudio's thread)
+static OSStatus volumeChanged(AudioObjectID obj, UInt32 n, const AudioObjectPropertyAddress *addr, void *ctx) {
+    dispatch_async(gQueue, ^{ refresh(); });
+    return noErr;
 }
+
+// on gQueue: follow the current default output device
+static void bind(void) {
+    static AudioObjectPropertyListenerBlock muteListener;
+    if (!muteListener) muteListener = ^(UInt32 n, const AudioObjectPropertyAddress *addr) { refresh(); };
+    if (gDevice != kAudioObjectUnknown) {
+        AudioHardwareServiceRemovePropertyListener(gDevice, &kVolume, volumeChanged, NULL);
+        AudioObjectRemovePropertyListenerBlock(gDevice, &kMute, gQueue, muteListener);
+    }
+    AudioDeviceID dev = kAudioObjectUnknown; UInt32 size = sizeof dev;
+    AudioObjectGetPropertyData(kAudioObjectSystemObject, &kDefaultOutput, 0, NULL, &size, &dev);
+    gDevice = dev;
+    if (dev != kAudioObjectUnknown) {
+        AudioHardwareServiceAddPropertyListener(dev, &kVolume, volumeChanged, NULL);
+        AudioObjectAddPropertyListenerBlock(dev, &kMute, gQueue, muteListener);
+    }
+    refresh();
+}
+
++ (void)start {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gQueue = dispatch_queue_create("sofa.volume", DISPATCH_QUEUE_SERIAL);
+        dispatch_async(gQueue, ^{
+            AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &kDefaultOutput, gQueue,
+                                                ^(UInt32 n, const AudioObjectPropertyAddress *addr) { bind(); });
+            bind();
+        });
+    });
+}
+
++ (float)volume { [self start]; return atomic_load(&gVolume); }
+
++ (BOOL)muted { [self start]; return atomic_load(&gMuted) != 0; }
 
 + (void)setVolume:(float)v {
-    AudioDeviceID d = outputDevice();
+    [self start];
     Float32 x = MAX(0, MIN(1, v));
-    AudioObjectPropertyAddress a = {kAudioHardwareServiceDeviceProperty_VirtualMasterVolume, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
-    AudioHardwareServiceSetPropertyData(d, &a, 0, NULL, sizeof x, &x);
-    if (x > 0 && [self muted]) [self setMuted:NO];
-}
-
-+ (BOOL)muted {
-    AudioDeviceID d = outputDevice();
-    UInt32 m = 0, size = sizeof m;
-    AudioObjectPropertyAddress a = {kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
-    if (AudioObjectGetPropertyData(d, &a, 0, NULL, &size, &m) != noErr) return NO;
-    return m != 0;
+    if (atomic_load(&gVolume) < 0) return;   // not adjustable
+    atomic_store(&gVolume, x);
+    BOOL unmute = x > 0 && atomic_load(&gMuted);
+    if (unmute) atomic_store(&gMuted, 0);
+    dispatch_async(gQueue, ^{
+        AudioHardwareServiceSetPropertyData(gDevice, &kVolume, 0, NULL, sizeof x, &x);
+        if (unmute) { UInt32 m = 0; AudioObjectSetPropertyData(gDevice, &kMute, 0, NULL, sizeof m, &m); }
+    });
 }
 
 + (void)setMuted:(BOOL)mu {
-    AudioDeviceID d = outputDevice();
-    UInt32 m = mu ? 1 : 0;
-    AudioObjectPropertyAddress a = {kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput, kAudioObjectPropertyElementMaster};
-    AudioObjectSetPropertyData(d, &a, 0, NULL, sizeof m, &m);
+    [self start];
+    atomic_store(&gMuted, mu ? 1 : 0);
+    dispatch_async(gQueue, ^{ UInt32 m = mu ? 1 : 0; AudioObjectSetPropertyData(gDevice, &kMute, 0, NULL, sizeof m, &m); });
 }
 
 + (void)step:(int)dir {
     float v = [self volume];
     if (v < 0) return;
-    float n = roundf(v * 16 + dir) / 16;
-    [self setVolume:n];
+    [self setVolume:roundf(v * 16 + dir) / 16];
 }
 @end
