@@ -78,17 +78,18 @@ static NSString *SFRowKey(SFRow *r) {
         si++;
     }
     NSUInteger reused = 0;
+    NSMutableSet *kept = [NSMutableSet new];
     for (SFRow *r in _rows) {
         NSString *key = SFRowKey(r);
         SFRow *old = keep[key];
         if (!old) continue;
         [keep removeObjectForKey:key];
-        reused++;
+        reused++; [kept addObject:r];
         r.layer = old.layer; r.strip = old.strip; r.tiles = old.tiles;
         r.focusCol = old.focusCol; r.scrollCol = old.scrollCol;
         SFNoAnimate(^{ r.layer.position = CGPointMake(0, r.y); });
     }
-    if (reused + keep.count) SFLog(@"rows: rebuilt %@ - %lu kept, %lu new", _page.title ?: @"(Start)", (unsigned long)reused, (unsigned long)(_rows.count - reused));
+    BOOL rebuilt = reused + keep.count > 0;   // an earlier page had built rows
     SFNoAnimate(^{ for (SFRow *gone in keep.allValues) [gone.layer removeFromSuperlayer]; });
     if (!_rows.count) {
         _empty = [SFLabel labelWithFont:[t regular:32] color:t.textDim];
@@ -105,6 +106,11 @@ static NSString *SFRowKey(SFRow *r) {
     _scrollY = 0;
     SFNoAnimate(^{ self->_content.position = CGPointZero; });
     [self updateVisibleRows];
+    if (rebuilt) {   // the rows built anew (layers and tiles); rows off screen get none yet
+        NSMutableArray *fresh = [NSMutableArray new];
+        for (SFRow *r in _rows) if (r.layer && ![kept containsObject:r]) [fresh addObject:[NSString stringWithFormat:@"%@#%lu", r.title ?: @"-", (unsigned long)r.firstIndex]];
+        SFLog(@"rows: rebuilt %@ - %lu kept, %lu new (%@)", _page.title ?: @"(Start)", (unsigned long)reused, (unsigned long)fresh.count, [fresh componentsJoinedByString:@", "]);
+    }
     NSUInteger start = 0;   // start focus of the page (season choice stays reachable via Up)
     for (NSUInteger i = 0; i < _rows.count && _page.focusShelf; i++) if ([_rows[i] shelf] == _page.focusShelf) { start = i; break; }
     _pinTop = start > 0;

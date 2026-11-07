@@ -211,11 +211,31 @@ static BOOL usable(NSString *img) {
 // picture). Only its own fields count: the stored items can hold more than a list gives (a
 // description from the details page, an exact date from a download) - that is no change. View
 // counts change all the time and are no change either.
-static BOOL bringsValues(NSArray *fresh, NSArray *stored) {
-    for (NSUInteger n = 0; n < fresh.count; n++)
-        for (NSString *k in fresh[n])
-            if (![k isEqualToString:@"views"] && ![stored[n][k] isEqual:fresh[n][k]]) return YES;
-    return NO;
+// A picture URL without its query: YouTube thumbnails carry signing parameters (sqp, rs) that
+// differ per request for the same picture.
+static NSString *pictureOf(id url) {
+    if (![url isKindOfClass:[NSString class]]) return nil;
+    NSRange q = [url rangeOfString:@"?"];
+    return q.location == NSNotFound ? url : [url substringToIndex:q.location];
+}
+
+// Same episodes, but something one sees changed: title, description, duration, channel, playback
+// limits or the picture. Not: view counts (and the subtitle built from them), dates computed from
+// "vor 3 Tagen" (a little different at every fetch), picture URL parameters - they made nearly
+// every check an "update": a database write and a Home rebuild every ~30 s (2026-11-07).
+static NSString *changedField(NSArray *fresh, NSArray *stored) {   // nil: nothing one sees changed
+    static NSArray *seen;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ seen = @[@"title", @"plot", @"duration", @"channel", @"drm", @"geo"]; });
+    for (NSUInteger n = 0; n < fresh.count; n++) {
+        NSDictionary *a = fresh[n], *b = n < stored.count ? stored[n] : nil;
+        for (NSString *k in seen) if (a[k] != b[k] && ![a[k] isEqual:b[k]]) return k;
+        for (NSString *k in @[@"image", @"backdrop"]) {
+            NSString *pa = pictureOf(a[k]), *pb = pictureOf(b[k]);
+            if (pa != pb && ![pa isEqualToString:pb]) return k;
+        }
+    }
+    return nil;
 }
 
 static BOOL hasCounts(NSArray *dicts) {
@@ -244,7 +264,8 @@ static BOOL hasCounts(NSArray *dicts) {
                 NSArray *dicts = [keep valueForKey:@"dictionaryRepresentation"];
                 NSArray *before = [self->_items[f.identifier] valueForKey:@"dictionaryRepresentation"];
                 BOOL news = ![[dicts valueForKey:@"id"] isEqualToArray:[before valueForKey:@"id"]];   // new episodes/videos
-                BOOL updated = !news && bringsValues(dicts, before);
+                NSString *field = news ? nil : changedField(dicts, before);
+                BOOL updated = field != nil;
                 // counts first known (stored before the source had them): written once, so they
                 // survive a restart; later count changes alone are not a change
                 BOOL gainedCounts = !hasCounts(before) && hasCounts(dicts);
@@ -263,7 +284,7 @@ static BOOL hasCounts(NSArray *dicts) {
                 if (news) {
                     SFLog(@"follows: %@ has news", f.title);
                     [[NSNotificationCenter defaultCenter] postNotificationName:SFFollowsNewItemsNotification object:f.identifier];
-                } else SFLog(@"follows: %@ updated", f.title);
+                } else SFLog(@"follows: %@ updated (%@)", f.title, field);
             }
             finish();
         });

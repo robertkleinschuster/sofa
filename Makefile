@@ -22,7 +22,10 @@ CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wn
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
 # linked libraries and their MacPorts ports (declared in the port's depends_lib):
 #   mpv (+libmpv) -lmpv, sqlite3 -lsqlite3, curl -lcurl, webp -lwebp (WebP thumbnails, SFWebP)
-LDFLAGS := -mmacosx-version-min=10.9 -framework Cocoa -framework QuartzCore -framework OpenGL \
+# -headerpad_max_install_names: deploy/make-release rewrite every library path to the bundle's own
+# copies (relink.py, longer paths); without room in the header that failed once the binary grew
+# ("larger updated load commands do not fit", 2026-11-07)
+LDFLAGS := -mmacosx-version-min=10.9 -headerpad_max_install_names -framework Cocoa -framework QuartzCore -framework OpenGL \
            -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lwebp -lX11 -lXtst
 # libmpv (overlay port multimedia/mpv) is the player engine: required
 SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
@@ -113,7 +116,7 @@ $(BIN): $(OBJ)
 
 $(HBIN): $(HOBJ)
 	@mkdir -p $(APP)/Contents/MacOS
-	$(CC) $(HOBJ) -mmacosx-version-min=10.9 -framework Cocoa -framework IOKit -o $@
+	$(CC) $(HOBJ) -mmacosx-version-min=10.9 -headerpad_max_install_names -framework Cocoa -framework IOKit -o $@
 
 $(APP)/Contents/Info.plist: res/Info.plist
 	@mkdir -p $(APP)/Contents/Resources
