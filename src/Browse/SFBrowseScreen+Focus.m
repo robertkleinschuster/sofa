@@ -105,6 +105,7 @@
     }
     if (!_rows.count) {
         if ((key == SFKeyUp || key == SFKeyUpHold) && _searchPill) { [self focusHeaderSearch]; return YES; }
+        if (_loadFailed && (key == SFKeySelect || key == SFKeyPlayPause)) { [self reload]; return YES; }   // "OK – erneut versuchen"
         return NO;
     }
     SFRow *r = _rows[_row];

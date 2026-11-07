@@ -35,6 +35,8 @@
 
 @interface SFBrowseScreen () {
     BOOL _reloadPending;          // a coalesced notification reload is queued
+    NSUInteger _reloadSeq;        // the newest reload: an older one answering later is dropped
+    BOOL _loadFailed;             // the page shows a load error (OK and coming online retry)
     SFPage *_page;
     BOOL _pinTop;   // start focus below the first row: do not scroll while the row is visible
     CALayer *_bg;

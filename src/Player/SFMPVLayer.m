@@ -1,6 +1,8 @@
 #import "SFMPVLayer.h"
 #import "SFMPVEngine.h"
 #import "SFModel.h"
+#include <libkern/OSAtomic.h>
+#include <pthread.h>
 
 // Reads the FBO into a CGImage (+1). GL returns rows bottom-up.
 static CGImageRef devReadImage(GLint fbo, GLint w, GLint h) {
@@ -37,13 +39,28 @@ static void *glProc(void *ctx, const char *name) {
 
 
 
+// Frames are drawn on CoreAnimation's own display thread (asynchronous layer), at the display's
+// refresh, when mpv has a new one - never through the main thread. Before (until 2026-11-07) each
+// frame went mpv -> main queue -> setNeedsDisplay -> a draw in the main thread's commit, and the
+// render waited there for the frame's display time: every main-thread stall dropped frames (50 fps:
+// 1.1 % dropped, decoder 0), and the waits took main-thread time from the UI.
 @implementation SFMPVLayer {
-    mpv_render_context *_rc;
+    mpv_render_context *_rc;          // guarded by _rcLock (drawn on CA's thread, retired on main)
+    pthread_mutex_t _rcLock;
     CGLContextObj _ctx;
+    volatile int32_t _frameDue;       // mpv's update callback: something new to draw
+    volatile int32_t _forced;         // a draw the layer itself asked for (bounds, still frame retry)
     int _fbRetries;   // CA framebuffer not ready yet: redraw a limited number of times (still frame when paused)
 }
 
 - (BOOL)hasRenderContext { return _rc != NULL; }
+
+- (void)dealloc { pthread_mutex_destroy(&_rcLock); }
+
+- (void)setNeedsDisplay {
+    OSAtomicOr32Barrier(1, (volatile uint32_t *)&_forced);
+    [super setNeedsDisplay];
+}
 
 static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for "frameshot")
 + (SFMPVLayer *)devCurrent { return gDevLayer; }
@@ -51,7 +68,8 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
 - (instancetype)init {
     if ((self = [super init])) {
         gDevLayer = self;
-        self.asynchronous = NO;              // drawn on demand (mpv update callback)
+        pthread_mutex_init(&_rcLock, NULL);
+        self.asynchronous = YES;             // CA asks at every refresh (canDrawInCGLContext) - off the main thread
         self.needsDisplayOnBoundsChange = YES;
         self.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
         self.opaque = YES;
@@ -94,6 +112,8 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
         if (SFDevMode) SFLog(@"mpv: dev frame unavailable (rc %d ctx %d size %.0fx%.0f)", _rc != NULL, _ctx != NULL, size.width, size.height);
         return NULL;
     }
+    pthread_mutex_lock(&_rcLock);   // mpv renders on one thread at a time (CA's display thread draws too)
+    if (!_rc) { pthread_mutex_unlock(&_rcLock); return NULL; }
     CGLLockContext(_ctx);
     CGLContextObj prev = CGLGetCurrentContext();
     CGLSetCurrentContext(_ctx);
@@ -125,24 +145,38 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     glViewport(oVP[0], oVP[1], oVP[2], oVP[3]);
     CGLSetCurrentContext(prev);
     CGLUnlockContext(_ctx);
+    pthread_mutex_unlock(&_rcLock);
     return img;
 }
 
 static void onUpdate(void *ctx) {
-    // mpv thread -> main: new frame ready
+    // mpv thread: something new to draw - CA's display thread picks it up at the next refresh
     SFMPVLayer *l = (__bridge SFMPVLayer *)ctx;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (SFMPVDevFrameShotPath) [l devFrameShot];
-        [l setNeedsDisplay];
-    });
+    OSAtomicOr32Barrier(1, (volatile uint32_t *)&l->_frameDue);
+    if (SFMPVDevFrameShotPath) dispatch_async(dispatch_get_main_queue(), ^{ [l devFrameShot]; });
 }
 
+// CA's display thread, every refresh: draw when mpv has a frame for now (or the layer needs one).
 - (BOOL)canDrawInCGLContext:(CGLContextObj)ctx pixelFormat:(CGLPixelFormatObj)pf forLayerTime:(CFTimeInterval)t displayTime:(const CVTimeStamp *)ts {
-    return YES;
+    if (OSAtomicAnd32OrigBarrier(0, (volatile uint32_t *)&_forced)) return YES;
+    if (!_rc) return _mpv != NULL;   // the first draw creates the render context
+    if (!OSAtomicAnd32OrigBarrier(0, (volatile uint32_t *)&_frameDue)) return NO;
+    pthread_mutex_lock(&_rcLock);
+    uint64_t flags = _rc ? mpv_render_context_update(_rc) : 0;
+    pthread_mutex_unlock(&_rcLock);
+    return (flags & MPV_RENDER_UPDATE_FRAME) != 0;
 }
 
 - (void)drawInCGLContext:(CGLContextObj)ctx pixelFormat:(CGLPixelFormatObj)pf forLayerTime:(CFTimeInterval)t displayTime:(const CVTimeStamp *)ts {
     CGLSetCurrentContext(ctx);
+    pthread_mutex_lock(&_rcLock);
+    [self drawLocked:ctx];
+    pthread_mutex_unlock(&_rcLock);
+    [super drawInCGLContext:ctx pixelFormat:pf forLayerTime:t displayTime:ts];
+}
+
+// Under _rcLock on CA's display thread: _rc stays valid throughout (retireWithMPV takes the lock).
+- (void)drawLocked:(CGLContextObj)ctx {
     if (!_rc && _mpv) {
         mpv_opengl_init_params gp = { .get_proc_address = glProc, .get_proc_address_ctx = NULL };
         mpv_render_param p[] = {
@@ -189,14 +223,13 @@ static void onUpdate(void *ctx) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [ws setNeedsDisplay]; });
         }
     }
-    [super drawInCGLContext:ctx pixelFormat:pf forLayerTime:t displayTime:ts];
     if (rendered) mpv_render_context_report_swap(_rc);
 }
 
 // Closing a player blocked the main thread ~300 ms in mpv_render_context_free and
 // mpv_terminate_destroy, which wait for the vo and core threads (hitch monitor 2026-11-07, "menu").
-// Here the main thread only detaches: _rc goes NULL first, so drawing (main thread, under the
-// context lock) never touches it again. The render context is freed on a serial queue with the
+// Here the main thread only detaches: _rc goes NULL first under _rcLock, so drawing (CA's display
+// thread, under the same lock) never touches it again. The render context is freed on a serial queue with the
 // layer's GL context current and locked, before the core it belongs to is destroyed.
 - (void)retireWithMPV:(mpv_handle *)mpv {
     static dispatch_queue_t teardown;
@@ -204,9 +237,11 @@ static void onUpdate(void *ctx) {
     dispatch_once(&once, ^{ teardown = dispatch_queue_create("sofa.mpv-teardown", DISPATCH_QUEUE_SERIAL); });
     self.mpv = NULL;
     self.onRenderContext = nil;
+    pthread_mutex_lock(&_rcLock);   // waits for a draw in progress (at most one frame)
     mpv_render_context *rc = _rc;
     _rc = NULL;
     if (rc) mpv_render_context_set_update_callback(rc, NULL, NULL);
+    pthread_mutex_unlock(&_rcLock);
     CGLContextObj ctx = rc && _ctx ? CGLRetainContext(_ctx) : NULL;
     if (!rc && !mpv) return;
     dispatch_async(teardown, ^{

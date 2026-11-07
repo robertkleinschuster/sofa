@@ -197,6 +197,21 @@ void SFAnimate(CFTimeInterval dur, dispatch_block_t changes) {
     changes();
     [CATransaction commit];
 }
+void SFFadeOpacity(CALayer *layer, float to, CFTimeInterval dur) {
+    CALayer *shown = layer.presentationLayer;
+    float from = shown ? shown.opacity : layer.opacity;
+    for (NSString *key in [layer animationKeys] ?: @[]) {
+        CAAnimation *a = [layer animationForKey:key];
+        if ([a isKindOfClass:[CAPropertyAnimation class]] && [((CAPropertyAnimation *)a).keyPath isEqualToString:@"opacity"]) [layer removeAnimationForKey:key];
+    }
+    SFNoAnimate(^{ layer.opacity = to; });
+    if (dur <= 0 || from == to) return;
+    CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    fade.fromValue = @(from); fade.toValue = @(to); fade.duration = dur;
+    fade.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.25 :0.1 :0.25 :1.0];
+    [layer addAnimation:fade forKey:@"opacity"];
+}
+
 void SFNoAnimate(dispatch_block_t changes) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];

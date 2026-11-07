@@ -201,16 +201,66 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 #pragma mark - SFImageLayer
 
 @interface SFImageLayer (Fade)
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated;
 @end
 
 @interface SFImageLayer (Adaptive)
 - (void)adaptBackgroundTo:(CGImageRef)img source:(NSString *)want;
 @end
 
+// The backdrop's soft edges as an alpha mask (white, alpha = the fade): left 45 % from 0 to 1,
+// bottom 45 % from 1 to 0, the top 18 % slightly darker (header/clock readable), smoothstep each.
+// Computed once at a small size; the GPU scales and applies it when compositing (layer mask) - it
+// was a per-pixel CPU pass over every new 2560x1440 picture, competing with the video decoder.
+static CGImageRef EdgeMask(void) {
+    static CGImageRef mask;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        const size_t w = 512, h = 288;
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGColorSpaceRelease(cs);
+        if (!c) return;
+        uint8_t *px = CGBitmapContextGetData(c);
+        size_t bpr = CGBitmapContextGetBytesPerRow(c);
+        for (size_t y = 0; y < h; y++) {
+            double fy = (double)y / h;   // bitmap row 0 = top
+            double vy = fy < 0.55 ? 1.0 : MAX(0, 1.0 - (fy - 0.55) / 0.45);
+            if (fy < 0.18) vy *= 0.35 + 0.65 * (fy / 0.18);
+            for (size_t x = 0; x < w; x++) {
+                double fx = (double)x / w;
+                double vx = fx > 0.45 ? 1.0 : fx / 0.45;
+                uint8_t a = (uint8_t)(vx * vx * (3 - 2 * vx) * vy * vy * (3 - 2 * vy) * 255);
+                uint8_t *p = px + y * bpr + x * 4;
+                p[0] = p[1] = p[2] = p[3] = a;   // premultiplied white
+            }
+        }
+        mask = CGBitmapContextCreateImage(c);
+        CGContextRelease(c);
+    });
+    return mask;
+}
+
 @implementation SFImageLayer
 
 static const NSTimeInterval kFadeIn = 0.3;
+
+- (void)setFadeEdges:(BOOL)fade {
+    _fadeEdges = fade;
+    if (!fade) { self.mask = nil; return; }
+    CALayer *m = [CALayer layer];
+    m.contents = (__bridge id)EdgeMask();
+    m.contentsGravity = kCAGravityResize;
+    m.frame = self.bounds;
+    self.mask = m;
+}
+- (void)setBounds:(CGRect)b {
+    [super setBounds:b];
+    if (self.mask) SFNoAnimate(^{ self.mask.frame = self.bounds; });
+}
+- (void)setFrame:(CGRect)f {
+    [super setFrame:f];
+    if (self.mask) SFNoAnimate(^{ self.mask.frame = self.bounds; });
+}
 
 - (instancetype)init {
     if ((self = [super init])) {
@@ -246,7 +296,6 @@ static const NSTimeInterval kFadeIn = 0.3;
         SFImageLayer *s = ws;
         if (!s || ![s.source isEqualToString:want] || !img) return;
         BOOL animated = !inMemory || s.alwaysFadesIn;
-        if (s.fadeEdges) { [s applyFaded:img source:want loaded:loaded animated:animated]; return; }
         if (s.adaptiveBackground) [s adaptBackgroundTo:img source:want];
         [s present:(__bridge id)img animated:animated];
     };
@@ -267,7 +316,8 @@ static const NSTimeInterval kFadeIn = 0.3;
     [CATransaction setDisableActions:YES];
     self.contents = img;
     [CATransaction commit];
-    if (!animated || !img) return;
+    // invisible (a backdrop already left for the next tile): no fade - it would flash the late picture
+    if (!animated || !img || self.opacity == 0) return;
     CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
     fade.fromValue = @0; fade.toValue = @1; fade.duration = kFadeIn;
     [self addAnimation:fade forKey:@"fadein"];
@@ -324,58 +374,6 @@ static SFLogoInfo logoInfo(CGImageRef img) {
             } else if (lum < 0.4 && bgLum < 0.5) bg = [NSColor colorWithCalibratedWhite:0.9 alpha:1];        // dark logo on dark -> light
             else if (lum > 0.7 && bgLum > 0.5) bg = [NSColor colorWithCalibratedWhite:0.14 alpha:1];  // light logo on light -> dark
             if (bg) SFAnimate(0.25, ^{ s.backgroundColor = bg.CGColor; });
-        });
-    });
-}
-@end
-
-static CGImageRef fadedImage(CGImageRef src) CF_RETURNS_RETAINED;
-static CGImageRef fadedImage(CGImageRef src) {
-    size_t w = CGImageGetWidth(src), h = CGImageGetHeight(src);
-    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
-    CGContextRef m = CGBitmapContextCreate(NULL, w, h, 8, 0, NULL, (CGBitmapInfo)kCGImageAlphaOnly);
-    // mask: horizontal 0->1 (left 45 %), multiplied by vertical 1->0 (bottom 45 %)
-    uint8_t *mp = CGBitmapContextGetData(m);
-    size_t bpr = CGBitmapContextGetBytesPerRow(m);
-    for (size_t y = 0; y < h; y++) {
-        // bitmap row 0 = top
-        double fy = (double)y / h;
-        double vy = fy < 0.55 ? 1.0 : MAX(0, 1.0 - (fy - 0.55) / 0.45);
-        if (fy < 0.18) vy *= 0.35 + 0.65 * (fy / 0.18);   // darken the top slightly (header/clock readable)
-        for (size_t x = 0; x < w; x++) {
-            double fx = (double)x / w;
-            double vx = fx > 0.45 ? 1.0 : fx / 0.45;
-            double a = vx * vx * (3 - 2 * vx) * vy * vy * (3 - 2 * vy);
-            mp[y * bpr + x] = (uint8_t)(a * 255);
-        }
-    }
-    CGImageRef mask = CGBitmapContextCreateImage(m);
-    CGContextClipToMask(c, CGRectMake(0, 0, w, h), mask);
-    CGContextDrawImage(c, CGRectMake(0, 0, w, h), src);
-    CGImageRef out = CGBitmapContextCreateImage(c);
-    CGImageRelease(mask); CGContextRelease(m); CGContextRelease(c); CGColorSpaceRelease(cs);
-    return out;
-}
-
-@implementation SFImageLayer (Fade)
-// `want` = the layer's source (still current?), `loaded` = where the pixels came from (the source
-// or its fallback) - the faded result is cached by `loaded`.
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated {
-    static NSCache *cache;
-    static dispatch_once_t o;
-    dispatch_once(&o, ^{ cache = [NSCache new]; cache.countLimit = 12; });
-    id hit = [cache objectForKey:loaded];
-    if (hit) { [self present:hit animated:animated]; return; }
-    CGImageRef keep = CGImageRetain(img);
-    SFBackground(^{
-        CGImageRef f = fadedImage(keep);
-        CGImageRelease(keep);
-        id obj = (__bridge_transfer id)f;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!obj) return;
-            [cache setObject:obj forKey:loaded];
-            if ([self.source isEqualToString:want]) [self present:obj animated:YES];
         });
     });
 }

@@ -11,6 +11,7 @@
 #import "SFStats.h"
 #import "SFDownloads.h"
 #import "SFEngine.h"
+#import "SFYTWatch.h"
 
 static NSString *const kBotMsg = @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
 
@@ -84,6 +85,16 @@ static NSString *outcome(NSError *e) {
     return @"error";
 }
 
+// The watch page (/next) a few seconds into a playback, as youtube.com's watch navigation asks for it
+// (captured 2026-11-07: /next ~4.7 s after the navigation) - instead of at half time (autoplay) or
+// when the info panel opens. Cached (SFYTWatch, 30 min): autoplay and the info panel use the same
+// answer, so it adds no request, it only comes when a browser's would.
+static void watchPageSoon(NSString *vid) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [SFYTWatch watchPageFor:vid done:^(NSArray *related, NSDictionary *details) {}];
+    });
+}
+
 // SABR via the engine (like the web player: one request per video): local WebM/MP4
 // tracks for mpv; a video that turned out to be live comes back as HLS.
 static void playOnline(NSString *vid, SFURLDone done) {
@@ -96,6 +107,7 @@ static void playOnline(NSString *vid, SFURLDone done) {
         }
         SFCount(r[@"hls"] ? @"yt.play.sabr-hls" : @"yt.play.sabr");
         sabrPlay(vid, r, done);   // a video that turned out to be live comes back as HLS
+        watchPageSoon(vid);
     }];
 }
 

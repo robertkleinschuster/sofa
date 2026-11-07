@@ -7,26 +7,28 @@
 
 // The backdrop follows the focus in two steps (user 2026-11-07): leaving a tile fades its picture
 // out at once; once the focus rests on the next one, that one's picture fades in. They never
-// overlap, and fast navigation does not flicker through pictures.
+// overlap, and fast navigation does not flicker through pictures. Every fade starts where the
+// picture is on screen (SFFadeOpacity): moving on mid fade-in, or back mid fade-out, turns the fade
+// around instead of jumping; a picture that arrives after the focus left stays hidden (SFImageLayer).
 static const NSTimeInterval kBackdropOut = 0.25;
 
 - (void)leaveBackdropFor:(SFItem *)next {
     if (self.overlay) return;
     NSString *src = (next.backdrop ?: next.image) ?: _page.backdrop;
     if ([src isEqualToString:_backdrop.source] || _backdrop.opacity == 0) return;
-    SFAnimate(kBackdropOut, ^{ self->_backdrop.opacity = 0; });
+    SFFadeOpacity(_backdrop, 0, kBackdropOut);
 }
 
 - (void)updateBackdropFor:(SFItem *)it {
     if (self.overlay) return;   // the video itself is the backdrop
     NSString *src = it.backdrop ?: _page.backdrop;
     if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) {
-        if (_backdrop.opacity < 1) SFAnimate(0.3, ^{ self->_backdrop.opacity = 1; });   // back on the tile it left
+        if (_backdrop.opacity < 1) SFFadeOpacity(_backdrop, 1, 0.3);   // back on the tile it left (also mid fade-out)
         return;
     }
     if (!src.length) { SFAnimate(0.4, ^{ self->_backdropBox.opacity = 0; }); return; }
     _backdrop.fallbackSource = it.backdrop && it.image.length ? it.image : nil;   // big image missing -> the tile image
-    SFNoAnimate(^{ [self->_backdrop removeAnimationForKey:@"opacity"]; self->_backdrop.opacity = 1; });   // empty until it fades in
+    SFFadeOpacity(_backdrop, 1, 0);   // empty until the new picture fades in (an old fade-out ends here)
     _backdrop.source = src;
     CGFloat op = self.showsHero ? 0.75 : 0.4;   // more restrained on grid pages
     if (self.theme.light) op *= 0.6;
@@ -111,6 +113,11 @@ static const NSTimeInterval kBackdropRest = 0.25;   // after the hero's 0.12 s: 
         // fails to load (YouTube: old videos have no maxres version)
         SFItem *b = nil;
         if (it.backdrop.length || it.image.length) { b = [SFItem new]; b.backdrop = it.backdrop ?: it.image; b.image = it.image; }
+        // load it meanwhile (decoded into the shared cache): at rest it fades in at once, not after a download
+        if (b.backdrop.length && !self.overlay) {
+            CGFloat px = MAX(self->_backdrop.bounds.size.width, self->_backdrop.bounds.size.height) * self->_backdrop.contentsScale;
+            [[SFImageCache shared] imageForSource:b.backdrop maxPixel:px < 1 ? 512 : px blurred:self->_backdrop.blurred completion:^(CGImageRef img) {}];
+        }
         // the next picture comes once the focus rests, after the scroll animation (0.34 s): fast
         // navigation starts no load and no fade per step
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBackdropRest * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

@@ -9,6 +9,7 @@
     NSUInteger _errors;   // failed statements so far (a migration step that adds one is rolled back)
     dispatch_queue_t _q;
     NSMutableDictionary *_progressCache;   // id -> @[pos, dur, watched]
+    NSMutableDictionary *_settings;        // k -> v: the whole (small) settings table, read without the queue
 }
 
 + (instancetype)shared {
@@ -35,6 +36,7 @@
         [self attachCache];
         [self migrate];
         [self loadProgress];
+        [self loadSettings];
         // response cache housekeeping: shortly after launch, then daily
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), _q, ^{ [self trimCache]; });
     }
@@ -95,6 +97,20 @@ static const long long kCacheMaxBytes = 64LL * 1024 * 1024;
         SFLog(@"store: %@ -> %s", sql, err);
         sqlite3_free(err);
     }
+}
+
+// Settings are read on the main thread all the time (screens, players): from memory, never behind
+// the queue - setting: waited there behind cache writes, 1 s at launch (hitch log 2026-11-07).
+// Loaded after the schema steps (they may delete settings); writes update memory, then the table.
+- (void)loadSettings {
+    _settings = [NSMutableDictionary new];
+    sqlite3_stmt *st;
+    if (sqlite3_prepare_v2(_db, "SELECT k,v FROM settings", -1, &st, NULL) != SQLITE_OK) return;
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        const unsigned char *k = sqlite3_column_text(st, 0), *v = sqlite3_column_text(st, 1);
+        if (k && v) _settings[@((const char *)k)] = @((const char *)v);
+    }
+    sqlite3_finalize(st);
 }
 
 - (void)loadProgress {
@@ -216,17 +232,12 @@ static SFItem *playableItem(id json) {
 
 
 - (NSString *)setting:(NSString *)key {
-    __block NSString *v = nil;
-    dispatch_sync(_q, ^{
-        sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, "SELECT v FROM settings WHERE k=?", -1, &st, NULL) != SQLITE_OK) return;
-        bindText(st, 1, key);
-        if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_text(st, 0)) v = @((const char *)sqlite3_column_text(st, 0));
-        sqlite3_finalize(st);
-    });
-    return v;
+    if (!key) return nil;
+    @synchronized (_settings) { return _settings[key]; }
 }
 - (void)setSetting:(NSString *)value forKey:(NSString *)key {
+    if (!key) return;
+    @synchronized (_settings) { _settings[key] = value; }   // nil removes
     if (!value) { [self run:@"DELETE FROM settings WHERE k=?" args:@[key]]; return; }   // nil = unset, no empty row
     dispatch_async(_q, ^{
         sqlite3_stmt *st;

@@ -30,7 +30,7 @@
 // keep the download status on the tiles live
 - (void)observeDownloads {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(downloadChanged:) name:SFDownloadsDidChangeNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onlineChanged) name:SFNetOnlineDidChangeNotification object:nil];
     for (NSString *n in [SFAppRegistry remoteStatusNotifications])
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:n object:nil];
 }
@@ -139,23 +139,44 @@
     dispatch_async(dispatch_get_main_queue(), ^{ self->_reloadPending = NO; [self reload]; });
 }
 
+- (void)onlineChanged {
+    [self updateHint];
+    if (_loadFailed && [SFNet isOnline]) [self reload];   // the page that failed offline loads itself
+}
+
+// What a failed load tells the viewer: the source's own (German) message, a connection problem in
+// plain words - never a raw NSURLError/curl text - and what to do.
+static NSString *LoadErrorText(NSError *err) {
+    NSString *m = err.localizedDescription;
+    BOOL technical = !m.length || [err.domain isEqualToString:NSURLErrorDomain] || [m rangeOfString:@"curl" options:NSCaseInsensitiveSearch].location != NSNotFound;
+    NSString *what = technical ? @"Der Inhalt konnte gerade nicht geladen werden." : m;
+    return [what stringByAppendingString:@"\n\nOK – erneut versuchen"];
+}
+
 - (void)reload {
     if (!self.loader) return;
     _loading = YES;
-    if (!_page) [self showSpinner:YES];
+    NSUInteger seq = ++_reloadSeq;
+    if (!_page || _loadFailed) [self showSpinner:YES];
     __weak SFBrowseScreen *ws = self;
     self.loader(^(SFPage *page, NSError *err) {
         SFMain(^{
-            SFBrowseScreen *s = ws; if (!s) return;
+            SFBrowseScreen *s = ws; if (!s || seq != s->_reloadSeq) return;   // a newer reload owns the page
             s->_loading = NO;
             [s showSpinner:NO];
             if (!page) {
+                // a refresh of a page with content keeps what it shows (a download finishing reloads
+                // channel pages; a timeout there must not wipe the rows)
+                if (s->_page.shelves.count && !s->_loadFailed) { SFLog(@"browse: refresh of %@ failed (%@) - keeping the page", s->_page.title ?: @"page", err.localizedDescription ?: @"?"); return; }
                 SFPage *p = [SFPage page:s->_page.title theme:s.theme.identifier shelves:@[]];
-                p.emptyText = err.localizedDescription ?: @"Inhalt konnte nicht geladen werden.";
+                p.emptyText = LoadErrorText(err);
+                s->_loadFailed = YES;
                 [s setPage:p keepFocus:NO];
                 return;
             }
-            [s setPage:page keepFocus:s->_page != nil];
+            BOOL keep = s->_page != nil && !s->_loadFailed;
+            s->_loadFailed = NO;
+            [s setPage:page keepFocus:keep];
         });
     });
 }

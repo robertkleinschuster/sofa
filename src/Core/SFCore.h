@@ -73,6 +73,10 @@ NSString *SFSharedCacheDir(void);
 // Animation helper: animate all changes in the block with a uniform curve.
 void SFAnimate(CFTimeInterval dur, dispatch_block_t changes);
 void SFNoAnimate(dispatch_block_t changes);
+// Fades a layer's opacity to `to` from what is on screen now (its presentation value): any running
+// opacity animation (a fade-in, an earlier fade) is replaced, never jumped over - a fade interrupted
+// halfway turns around where it is. dur <= 0: at once.
+void SFFadeOpacity(CALayer *layer, float to, CFTimeInterval dur);
 
 extern BOOL SFDevMode;   // invisible development mode (main.m)
 // Test knobs: environment variable NAME, honoured in dev instances only (never in the real app).
