@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mod, FIX, fixturePlayer, json, must, nth, startApp, sleep, ytError, noSessions } from './helpers.ts';
+import { mod, FIX, fixturePlayer, json, must, nth, startApp, until, ytError, noSessions } from './helpers.ts';
 import { MemoryStore } from '../../res/sofa-yt/lib/store.ts';
 import type { FakeStart } from './helpers.ts';
 import type { EngineYouTube, LiveAnswer, OpenFailure } from '../../res/sofa-yt/lib/engine.ts';
@@ -392,10 +392,11 @@ test('/open of an upcoming stream: error upcoming with the start time', async ()
 test('idle live sessions expire like VOD sessions', async () => {
   const app = await startApp({ youtube: fakeYT(liveInfo()), po: {}, breaker, startPump: noPump, fetchFn: fakeUpstream().fetch, idleMs: 50, sweepMs: 20 });
   try {
-    const r = await j(`${app.base}/open?v=${LIVE}`);
-    assert.equal(app.engine.sessions.size, 1);
-    await sleep(150);
-    assert.equal(app.engine.sessions.size, 0);
+    // the open's answer proves the session existed; a size check right after it raced the 50 ms
+    // idle window under test-all load (2026-11-07) - wait for the sweep instead
+    const r = await j<{ sid: string }>(`${app.base}/open?v=${LIVE}`);
+    assert.ok(r.sid);
+    assert.ok(await until(() => app.engine.sessions.size === 0), 'the idle session is swept');
     assert.equal((await fetch(`${app.base}/s/${r.sid}/live.m3u8`)).status, 404);
   } finally { await app.close(); }
 });
