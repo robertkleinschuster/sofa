@@ -216,10 +216,19 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
                                      @"-fp", [NSString stringWithFormat:@"%@,built-ins", SFRuntimePath(@"share/fonts/misc")]],
                   MesaEnv(), -1, log, p[1]);
     close(p[1]);
+    // the whole line: Xvfb writes the number and its newline separately, and dies ("Cannot write
+    // display number to fd 3") when the pipe closed in between (seen under load, 2026-11-07)
     char buf[16] = {0};
     ssize_t n = 0;
-    struct pollfd pf = {p[0], POLLIN, 0};
-    if (_xvfb > 0 && poll(&pf, 1, kDisplayWaitMS) == 1) n = read(p[0], buf, sizeof buf - 1);
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:kDisplayWaitMS / 1000.0];
+    while (_xvfb > 0 && n < (ssize_t)sizeof buf - 1 && !memchr(buf, '\n', (size_t)n)) {
+        int left = (int)([until timeIntervalSinceNow] * 1000);
+        struct pollfd pf = {p[0], POLLIN, 0};
+        if (left <= 0 || poll(&pf, 1, left) != 1) break;
+        ssize_t r = read(p[0], buf + n, sizeof buf - 1 - (size_t)n);
+        if (r <= 0) break;
+        n += r;
+    }
     close(p[0]);
     int display = n > 0 ? atoi(buf) : -1;
     if (display < 0 || !(n > 0 && buf[0] >= '0' && buf[0] <= '9')) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }

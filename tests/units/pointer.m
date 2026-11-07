@@ -33,8 +33,10 @@ static pid_t startXvfb(char *name, size_t len) {
     posix_spawn_file_actions_destroy(&fa);
     close(p[1]);
     if (lf >= 0) close(lf);
+    // the whole line (number + newline, written separately: closing between them kills Xvfb)
     char buf[16] = {0};
-    ssize_t n = rc == 0 ? read(p[0], buf, sizeof buf - 1) : -1;
+    ssize_t n = 0, r;
+    while (rc == 0 && n < (ssize_t)sizeof buf - 1 && !memchr(buf, '\n', (size_t)n) && (r = read(p[0], buf + n, sizeof buf - 1 - (size_t)n)) > 0) n += r;
     close(p[0]);
     if (n <= 0) { if (pid > 0) kill(pid, SIGTERM); return -1; }
     snprintf(name, len, ":%d", atoi(buf));
