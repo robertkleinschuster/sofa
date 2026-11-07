@@ -189,6 +189,11 @@ The engine adds no headers of its own (a custom one made googlevideo refuse the 
 ## Still open
 
 - The EU consent dialog in a fresh profile (no `SOCS` cookie): answer it once, like a user.
+  Measured 2026-11-07 (fresh profile, de-AT): an overlay on www.youtube.com itself ("Bevor Sie zu
+  YouTube weitergehen", buttons "Alle ablehnen" / "Alle akzeptieren" / "Weitere Optionen") - no
+  redirect, so the extension's content scripts are in that page and can report the button's
+  screen position (`mozInnerScreenX/Y` + its rect). A click from page script is `isTrusted=false`;
+  a trusted one is a pointer event on the Xvfb display (XTest). Waiting for the user's decision.
 - Release: make-release bundles Firefox, Xvfb (+ xkbcomp, xkb data, misc fonts) and Mesa (libGL,
   DRI drivers) into Contents/Runtime, relinked to `@loader_path`; SFYTBrowser finds them through
   `SFRuntimePath` and passes Xvfb its paths explicitly (`-xkbdir`, `-xkbbindir` - an

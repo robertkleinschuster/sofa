@@ -237,12 +237,13 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       the extension (stream protection accepts it, `sps=1`), `SFYTEngine`/`SFYTBrowser`/`SFYTChannel`/
       `SFLocalHTTP` replace the node sidecar in Sofa, live-verified (test-playback 9); node sidecar,
       jsdom, identity/transport removed from the repo. OPEN, in order:
-      1. Release bundle: Firefox + Xvfb + Mesa relocatable in Contents/Runtime (port patches: libGL
-         path relative to the firefox binary - pending; Xvfb done 2026-11-07: -xkbbindir, the rest
-         by flag/env: -xkbdir, -fp, LIBGL_DRIVERS_PATH; env for Mesa DRI, fonts,
-         GTK in SFYTBrowser - SFRuntimeSetup's neutralised paths must not reach Firefox).
-         make-release and sofa-deploy refuse until then (the installed 0.3.10 keeps the sidecar).
-      2. EU consent dialog in a fresh profile: answer once, like a user.
+      1. Release bundle: Firefox + Xvfb + Mesa relocatable in Contents/Runtime (2026-11-07:
+         make-release bundles + relinks them, SFYTBrowser via SFRuntimePath, test-release runs them
+         with /opt/local denied - starts, system fonts, WebGL probe). Missing: firefox-x11 rev 3
+         (libGL by a relative path, backport-toolkit 1f40bcb) - rebuild running 2026-11-07; then
+         a bundle passes the WebGL check. make-release and sofa-deploy refuse until then.
+      2. EU consent dialog in a fresh profile: answer once, like a user (overlay on www.youtube.com,
+         measured 2026-11-07; proposal: trusted click via XTest on Xvfb - awaiting the user).
       3. ~~Live HLS segments through the engine~~ (2026-11-07: local `/s/<sid>/seg/<n>`, live-verified
          1080p60; header emulation removed - the browser sends its own, a custom header meant CORS).
       4. ~~"Platz schaffen" availability (oEmbed over libcurl)~~ through the engine (2026-11-07,
