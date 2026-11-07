@@ -51,8 +51,9 @@ done
 [ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] && ok "engine extension in the bundle" || bad "engine extension missing"
 
 # The engine's browser as SFYTBrowser starts it: Xvfb picks a display (-displayfd) and ends with its
-# last client, Firefox on a fresh profile with the engine's graphics prefs. A local page measures
-# what YouTube's scripts could see - generic families resolving to different system fonts, WebGL -
+# last client, both with Mesa's drivers from the bundle (LIBGL_DRIVERS_PATH: Xvfb's built-in path is
+# MacPorts' - without them the display has no GLX and Firefox no WebGL), Firefox on a fresh profile
+# with the engine's graphics prefs. A local page measures what YouTube's scripts could see - generic families resolving to different system fonts, WebGL -
 # and posts it to a one-shot receiver here (file:// -> loopback, a simple request: no preflight).
 PY=/opt/local/bin/python3.14
 "$PY" -I -c '
@@ -64,7 +65,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(s, *a): pass
 srv = http.server.HTTPServer(("127.0.0.1", 0), H); print(srv.server_port, flush=True); srv.timeout = 90; srv.handle_request()
 ' "$T/probe.json" > "$T/port" & PIDS="$PIDS $!"; disown
-"${NP[@]}" "$RT/bin/Xvfb" -displayfd 3 -terminate -screen 0 1280x720x24 -nolisten tcp -xkbdir "$RT/share/X11/xkb" -xkbbindir "$RT/bin" \
+LIBGL_DRIVERS_PATH="$RT/lib/dri" "${NP[@]}" "$RT/bin/Xvfb" -displayfd 3 -terminate -screen 0 1280x720x24 -nolisten tcp -xkbdir "$RT/share/X11/xkb" -xkbbindir "$RT/bin" \
    -fp "$RT/share/fonts/misc,built-ins" 3>"$T/display" >"$T/xvfb.log" 2>&1 & PIDS="$PIDS $!"; disown
 for _ in $(seq 50); do [ -s "$T/display" ] && [ -s "$T/port" ] && break; sleep 0.2; done
 if [ -s "$T/display" ] && [ -s "$T/port" ]; then
