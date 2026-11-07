@@ -53,8 +53,9 @@ done
 # The engine's browser as SFYTBrowser starts it: Xvfb picks a display (-displayfd) and ends with its
 # last client, both with Mesa's drivers from the bundle (LIBGL_DRIVERS_PATH: Xvfb's built-in path is
 # MacPorts' - without them the display has no GLX and Firefox no WebGL), Firefox on a fresh profile
-# with the engine's graphics prefs. A local page measures what YouTube's scripts could see - generic families resolving to different system fonts, WebGL -
-# and posts it to a one-shot receiver here (file:// -> loopback, a simple request: no preflight).
+# with the engine's graphics prefs. A local page measures what YouTube's scripts could see -
+# generic families resolving to different system fonts, WebGL - and posts it to a one-shot
+# receiver here (file:// -> loopback, a simple request: no preflight).
 PY=/opt/local/bin/python3.14
 "$PY" -I -c '
 import http.server, sys
