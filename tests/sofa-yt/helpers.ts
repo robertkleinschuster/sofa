@@ -39,6 +39,7 @@ interface Modules {
   'lib/engine.ts': typeof import('../../res/sofa-yt/lib/engine.ts');
   'lib/breaker.ts': typeof import('../../res/sofa-yt/lib/breaker.ts');
   'lib/bytes.ts': typeof import('../../res/sofa-yt/lib/bytes.ts');
+  'lib/lounge.ts': typeof import('../../res/sofa-yt/lib/lounge.ts');
   'lib/formats.ts': typeof import('../../res/sofa-yt/lib/formats.ts');
   'lib/hls.ts': typeof import('../../res/sofa-yt/lib/hls.ts');
   'lib/mediaindex.ts': typeof import('../../res/sofa-yt/lib/mediaindex.ts');

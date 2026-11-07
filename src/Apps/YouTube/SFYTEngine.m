@@ -58,6 +58,12 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
 }
 
+// Every change of _state goes through here: `ready` mirrors it for calls from other queues.
+- (void)setState:(SFYTEngineState)state {
+    _state = state;
+    self.ready = state == SFYTEngineReady;
+}
+
 + (instancetype)shared {
     static SFYTEngine *s; static dispatch_once_t once;
     dispatch_once(&once, ^{ s = [SFYTEngine new]; });
@@ -132,7 +138,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         return;
     }
     if (!_server.port && ![self startServer]) return;
-    _state = SFYTEngineStarting;
+    [self setState:SFYTEngineStarting];
     _launchedAt = [NSDate date];
     NSUInteger run = ++_run;
     [_browser launchWithChannelPort:_server.port token:_channel.token done:^(BOOL ok, BOOL adopted) {
@@ -150,7 +156,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 // Quit: the browser ends now. An update's or a crash's end does not come here - the browser waits
 // out the hand-over grace for the next Sofa (SFYTBrowser).
 - (void)stop {
-    _state = SFYTEngineIdle;
+    [self setState:SFYTEngineIdle];
     _run++;
     _nextStartAt = DBL_MAX;   // no restart
     [_browser stop];
@@ -161,7 +167,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     if (_state == SFYTEngineIdle) return;
     SFLog(@"yt-engine: %@", why);
     BOOL wasReady = _state == SFYTEngineReady;
-    _state = SFYTEngineIdle;
+    [self setState:SFYTEngineIdle];
     _run++;
     [_browser stop];
     [_channel failAll:SFError(@"engine: the browser went away")];
@@ -171,6 +177,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     _nextStartAt = [NSDate date].timeIntervalSince1970 + delay;
     if (_failures > 1) SFLog(@"yt-engine: %ld short runs in a row - next start in %.0f s", (long)_failures, delay);
     [self tellWaiting:NO];
+    [self endLoungePolls];   // their page is gone: no end will come
     if (wasReady) [[NSNotificationCenter defaultCenter] postNotificationName:SFYTEngineSessionsLostNotification object:self];
     if (!SFDevMode) [self start];   // after the backoff; dev instances on their next use
 }
@@ -180,13 +187,14 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     if ([type isEqualToString:@"log"]) { SFLog(@"yt-engine: %@", e[@"line"]); return; }
     if ([type isEqualToString:@"block"]) { [[SFYTBreaker shared] recordState:dict(e[@"state"])]; return; }
     if ([type isEqualToString:@"consent"]) { [self acceptConsent:e]; return; }
+    if ([type isEqualToString:@"lounge"]) { [self loungeEvent:e]; return; }
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
         BOOL wasReady = _state == SFYTEngineReady;
         // starting again BEFORE anyone hears of it: a player that reopens on the notification must
         // wait for the new document's engine - it used to be sent to it before its start ("engine
         // not started", the video stopped after an update restart, 2026-11-07)
-        _state = SFYTEngineStarting;
+        [self setState:SFYTEngineStarting];
         if (wasReady) {   // a new document: the old page's sessions are gone
             SFLog(@"yt-engine: page reloaded (%@%@, %@) - sessions lost", str(e[@"navigation"]) ?: @"?",
                   [e[@"late"] boolValue] ? @", injected late" : @"", str(e[@"url"]));
@@ -194,6 +202,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
             // seen 2026-11-07) for an answer no document will send
             [_channel failAll:[NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelPageGone
                                               userInfo:@{NSLocalizedDescriptionKey: @"engine: the page reloaded"}]];
+            [self endLoungePolls];
             [[NSNotificationCenter defaultCenter] postNotificationName:SFYTEngineSessionsLostNotification object:self];
         }
         [self startPage:++_page polls:kPagePolls];
@@ -238,7 +247,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         [self request:@"start" args:@[cfg] timeout:kCallTimeout done:^(id v, NSError *se) { SFMain(^{
             if (page != self->_page || self->_state != SFYTEngineStarting) return;
             if (se && se.code != 409) { [self runFailed:[@"engine start failed: " stringByAppendingString:se.localizedDescription]]; return; }
-            self->_state = SFYTEngineReady;
+            [self setState:SFYTEngineReady];
             NSString *ua = str(dict(v)[@"userAgent"]) ?: str(dict(h)[@"userAgent"]);
             SFLog(@"yt-engine: ready (%@)", ua);
             [self tellWaiting:YES];

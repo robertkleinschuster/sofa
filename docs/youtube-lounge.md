@@ -57,8 +57,14 @@ receiver), `plaincast` (aykevl, Go, receiver), `pyytlounge` (FabioGNR, Python, s
   onAutoplayModeChanged(UNSUPPORTED)`; then `nowPlaying` + `onStateChange` on every
   player change, `onVolumeChanged` on `getVolume`/`setVolume`.
 * `ctt` is not needed – Sofa resolves streams itself (the sofa-yt sidecar, see `docs/youtube.md`).
-* **Use libcurl (already linked by Sofa) or CFReadStream for the long-poll GET. NSURLSession
-  on 10.9 buffers the stream and delivers nothing** **[live]**.
+* **Transport (since 2026-11-07): the YouTube engine's page.** Every lounge request - pairing,
+  token, session open, sends and the long poll - is made by the engine's youtube.com page
+  (`res/sofa-yt/lib/lounge.ts`, `SFYTEngine+Lounge.m`), same origin with the profile's cookies,
+  as YouTube's own TV web app (youtube.com/tv) makes them: one YouTube client, not a libcurl one
+  next to the engine's Firefox on the same IP. The long poll streams its bytes to Sofa as
+  `lounge` events (the page reads the response body as it arrives; a poll silent for 70 s is cut
+  off). Sofa keeps the protocol (`SFLounge.m`). Before: libcurl - NSURLSession on 10.9 buffers the
+  stream and delivers nothing **[live]**, which no longer matters.
 
 ---
 
@@ -707,8 +713,8 @@ get_screen, unknown/expired code    → 404
 
 * `SofaLounge` object on its own serial dispatch queue; persisted `{screenId, deviceId,
   loungeToken, expiration}` in Application Support.
-* Long-poll on a dedicated `NSThread` with libcurl (`CURLOPT_WRITEFUNCTION` → framer →
-  `NSJSONSerialization` → dispatch to the lounge queue), `CURLOPT_LOW_SPEED_TIME 90`.
+* Long-poll on a dedicated `NSThread`, its bytes from the engine page (`lounge` events → framer →
+  `NSJSONSerialization` on the lounge queue); 70 s without bytes = cut off (page side).
 * Sender queue: coalesce pending messages, one POST in flight, `ofs`/`RID` advanced only
   inside the queue; retry a failed POST with the *same* body (same `ofs`, new `RID`).
 * Player bridge: map Sofa's AVPlayer events to `onStateChange`/`nowPlaying`; resolve

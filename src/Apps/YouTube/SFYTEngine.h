@@ -40,3 +40,13 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // youtube.com loads it. status: the host's (404 = no such picture), 0 without an answer. Any queue.
 - (void)image:(NSURL *)url done:(void (^)(NSData *data, NSInteger status))done;
 @end
+
+@interface SFYTEngine (Lounge)
+// The lounge's transport (SFLounge): its requests to www.youtube.com/api/lounge made by the
+// engine page - same origin, the profile's cookies, as youtube.com/tv makes them. Any queue;
+// status 0 = no answer.
+- (void)loungeRequest:(NSString *)method url:(NSString *)url body:(NSString *)body done:(void (^)(NSData *data, NSInteger status))done;
+// The bind channel's long poll: its bytes in order, then done once - the status of a poll that
+// ended normally, 0 when it was cut off or not answered. Any queue.
+- (void)loungePoll:(NSString *)url data:(void (^)(NSData *chunk))onData done:(void (^)(NSInteger status))done;
+@end

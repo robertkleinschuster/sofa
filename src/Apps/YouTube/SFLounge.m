@@ -1,12 +1,11 @@
 #import "SFLounge.h"
-#import "SFCurl.h"
+#import "SFYTEngine.h"
 #import "SFStore.h"
 #import "SFModel.h"
 #import "SFPlayerScreen.h"
 #import "SFVolume.h"
 #import "SFLoungeMessages.h"
 #import "SFYouTubeApp.h"
-#import <curl/curl.h>
 
 NSString *const SFLoungeRemotesDidChangeNotification = @"SFLoungeRemotesDidChangeNotification";
 static NSString *const kAPI = @"https://www.youtube.com/api/lounge";
@@ -26,11 +25,6 @@ static NSString *zx(void) {
     char b[13]; for (int i = 0; i < 12; i++) b[i] = cs[arc4random_uniform(36)]; b[12] = 0;
     return @(b);
 }
-
-#pragma mark - Long poll (libcurl, own thread)
-
-typedef struct { void *self; } SFLPCtx;
-static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 
 @interface SFLounge ()
 - (void)feed:(NSData *)d;
@@ -82,12 +76,20 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
 
 - (NSString *)key:(NSString *)k { return [@"lounge." stringByAppendingString:k]; }
 
+// One request, made by the YouTube engine's page like youtube.com/tv makes it (SFYTEngine
+// loungeRequest) - the lounge is part of YouTube's one client. Blocking: on _q, never main.
 - (NSData *)http:(NSString *)method url:(NSString *)url body:(NSString *)body status:(NSInteger *)st {
-    NSError *e = nil;
-    NSDictionary *h = body ? @{@"Content-Type": @"application/x-www-form-urlencoded"} : nil;
-    NSData *d = SFCurlFetch(url, method, h, [body dataUsingEncoding:NSUTF8StringEncoding], st, &e);
-    if (e) SFLog(@"lounge: %@ %@ -> %@", method, ((NSString *)[url componentsSeparatedByString:@"?"][0]).lastPathComponent, e.localizedDescription);
-    return d;
+    __block NSData *data = nil;
+    __block NSInteger status = 0;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    [[SFYTEngine shared] loungeRequest:method url:url body:body done:^(NSData *d, NSInteger code) {
+        data = d; status = code;
+        dispatch_semaphore_signal(sem);
+    }];
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);   // the engine call times out on its own
+    if (!status) SFLog(@"lounge: %@ %@ -> no answer", method, ((NSString *)[url componentsSeparatedByString:@"?"][0]).lastPathComponent);
+    *st = status;
+    return data;
 }
 
 - (BOOL)ensureIdentity {   // on _q
@@ -271,6 +273,8 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
     }
 }
 
+// The bind channel's long poll through the engine page: its bytes are fed as they come; returns
+// the status of a poll that ended normally (200 after ~5 min), -1 when it was cut off. Own thread.
 - (NSInteger)longPoll {
     __block NSString *url = nil;
     dispatch_sync(_q, ^{
@@ -278,30 +282,19 @@ static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud);
                kAPI, [self commonParams], self->_sid, formEncode(self->_gsid), (long)self->_aid, zx()];
         self->_frameBuf = [NSMutableData new];
     });
-    CURL *c = SFCurlNew();
-    if (!c) return -1;
-    curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, lpWrite);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, (__bridge void *)self);
-    curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1L);     // noop every ~28 s -> 70 s without data = dead
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 70L);
-    curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
-    CURLcode rc = curl_easy_perform(c);
-    long code = 0;
-    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(c);
-    if (rc != CURLE_OK && code == 200) return -1;    // aborted midway through the stream
-    if (rc != CURLE_OK) SFLog(@"lounge: poll %s", curl_easy_strerror(rc));
+    __block NSInteger code = 0;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __weak SFLounge *ws = self;
+    [[SFYTEngine shared] loungePoll:url data:^(NSData *chunk) {
+        SFLounge *s = ws;
+        if (s) dispatch_async(s->_q, ^{ [s feed:chunk]; });
+    } done:^(NSInteger st) {
+        code = st;
+        dispatch_semaphore_signal(sem);
+    }];
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);   // the poll ends on its own (SFYTEngine+Lounge)
+    dispatch_sync(_q, ^{});   // its last bytes are fed before the next poll's AID is read
     return code ?: -1;
-}
-
-static size_t lpWrite(char *ptr, size_t size, size_t n, void *ud) {
-    SFLounge *s = (__bridge SFLounge *)ud;
-    NSData *d = [NSData dataWithBytes:ptr length:size * n];
-    dispatch_async(s->_q, ^{ [s feed:d]; });
-    return size * n;
 }
 
 // frame: "<len>\n<json>" (len incl. the trailing \n); on _q

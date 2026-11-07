@@ -73,6 +73,8 @@ the same.
 | `suggest(q)` | `GET /suggest` | suggestions |
 | `availability(v)` | (libcurl oEmbed in Sofa) | oEmbed HTTP status: 200 online, 400/404 gone, else unknown |
 | `image(url)` | (NSURLSession in Sofa) | `{mimeType, data: base64}`: a picture of i.ytimg.com / yt3.ggpht.com / yt3.googleusercontent.com, the page's fetch (status of the host on failure) |
+| `loungeRequest(method, url, body)` | (libcurl in Sofa) | `{status, data: base64}`: a request to www.youtube.com/api/lounge (docs/youtube-lounge.md) |
+| `loungePoll(id, url)` | (libcurl in Sofa) | `true`; the bind channel's bytes follow as `lounge {id, data}` events, then `lounge {id, end, status, error?}` (status 0 = cut off); a new poll ends the earlier |
 | `block(state)` | (breaker file) | Sofa's breaker file changed |
 | `health()` | `GET /health` | libraries, user agent, origin, on youtube.com, engine counters |
 

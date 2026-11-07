@@ -25,6 +25,8 @@ import { pageSessions } from './pagesession.ts';
 import { documentMinter } from './pagebotguard.ts';
 import { onYouTubePage } from './page.ts';
 import { initTrustedTypes } from './trusted.ts';
+import { createLounge } from '../lib/lounge.ts';
+import type { LoungeEvent } from '../lib/lounge.ts';
 import { watchConsent } from './consent.ts';
 import type { ConsentTarget } from './consent.ts';
 
@@ -49,7 +51,8 @@ export type EngineEvent =
   | { type: 'ready'; userAgent: string; url: string; late: boolean; navigation: string }
   | { type: 'log'; line: string }
   | { type: 'block'; state: BlockState }
-  | ({ type: 'consent' } & ConsentTarget);   // the consent dialog's accept button, for Sofa to click (consent.ts)
+  | ({ type: 'consent' } & ConsentTarget)   // the consent dialog's accept button, for Sofa to click (consent.ts)
+  | LoungeEvent;   // a lounge poll's bytes and end (lib/lounge.ts)
 
 /** Every call's answer: a value or the status + body an HTTP server would answer with. */
 export type Reply<T> = { ok: true; value: T } | { ok: false; status: number; body: { error: string } & Record<string, unknown> };
@@ -79,6 +82,10 @@ export interface SofaEngine {
   suggest(q: string): Promise<Reply<object>>;
   availability(v: string): Promise<Reply<number>>;
   image(url: string): Promise<Reply<{ mimeType: string; data: string }>>;
+  /** The lounge's requests from this page (lib/lounge.ts): status + body (base64). */
+  loungeRequest(method: string, url: string, body: string | null): Promise<Reply<{ status: number; data: string }>>;
+  /** Starts the bind channel's long poll; bytes and end come as `lounge` events. */
+  loungePoll(id: string, url: string): Reply<boolean>;
   stop(): void;
 }
 
@@ -88,6 +95,7 @@ let core: Engine | null = null;
 let blocks: MemoryBlocks | null = null;
 let channel: ((json: string) => void) | null = null;
 const send = (e: EngineEvent): void => { channel?.(JSON.stringify(e)); };
+const lounge = createLounge({ fetch: (input, init) => fetch(input, init), emit: send });
 
 function reply<T>(f: () => T): Reply<T> {
   try {
@@ -182,7 +190,11 @@ export const sofaEngine: SofaEngine = {
     return { mimeType: r.mimeType, data: toBase64(r.bytes) };
   }),
 
+  loungeRequest: (method, url, body) => replyAsync(() => lounge.request(method, url, body)),
+  loungePoll: (id, url) => reply(() => { lounge.poll(id, url); return true; }),
+
   stop() {
+    lounge.stop();
     core?.shutdown();
     core = null;
     blocks = null;
