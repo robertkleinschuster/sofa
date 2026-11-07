@@ -7,6 +7,12 @@ export function randomHex(n: number): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 }
 
+/** A client playback nonce as youtube.com's player makes one: 16 characters of the base64url alphabet. */
+export function clientNonce(): string {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  return Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (x) => abc[x & 63]).join('');
+}
+
 /** Bytes of a base64 or base64url string. */
 export function fromBase64(s: string): Uint8Array {
   const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));

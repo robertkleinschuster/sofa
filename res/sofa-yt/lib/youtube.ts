@@ -69,6 +69,20 @@ export interface VodInfo extends InfoBase {
   sabrUrl: string;
   ustreamer: string;
   formats: RawFormat[];
+  /** The player response's reporting URLs (playbackTracking.*.baseUrl), for a view's stats pings. */
+  tracking?: PlaybackTracking;
+}
+
+export interface PlaybackTracking { playback?: string; watchtime?: string; ptracking?: string; atr?: string; qoe?: string }
+
+/** The reporting URLs of a player response; the ones it lacks stay absent. */
+export function trackingOf(raw: RawPlayerResponse): PlaybackTracking {
+  const t = raw.playbackTracking || {};
+  const out: PlaybackTracking = {};
+  const pick = (k: keyof PlaybackTracking, v: { baseUrl?: string } | undefined) => { if (typeof v?.baseUrl === 'string' && v.baseUrl.startsWith('https://')) out[k] = v.baseUrl; };
+  pick('playback', t.videostatsPlaybackUrl); pick('watchtime', t.videostatsWatchtimeUrl); pick('ptracking', t.ptrackingUrl);
+  pick('atr', t.atrUrl); pick('qoe', t.qoeUrl);
+  return out;
 }
 
 /** A live / post-live DVR recording: the prepared HLS manifest URL. */
@@ -515,6 +529,7 @@ export class YouTube {
       formats: sd.adaptiveFormats || [],
       captions: raw.captions || null,
       endscreen: endscreenElements(raw),
+      tracking: trackingOf(raw),
       fetchedAt: Math.floor(Date.now() / 1000),
       published: publishedOf(raw),
     };

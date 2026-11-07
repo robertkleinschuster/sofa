@@ -13,7 +13,7 @@
 // Video pumps carry the audio track read most recently (SABR has no video-only mode); other audio
 // tracks (language switch) get audio-only pumps. Memory: media more than KEEP_BEHIND_MS behind every
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
-import { randomHex } from './bytes.ts';
+import { clientNonce, randomHex } from './bytes.ts';
 import { background } from './timers.ts';
 import { VirtualFile } from './vfile.ts';
 import type { Segment } from './vfile.ts';
@@ -51,6 +51,7 @@ export type PumpEnd = 'finished' | 'aborted' | 'error';
 
 /** What a session asks of its pump factory (sabrpump.startSabrPump or a test fake). */
 export interface PumpRequest {
+  cpn: string;                       // the playback's client nonce (PlaybackSession.cpn)
   video: DescribedFormat | null;     // null: audio only
   audio: DescribedFormat;
   startMs: number;
@@ -272,6 +273,9 @@ export class PlaybackSession {
   tracks: Map<string, Track>;
   audioFormats: Map<string, DescribedFormat>;
   mainAudioKey: string;
+  /** One playback's client nonce, as youtube.com's player keeps one per view: on every media
+   * request of this session (sabrpump.ts) - YouTube matches its requests by it. */
+  cpn: string;
   subs: SubtitleTrack[];
   subCache: Map<string, string>;
   pumps: Set<Pump>;
@@ -301,6 +305,7 @@ export class PlaybackSession {
   constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }: PlaybackSessionOptions) {
     this.kind = 'sabr';
     this.sid = randomHex(8);
+    this.cpn = clientNonce();
     this.info = info;
     this.formats = formats;
     this.cfg = { ...DEFAULTS, ...cfg };
@@ -439,6 +444,7 @@ export class PlaybackSession {
     debug(`${this.tag}: start ${video ? 'video+' : 'audio-only '}${audio.key} at ${(p.startMs / 1000).toFixed(1)}s`);
     try {
       p.handle = this.startPumpFn({
+        cpn: this.cpn,
         video: video ? video.fmt : null,
         audio: audio.fmt,
         startMs: p.startMs,

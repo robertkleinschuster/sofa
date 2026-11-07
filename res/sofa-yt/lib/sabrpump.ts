@@ -51,14 +51,29 @@ interface SegmentHeader {
  * is a request loop against googlevideo every few seconds (2026-11-07 20:04, during a bot-check
  * pause). Such a reload fails: the run ends and the session backs off.
  */
-export function freshReloads(reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>, url: string): (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse> {
+export function freshReloads(reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>, url: string,
+  decorate: (url: string) => string = (u) => u): (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse> {
   let current = url;
   return async (ctx) => {
     const r = await reload(ctx);
     if (r.serverAbrStreamingUrl === current) throw new Error('no fresh player response (the refused SABR URL came back)');
     current = r.serverAbrStreamingUrl;
-    return r;
+    return { ...r, serverAbrStreamingUrl: decorate(r.serverAbrStreamingUrl) };
   };
+}
+
+/**
+ * The SABR URL as youtube.com's player requests it: the player response's URL plus what the
+ * client adds (captured 2026-11-07) - its playback nonce, client name and version, alr=yes; `rn`
+ * (request number) is googlevideo's. Without them every media request differed from a browser's.
+ */
+export function clientSabrUrl(url: string, cpn: string, clientVersion: string): string {
+  const u = new URL(url);
+  u.searchParams.set('cpn', cpn);
+  u.searchParams.set('c', 'WEB');
+  u.searchParams.set('cver', clientVersion);
+  u.searchParams.set('alr', 'yes');
+  return u.toString();
 }
 
 /** Start a run; segments go to o.onSegment, the end (once) to o.onEnd. */
@@ -73,11 +88,12 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     o.onEnd(err, how);
   };
 
-  const reload = freshReloads(o.reload, o.info.sabrUrl);
+  const client = (url: string): string => clientSabrUrl(url, o.cpn, o.info.clientVersion);
+  const reload = freshReloads(o.reload, o.info.sabrUrl, client);
   const sabr = new SabrStream({
     videoId: o.info.id,
     formats: o.formats.map((f) => f.sabr),
-    serverAbrStreamingUrl: o.info.sabrUrl,
+    serverAbrStreamingUrl: client(o.info.sabrUrl),
     videoPlaybackUstreamerConfig: o.info.ustreamer,
     clientInfo: { clientName: o.info.clientName, clientVersion: o.info.clientVersion },
     poToken: o.poToken,

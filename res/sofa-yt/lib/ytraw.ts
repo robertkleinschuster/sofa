@@ -93,10 +93,12 @@ export interface RawPlayerResponse {
   };
   captions?: RawCaptions;
   endscreen?: { endscreenRenderer?: { elements?: RawEndscreenElement[] } };
+  /** Where youtube.com's player reports a view (stats/playback, watchtime, ptracking, atr, qoe). */
+  playbackTracking?: Partial<Record<'videostatsPlaybackUrl' | 'videostatsWatchtimeUrl' | 'ptrackingUrl' | 'atrUrl' | 'qoeUrl', { baseUrl?: string }>>;
 }
 
 const CONTAINERS = ['playabilityStatus', 'videoDetails', 'microformat', 'streamingData', 'playerConfig',
-  'captions', 'endscreen'] as const;
+  'captions', 'endscreen', 'playbackTracking'] as const;
 
 /**
  * Untrusted JSON -> RawPlayerResponse. Non-objects become `{}`; a top-level container that is not an

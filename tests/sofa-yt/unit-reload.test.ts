@@ -77,3 +77,18 @@ test('a run\'s reload must bring a new SABR URL: the refused one coming back end
   const stale = freshReloads(async () => ({ serverAbrStreamingUrl: 'https://rr1/old', videoPlaybackUstreamerConfig: 'u' }), 'https://rr1/old');
   await assert.rejects(stale(), /refused SABR URL/, 'a cached response with the run\'s own URL');
 });
+
+test('SABR URLs carry what youtube.com\'s player adds: cpn, c=WEB, cver, alr=yes - also after a reload', async () => {
+  const { clientSabrUrl, freshReloads } = await mod('lib/sabrpump.ts');
+  const { clientNonce } = await mod('lib/bytes.ts');
+  const cpn = clientNonce();
+  assert.match(cpn, /^[A-Za-z0-9_-]{16}$/, 'a 16-character nonce');
+  assert.notEqual(clientNonce(), cpn);
+  const u = new URL(clientSabrUrl('https://rr1---sn-x.googlevideo.com/videoplayback?sabr=1&expire=1&id=o-A', cpn, '2.20261105.05.01'));
+  assert.deepEqual(['sabr', 'expire', 'id', 'cpn', 'c', 'cver', 'alr'].map((k) => u.searchParams.get(k)), ['1', '1', 'o-A', cpn, 'WEB', '2.20261105.05.01', 'yes']);
+  const reload = freshReloads(async () => ({ serverAbrStreamingUrl: 'https://rr1/new?sabr=1', videoPlaybackUstreamerConfig: 'u' }), 'https://rr1/old?sabr=1',
+    (x) => clientSabrUrl(x, cpn, '2.x'));
+  const r = await reload();
+  assert.equal(new URL(r.serverAbrStreamingUrl).searchParams.get('cpn'), cpn, 'the same nonce on the reloaded URL');
+  await assert.rejects(reload(), /refused SABR URL/, 'compared without the added parameters');
+});
