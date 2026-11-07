@@ -18,7 +18,6 @@ const pageFetch: typeof fetch = (input, init) => {
 
 export function pageSessions(): SessionFactory {
   return {
-    headers: {},   // the browser sends its own
     async create(visitor) {
       Log.setLevel(Log.Level.ERROR);
       // the n/sig transforms of the player, compiled through the engine's Trusted Types policy

@@ -34,10 +34,8 @@ export function normalizeVtt(text: string | null | undefined): string {
 }
 
 export async function fetchVtt(track: CaptionSource,
-  { headers, poToken, clientVersion, fetchFn = fetch }: CaptionAuth & { headers: Record<string, string>; fetchFn?: typeof fetch }): Promise<string> {
-  const r = await fetchFn(captionUrl(track, { poToken, clientVersion }), {
-    headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  { poToken, clientVersion, fetchFn = fetch }: CaptionAuth & { fetchFn?: typeof fetch }): Promise<string> {
+  const r = await fetchFn(captionUrl(track, { poToken, clientVersion }), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`timedtext HTTP ${r.status}`);
   const body = await r.text();
   if (body.length > MAX_BYTES) throw new Error('caption track too large');

@@ -66,6 +66,7 @@ export interface SofaEngine {
   open(req: OpenRequest): Promise<Reply<OpenAnswer>>;
   read(sid: string, key: string, offset: number, maxBytes: number): Promise<Reply<MediaChunk>>;
   playlist(sid: string): Promise<Reply<string>>;
+  segment(sid: string, n: number): Promise<Reply<{ mimeType: string; data: string }>>;
   subtitles(sid: string, key: string): Promise<Reply<string>>;
   status(sid: string): Reply<object>;
   close(sid: string): Reply<boolean>;
@@ -158,6 +159,10 @@ export const sofaEngine: SofaEngine = {
     return { total: r.total, mimeType: r.mimeType, data: toBase64(r.bytes) };
   }),
   playlist: (sid) => replyAsync(() => core!.playlist(sid)),
+  segment: (sid, n) => replyAsync(async () => {
+    const r = await core!.segment(sid, n);
+    return { mimeType: r.mimeType, data: toBase64(r.bytes) };
+  }),
   subtitles: (sid, key) => replyAsync(() => core!.subtitles(sid, key)),
   status: (sid) => reply(() => core!.status(sid)),
   close: (sid) => reply(() => core!.close(sid)),

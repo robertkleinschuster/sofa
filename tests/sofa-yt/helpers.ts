@@ -207,7 +207,6 @@ export function fakeYouTube(infos: Record<string, VideoInfo | 'live' | 'bot' | '
     },
     async refresh() { throw new Error('fakeYouTube: no refresh'); },
     forget() {},
-    async webHeaders() { return {}; },
   };
   return y;
 }
@@ -234,7 +233,7 @@ export async function startApp(opts: TestAppOptions): Promise<TestApp> {
   const { createEngine } = await mod('lib/engine.ts');
   // the doubles carry what a test exercises; a member a test leaves out must never be reached
   const youtube: EngineYouTube = { sessionState: 'ready', refresh: unused('youtube.refresh'), forget: unused('youtube.forget'),
-    webHeaders: unused('youtube.webHeaders'), ...opts.youtube };
+    ...opts.youtube };
   let port = 0;
   const engine = createEngine({ ...opts, youtube, po: { state: 'ready', mintString: unused('po.mintString'), ...opts.po },
     base: () => `http://127.0.0.1:${port}` });
@@ -338,6 +337,5 @@ export function json<T>(body: Buffer | string): T {
 
 /** A SessionFactory for tests that stub the Innertube session (or never need one). */
 export const noSessions = {
-  headers: {} as Record<string, string>,
   create: (): Promise<never> => Promise.reject(new Error('no Innertube session in this test')),
 };

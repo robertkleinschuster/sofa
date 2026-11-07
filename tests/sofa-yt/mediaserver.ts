@@ -4,7 +4,7 @@
 // extension's channel as plain HTTP for test convenience. 127.0.0.1 only, Connection: close.
 //   GET /open?v=<id>&bg=0|1&maxHeight=&lang=&start=&prefetch=0|1&vcodec=&acodec=   (open)
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>              (Range, 206)
-//   GET /s/<sid>/live.m3u8   /s/<sid>/subs/<key>.vtt   /s/<sid>/status
+//   GET /s/<sid>/live.m3u8   /s/<sid>/seg/<n>.<ext>   /s/<sid>/subs/<key>.vtt   /s/<sid>/status
 //   GET /close?sid=   POST /yt/<endpoint>?bg=0|1   GET /suggest?q=   GET /health
 import http from 'node:http';
 import { EngineError } from '../../res/sofa-yt/lib/engine.ts';
@@ -121,6 +121,11 @@ export async function serveEngine(engine: Engine, setBase: (base: string) => voi
         if (what === 'status') return sendJson(res, 200, engine.status(sid));
       } else if (sub !== undefined) {
         if (what === 'audio') return media(engine, sid, sub, req, res);
+        if (what === 'seg') {
+          const seg = await engine.segment(sid, parseInt(sub, 10));
+          res.writeHead(200, { 'Content-Type': seg.mimeType, 'Content-Length': seg.bytes.length });
+          res.end(req.method === 'HEAD' ? undefined : seg.bytes); return;
+        }
         if (what === 'subs' && sub.endsWith('.vtt')) return sendText(req, res, 'text/vtt; charset=utf-8', await engine.subtitles(sid, sub.slice(0, -4)));
       }
     }

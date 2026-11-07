@@ -6,8 +6,9 @@
 // pull live SABR, but its segments are self-initializing fragments without byte positions or a
 // content length - mpv would need a growing stream or a locally generated playlist. YouTube's own
 // HLS manifest is exactly that playlist, muxed (one TS stream, audio included), and the variant
-// playlists keep the deciphered n and the token in every segment URL. mpv fetches the segments
-// directly from googlevideo; only the small playlists pass through here.
+// playlists keep the deciphered n and the token in every segment URL. The engine fetches the
+// segments too (one client for everything, NOTES "YouTube client goals"): the playlist it serves
+// names local segment URLs, `segment(n)` pulls one from googlevideo with the page's fetch.
 //
 // The engine keeps the playlist alive: the variant playlist is fetched fresh on every mpv reload
 // (with a 1 s micro cache), the manifest URL is renewed through the guarded player request path
@@ -127,16 +128,6 @@ export function pickVariant(variants: Variant[], maxHeight: number, preferItag: 
   return [...variants].sort(rank)[0]!;
 }
 
-/** A media playlist with every URI made absolute (it is served from 127.0.0.1). */
-export function absolutize(text: string, base: string): string {
-  return String(text).split(/\r?\n/).map((l) => {
-    if (!l.trim()) return l;
-    if (!l.startsWith('#')) return new URL(l.trim(), base).toString();
-    // URI="..." attributes (EXT-X-MAP, EXT-X-KEY)
-    return l.replace(/URI="([^"]+)"/g, (_m, u: string) => `URI="${new URL(u, base).toString()}"`);
-  }).join('\n');
-}
-
 export const codecShort = (codecs: string | undefined): string | null => {
   const v = String(codecs).split(',').map((c) => c.trim()).find((c) => /^(avc1|vp09|av01|hvc1|hev1)/.test(c)) || '';
   return v.startsWith('vp09') ? 'vp9' : v.split('.')[0] || null;
@@ -166,15 +157,37 @@ export interface LiveStatus {
 }
 
 /** The upstream fetch LiveSession needs (global fetch, or a fake in tests). */
-export type PlaylistFetch = (url: string, init: { headers: Record<string, string>; signal: AbortSignal; redirect: 'follow' })
-  => Promise<{ ok: boolean; status: number; url: string; text(): Promise<string> }>;
+export type PlaylistFetch = (url: string, init: { signal: AbortSignal; redirect: 'follow' })
+  => Promise<{ ok: boolean; status: number; url: string; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer>;
+    headers?: { get(name: string): string | null } }>;
+
+/** Remembered segment URLs per session: playlists slide, a reader may still ask for an older one. */
+const SEGMENTS_KEPT = 1024;
+
+/**
+ * A media playlist with every URI made local: `local(n, ext)` names segment n (the same upstream URL
+ * keeps its number across playlist reloads); `remember(url)` gives that number. EXT-X-MAP/KEY URIs too.
+ */
+export function localize(text: string, base: string, remember: (url: string) => number, local: (n: number, ext: string) => string): string {
+  const to = (u: string): string => {
+    const abs = new URL(u.trim(), base).toString();
+    const ext = /\.([a-z0-9]{1,5})$/i.exec(new URL(abs).pathname)?.[1]?.toLowerCase() ?? 'ts';
+    return local(remember(abs), ext);
+  };
+  return String(text).split(/\r?\n/).map((l) => {
+    if (!l.trim()) return l;
+    if (!l.startsWith('#')) return to(l);
+    return l.replace(/URI="([^"]+)"/g, (_m, u: string) => `URI="${to(u)}"`);
+  }).join('\n');
+}
 
 export interface LiveSessionOptions {
   info: HlsInfo;                                    // youtube.ts info with `hlsUrl`
   maxHeight: number;
   refresh: (why: string) => Promise<VideoInfo>;     // fresh info (guarded player request)
   fetchFn?: PlaylistFetch;
-  headers?: () => Promise<Record<string, string>> | Record<string, string>;   // web-player headers for playlist fetches
+  /** Where Sofa serves segment n of session `sid` (extension `ext` as upstream: ffmpeg checks it). */
+  segmentUrl: (sid: string, n: number, ext: string) => string;
   subs?: SubtitleTrack[];
   cfg?: Partial<HlsConfig>;
 }
@@ -192,7 +205,6 @@ export class LiveSession {
   lang: string | null;
   refreshInfo: (why: string) => Promise<VideoInfo>;
   fetchFn: PlaylistFetch;
-  headers: () => Promise<Record<string, string>> | Record<string, string>;
   cfg: HlsConfig;
   subs: SubtitleTrack[];
   subCache: Map<string, string>;
@@ -215,16 +227,21 @@ export class LiveSession {
   bytes: number;
   cache: { at: number; body: string } | null;
   inflight: Promise<string> | null;
+  segmentUrl: (sid: string, n: number, ext: string) => string;
+  segNumbers: Map<string, number>;   // upstream URL -> local number (insertion order = age)
+  segUrls: Map<number, string>;
+  nextSeg: number;
 
-  constructor({ info, maxHeight, refresh, fetchFn = fetch, headers = () => ({}), subs = [], cfg = {} }: LiveSessionOptions) {
+  constructor({ info, maxHeight, refresh, fetchFn = fetch, segmentUrl, subs = [], cfg = {} }: LiveSessionOptions) {
     this.kind = 'hls';
     this.sid = randomHex(8);
     this.info = info;
     this.maxHeight = maxHeight;
     this.lang = null;
     this.refreshInfo = refresh;
-    this.fetchFn = fetchFn;
-    this.headers = headers;
+    // never called as this.fetchFn(...): the browser's fetch refuses another `this` ("called on an
+    // object that does not implement interface Window" - every live failed in Firefox, 2026-11-07)
+    this.fetchFn = (url, init) => fetchFn(url, init);
     this.cfg = { ...HLS_DEFAULTS, ...cfg };
     this.subs = subs;
     this.subCache = new Map();
@@ -242,18 +259,51 @@ export class LiveSession {
     this.everRead = false;
     this.lastReadAt = 0;
     this.activeReaders = 0;      // playlist requests are short: never "in use" by an open response
-    this.fetched = { video: { ms: 0, bytes: 0 }, audio: { ms: 0, bytes: 0 } }; // media goes mpv <-> googlevideo directly
+    this.fetched = { video: { ms: 0, bytes: 0 }, audio: { ms: 0, bytes: 0 } };   // segments: muxed, counted as video
     this.runs = 0;
     this.bytes = 0;
     this.cache = null;           // {at, body}
     this.inflight = null;        // shared upstream fetch of the variant playlist
+    this.segmentUrl = segmentUrl;
+    this.segNumbers = new Map();
+    this.segUrls = new Map();
+    this.nextSeg = 1;
+  }
+
+  /** The local number of an upstream segment URL (stable while remembered). */
+  remember(url: string): number {
+    const have = this.segNumbers.get(url);
+    if (have !== undefined) return have;
+    const n = this.nextSeg++;
+    this.segNumbers.set(url, n); this.segUrls.set(n, url);
+    for (const [old, m] of this.segNumbers) {   // oldest first
+      if (this.segNumbers.size <= SEGMENTS_KEPT) break;
+      this.segNumbers.delete(old); this.segUrls.delete(m);
+    }
+    return n;
+  }
+
+  /** Segment n from googlevideo (the reader's request, made by the engine). */
+  async segment(n: number): Promise<{ bytes: Uint8Array; mimeType: string }> {
+    if (this.failed) throw this.failed;
+    const url = this.segUrls.get(n);
+    if (!url) throw new HttpError(404);
+    this.lastActivity = Date.now();
+    this.lastReadAt = Date.now();
+    const t0 = Date.now();
+    const r = await this.fetchFn(url, { signal: AbortSignal.timeout(this.cfg.FETCH_TIMEOUT_MS), redirect: 'follow' });
+    if (!r.ok) throw new HttpError(r.status);
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    this.fetched.video.bytes += bytes.length;
+    this.bytes += bytes.length;
+    debug(`${this.tag}: segment ${n} ${bytes.length} bytes in ${Date.now() - t0} ms`);
+    return { bytes, mimeType: (r.headers?.get('content-type') || 'video/mp2t').split(';')[0]!.trim() };
   }
 
   get tag(): string { return `live ${this.sid.slice(0, 6)} ${this.info.id}`; }
 
   async fetchText(url: string): Promise<{ body: string; url: string }> {
-    const headers = await this.headers();
-    const r = await this.fetchFn(url, { headers, signal: AbortSignal.timeout(this.cfg.FETCH_TIMEOUT_MS), redirect: 'follow' });
+    const r = await this.fetchFn(url, { signal: AbortSignal.timeout(this.cfg.FETCH_TIMEOUT_MS), redirect: 'follow' });
     if (!r.ok) throw new HttpError(r.status);
     const body = await r.text();
     if (!body.startsWith('#EXTM3U')) throw new Error('not a playlist');
@@ -287,7 +337,7 @@ export class LiveSession {
     await this.choose();
   }
 
-  /** The media playlist for mpv: upstream variant, absolute URIs. Self-heals expired/rejected URLs. */
+  /** The media playlist for mpv: upstream variant, local segment URIs. Self-heals expired/rejected URLs. */
   async playlist(): Promise<string> {
     if (this.failed) throw this.failed;
     this.lastActivity = Date.now();
@@ -329,7 +379,7 @@ export class LiveSession {
       const ended = /^#EXT-X-ENDLIST/m.test(res.body);
       if (ended && !this.ended && this.info.live) log(`${this.tag}: broadcast ended (EXT-X-ENDLIST)`);
       this.ended = ended;
-      const body = absolutize(res.body, res.url);
+      const body = localize(res.body, res.url, (u) => this.remember(u), (n, ext) => this.segmentUrl(this.sid, n, ext));
       this.cache = { at: Date.now(), body };
       debug(`${this.tag}: playlist ok (${body.length} bytes${ended ? ', ended' : ''})`);
       return body;
@@ -349,6 +399,7 @@ export class LiveSession {
     this.closed = true;
     this.cache = null;
     this.subCache.clear();
+    this.segNumbers.clear(); this.segUrls.clear();
     log(`${this.tag}: closed (${why})`);
   }
 

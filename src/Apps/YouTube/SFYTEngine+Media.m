@@ -1,7 +1,8 @@
 // The engine's sessions as local URLs for mpv and ffmpeg (the URLs open() answers, under the
 // loopback server's base):
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
-//   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the HLS media playlist)
+//   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the HLS media playlist, naming...)
+//   GET /s/<sid>/seg/<n>.<ext> (...its segments, fetched by the engine from googlevideo)
 //   GET /s/<sid>/subs/<key>.vtt
 //   GET /s/<sid>/status       (diagnostics)
 // Media bytes come from the page in pieces (engine read(): waits for SABR like a reader) and go out
@@ -51,6 +52,7 @@ static NSString *ErrorJSON(NSError *e) {
     if (!sub && [what isEqualToString:@"live.m3u8"]) {
         [self text:@"playlist" args:@[sid] type:@"application/vnd.apple.mpegurl" to:x]; return;
     }
+    if (sub && [what isEqualToString:@"seg"]) { [self serveSegment:sub.integerValue sid:sid to:x]; return; }
     if (sub && [what isEqualToString:@"subs"] && [sub hasSuffix:@".vtt"]) {
         [self text:@"subtitles" args:@[sid, [sub substringToIndex:sub.length - 4]] type:@"text/vtt; charset=utf-8" to:x]; return;
     }
@@ -67,6 +69,16 @@ static NSString *ErrorJSON(NSError *e) {
     [self request:method args:args timeout:30 done:^(id v, NSError *e) {
         if (e || !str(v)) { [x respondJSON:e.code ?: 502 object:@{@"error": e ? ErrorJSON(e) : @"no text"}]; return; }
         [x respond:200 type:type body:[(NSString *)v dataUsingEncoding:NSUTF8StringEncoding]];
+    }];
+}
+
+// A live segment, whole (a few MB at most): the reader's request, made by the engine.
+- (void)serveSegment:(NSInteger)n sid:(NSString *)sid to:(SFHTTPExchange *)x {
+    [self request:@"segment" args:@[sid, @(n)] timeout:kReadTimeout done:^(id v, NSError *e) {
+        NSDictionary *r = dict(v);
+        NSData *bytes = str(r[@"data"]) ? [[NSData alloc] initWithBase64EncodedString:r[@"data"] options:0] : nil;
+        if (e || !bytes) { [x respondJSON:(e.code >= 400 && e.code < 600) ? e.code : 502 object:@{@"error": e ? ErrorJSON(e) : @"malformed segment"}]; return; }
+        [x respond:200 type:str(r[@"mimeType"]) ?: @"video/mp2t" body:bytes];
     }];
 }
 

@@ -272,13 +272,11 @@ export interface BotPause {
 }
 
 /**
- * How this runtime opens an Innertube session: node - lib/nodesession.ts under the Chrome identity;
- * browser engine - youtubei.js' web build, the browser is the identity (docs/youtube-engine.md).
+ * How the engine opens an Innertube session: youtubei.js' web build in the youtube.com page, the
+ * browser is the identity (docs/youtube-engine.md) - it sends its own headers on every request.
  */
 export interface SessionFactory {
   create(visitor: string | undefined): Promise<Innertube>;
-  /** what a plain fetch (captions) adds to look like the web player; {} where the browser sends its own */
-  headers: Record<string, string>;
 }
 
 export interface YouTubeOptions {
@@ -629,14 +627,5 @@ export class YouTube {
   }
 
   /** Headers that make a plain fetch (captions) look like this session's web player. */
-  async webHeaders(): Promise<Record<string, string>> {
-    const yt = await this.session();
-    const c = yt.session.context.client;
-    return {
-      ...this.sessions.headers,
-      origin: 'https://www.youtube.com',
-      referer: 'https://www.youtube.com/',
-      ...(c.visitorData ? { 'x-goog-visitor-id': c.visitorData } : {}),
-    };
-  }
+
 }

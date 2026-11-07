@@ -86,12 +86,16 @@ test('parseMaster + pickVariant on the recorded master playlist', () => {
   assert.ok(v.every((x) => x.url.startsWith('https://manifest.googlevideo.com/api/manifest/hls_playlist/')));
 });
 
-test('absolutize: relative segment and MAP URIs become absolute', () => {
-  const t = '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:5.0,\nseg/1.ts\n#EXTINF:5.0,\nhttps://other/2.ts\n';
-  const out = hls.absolutize(t, 'https://h.example/a/b/index.m3u8');
-  assert.match(out, /URI="https:\/\/h\.example\/a\/b\/init\.mp4"/);
-  assert.match(out, /^https:\/\/h\.example\/a\/b\/seg\/1\.ts$/m);
-  assert.match(out, /^https:\/\/other\/2\.ts$/m);
+test('localize: segment and MAP URIs become local ones, numbered per absolute upstream URL, extension kept', () => {
+  const t = '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:5.0,\nseg/1.ts\n#EXTINF:5.0,\nhttps://other/2.ts\n#EXTINF:5.0,\nhttps://other/x\n';
+  const seen: string[] = [];
+  const remember = (u: string): number => { const i = seen.indexOf(u); if (i >= 0) return i + 1; seen.push(u); return seen.length; };
+  const out = hls.localize(t, 'https://h.example/a/b/index.m3u8', remember, (n, ext) => `http://l/s/x/seg/${n}.${ext}`);
+  assert.deepEqual(seen, ['https://h.example/a/b/init.mp4', 'https://h.example/a/b/seg/1.ts', 'https://other/2.ts', 'https://other/x']);
+  assert.match(out, /URI="http:\/\/l\/s\/x\/seg\/1\.mp4"/);
+  assert.deepEqual(out.split('\n').filter((l) => l && !l.startsWith('#')), ['http://l/s/x/seg/2.ts', 'http://l/s/x/seg/3.ts', 'http://l/s/x/seg/4.ts']);
+  hls.localize(t, 'https://h.example/a/b/index.m3u8', remember, () => '');
+  assert.equal(seen.length, 4, 'a reload keeps the numbers');
 });
 
 // ---- youtube.ts: player request -> live info / upcoming ------------------------------------
@@ -189,16 +193,21 @@ interface Upstream {
   variantBody: string;
   masterStatus: number;
   lastHeaders: Record<string, string> | null;
+  segments: string[];
   fetch: PlaylistFetch;
 }
 
 function fakeUpstream({ variant = VARIANT } = {}): Upstream {
-  const f: Upstream = { master: 0, variant: 0, failVariant: [], variantBody: variant, masterStatus: 200, lastHeaders: null,
+  const f: Upstream = { master: 0, variant: 0, failVariant: [], variantBody: variant, masterStatus: 200, lastHeaders: null, segments: [],
     fetch: () => Promise.reject(new Error('set below')) };
-  f.fetch = async (url, opts) => {
-    f.lastHeaders = opts?.headers;
+  // a function with its own `this`, like the browser's fetch: it must be called without one
+  f.fetch = async function (this: unknown, url, opts) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("'fetch' called on an object that does not implement interface Window.");
+    f.lastHeaders = (opts as { headers?: Record<string, string> }).headers ?? null;
     const u = String(url);
-    const mk = (status: number, body: string) => ({ ok: status < 300, status, url: u, text: async () => body });
+    const mk = (status: number, body: string) => ({ ok: status < 300, status, url: u, text: async () => body,
+      arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer, headers: { get: () => 'video/mp2t' } });
+    if (u.includes('/videoplayback/')) { f.segments.push(u); return mk(200, `segment ${u.length}`); }
     if (u.includes('/hls_variant/')) { f.master++; return f.masterStatus === 200 ? mk(200, MASTER) : mk(f.masterStatus, ''); }
     if (u.includes('/hls_playlist/')) {
       f.variant++;
@@ -219,7 +228,6 @@ function fakeYT(info: VideoInfo, { refreshInfo }: { refreshInfo?: () => VideoInf
     async info() { y.requests++; return { info, cached: y.requests > 1 }; },
     async refresh() { y.refreshes++; if (!refreshInfo) throw new Error('reload limit reached'); return refreshInfo(); },
     forget() { y.forgotten++; },
-    async webHeaders() { return { 'user-agent': 'UA-test' }; },
   };
   return y;
 }
@@ -229,7 +237,7 @@ const noPump: FakeStart = () => { throw new Error('no SABR for lives'); };
 /** GET a JSON answer of the media server (mediaserver.ts) (the test states its shape). */
 const j = async <T = LiveAnswer>(url: string): Promise<T> => (await fetch(url)).json() as Promise<T>;
 
-test('/open of a live: local HLS playlist URL, live flag, chosen variant; playlist proxied with absolute URLs', async () => {
+test('/open of a live: local HLS playlist URL, live flag, chosen variant; playlist and segments through the engine', async () => {
   const up = fakeUpstream();
   const yt = fakeYT(liveInfo());
   const app = await startApp({ youtube: yt, po: {}, breaker, startPump: noPump, fetchFn: up.fetch });
@@ -246,9 +254,18 @@ test('/open of a live: local HLS playlist URL, live flag, chosen variant; playli
     assert.match(res.headers.get('content-type') ?? '', /mpegurl/);
     const body = await res.text();
     assert.ok(body.startsWith('#EXTM3U'));
-    assert.equal(body.split('\n').filter((l) => l && !l.startsWith('#')).length, 6);
-    assert.ok(body.split('\n').filter((l) => l && !l.startsWith('#')).every((l) => l.startsWith('https://')));
-    assert.equal(up.lastHeaders?.['user-agent'], 'UA-test');   // the web identity's headers
+    const segs = body.split('\n').filter((l) => l && !l.startsWith('#'));
+    assert.equal(segs.length, 6);
+    // every segment from the engine (one client, NOTES "YouTube client goals"): local URLs, upstream extension
+    assert.ok(segs.every((l, i) => l === `${app.base}/s/${r.sid}/seg/${i + 1}.ts`), `local segment URLs: ${segs[0]}`);
+    assert.equal(up.lastHeaders, null, 'no headers of our own: the browser sends its own (a custom one meant a CORS preflight)');
+    const seg = await fetch(must(segs[1]));
+    assert.equal(seg.status, 200);
+    assert.equal(seg.headers.get('content-type'), 'video/mp2t');
+    assert.match(await seg.text(), /^segment \d+$/);
+    assert.equal(up.segments.length, 1);
+    assert.ok(must(up.segments[0]).includes('googlevideo.com/videoplayback/'), 'the second playlist entry, fetched upstream');
+    assert.equal((await fetch(`${app.base}/s/${r.sid}/seg/999.ts`)).status, 404, 'only segments the playlist named');
     // micro cache: an immediate second read does not hit upstream again
     await fetch(r.hls).then((x) => x.text());
     assert.equal(up.variant, 1);

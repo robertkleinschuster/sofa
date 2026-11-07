@@ -24,7 +24,7 @@ export const READ_MAX = 8 * 1024 * 1024;   // one read(); the caller reads on in
 const IN_USE_MS = 60000;   // read within this time = in use (mpv reconnects, pauses between reads)
 
 /** What the engine uses of YouTube / the PO token minter / the breaker (tests pass fakes). */
-export type EngineYouTube = Pick<YouTube, 'sessionState' | 'info' | 'refresh' | 'forget' | 'webHeaders'> & Partial<Pick<YouTube, 'prune' | 'innertube'>>;
+export type EngineYouTube = Pick<YouTube, 'sessionState' | 'info' | 'refresh' | 'forget'> & Partial<Pick<YouTube, 'prune' | 'innertube'>>;
 export type EnginePo = Pick<PoTokenProvider, 'state' | 'mintString'>;
 export type EngineBreaker = Pick<Breaker, 'blockedUntil'>;
 
@@ -187,6 +187,8 @@ export interface Engine {
    */
   read(sid: string, key: string, offset: number, maxBytes: number): Promise<MediaBytes>;
   playlist(sid: string): Promise<string>;
+  /** Segment n of a live session's playlist (its local URL `/s/<sid>/seg/<n>.<ext>`), fetched from googlevideo. */
+  segment(sid: string, n: number): Promise<{ mimeType: string; bytes: Uint8Array }>;
   subtitles(sid: string, key: string): Promise<string>;
   status(sid: string): object;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<object>;
@@ -287,7 +289,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     makeRoom();
     const s = new LiveSession({
       info, maxHeight, fetchFn, cfg: liveCfg,
-      headers: () => youtube.webHeaders(),
+      segmentUrl: (sid, n, ext) => `${base()}/s/${sid}/seg/${n}.${ext}`,
       refresh: (_why) => youtube.refresh(info.id, null, { bg }),
       subs: info.captions ? subtitleTracks(info.captions, lang) : [],
     });
@@ -438,6 +440,18 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     }
   }
 
+  async function segment(sid: string, n: number): Promise<{ mimeType: string; bytes: Uint8Array }> {
+    const s = session(sid);
+    if (s.kind !== 'hls') throw new EngineError(404, { error: 'not a live session' });
+    if (s.failed) throw new EngineError(503, { error: s.failed.message });
+    if (!s.segUrls.has(n)) throw new EngineError(404, { error: `no segment ${n}` });
+    try {
+      return await s.segment(n);
+    } catch (e) {
+      throw new EngineError(502, { error: errorMessage(e) });   // mpv's HLS demuxer retries / skips
+    }
+  }
+
   async function subtitles(sid: string, key: string): Promise<string> {
     const s = session(sid);
     const t = s.subs.find((x) => x.key === key);
@@ -445,8 +459,8 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     let body = s.subCache.get(key);
     if (!body) {
       try {
-        const [headers, poToken] = await Promise.all([youtube.webHeaders(), po.mintString(s.info.id).catch(() => null)]);
-        body = await fetchVtt(t, { headers, poToken, clientVersion: s.info.clientVersion });
+        const poToken = await po.mintString(s.info.id).catch(() => null);
+        body = await fetchVtt(t, { poToken, clientVersion: s.info.clientVersion });
         s.subCache.set(key, body);
       } catch (e) {
         log(`${s.tag}: subtitles ${key}: ${errorMessage(e)}`);
@@ -503,6 +517,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     },
     read,
     playlist,
+    segment,
     subtitles,
     status: (sid) => session(sid).status(),
     innertube,
