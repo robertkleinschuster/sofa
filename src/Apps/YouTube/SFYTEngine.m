@@ -146,7 +146,12 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     if ([type isEqualToString:@"consent"]) { [self acceptConsent:e]; return; }
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
-        if (_state == SFYTEngineReady) {   // a new document: the old page's sessions are gone
+        BOOL wasReady = _state == SFYTEngineReady;
+        // starting again BEFORE anyone hears of it: a player that reopens on the notification must
+        // wait for the new document's engine - it used to be sent to it before its start ("engine
+        // not started", the video stopped after an update restart, 2026-11-07)
+        _state = SFYTEngineStarting;
+        if (wasReady) {   // a new document: the old page's sessions are gone
             SFLog(@"yt-engine: page reloaded - sessions lost");
             // and its calls: one it had fetched would wait out its whole timeout (an open: 60 s,
             // seen 2026-11-07) for an answer no document will send
@@ -154,7 +159,6 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
                                               userInfo:@{NSLocalizedDescriptionKey: @"engine: the page reloaded"}]];
             [[NSNotificationCenter defaultCenter] postNotificationName:SFYTEngineSessionsLostNotification object:self];
         }
-        _state = SFYTEngineStarting;
         [self startPage:++_page polls:kPagePolls];
     }
 }
