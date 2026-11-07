@@ -106,6 +106,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_barKnob.cornerRadius = U(11);
         self->_barKnob.backgroundColor = acc.CGColor;
         self->_barKnob.shadowOpacity = 0.5; self->_barKnob.shadowRadius = U(4);
+        SFShadowPathFromBounds(self->_barKnob);
         [self->_osd addSublayer:self->_barKnob];
 
         self->_elapsed = [SFLabel labelWithFont:[t medium:28] color:[NSColor whiteColor]];

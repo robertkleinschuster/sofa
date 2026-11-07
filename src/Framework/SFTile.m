@@ -159,6 +159,7 @@ static id<SFTileStatusSource> gStatus;
             pill.cornerRadius = U(6);
             pill.frame = CGRectMake(w - lw - U(16) - U(12), U(12), lw + U(16), lh + U(10));
             pill.shadowOpacity = 0.35; pill.shadowRadius = U(4); pill.shadowOffset = CGSizeMake(0, -U(1));
+            SFShadowPathFromBounds(pill);
             CALayer *lg = [CALayer layer];
             lg.contents = (__bridge id)mark;
             lg.contentsGravity = kCAGravityResizeAspect;

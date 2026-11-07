@@ -201,24 +201,24 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 #pragma mark - SFImageLayer
 
 @interface SFImageLayer (Fade)
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated;
 @end
 
 @interface SFImageLayer (Adaptive)
 - (void)adaptBackgroundTo:(CGImageRef)img source:(NSString *)want;
 @end
 
-// The backdrop's soft edges as an alpha mask (white, alpha = the fade): left 45 % from 0 to 1,
-// bottom 45 % from 1 to 0, the top 18 % slightly darker (header/clock readable), smoothstep each.
-// Computed once at a small size; the GPU scales and applies it when compositing (layer mask) - it
-// was a per-pixel CPU pass over every new 2560x1440 picture, competing with the video decoder.
+// The backdrop's soft edges (alpha): left 45 % from 0 to 1, bottom 45 % from 1 to 0, the top 18 %
+// slightly darker (header/clock readable), smoothstep each. Computed once at a small size (gray =
+// alpha) and scaled onto each picture when it is baked (FadedImage).
 static CGImageRef EdgeMask(void) {
     static CGImageRef mask;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         const size_t w = 512, h = 288;
-        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
-        CGColorSpaceRelease(cs);
+        CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
+        CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, gray, (CGBitmapInfo)kCGImageAlphaNone);
+        CGColorSpaceRelease(gray);
         if (!c) return;
         uint8_t *px = CGBitmapContextGetData(c);
         size_t bpr = CGBitmapContextGetBytesPerRow(c);
@@ -229,9 +229,7 @@ static CGImageRef EdgeMask(void) {
             for (size_t x = 0; x < w; x++) {
                 double fx = (double)x / w;
                 double vx = fx > 0.45 ? 1.0 : fx / 0.45;
-                uint8_t a = (uint8_t)(vx * vx * (3 - 2 * vx) * vy * vy * (3 - 2 * vy) * 255);
-                uint8_t *p = px + y * bpr + x * 4;
-                p[0] = p[1] = p[2] = p[3] = a;   // premultiplied white
+                px[y * bpr + x] = (uint8_t)(vx * vx * (3 - 2 * vx) * vy * vy * (3 - 2 * vy) * 255);
             }
         }
         mask = CGBitmapContextCreateImage(c);
@@ -240,27 +238,28 @@ static CGImageRef EdgeMask(void) {
     return mask;
 }
 
+// The picture with its edges faded into transparency, baked once per picture off the main thread.
+// Not a layer mask: Core Animation re-renders a masked layer offscreen on every frame anything
+// near it moves - with the backdrop masked, Home's shelf changes dropped from 62 to 26-35 fps
+// (frame meter, 2026-11-07). A baked picture is a plain texture to the compositor.
+static CGImageRef FadedImage(CGImageRef src) CF_RETURNS_RETAINED;
+static CGImageRef FadedImage(CGImageRef src) {
+    size_t w = CGImageGetWidth(src), h = CGImageGetHeight(src);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, cs, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
+    CGColorSpaceRelease(cs);
+    if (!c) return NULL;
+    CGContextSetInterpolationQuality(c, kCGInterpolationHigh);   // the small mask scaled up smoothly
+    CGContextClipToMask(c, CGRectMake(0, 0, w, h), EdgeMask());
+    CGContextDrawImage(c, CGRectMake(0, 0, w, h), src);
+    CGImageRef out = CGBitmapContextCreateImage(c);
+    CGContextRelease(c);
+    return out;
+}
+
 @implementation SFImageLayer
 
 static const NSTimeInterval kFadeIn = 0.3;
-
-- (void)setFadeEdges:(BOOL)fade {
-    _fadeEdges = fade;
-    if (!fade) { self.mask = nil; return; }
-    CALayer *m = [CALayer layer];
-    m.contents = (__bridge id)EdgeMask();
-    m.contentsGravity = kCAGravityResize;
-    m.frame = self.bounds;
-    self.mask = m;
-}
-- (void)setBounds:(CGRect)b {
-    [super setBounds:b];
-    if (self.mask) SFNoAnimate(^{ self.mask.frame = self.bounds; });
-}
-- (void)setFrame:(CGRect)f {
-    [super setFrame:f];
-    if (self.mask) SFNoAnimate(^{ self.mask.frame = self.bounds; });
-}
 
 - (instancetype)init {
     if ((self = [super init])) {
@@ -296,6 +295,7 @@ static const NSTimeInterval kFadeIn = 0.3;
         SFImageLayer *s = ws;
         if (!s || ![s.source isEqualToString:want] || !img) return;
         BOOL animated = !inMemory || s.alwaysFadesIn;
+        if (s.fadeEdges) { [s applyFaded:img source:want loaded:loaded animated:animated]; return; }
         if (s.adaptiveBackground) [s adaptBackgroundTo:img source:want];
         [s present:(__bridge id)img animated:animated];
     };
@@ -374,6 +374,30 @@ static SFLogoInfo logoInfo(CGImageRef img) {
             } else if (lum < 0.4 && bgLum < 0.5) bg = [NSColor colorWithCalibratedWhite:0.9 alpha:1];        // dark logo on dark -> light
             else if (lum > 0.7 && bgLum > 0.5) bg = [NSColor colorWithCalibratedWhite:0.14 alpha:1];  // light logo on light -> dark
             if (bg) SFAnimate(0.25, ^{ s.backgroundColor = bg.CGColor; });
+        });
+    });
+}
+@end
+
+@implementation SFImageLayer (Fade)
+// `want` = the layer's source (still current?), `loaded` = where the pixels came from (the source
+// or its fallback) - the faded result is cached by `loaded`.
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated {
+    static NSCache *cache;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ cache = [NSCache new]; cache.countLimit = 12; });
+    id hit = [cache objectForKey:loaded];
+    if (hit) { [self present:hit animated:animated]; return; }
+    CGImageRef keep = CGImageRetain(img);
+    __weak SFImageLayer *ws = self;
+    SFBackground(^{
+        id obj = (__bridge_transfer id)FadedImage(keep);
+        CGImageRelease(keep);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SFImageLayer *s = ws;
+            if (!obj) return;
+            [cache setObject:obj forKey:loaded];
+            if (s && [s.source isEqualToString:want]) [s present:obj animated:YES];
         });
     });
 }

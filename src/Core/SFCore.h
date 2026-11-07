@@ -77,6 +77,9 @@ void SFNoAnimate(dispatch_block_t changes);
 // opacity animation (a fade-in, an earlier fade) is replaced, never jumped over - a fade interrupted
 // halfway turns around where it is. dur <= 0: at once.
 void SFFadeOpacity(CALayer *layer, float to, CFTimeInterval dur);
+// The layer's shadow shape as its rounded bounds (call after sizing it). Without a shadowPath Core
+// Animation derives every shadow from the layer's alpha, offscreen, on every frame it composites.
+void SFShadowPathFromBounds(CALayer *layer);
 
 extern BOOL SFDevMode;   // invisible development mode (main.m)
 // Test knobs: environment variable NAME, honoured in dev instances only (never in the real app).

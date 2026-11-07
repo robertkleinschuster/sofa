@@ -58,56 +58,71 @@ static const NSTimeInterval kBackdropRest = 0.25;   // after the hero's 0.12 s: 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (seq != self->_heroSeq) return;
         CGFloat w = self.size.width * (self.overlay ? 0.6 : 0.5);
-        NSString *before = [NSString stringWithFormat:@"%@|%@|%@", self->_heroTitle.text, self->_heroMeta.text, self->_heroPlot.text];
-        SFNoAnimate(^{
-            self->_heroTitle.text = it.heroTitle ?: it.title ?: self->_page.title;
-            CGFloat h1 = [self->_heroTitle sizeToFitWidth:w];
-            NSMutableArray *meta = [NSMutableArray new];
-            if (it.channel.length && ![it.channel isEqualToString:it.title]) [meta addObject:it.channel];
-            // a live stream's date is when its page was set up - meaningless; its subtitle (what is on now) says more
-            if (it.date && it.kind != SFItemLive) [meta addObject:SFFormatDateShort(it.date)];
-            if (it.duration > 0) [meta addObject:SFFormatDuration(it.duration)];
-            if (!meta.count && it.subtitle.length) [meta addObject:it.subtitle];
-            if (it.heroMeta.length) { [meta removeAllObjects]; [meta addObject:it.heroMeta]; }
-            // live channel with a programme: what runs now, its time, what comes next, its description
-            SFBroadcast *now = it.kind == SFItemLive ? [it broadcastAt:[NSDate date]] : nil;
-            NSString *plotText = it.plot;
-            if (now) {
-                SFBroadcast *next = [it broadcastAfter:now];
-                [meta removeAllObjects];
-                [meta addObject:now.title];
-                [meta addObject:[NSString stringWithFormat:@"%@ – %@", SFFormatClock(now.start), SFFormatClock(now.end)]];
-                if (next) [meta addObject:[@"Danach: " stringByAppendingString:next.title]];
-                plotText = now.plot.length ? now.plot : now.subtitle.length ? now.subtitle : it.plot;
-            }
-            self->_heroMeta.text = [meta componentsJoinedByString:@"  ·  "];
-            CGFloat h2 = [self->_heroMeta sizeToFitWidth:w];
-            NSString *plot = [plotText stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
-            self->_heroPlot.text = plot;
-            // fit the plot lines to the space available down to the shelves
-            CGFloat y = self.overlay ? U(120) : U(190);   // overlay: no logo row above
-            CGFloat avail = self->_contentTop - U(40) - (y + h1 + h2 + U(26));
-            // first line incl. descender/shadow padding, each further line only its line height
-            self->_heroPlot.maxLines = 1;
-            CGFloat lh = [self->_heroPlot sizeToFitWidth:w];
-            self->_heroPlot.maxLines = 2;
-            CGFloat step = MAX(1, [self->_heroPlot sizeToFitWidth:w] - lh);
-            NSInteger fit = avail < lh ? 0 : 1 + (NSInteger)floor((avail - lh) / step);
-            NSInteger lines = MAX(0, MIN(self.heroPlotLines > 0 ? self.heroPlotLines : 3, fit));
-            self->_heroPlot.hidden = lines == 0;
-            self->_heroPlot.maxLines = MAX(1, lines);
-            [self->_heroPlot sizeToFitWidth:w];
-            self->_heroTitle.position = CGPointMake(U(96), y);
-            self->_heroMeta.position = CGPointMake(U(96), y + h1 + U(10));
-            self->_heroPlot.position = CGPointMake(U(96), y + h1 + h2 + U(26));
-        });
-        // fades only when it says something new: a page rebuilt with more data keeps its hero still
-        NSString *after = [NSString stringWithFormat:@"%@|%@|%@", self->_heroTitle.text, self->_heroMeta.text, self->_heroPlot.text];
-        if (![before isEqualToString:after]) {
-            CATransition *tr = [CATransition animation];
-            tr.type = kCATransitionFade; tr.duration = 0.25;
-            [self->_hero addAnimation:tr forKey:@"fade"];
+        NSString *title = it.heroTitle ?: it.title ?: self->_page.title;
+        NSMutableArray *meta = [NSMutableArray new];
+        if (it.channel.length && ![it.channel isEqualToString:it.title]) [meta addObject:it.channel];
+        // a live stream's date is when its page was set up - meaningless; its subtitle (what is on now) says more
+        if (it.date && it.kind != SFItemLive) [meta addObject:SFFormatDateShort(it.date)];
+        if (it.duration > 0) [meta addObject:SFFormatDuration(it.duration)];
+        if (!meta.count && it.subtitle.length) [meta addObject:it.subtitle];
+        if (it.heroMeta.length) { [meta removeAllObjects]; [meta addObject:it.heroMeta]; }
+        // live channel with a programme: what runs now, its time, what comes next, its description
+        SFBroadcast *now = it.kind == SFItemLive ? [it broadcastAt:[NSDate date]] : nil;
+        NSString *plotText = it.plot;
+        if (now) {
+            SFBroadcast *next = [it broadcastAfter:now];
+            [meta removeAllObjects];
+            [meta addObject:now.title];
+            [meta addObject:[NSString stringWithFormat:@"%@ – %@", SFFormatClock(now.start), SFFormatClock(now.end)]];
+            if (next) [meta addObject:[@"Danach: " stringByAppendingString:next.title]];
+            plotText = now.plot.length ? now.plot : now.subtitle.length ? now.subtitle : it.plot;
         }
+        NSString *metaText = [meta componentsJoinedByString:@"  ·  "];
+        NSString *plot = [plotText stringByReplacingOccurrencesOfString:@"\n" withString:@" "] ?: @"";
+        SFLabel *tl = self->_heroTitle, *ml = self->_heroMeta, *pl = self->_heroPlot;
+        SFLabelLook *titleLook = [tl lookForText:title maxLines:tl.maxLines width:w];
+        SFLabelLook *metaLook = [ml lookForText:metaText maxLines:ml.maxLines width:w];
+        CGFloat h1 = titleLook.size.height, h2 = metaLook.size.height;
+        // fit the plot lines to the space available down to the shelves
+        CGFloat y = self.overlay ? U(120) : U(190);   // overlay: no logo row above
+        CGFloat avail = self->_contentTop - U(40) - (y + h1 + h2 + U(26));
+        // first line incl. descender/shadow padding, each further line only its line height
+        CGFloat lh = [pl heightForText:plot maxLines:1 width:w];
+        CGFloat step = MAX(1, [pl heightForText:plot maxLines:2 width:w] - lh);
+        NSInteger fit = avail < lh ? 0 : 1 + (NSInteger)floor((avail - lh) / step);
+        NSInteger lines = MAX(0, MIN(self.heroPlotLines > 0 ? self.heroPlotLines : 3, fit));
+        SFLabelLook *plotLook = [pl lookForText:plot maxLines:MAX(1, lines) width:w];
+        NSString *before = [NSString stringWithFormat:@"%@|%@|%@", tl.text, ml.text, pl.text];
+        NSString *after = [NSString stringWithFormat:@"%@|%@|%@", title, metaText, plot];
+        // Drawn off the main thread; text, sizes and pictures change together once drawn. A slow
+        // draw (colour emoji at hero size) must not leave the last item's text up meanwhile: past
+        // 0.1 s the old text fades out and the new one fades in when it is ready.
+        __block BOOL applied = NO, faded = NO;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (applied || seq != self->_heroSeq || [before isEqualToString:after]) return;
+            faded = YES;
+            SFFadeOpacity(self->_hero, 0, 0.15);
+        });
+        [SFLabelLook render:@[titleLook, metaLook, plotLook] done:^{
+            applied = YES;
+            if (seq != self->_heroSeq) { if (faded) SFFadeOpacity(self->_hero, 1, 0.2); return; }   // a newer step shows its own
+            SFNoAnimate(^{
+                [tl applyLook:titleLook];
+                [ml applyLook:metaLook];
+                [pl applyLook:plotLook];
+                pl.hidden = lines == 0;
+                tl.position = CGPointMake(U(96), y);
+                ml.position = CGPointMake(U(96), y + h1 + U(10));
+                pl.position = CGPointMake(U(96), y + h1 + h2 + U(26));
+            });
+            // fades only when it says something new: a page rebuilt with more data keeps its hero still
+            if (faded) SFFadeOpacity(self->_hero, 1, 0.2);
+            else if (![before isEqualToString:after]) {
+                CATransition *tr = [CATransition animation];
+                tr.type = kCATransitionFade; tr.duration = 0.25;
+                [self->_hero addAnimation:tr forKey:@"fade"];
+            }
+        }];
         // the big picture of the focused item (every app's backdrop is the TV-sized version of the
         // same picture), else its tile picture; the tile picture also stands in when the big one
         // fails to load (YouTube: old videos have no maxres version)

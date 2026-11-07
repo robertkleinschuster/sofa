@@ -197,6 +197,13 @@ void SFAnimate(CFTimeInterval dur, dispatch_block_t changes) {
     changes();
     [CATransaction commit];
 }
+void SFShadowPathFromBounds(CALayer *layer) {
+    CGFloat r = MIN(layer.cornerRadius, MIN(layer.bounds.size.width, layer.bounds.size.height) / 2);
+    CGPathRef p = CGPathCreateWithRoundedRect(layer.bounds, r, r, NULL);
+    layer.shadowPath = p;
+    CGPathRelease(p);
+}
+
 void SFFadeOpacity(CALayer *layer, float to, CFTimeInterval dur) {
     CALayer *shown = layer.presentationLayer;
     float from = shown ? shown.opacity : layer.opacity;

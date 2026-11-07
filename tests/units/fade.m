@@ -36,6 +36,14 @@ int main(void) {
         CHECK(opacityAnimations(l).count == 0 && l.opacity == 0.5f, "dur 0: at once, no animation");
         SFFadeOpacity(l, 0.5, 0.3);
         CHECK(opacityAnimations(l).count == 0, "already there: nothing to animate");
+
+        // SFShadowPathFromBounds: the shadow takes the rounded bounds (no per-frame alpha pass)
+        CALayer *p = [CALayer layer];
+        p.bounds = CGRectMake(0, 0, 120, 40); p.cornerRadius = 30;   // more than half the height
+        SFShadowPathFromBounds(p);
+        CHECK(p.shadowPath && CGRectEqualToRect(CGPathGetBoundingBox(p.shadowPath), p.bounds), "shadow path = the bounds");
+        CHECK(CGPathContainsPoint(p.shadowPath, NULL, CGPointMake(60, 20), false) && !CGPathContainsPoint(p.shadowPath, NULL, CGPointMake(1, 1), false),
+              "rounded: corners outside, radius clamped to a pill");
     }
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     printf("fade ok\n");

@@ -128,6 +128,7 @@ static const NSInteger kCols = 10, kMaxSug = 6, kMaxLen = 80;
                 k.bg.cornerRadius = U(MAX(4, MIN(14, t.corner)));
                 k.bg.shadowColor = CGColorGetConstantColor(kCGColorBlack);
                 k.bg.shadowRadius = U(16); k.bg.shadowOffset = CGSizeMake(0, U(8));
+                SFShadowPathFromBounds(k.bg);
                 k.text = [SFLabel labelWithFont:k.kind == SFKbChar ? [t medium:42] : [t medium:30] color:t.text];
                 k.text.text = k.label;
                 k.text.alignment = NSCenterTextAlignment;

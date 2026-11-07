@@ -40,6 +40,7 @@
     _holder.backgroundColor = [NSColor colorWithDeviceWhite:0.12 alpha:1].CGColor;
     _holder.shadowColor = CGColorGetConstantColor(kCGColorBlack);
     _holder.shadowOpacity = 0.6; _holder.shadowRadius = U(14); _holder.shadowOffset = CGSizeMake(0, U(4));
+    SFShadowPathFromBounds(_holder);
     [self addSublayer:_holder];
     _image = [SFImageLayer layer];
     _image.frame = self.bounds;

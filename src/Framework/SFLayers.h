@@ -1,6 +1,8 @@
 // Basic UI building blocks: text layer and asynchronously loaded image layer.
 #import "SFCore.h"
 
+@class SFLabelLook;
+
 // Text as a CALayer (draws with NSStringDrawing, antialiasing, ellipsis).
 @interface SFLabel : CALayer
 @property (nonatomic, copy) NSString *text;
@@ -13,6 +15,22 @@
 + (instancetype)labelWithFont:(NSFont *)f color:(NSColor *)c;
 // Sets bounds.height to fit the text at the given width; returns the height.
 - (CGFloat)sizeToFitWidth:(CGFloat)w;
+
+// Changing a label without drawing on the main thread. A first draw can be slow - a colour emoji at
+// hero size decodes its bitmap from the font: 110-180 ms each on this iMac (2026-11-07), and a
+// title with three of them blocked Home's navigation for half a second. A look is measured on the
+// main thread (cheap) and drawn on the text queue (SFLabelLook render:); applyLook: then shows it
+// at once, so text, size and picture change together.
+- (CGFloat)heightForText:(NSString *)text maxLines:(NSInteger)maxLines width:(CGFloat)w;   // what sizeToFitWidth: would give
+- (SFLabelLook *)lookForText:(NSString *)text maxLines:(NSInteger)maxLines width:(CGFloat)w;
+- (void)applyLook:(SFLabelLook *)look;   // main thread, after render:
+@end
+
+@interface SFLabelLook : NSObject
+@property (nonatomic, readonly, copy) NSString *text;
+@property (nonatomic, readonly) CGSize size;
+// Draws the looks on the text queue (serial, off the main thread); `done` runs on the main thread.
++ (void)render:(NSArray *)looks done:(dispatch_block_t)done;
 @end
 
 // Image layer: loads file/HTTP images in the background, scales to the layer size,

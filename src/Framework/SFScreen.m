@@ -321,6 +321,7 @@ static __weak SFNavigator *gMainNav;
         CGFloat w = MIN(maxW, MAX(U(320), tw + U(96)));
         CGFloat h = [self->_toastLabel sizeToFitWidth:w - U(64)];
         self->_toastLayer.bounds = CGRectMake(0, 0, w, h + U(44));
+        SFShadowPathFromBounds(self->_toastLayer);
         CGFloat fromBottom = self.top ? [self.top toastCenterFromBottom] : U(110);
         self->_toastLayer.position = CGPointMake(sz.width / 2, sz.height - fromBottom);
         self->_toastLabel.position = CGPointMake(U(32), U(22));   // label = width − 2·32
