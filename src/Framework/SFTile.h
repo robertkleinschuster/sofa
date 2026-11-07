@@ -25,6 +25,7 @@ CGFloat SFButtonTileWidth(SFItem *item, SFTheme *theme, CGFloat minWidth);
 - (instancetype)initWithItem:(SFItem *)item style:(SFTileStyle)st theme:(SFTheme *)theme;
 // width > 0: own width in points instead of the style's (content-sized button pills)
 - (instancetype)initWithItem:(SFItem *)item style:(SFTileStyle)st theme:(SFTheme *)theme width:(CGFloat)width;
-- (void)refreshProgress;
+- (void)refreshProgress;   // watched/broadcast progress and the download chip
+- (void)refreshDownload;   // the download chip only
 - (void)loadImage;
 @end

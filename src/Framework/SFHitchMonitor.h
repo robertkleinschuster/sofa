@@ -1,5 +1,5 @@
-// SFHitchMonitor - main-thread stalls as numbers: every busy stretch of the main run loop longer
-// than two frames goes to the log, with the key press it followed. Home-screen micro-stutter
+// SFHitchMonitor - main-thread stalls as numbers: whenever the main queue makes work wait longer
+// than two frames, the log says so, with the key press it followed. Home-screen micro-stutter
 // (user 2026-11-07) is found from these lines instead of by feel.
 #import <Foundation/Foundation.h>
 

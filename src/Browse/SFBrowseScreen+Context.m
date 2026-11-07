@@ -158,6 +158,16 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
     for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues) [tl refreshProgress];
 }
 
+// A download changed (object = its item id; nil = any): only its tiles - a running download posts
+// every few percent, and refreshing every tile of the page each time cost ~50 ms of main thread
+// (sample 2026-11-07, home-screen micro-stutter)
+- (void)downloadChanged:(NSNotification *)n {
+    NSString *changed = [n.object isKindOfClass:[NSString class]] ? n.object : nil;
+    if (!changed) { [self refreshTiles]; return; }
+    for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues)
+        if ([tl.item.identifier isEqualToString:changed]) [tl refreshDownload];
+}
+
 @end
 
 

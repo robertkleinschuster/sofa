@@ -105,4 +105,5 @@
 
 @interface SFBrowseScreen (Context)
 - (void)showContextMenuFor:(SFItem *)it shelfItems:(NSArray *)items index:(NSUInteger)idx;
+- (void)downloadChanged:(NSNotification *)n;   // SFDownloadsDidChangeNotification: that item's tiles
 @end

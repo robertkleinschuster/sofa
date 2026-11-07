@@ -29,7 +29,7 @@
 }
 // keep the download status on the tiles live
 - (void)observeDownloads {
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshTiles) name:SFDownloadsDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(downloadChanged:) name:SFDownloadsDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateHint) name:SFNetOnlineDidChangeNotification object:nil];
     for (NSString *n in [SFAppRegistry remoteStatusNotifications])
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updatePhoneStatus) name:n object:nil];

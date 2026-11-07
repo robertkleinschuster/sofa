@@ -257,6 +257,7 @@ static id<SFTileStatusSource> gStatus;
 - (void)refreshDownload {
     if (!_dlChip) return;
     NSString *t = [gStatus chipTextForItem:self.item];
+    if ((t == nil) == self->_dlChip.hidden && (!t || [t isEqualToString:self->_dlLabel.text])) return;   // unchanged: no text layout
     SFNoAnimate(^{
         self->_dlChip.hidden = (t == nil);
         if (!t) return;
