@@ -92,6 +92,7 @@ waitlog() { for i in $(seq 1 ${3:-40}); do since $1 | grep -q "$2" && return 0; 
 shot() { local m; m=$(mark); cmd "shot $1"; waitlog $m "dev: shot written $1" 40; }
 keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS/"; return 0; }
 mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
+pos() { local n; n=$(mark); cmd "mpvprop time-pos"; waitlog $n 'mpv time-pos = ' 12; mpvtime $n; }   # asks mpv, waits for the answer
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {
   [ -n "$APP" ] && { kill $APP 2>/dev/null; wait $APP 2>/dev/null; }
@@ -124,10 +125,10 @@ echo "==> 3. info panel over the running video"
 m=$(mark); cmd "key selecthold"; waitlog $m 'info: panel for'
 since $m | grep -q 'info: panel for' && ok "panel opened" || bad "panel did not open"
 shot "$T/info.png"; [ -s "$T/info.png" ] && { ok "panel rendered"; keep "$T/info.png"; } || bad "no panel screenshot"
-cmd "mpvprop time-pos"; sleep 0.5; t1=$(mpvtime $m); sleep 2
-m2=$(mark); cmd "mpvprop time-pos"; sleep 0.5; t2=$(mpvtime $m2)
+t1=$(pos); sleep 2
+t2=$(pos)
 awk "BEGIN{exit !($t2 > $t1 + 1)}" 2>/dev/null && ok "video keeps playing under the panel ($t1 -> $t2 s)" || bad "video not playing under the panel ($t1 -> $t2)"
-m3=$(mark); cmd "key menu"; sleep 2; cmd "mpvprop time-pos"; sleep 0.5; t3=$(mpvtime $m3)
+m3=$(mark); cmd "key menu"; sleep 2; t3=$(pos)
 since $m3 | grep -q 'info: panel closed' && ok "MENU closed the panel" || bad "MENU did not close the panel"
 awk "BEGIN{exit !($t3 > $t2 + 1)}" 2>/dev/null && ok "playback continues after MENU ($t3 s)" || bad "playback stopped after MENU ($t3)"
 since $m | grep -q 'player: resolve\|player: play ' && bad "the panel restarted playback" || ok "no restart by the panel"
@@ -220,7 +221,7 @@ since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q 
 shot "$T/endscreen-focus.png"; keep "$T/endscreen-focus.png"
 m=$(mark); cmd "key select"; sleep 0.6; cmd "key select"; sleep 0.6
 since $m | grep -q 'follows: + Endscreen-Testkanal' && since $m | grep -q "follows: - ytchannel:$ESCH" && ok "follow tile follows and unfollows" || bad "follow toggle: $(since $m | grep 'follows' | tail -2)"
-m=$(mark); cmd "key menu"; sleep 0.6; cmd "mpvprop time-pos"; sleep 0.5; t1=$(mpvtime $m); sleep 1.5; m2=$(mark); cmd "mpvprop time-pos"; sleep 0.5; t2=$(mpvtime $m2)
+m=$(mark); cmd "key menu"; sleep 0.6; t1=$(pos); sleep 1.5; t2=$(pos)
 since $m | grep -q 'endscreen: left the tiles' && ok "MENU leaves the tiles" || bad "MENU did not leave the tiles"
 awk "BEGIN{exit !($t2 > $t1 + 0.5)}" 2>/dev/null && ok "playback goes on after leaving ($t1 -> $t2 s)" || bad "playback stopped after MENU ($t1 -> $t2)"
 m=$(mark); cmd "key play"; sleep 0.8; cmd "key prev"; waitlog $m 'endscreen: hidden' && ok "seeking back before the end screen hides it (paused)" || bad "tiles stayed after seeking back"
@@ -277,7 +278,7 @@ if [ -n "${SOFA_YT_LIVE:-}" ]; then
   since $m | grep -q 'SABR stream failed (.*) -> reopening via SABR' && ok "browser exit noticed" || bad "exit not noticed: $(since $m | grep 'yt-engine\|yt-browser\|player:' | tail -3)"
   since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && ok "reopened after the browser restart" || bad "not reopened"
   sleep 6
-  m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 3; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
+  a=$(pos); sleep 3; b=$(pos)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"
   # no browser outlives Sofa: quit ends it (SFApp stop), a crash too (SFYTBrowser's watcher: its
   # pipe from Sofa closes) - 2026-11-07: browsers outlived every test run
@@ -304,7 +305,7 @@ if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then
   sleep 6
   cmd "mpvprop vo-configured"; sleep 1
   since $m | grep -q 'mpv vo-configured = yes' && ok "video output configured" || bad "no video"
-  m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 4; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
+  a=$(pos); sleep 4; b=$(pos)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "live is playing ($a -> $b s)" || bad "live not playing ($a -> $b)"
   stop
 fi
