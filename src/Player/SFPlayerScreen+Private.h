@@ -76,6 +76,7 @@
 - (void)updateTitles;
 - (void)showMessage:(NSString *)msg;
 - (void)showSpinner:(BOOL)on;
+- (BOOL)awaitingPicture;
 - (void)didAppear;
 - (void)willDisappear;
 - (void)startItem;

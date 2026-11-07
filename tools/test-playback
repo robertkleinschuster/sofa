@@ -115,6 +115,10 @@ vo() {   # vo MARK: ask mpv until it reports a configured video output (10 s)
 vo $m
 grep -q 'mpv vo-configured = yes' "$LOG" && ok "video output configured" || bad "no video output (audio only?)"
 grep -q 'No render context set' "$LOG" && bad "mpv started before the render context" || ok "no render-context race"
+# the spinner stays until the first frame (user 2026-11-07: seconds of black screen after it vanished
+# at "file loaded"): its "off" comes after mpv's first frame, never before
+ff=$(since $m | grep -n 'mpv: first frame' | head -1 | cut -d: -f1); so=$(since $m | grep -n 'player: spinner off' | head -1 | cut -d: -f1)
+[ -n "$ff" ] && [ -n "$so" ] && [ "$so" -gt "$ff" ] && ok "spinner until the first frame" || bad "spinner gone before the first frame (frame line ${ff:-none}, off line ${so:-none})"
 
 echo "==> 2. self-healing of a dead video output"
 m=$(mark); cmd "mpvset vid no"; waitlog $m 'video output missing' 40; vo $m

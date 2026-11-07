@@ -79,7 +79,7 @@ static const NSTimeInterval kSessionReopenMinPlay = 60;
 }
 - (void)engineRateChanged { [self updatePauseState]; }
 - (void)engineBufferingChanged {
-    [self showSpinner:!_engine.likelyToKeepUp && _engine.playing && !_failed];
+    [self showSpinner:[self awaitingPicture]];
     [self postState];
 }
 // A session stream that ends or breaks well before the end of the video lost its local source

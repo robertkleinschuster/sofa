@@ -167,7 +167,14 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     });
 }
 
+// The spinner's rule: until this open's first frame is up, and while running playback waits for data
+- (BOOL)awaitingPicture {
+    if (_failed) return NO;
+    return !_engine.started || (_engine.playing && !_engine.likelyToKeepUp);
+}
+
 - (void)showSpinner:(BOOL)on {
+    if (on != (_spinner != nil)) SFLog(@"player: spinner %@", on ? @"on" : @"off");
     if (on && !_spinner) {
         _spinner = [CALayer layer];
         CAShapeLayer *arc = [CAShapeLayer layer];
@@ -346,7 +353,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];
     [self esUpdate];
-    if (_spinner && _engine.status == SFEngineReady && _engine.likelyToKeepUp) [self showSpinner:NO];
+    if (_spinner && ![self awaitingPicture]) [self showSpinner:NO];
 }
 
 - (void)updateBar {
@@ -397,7 +404,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     if (_closing || !_item) return SFPlaybackIdle;
     if (_ended) return SFPlaybackEnded;
     if (_failed) return SFPlaybackIdle;
-    if (!_engine || _engine.status != SFEngineReady || _pendingSeek != 0) return SFPlaybackBuffering;
+    if (!_engine || _engine.status != SFEngineReady || !_engine.started || _pendingSeek != 0) return SFPlaybackBuffering;
     if (_engine.playing) return _engine.likelyToKeepUp ? SFPlaybackPlaying : SFPlaybackBuffering;
     return SFPlaybackPaused;
 }

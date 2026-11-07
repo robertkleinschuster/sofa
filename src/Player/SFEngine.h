@@ -12,7 +12,7 @@ typedef NS_ENUM(NSInteger, SFEngineStatus) {
 @protocol SFEngineDelegate <NSObject>
 - (void)engineStatusChanged;      // Loading -> Ready/Failed
 - (void)engineRateChanged;        // Play/Pause
-- (void)engineBufferingChanged;   // likelyToKeepUp changed
+- (void)engineBufferingChanged;   // likelyToKeepUp or started changed
 - (void)engineDidEnd;             // end reached
 - (void)engineInterrupted;        // stream aborted midway
 - (void)engineTick;               // ~2x per second during playback
@@ -25,6 +25,7 @@ typedef NS_ENUM(NSInteger, SFEngineStatus) {
 @property (nonatomic, readonly) NSError *error;
 @property (nonatomic, readonly) BOOL playing;              // running (rate > 0)
 @property (nonatomic, readonly) BOOL likelyToKeepUp;
+@property (nonatomic, readonly) BOOL started;                // this open's playback began: the first frame is up (also paused)
 @property (nonatomic, readonly) NSTimeInterval currentTime;
 @property (nonatomic, readonly) NSTimeInterval duration;   // 0 = unknown/live
 @property (nonatomic, readonly) NSTimeInterval bufferedUntil;

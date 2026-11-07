@@ -34,7 +34,8 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
     SFEngineStatus _status;
     NSError *_error;
     double _time, _dur, _cacheTime;
-    BOOL _paused, _waiting, _eof, _loaded;
+    BOOL _paused, _waiting, _eof, _loaded, _started;
+    NSDate *_openedAt;
     NSTimer *_tick;
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
     NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
@@ -104,8 +105,8 @@ static void onWakeup(void *ctx) {
 }
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
-    _status = SFEngineLoading; _error = nil; _loaded = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
-    _stallSince = nil; _stallFired = NO;
+    _status = SFEngineLoading; _error = nil; _loaded = NO; _started = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
+    _openedAt = [NSDate date]; _stallSince = nil; _stallFired = NO;
     if (!_mpv) { _status = SFEngineFailed; _error = SFError(@"mpv nicht verfügbar"); [self.delegate engineStatusChanged]; return; }
     // Options for the next file (start, pause, separate audio track). URLs contain ':' and ',' ->
     // no path-list syntax, but change-list ... append (one element).
@@ -227,6 +228,16 @@ static void onWakeup(void *ctx) {
                 _loaded = YES; _status = SFEngineReady;
                 [self.delegate engineStatusChanged];
                 break;
+            case MPV_EVENT_PLAYBACK_RESTART:
+                // after loading (and after every seek): decoding caught up, the frame is shown. "file
+                // loaded" comes seconds earlier for a network stream - a spinner hidden then left a
+                // black screen (user 2026-11-07)
+                if (!_started && _loaded) {
+                    _started = YES;
+                    SFLog(@"mpv: first frame %.1f s after open", -[_openedAt timeIntervalSinceNow]);
+                    [self.delegate engineBufferingChanged];
+                }
+                break;
             case MPV_EVENT_END_FILE: {
                 mpv_event_end_file *ef = ev->data;
                 if (ef && ef->reason == MPV_END_FILE_REASON_ERROR) {
@@ -271,6 +282,7 @@ static void onWakeup(void *ctx) {
 - (NSError *)error { return _error; }
 - (BOOL)playing { return _loaded && !_paused && !_eof; }   // "running" while buffering too
 - (BOOL)likelyToKeepUp { return !_waiting; }
+- (BOOL)started { return _started; }
 - (NSTimeInterval)currentTime { return _time > 0 ? _time : 0; }
 - (NSTimeInterval)duration { return _dur > 0 ? _dur : 0; }
 - (NSTimeInterval)bufferedUntil { return _cacheTime; }
@@ -291,7 +303,7 @@ static void onWakeup(void *ctx) {
     [_tick invalidate]; _tick = nil;
     if (!_mpv) return;
     [self command:@[@"stop"]];
-    _loaded = NO; _status = SFEngineLoading;
+    _loaded = NO; _started = NO; _status = SFEngineLoading;
 }
 
 - (void)shutdown {
