@@ -39,13 +39,14 @@ static void *glProc(void *ctx, const char *name) {
 
 
 
-// Frames are drawn on CoreAnimation's own display thread (asynchronous layer), at the display's
-// refresh, when mpv has a new one - never through the main thread. Before (until 2026-11-07) each
-// frame went mpv -> main queue -> setNeedsDisplay -> a draw in the main thread's commit, and the
-// render waited there for the frame's display time: every main-thread stall dropped frames (50 fps:
-// 1.1 % dropped, decoder 0), and the waits took main-thread time from the UI.
+// Frames are drawn when CA asks at the display's refresh (asynchronous layer: canDraw, then draw)
+// and mpv has a new one; the render never waits for a frame's display time. On 10.9 CA asks from a
+// timer on the MAIN run loop (CAOpenGLLayer_timer_callback, sampled 2026-11-07) - rendering, the
+// frame's texture upload included, is main-thread time; a render thread of its own is in NOTES.
+// Before (until 2026-11-07) each frame went mpv -> main queue -> setNeedsDisplay -> a draw in the
+// commit that blocked until the frame's display time (50 fps: 1.1 % dropped, decoder 0).
 @implementation SFMPVLayer {
-    mpv_render_context *_rc;          // guarded by _rcLock (drawn on CA's thread, retired on main)
+    mpv_render_context *_rc;          // guarded by _rcLock (drawn from CA's timer, served on the render queue, retired on main)
     pthread_mutex_t _rcLock;
     CGLContextObj _ctx;
     volatile int32_t _frameDue;       // mpv's update callback: something new to draw
@@ -61,9 +62,22 @@ static void *glProc(void *ctx, const char *name) {
     if (_ctx) CGLReleaseContext(_ctx);
 }
 
+// A draw at the next refresh (canDraw asks every refresh of a layer on screen). super's draws in
+// the main thread's next commit as well, holding up the commit (a key's animation) for a render;
+// only the first draw, which creates the render context and renders nothing yet, goes that way: CA
+// asks a layer off screen (an offscreen window) only when told to.
 - (void)setNeedsDisplay {
     OSAtomicOr32Barrier(1, (volatile uint32_t *)&_forced);
-    [super setNeedsDisplay];
+    if (!_rc) [super setNeedsDisplay];
+}
+- (void)setNeedsDisplayInRect:(CGRect)r {   // super's setNeedsDisplay ends up here
+    OSAtomicOr32Barrier(1, (volatile uint32_t *)&_forced);
+    if (!_rc) [super setNeedsDisplayInRect:r];
+}
+- (void)setBounds:(CGRect)b {
+    BOOL changed = !CGSizeEqualToSize(b.size, self.bounds.size);
+    [super setBounds:b];
+    if (changed) [self setNeedsDisplay];   // the video at its new size (the first frame sizes the layer)
 }
 
 static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for "frameshot")
@@ -73,8 +87,8 @@ static __weak SFMPVLayer *gDevLayer;   // dev: most recently created layer (for 
     if ((self = [super init])) {
         gDevLayer = self;
         pthread_mutex_init(&_rcLock, NULL);
-        self.asynchronous = YES;             // CA asks at every refresh (canDrawInCGLContext) - off the main thread
-        self.needsDisplayOnBoundsChange = YES;
+        self.asynchronous = YES;             // CA asks at every refresh (canDrawInCGLContext) while on screen
+        self.needsDisplayOnBoundsChange = NO;   // setBounds: asks for the redraw at the next refresh
         self.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
         self.opaque = YES;
     }
@@ -185,7 +199,7 @@ static dispatch_queue_t RenderQueue(void) {
 }
 
 static void onUpdate(void *ctx) {
-    // mpv thread: something new to draw - CA's display thread picks it up at the next refresh;
+    // mpv thread: something new to draw - CA's refresh picks it up;
     // work for the render thread runs on the render queue right away
     SFMPVLayer *l = (__bridge SFMPVLayer *)ctx;
     OSAtomicOr32Barrier(1, (volatile uint32_t *)&l->_frameDue);
@@ -194,7 +208,7 @@ static void onUpdate(void *ctx) {
     if (SFMPVDevFrameShotPath) dispatch_async(dispatch_get_main_queue(), ^{ [l devFrameShot]; });
 }
 
-// CA's display thread, every refresh: draw when mpv has a frame for now (or the layer needs one).
+// CA's refresh timer: draw when mpv has a frame for now (or the layer needs one).
 - (BOOL)canDrawInCGLContext:(CGLContextObj)ctx pixelFormat:(CGLPixelFormatObj)pf forLayerTime:(CFTimeInterval)t displayTime:(const CVTimeStamp *)ts {
     if (OSAtomicAnd32OrigBarrier(0, (volatile uint32_t *)&_forced)) return YES;
     if (!_rc) return _mpv != NULL;   // the first draw creates the render context
@@ -219,7 +233,7 @@ static void onUpdate(void *ctx) {
     [super drawInCGLContext:ctx pixelFormat:pf forLayerTime:t displayTime:ts];
 }
 
-// Under _rcLock on CA's display thread: _rc stays valid throughout (retireWithMPV takes the lock).
+// Under _rcLock in CA's draw: _rc stays valid throughout (retireWithMPV takes the lock).
 - (void)drawLocked:(CGLContextObj)ctx {
     if (!_rc && _mpv) {
         mpv_opengl_init_params gp = { .get_proc_address = glProc, .get_proc_address_ctx = NULL };
@@ -250,10 +264,15 @@ static void onUpdate(void *ctx) {
         GLenum stale; int n = 0;
         while ((stale = glGetError()) != GL_NO_ERROR && n++ < 8) if (SFDevMode) SFLog(@"mpv: GL error before rendering: 0x%x", stale);
         mpv_opengl_fbo f = { .fbo = fbo, .w = vp[2], .h = vp[3], .internal_format = 0 };
-        int flip = 1;
+        // Not blocking for the frame's target time: mpv's video thread hands each frame over when it
+        // is due, so CA's next refresh shows it in time anyway. Blocking waited on that thread - one
+        // that was shutting down held this draw (and CA's layer lock, which the main thread's commit
+        // needs) for mpv's 200 ms timeout on every player close (hitch monitor, 2026-11-07).
+        int flip = 1, noBlock = 0;
         mpv_render_param p[] = {
             { MPV_RENDER_PARAM_OPENGL_FBO, &f },
             { MPV_RENDER_PARAM_FLIP_Y, &flip },
+            { MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &noBlock },
             { MPV_RENDER_PARAM_INVALID, NULL },
         };
         mpv_render_context_render(_rc, p);
