@@ -26,8 +26,9 @@ function receivePort(): Promise<MessagePort> {
 if (window === window.top) {
   void receivePort().then((page) => {
     const ext = browser.runtime.connect({ name: 'engine' });
-    page.onmessage = (e: MessageEvent) => ext.postMessage(e.data);
+    let open = true;   // until the background goes (an extension update): posting then would throw
+    page.onmessage = (e: MessageEvent) => { if (open) ext.postMessage(e.data); };
     ext.onMessage.addListener((m) => page.postMessage(m));
-    ext.onDisconnect.addListener(() => page.close());
+    ext.onDisconnect.addListener(() => { open = false; page.close(); });
   });
 }

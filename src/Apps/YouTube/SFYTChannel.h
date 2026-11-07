@@ -12,9 +12,13 @@
 extern NSString *const SFYTChannelErrorDomain;
 enum { SFYTChannelTimedOut = 1, SFYTChannelPageGone = 2 };
 
+// 128 random bits, hex.
+NSString *SFYTChannelNewToken(void);
+
 @interface SFYTChannel : NSObject
 // `queue` (serial, the HTTP server's) runs everything: requests, events, call completions.
-- (instancetype)initWithQueue:(dispatch_queue_t)queue;
+// `token`: the one the extension sends (SFYTChannelNewToken() for a new profile).
+- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token;
 @property (nonatomic, readonly) NSString *token;
 @property (nonatomic, copy) void (^onEvent)(NSDictionary *event);
 // YES when the exchange was a channel request (answered or held); NO: not the channel's path.

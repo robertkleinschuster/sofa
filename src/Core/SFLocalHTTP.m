@@ -197,21 +197,31 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     return self;
 }
 
-- (BOOL)start {
-    if (_accept) return YES;
+// A listening socket on 127.0.0.1:port (0: a free one), or -1.
+- (int)listenOn:(uint16_t)port {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return NO;
+    if (fd < 0) return -1;
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     struct sockaddr_in sa = {0};
-    sa.sin_len = sizeof sa; sa.sin_family = AF_INET; sa.sin_port = 0;
+    sa.sin_len = sizeof sa; sa.sin_family = AF_INET; sa.sin_port = htons(port);
     sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    socklen_t len = sizeof sa;
-    if (bind(fd, (struct sockaddr *)&sa, sizeof sa) != 0 || listen(fd, 64) != 0 || getsockname(fd, (struct sockaddr *)&sa, &len) != 0) {
-        SFLog(@"%@: cannot listen on 127.0.0.1 (%s)", _name, strerror(errno));
+    if (bind(fd, (struct sockaddr *)&sa, sizeof sa) != 0 || listen(fd, 64) != 0) {
+        SFLog(@"%@: cannot listen on 127.0.0.1:%u (%s)", _name, port, strerror(errno));
         close(fd);
-        return NO;
+        return -1;
     }
+    return fd;
+}
+
+- (BOOL)startPreferringPort:(uint16_t)preferred {
+    if (_accept) return YES;
+    int fd = [self listenOn:preferred];
+    if (fd < 0 && preferred) fd = [self listenOn:0];
+    if (fd < 0) return NO;
+    struct sockaddr_in sa = {0};
+    socklen_t len = sizeof sa;
+    getsockname(fd, (struct sockaddr *)&sa, &len);
     _port = ntohs(sa.sin_port);
     _accept = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
     __weak SFLocalHTTP *ws = self;

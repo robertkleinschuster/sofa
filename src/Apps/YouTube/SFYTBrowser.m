@@ -155,9 +155,10 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     for (NSString *f in @[@"sessionstore.jsonlz4", @"sessionstore-backups"]) [fm removeItemAtPath:[_profile stringByAppendingPathComponent:f] error:nil];
     NSString *ext = [self extensionCopy], *exts = [_profile stringByAppendingPathComponent:@"extensions"];
     [fm createDirectoryAtPath:exts withIntermediateDirectories:YES attributes:nil error:nil];
-    // The installed copy changes only when its content does (a new build, another port or token):
-    // Firefox takes a changed unpacked extension for an update and injects its content scripts
-    // into the already loaded tab - a second engine in the same document (measured 2026-11-07).
+    // The installed copy changes only when its content does (a new build, another port or token -
+    // both kept across starts by SFYTEngine): Firefox takes a changed unpacked extension for an
+    // update and injects its content scripts into the already loaded tab - a second engine in the
+    // same document (measured 2026-11-07).
     NSData *cfg = [NSJSONSerialization dataWithJSONObject:@{@"port": @(port), @"token": token} options:0 error:nil];
     NSString *stamp = [NSString stringWithContentsOfFile:[BuiltExtension() stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil];
     BOOL same = stamp && [stamp isEqualToString:[NSString stringWithContentsOfFile:[ext stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil]]
@@ -167,6 +168,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
         [fm removeItemAtPath:ext error:nil];
         if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
         if (![cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]) return NO;
+        SFLog(@"yt-browser: extension installed (new build or channel) - Firefox will start its engine twice once");
     }
     NSString *proxy = [exts stringByAppendingPathComponent:kExtensionID];   // unchanged unless it must (as above)
     BOOL proxyOK = [[NSString stringWithContentsOfFile:proxy encoding:NSUTF8StringEncoding error:nil] isEqualToString:ext]

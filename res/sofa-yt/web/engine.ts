@@ -44,7 +44,9 @@ export interface EngineConfig {
 
 /** What the engine tells Sofa over the BiDi channel (each one JSON-encoded, one message per event). */
 export type EngineEvent =
-  | { type: 'ready'; userAgent: string; url: string }   // injected into a document (preload script ran)
+  // injected into a document (preload script ran); late: after document_start, navigation: how the
+  // document was loaded (navigate, reload, back_forward) - both for the log of an unexpected new page
+  | { type: 'ready'; userAgent: string; url: string; late: boolean; navigation: string }
   | { type: 'log'; line: string }
   | { type: 'block'; state: BlockState }
   | ({ type: 'consent' } & ConsentTarget);   // the consent dialog's accept button, for Sofa to click (consent.ts)
@@ -127,7 +129,8 @@ export const sofaEngine: SofaEngine = {
       log(`csp: ${e.disposition} ${e.violatedDirective} blocked ${e.blockedURI || '?'} ${(e.sample || '').slice(0, 80)}`);
     });
     setLogSink((line) => send({ type: 'log', line }));
-    send({ type: 'ready', userAgent: navigator.userAgent, url: location.href });
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    send({ type: 'ready', userAgent: navigator.userAgent, url: location.href, late: document.readyState !== 'loading', navigation: nav?.type ?? '?' });
     watchConsent((target) => send({ type: 'consent', ...target }));
   },
 

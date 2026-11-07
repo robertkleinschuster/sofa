@@ -73,8 +73,22 @@ static void testServer(void) {
             };
         } else [x respond:404 type:nil body:nil];
     }];
-    CHECK([s start] && s.port > 0, "server starts on a free port");
+    CHECK([s startPreferringPort:0] && s.port > 0, "server starts on a free port");
     uint16_t port = s.port;
+    // the engine's channel keeps its port across starts (the extension's config stays the same)
+    SFLocalHTTP *again = [[SFLocalHTTP alloc] initWithName:@"test2" queue:q maxBody:1 handler:^(SFHTTPExchange *x) { [x respond:404 type:nil body:nil]; }];
+    CHECK([again startPreferringPort:port] && again.port && again.port != port, "a taken preferred port: a free one instead");
+    [again stop];
+    // a port that was in use and is free again (the previous Sofa's: its process ended)
+    int held = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in hs = { .sin_len = sizeof hs, .sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK) };
+    socklen_t hl = sizeof hs;
+    bind(held, (struct sockaddr *)&hs, sizeof hs); listen(held, 1); getsockname(held, (struct sockaddr *)&hs, &hl);
+    uint16_t freed = ntohs(hs.sin_port);
+    close(held);
+    SFLocalHTTP *third = [[SFLocalHTTP alloc] initWithName:@"test3" queue:q maxBody:1 handler:^(SFHTTPExchange *x) { [x respond:404 type:nil body:nil]; }];
+    CHECK([third startPreferringPort:freed] && third.port == freed, "a free preferred port is taken again");
+    [third stop];
 
     NSString *resp = roundTrip(port, @"GET /echo/a%20b/c?x=1&y=h%C3%A4+p&flag HTTP/1.1\r\nHost: x\r\nRange: bytes=5-\r\n\r\n", nil);
     CHECK([resp hasPrefix:@"HTTP/1.1 200 OK\r\n"], "200");
@@ -112,13 +126,13 @@ static void testServer(void) {
 
 static void testChannel(void) {
     dispatch_queue_t q = dispatch_queue_create("test.channel", DISPATCH_QUEUE_SERIAL);
-    SFYTChannel *ch = [[SFYTChannel alloc] initWithQueue:q];
+    SFYTChannel *ch = [[SFYTChannel alloc] initWithQueue:q token:SFYTChannelNewToken()];
     NSMutableArray *events = [NSMutableArray new];
     ch.onEvent = ^(NSDictionary *e) { @synchronized (events) { [events addObject:e]; } };
     SFLocalHTTP *s = [[SFLocalHTTP alloc] initWithName:@"test" queue:q maxBody:1 << 20 handler:^(SFHTTPExchange *x) {
         if (![ch handle:x]) [x respond:404 type:nil body:nil];
     }];
-    [s start];
+    [s startPreferringPort:0];
     uint16_t port = s.port;
     CHECK(ch.token.length == 32, "token: 16 random bytes");
     CHECK([roundTrip(port, @"GET /engine/poll?token=wrong HTTP/1.1\r\n\r\n", nil) hasPrefix:@"HTTP/1.1 403 "], "wrong token: 403");

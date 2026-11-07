@@ -16,16 +16,20 @@ NSString *const SFYTChannelErrorDomain = @"SFYTChannel";
     long _nextID;
 }
 
-- (instancetype)initWithQueue:(dispatch_queue_t)queue {
+NSString *SFYTChannelNewToken(void) {
+    uint8_t b[16];
+    if (SecRandomCopyBytes(kSecRandomDefault, sizeof b, b) != 0) arc4random_buf(b, sizeof b);
+    NSMutableString *t = [NSMutableString new];
+    for (size_t i = 0; i < sizeof b; i++) [t appendFormat:@"%02x", b[i]];
+    return t;
+}
+
+- (instancetype)initWithQueue:(dispatch_queue_t)queue token:(NSString *)token {
     if ((self = [super init])) {
         _queue = queue;
         _queued = [NSMutableArray new];
         _pending = [NSMutableDictionary new];
-        uint8_t b[16];
-        if (SecRandomCopyBytes(kSecRandomDefault, sizeof b, b) != 0) arc4random_buf(b, sizeof b);
-        NSMutableString *t = [NSMutableString new];
-        for (size_t i = 0; i < sizeof b; i++) [t appendFormat:@"%02x", b[i]];
-        _token = t;
+        _token = [token copy];
     }
     return self;
 }

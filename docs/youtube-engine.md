@@ -177,7 +177,9 @@ Sofa loopback server  <-- long poll / POST (token) --  background.js   (extensio
   events (`ready`, `log`, `block`) as JSON strings. Sofa: `GET /engine/poll?token=` (held up to 20 s)
   and `POST /engine/post?token=` with `{answers, events}`.
 - Profile setup (Sofa, like `tests/sofa-yt/enginehost.ts`): the extension unpacked with
-  `config.json` ({port, token}), a proxy file `extensions/youtube-engine@sofa` (MV2: host
+  `config.json` ({port, token} - the same on every start: the last port again, the token kept in
+  `youtube-engine/channel.json`; a changed extension is an update to Firefox, which re-injects the
+  content scripts into the loaded page, a second engine at every start, 2026-11-07), a proxy file `extensions/youtube-engine@sofa` (MV2: host
   permissions come with the install), prefs
   `xpinstall.signatures.required=false` (ESR) and `extensions.autoDisableScopes=0`.
 

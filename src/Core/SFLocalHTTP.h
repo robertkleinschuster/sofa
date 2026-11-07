@@ -37,7 +37,8 @@ typedef void (^SFHTTPHandler)(SFHTTPExchange *x);
 // `queue` (serial) runs the handler and every callback; a request body above `maxBody` gets 413.
 - (instancetype)initWithName:(NSString *)name queue:(dispatch_queue_t)queue maxBody:(NSUInteger)maxBody
                      handler:(SFHTTPHandler)handler;
-- (BOOL)start;                                      // binds 127.0.0.1:<free port>; NO when it can't
+// binds 127.0.0.1:<preferred>, or a free port when that one is taken (or 0); NO when it can't
+- (BOOL)startPreferringPort:(uint16_t)preferred;
 @property (nonatomic, readonly) uint16_t port;      // 0 until started
 - (void)stop;                                       // no new connections; open ones run out
 @end

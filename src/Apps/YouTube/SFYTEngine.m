@@ -38,6 +38,8 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 
 @implementation SFYTEngine {
     SFLocalHTTP *_server;
+    NSString *_channelFile;       // the channel's port and token, kept across starts (startServer)
+    NSDictionary *_savedChannel;  // {port, token} as in the file
     SFYTBrowser *_browser;
     SFYTEngineState _state;
     NSUInteger _run;              // browser runs; stale callbacks of an earlier run are ignored
@@ -62,7 +64,14 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 - (instancetype)init {
     if ((self = [super init])) {
         _queue = dispatch_queue_create("sofa.yt-engine", DISPATCH_QUEUE_SERIAL);
-        _channel = [[SFYTChannel alloc] initWithQueue:_queue];
+        // dev instances: their own profile (SFAppSupportDir is theirs) - never the real identity's state
+        NSString *dir = [SFAppSupportDir() stringByAppendingPathComponent:@"youtube-engine"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+        _channelFile = [dir stringByAppendingPathComponent:@"channel.json"];
+        NSData *cd = [NSData dataWithContentsOfFile:_channelFile];
+        _savedChannel = dict(cd ? [NSJSONSerialization JSONObjectWithData:cd options:0 error:nil] : nil);
+        NSString *token = str(_savedChannel[@"token"]);
+        _channel = [[SFYTChannel alloc] initWithQueue:_queue token:token.length == 32 ? token : SFYTChannelNewToken()];
         _waiting = [NSMutableArray new];
         _preloads = [NSMutableArray new];
         __weak SFYTEngine *ws = self;
@@ -73,9 +82,6 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
             if ([x.request.pathParts.firstObject isEqualToString:@"s"]) [s serveSession:x];
             else [x respondJSON:404 object:@{@"error": @"not found"}];
         }];
-        // dev instances: their own profile (SFAppSupportDir is theirs) - never the real identity's state
-        NSString *dir = [SFAppSupportDir() stringByAppendingPathComponent:@"youtube-engine"];
-        [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
         _browser = [[SFYTBrowser alloc] initWithProfile:[dir stringByAppendingPathComponent:@"profile"]];
         _browser.onExit = ^(NSString *why) { [ws runFailed:why]; };
     }
@@ -85,6 +91,26 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 - (BOOL)available { return _browser.available; }
 
 #pragma mark Lifecycle
+
+// The channel's address goes into the extension's config.json; it stays the same on every start
+// (the last port again, the token kept in channel.json), so the installed extension changes only
+// with a new build. A changed extension is an update to Firefox: it restarts the extension and runs
+// its content scripts once more in the already loaded page - a second engine, which Sofa rightly
+// takes for a new page, every session dropped, at every start (a new token each launch did that,
+// 2026-11-07; seen as "page reloaded (navigate, injected late)").
+- (BOOL)startServer {
+    uint16_t saved = (uint16_t)num(_savedChannel[@"port"]).unsignedIntValue;
+    if (![_server startPreferringPort:saved]) return NO;
+    NSDictionary *now = @{@"port": @(_server.port), @"token": _channel.token};
+    if (![now isEqualToDictionary:_savedChannel]) {
+        if (saved && saved != _server.port) SFLog(@"yt-engine: channel port %u taken - now %u (the extension is updated once)", saved, _server.port);
+        NSData *d = [NSJSONSerialization dataWithJSONObject:now options:0 error:nil];
+        if ([d writeToFile:_channelFile atomically:YES])   // the token: the owner only
+            [NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions: @0600} ofItemAtPath:_channelFile error:nil];
+        _savedChannel = now;
+    }
+    return YES;
+}
 
 - (void)start {
     if (_state != SFYTEngineIdle || !self.available) return;
@@ -99,7 +125,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         });
         return;
     }
-    if (!_server.port && ![_server start]) return;
+    if (!_server.port && ![self startServer]) return;
     _state = SFYTEngineStarting;
     _launchedAt = [NSDate date];
     NSUInteger run = ++_run;
@@ -152,7 +178,8 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         // not started", the video stopped after an update restart, 2026-11-07)
         _state = SFYTEngineStarting;
         if (wasReady) {   // a new document: the old page's sessions are gone
-            SFLog(@"yt-engine: page reloaded - sessions lost");
+            SFLog(@"yt-engine: page reloaded (%@%@, %@) - sessions lost", str(e[@"navigation"]) ?: @"?",
+                  [e[@"late"] boolValue] ? @", injected late" : @"", str(e[@"url"]));
             // and its calls: one it had fetched would wait out its whole timeout (an open: 60 s,
             // seen 2026-11-07) for an answer no document will send
             [_channel failAll:[NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelPageGone

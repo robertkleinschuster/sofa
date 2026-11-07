@@ -293,6 +293,9 @@ if [ -n "${SOFA_YT_LIVE:-}" ]; then
   for i in $(seq 1 240); do since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && break; sleep 0.5; done
   since $m | grep -q 'SABR stream failed (.*) -> reopening via SABR' && ok "browser exit noticed" || bad "exit not noticed: $(since $m | grep 'yt-engine\|yt-browser\|player:' | tail -3)"
   since $m | grep -q 'yt-engine: opened OzCYsIrrRyw' && ok "reopened after the browser restart" || bad "not reopened"
+  # the restarted browser keeps one engine: the extension is unchanged across starts (same channel
+  # port and token) - a changed one was re-injected into the loaded page, "page reloaded" at every start
+  ! since $m | grep -q 'yt-engine: page reloaded' && ok "one engine page after the restart" || bad "engine page replaced: $(since $m | grep 'page reloaded' | tail -1)"
   sleep 6
   a=$(pos); sleep 3; b=$(pos)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"
