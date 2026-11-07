@@ -141,14 +141,16 @@ static void testChannel(void) {
     dispatch_async(dispatch_get_global_queue(0, 0), ^{ held = roundTrip(port, poll, nil); });
     usleep(300000);
     __block BOOL failed = NO;
-    [ch call:@"status" args:@[@"sid"] timeout:0.5 done:^(id v, NSError *e) { failed = e != nil && v == nil; }];
+    [ch call:@"status" args:@[@"sid"] timeout:0.5 done:^(id v, NSError *e) {
+        failed = v == nil && [e.domain isEqualToString:SFYTChannelErrorDomain] && e.code == SFYTChannelTimedOut;
+    }];
     CHECK(waitFor(^{ return (BOOL)(held != nil); }, 3) && [bodyOf(held) rangeOfString:@"\"status\""].location != NSNotFound, "held poll released by a call");
-    CHECK(waitFor(^{ return failed; }, 3), "no answer: the call times out with an error");
+    CHECK(waitFor(^{ return failed; }, 3), "no answer: the call times out (SFYTChannelTimedOut)");
 
     __block BOOL dropped = NO;
-    [ch call:@"read" args:@[] timeout:30 done:^(id v, NSError *e) { dropped = e != nil; }];
+    [ch call:@"read" args:@[] timeout:30 done:^(id v, NSError *e) { dropped = e != nil && ![e.domain isEqualToString:SFYTChannelErrorDomain]; }];
     [ch failAll:SFError(@"gone")];
-    CHECK(waitFor(^{ return dropped; }, 3), "failAll fails pending calls");
+    CHECK(waitFor(^{ return dropped; }, 3), "failAll fails pending calls (not as a timeout)");
     [s stop];
 }
 

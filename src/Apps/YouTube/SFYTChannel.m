@@ -5,6 +5,8 @@
 // A poll is held this long without commands, then answered empty (the background polls again).
 static const NSTimeInterval kPollHold = 20;
 
+NSString *const SFYTChannelErrorDomain = @"SFYTChannel";
+
 @implementation SFYTChannel {
     dispatch_queue_t _queue;
     NSMutableArray *_queued;            // commands not yet fetched
@@ -83,7 +85,8 @@ static const NSTimeInterval kPollHold = 20;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), self->_queue, ^{
             NSUInteger i = [self->_queued indexOfObjectPassingTest:^BOOL(NSDictionary *c, NSUInteger n, BOOL *stop) { return [c[@"id"] isEqual:cid]; }];
             if (i != NSNotFound) [self->_queued removeObjectAtIndex:i];   // never fetched: don't run it late
-            once(nil, SFError([NSString stringWithFormat:@"engine: no answer to %@ within %.0f s", method, timeout]));
+            once(nil, [NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelTimedOut
+                                      userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"engine: no answer to %@ within %.0f s", method, timeout]}]);
         });
         if (self->_poll) [self answerPoll];
     });

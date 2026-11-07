@@ -1,10 +1,13 @@
 // WebPO tokens: keeps a BotGuard minter (botguard.ts) ready - the integrity token lives ~12 h; the
 // minter is renewed before it expires, after a rejected token (renew), and re-created with backoff
-// after failures. Tokens are bound to the video id (content binding) for the player request and the
+// after failures. Nothing waits without a deadline: an attestation or a mint that hangs (BotGuard's
+// VM, incident 2026-11-07: every open stalled after a page reload) fails, and the next attempt
+// starts afresh instead of waiting on the hung one. Tokens are bound to the video id (content binding) for the player request and the
 // SABR stream. Runtime-neutral: the factory brings the environment (node: nodebotguard.ts / jsdom).
 import type { WebPoMinter } from 'bgutils-js/webpo';
 import { errorMessage } from './errors.ts';
 import { log } from './log.ts';
+import { withTimeout } from './timers.ts';
 
 /** What the provider needs from a minter (a test may pass a fake factory). */
 export type Minter = Pick<WebPoMinter, 'mint' | 'mintAsWebsafeString'>;
@@ -21,6 +24,16 @@ export type ProviderState = 'pending' | 'ready' | 'error';
 const RETRY_MIN_MS = 60 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
 const RENEW_MIN_MS = 10 * 60 * 1000;   // renew() at most this often
+const SETUP_TIMEOUT_MS = 30 * 1000;    // one attestation (measured 1-4 s, the first ~10 s)
+const MINT_TIMEOUT_MS = 10 * 1000;     // one token (measured: milliseconds)
+
+export interface ProviderOptions {
+  /** one attestation in this runtime (browser: documentMinter) */
+  factory: () => Promise<MinterSetup>;
+  setupTimeoutMs?: number;
+  mintTimeoutMs?: number;
+  retryMinMs?: number;
+}
 
 export class PoTokenProvider {
   factory: () => Promise<MinterSetup>;
@@ -31,14 +44,19 @@ export class PoTokenProvider {
   nextTry: number;
   lastError: string | null;
   lastRenew = 0;
+  readonly setupTimeoutMs: number;
+  readonly mintTimeoutMs: number;
+  readonly retryMinMs: number;
 
-  /** factory: one attestation in this runtime (node: () => jsdomMinter(identity)) */
-  constructor({ factory }: { factory: () => Promise<MinterSetup> }) {
+  constructor({ factory, setupTimeoutMs = SETUP_TIMEOUT_MS, mintTimeoutMs = MINT_TIMEOUT_MS, retryMinMs = RETRY_MIN_MS }: ProviderOptions) {
     this.factory = factory;
+    this.setupTimeoutMs = setupTimeoutMs;
+    this.mintTimeoutMs = mintTimeoutMs;
+    this.retryMinMs = retryMinMs;
     this.state = 'pending';
     this.current = null; // {minter, expiresAt}
     this.inflight = null;
-    this.retryMs = RETRY_MIN_MS;
+    this.retryMs = retryMinMs;
     this.nextTry = 0;
     this.lastError = null;
   }
@@ -46,24 +64,27 @@ export class PoTokenProvider {
   /** Start (or renew) in the background; never throws. */
   warm(): void { this.ensure().catch(() => {}); }
 
-  async ensure(timeoutMs = 30000): Promise<Minter> {
+  /** The current minter, or a new attestation (at most setupTimeoutMs). */
+  async ensure(): Promise<Minter> {
     const now = Date.now();
     if (this.current && now < this.current.expiresAt) return this.current.minter;
     if (!this.inflight) {
       if (now < this.nextTry) throw new Error(`PO token unavailable (${this.lastError}); retry in ${Math.ceil((this.nextTry - now) / 1000)} s`);
       if (!this.current) this.state = 'pending';
       this.inflight = (async () => {
+        const attempt = this.factory();
         try {
-          const { minter, ttlMs, refreshMs, dispose } = await this.factory();
+          const { minter, ttlMs, refreshMs, dispose } = await withTimeout(attempt, this.setupTimeoutMs, 'PO token setup');
           const old = this.current;
           // renew a little before YouTube's refresh threshold
           this.current = { minter, dispose, expiresAt: Date.now() + Math.max(60000, ttlMs - refreshMs - 5 * 60000) };
           this.state = 'ready';
           old?.dispose?.();
-          this.retryMs = RETRY_MIN_MS;
+          this.retryMs = this.retryMinMs;
           this.lastError = null;
           return minter;
         } catch (e) {
+          attempt.then((late) => late.dispose?.(), () => {});   // a hung attestation that finishes later is not used
           this.lastError = errorMessage(e);
           this.nextTry = Date.now() + this.retryMs;
           this.retryMs = Math.min(RETRY_MAX_MS, this.retryMs * 2);
@@ -75,14 +96,7 @@ export class PoTokenProvider {
         }
       })();
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([this.inflight, new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new Error('PO token setup timed out')), timeoutMs);
-      })]);
-    } finally {
-      clearTimeout(timer);
-    }
+    return this.inflight;
   }
 
   /**
@@ -101,13 +115,25 @@ export class PoTokenProvider {
 
   /** Websafe base64 token bound to `contentBinding` (video id). */
   async mintString(contentBinding: string): Promise<string> {
-    const m = await this.ensure();
-    return m.mintAsWebsafeString(contentBinding);
+    return this.mintWith((m) => m.mintAsWebsafeString(contentBinding));
   }
 
   /** Raw token bytes (googlevideo's onMintPoToken). */
   async mintBytes(contentBinding: string): Promise<Uint8Array> {
+    return this.mintWith((m) => m.mint(contentBinding));
+  }
+
+  /** One mint within mintTimeoutMs; a minter that hangs is dropped - the next token re-attests. */
+  private async mintWith<T>(mint: (m: Minter) => Promise<T>): Promise<T> {
     const m = await this.ensure();
-    return m.mint(contentBinding);
+    try {
+      return await withTimeout(mint(m), this.mintTimeoutMs, 'PO token mint');
+    } catch (e) {
+      if (this.current?.minter === m) {
+        log('webpo: minter dropped:', errorMessage(e));
+        this.current.expiresAt = 0;
+      }
+      throw e;
+    }
   }
 }

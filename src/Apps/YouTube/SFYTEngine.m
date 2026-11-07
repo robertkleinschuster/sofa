@@ -25,6 +25,8 @@ static const NSUInteger kMaxPost = 16 * 1024 * 1024;
 // focus preloads: at most this many player requests per window
 static const NSUInteger kPreloadBudget = 8;
 static const NSTimeInterval kPreloadWindow = 600;
+// a call timed out: the page must answer this liveness check within this time, or it hangs
+static const NSTimeInterval kAliveTimeout = 5;
 // the consent dialog is read for a moment before it is answered (seconds, uniform)
 static const double kConsentReadMin = 2.5, kConsentReadMax = 5.5;
 
@@ -43,6 +45,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     NSMutableArray *_waiting;     // ^(BOOL ready) blocks
     NSMutableArray *_preloads;    // times of recent focus preloads
     BOOL _consentPending;         // a consent click is scheduled or in progress
+    BOOL _aliveCheck;             // a liveness check after a timed-out call is running
 }
 
 + (instancetype)shared {
@@ -219,7 +222,12 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 
 - (void)request:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id, NSError *))done {
     [_channel call:method args:args timeout:timeout done:^(id reply, NSError *e) {
-        if (e) { done(nil, [NSError errorWithDomain:@"SFYTEngine" code:504 userInfo:@{NSLocalizedDescriptionKey: e.localizedDescription, @"unanswered": @YES}]); return; }
+        if (e) {
+            if ([e.domain isEqualToString:SFYTChannelErrorDomain] && e.code == SFYTChannelTimedOut && ![method isEqualToString:@"health"])
+                SFMain(^{ [self checkAliveAfter:method]; });
+            done(nil, [NSError errorWithDomain:@"SFYTEngine" code:504 userInfo:@{NSLocalizedDescriptionKey: e.localizedDescription, @"unanswered": @YES}]);
+            return;
+        }
         NSDictionary *r = dict(reply);
         if (!r || ![r objectForKey:@"ok"]) { done(reply, nil); return; }   // a plain value (health)
         if ([r[@"ok"] boolValue]) { done(nn(r[@"value"]), nil); return; }
@@ -227,6 +235,21 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         info[NSLocalizedDescriptionKey] = [str(info[@"error"]) ?: @"engine error" copy];
         done(nil, [NSError errorWithDomain:@"SFYTEngine" code:[r[@"status"] integerValue] userInfo:info]);
     }];
+}
+
+// A call went unanswered. That alone proves nothing (a read waits for data); a page that does not
+// even answer health within kAliveTimeout hangs - its browser is restarted like one that died
+// (incident 2026-11-07: after a page reload every open stalled until the browser was restarted by
+// hand). Hangs inside a live page are the engine's own deadlines' (lib/webpo.ts, youtube.ts).
+- (void)checkAliveAfter:(NSString *)method {
+    if (_state != SFYTEngineReady || _aliveCheck) return;
+    _aliveCheck = YES;
+    NSUInteger run = _run;
+    [self request:@"health" args:@[] timeout:kAliveTimeout done:^(id h, NSError *e) { SFMain(^{
+        self->_aliveCheck = NO;
+        if (run != self->_run || !e) return;
+        [self runFailed:[NSString stringWithFormat:@"engine page unresponsive (no answer to %@, nor to health within %.0f s)", method, kAliveTimeout]];
+    }); }];
 }
 
 // A call once the engine is ready; done on the main thread.

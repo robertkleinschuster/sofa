@@ -17,6 +17,7 @@ import { prepareManifestUrl, pathExpire } from './hls.ts';
 import { isRecord, parseJson, records } from './json.ts';
 import type { JsonObject } from './json.ts';
 import { log } from './log.ts';
+import { withTimeout } from './timers.ts';
 import { asPlayerResponse, rawText } from './ytraw.ts';
 import type { RawCaptions, RawFormat, RawPlayerResponse } from './ytraw.ts';
 import type { PoTokenProvider } from './webpo.ts';
@@ -203,12 +204,6 @@ export function classifyPlayer(raw: RawPlayerResponse | null | undefined): Playe
   if (vd.isLive) return { kind: 'live' };
   if (vd.isPostLiveDvr) return { kind: 'postlive' };
   return { kind: 'vod' };
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let t: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${what} timed out`)), ms); })])
-    .finally(() => clearTimeout(t));
 }
 
 /**
