@@ -11,7 +11,7 @@ import { ENGINE, FIREFOX, bidi, callIn, engineMessages, injectEngine, launchFire
 
 test('the engine injects as a preload script, says ready over its channel, answers off youtube.com', {
   skip: (!fs.existsSync(FIREFOX) && 'Firefox missing') || (!fs.existsSync(ENGINE) && 'engine bundle missing (tools/build-yt-engine)'),
-  timeout: 60000,
+  timeout: 90000,   // a hung Firefox start costs 30 s before the fresh one (firefox.ts)
 }, async () => {
   const dir = tempDir('sofa-yt-engine-');
   const profile = path.join(dir, 'profile');

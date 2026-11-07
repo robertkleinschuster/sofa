@@ -96,8 +96,26 @@ export async function startXvfb({ width = 1920, height = 1080 } = {}): Promise<V
  * Start Firefox on `profile` with BiDi on a free port: headless, or on `display` (startXvfb) like a
  * browser on a screen. The screen the page sees is the TV's.
  */
-export async function launchFirefox(profile: string, { width = 1920, height = 1080, display, remote = true, url = 'about:blank' }:
-  { width?: number; height?: number; display?: string; remote?: boolean; url?: string } = {}): Promise<RunningFirefox> {
+type LaunchOptions = { width?: number; height?: number; display?: string; remote?: boolean; url?: string };
+
+/**
+ * A started Firefox prints its BiDi port within ~2-3 s (measured 2026-11-07). Under test-all load a
+ * start now and then hangs right after "You are running in headless mode" and never prints it (three
+ * times on 2026-11-07) - a hang, not slowness: that start is ended and one fresh start is made.
+ */
+export async function launchFirefox(profile: string, opts: LaunchOptions = {}): Promise<RunningFirefox> {
+  try {
+    return await launchOnce(profile, opts);
+  } catch (e) {
+    if (!(e instanceof NoBidiPort)) throw e;
+    console.error(`firefox.ts: start hung (${e.message}) - one fresh start`);
+    return launchOnce(profile, opts);
+  }
+}
+
+class NoBidiPort extends Error {}
+
+async function launchOnce(profile: string, { width = 1920, height = 1080, display, remote = true, url = 'about:blank' }: LaunchOptions): Promise<RunningFirefox> {
   const env: NodeJS.ProcessEnv = display ? { ...process.env, DISPLAY: display }
     : { ...process.env, MOZ_HEADLESS_WIDTH: String(width), MOZ_HEADLESS_HEIGHT: String(height) };
   delete env.DYLD_INSERT_LIBRARIES;
@@ -117,7 +135,7 @@ export async function launchFirefox(profile: string, { width = 1920, height = 10
   };
   if (!remote) return { proc, url: '', output: () => out, stop };
   const re = /WebDriver BiDi listening on (ws:\/\/\S+)/;
-  if (!await until(() => re.test(out), 30000, 100)) { await stop(); throw new Error(`Firefox: no BiDi port (${out.slice(-500)})`); }
+  if (!await until(() => re.test(out), 30000, 100)) { await stop(); throw new NoBidiPort(`Firefox: no BiDi port (${out.slice(-500)})`); }
   return { proc, url: `${re.exec(out)![1]!}/session`, output: () => out, stop };
 }
 
