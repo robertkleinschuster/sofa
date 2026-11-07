@@ -31,6 +31,10 @@ static NSDictionary *EnginePrefs(void) {
         @"app.update.enabled": @NO, @"toolkit.telemetry.enabled": @NO,
         // the TV's languages
         @"intl.accept_languages": @"de-AT, de, en-US, en",
+        // IPv4 only (user decision 2026-11-07): YouTube had blocked this home's IPv6 /64 (its own
+        // player failed there with a fresh profile) while IPv4 played; one address family for the
+        // one identity
+        @"network.dns.disableIPv6": @YES,
         // the engine never plays anything itself; a page that does stays silent
         @"media.volume_scale": @"0.0",
     };
@@ -155,14 +159,20 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
 
 // The browser an earlier Sofa left running (an update, a crash: its watcher waits out the grace)
 // is taken over as it is - the same page, no new document, no new attestation for YouTube - if
-// display and browser still run and the installed extension is this build's on this channel (a
-// changed one would be updated into the loaded page: a second engine, see prepareProfile).
+// display and browser still run, the installed extension is this build's on this channel (a
+// changed one would be updated into the loaded page: a second engine, see prepareProfile) and it
+// started with this build's prefs.
 - (BOOL)adoptForPort:(uint16_t)port token:(NSString *)token {
     NSDictionary *r = [self record];
     pid_t ff = [r[@"firefox"] intValue], xv = [r[@"xvfb"] intValue];
     int display = r[@"display"] ? [r[@"display"] intValue] : -1;
     if (!r || display < 0 || !SFYTProcessIs(ff, @"firefox") || !SFYTProcessIs(xv, @"Xvfb")) return NO;
     if (![self extensionCurrentForPort:port token:token]) { SFLog(@"yt-browser: the running browser has another extension build - starting anew"); return NO; }
+    // prefs are read at Firefox's start: the running one must have started with these
+    if (![[NSString stringWithContentsOfFile:[_profile stringByAppendingPathComponent:@"user.js"] encoding:NSUTF8StringEncoding error:nil] isEqualToString:UserJS(EnginePrefs())]) {
+        SFLog(@"yt-browser: the running browser has other prefs - starting anew");
+        return NO;
+    }
     [SFYTWatcher endEarlier:[r[@"watcher"] intValue]];   // its processes are this Sofa's now
     _firefox = ff; _xvfb = xv; _display = display;
     NSString *name = [NSString stringWithFormat:@":%d", display];
