@@ -2,6 +2,7 @@
 // into a part file, installs and verifies the result, fetches the thumbnail, records the outcome.
 #import "SFDownloads+Private.h"
 #import "SFHostFetch.h"
+#import "SFDownloadBudget.h"
 #import <signal.h>
 
 @implementation SFDownloads (Worker)
@@ -42,7 +43,7 @@
         return;
     }
     _runningID = r.identifier;
-    [self noteStartOf:[self sourceOf:r] at:now];
+    [self noteStartOf:[self sourceOf:r] at:now subscription:r.sub != nil];
     _resumeID = nil;
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
@@ -200,6 +201,7 @@ static NSTimeInterval SFStartSpacing(NSString *src) {
 }
 
 static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." stringByAppendingString:src]; }
+static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionStarts." stringByAppendingString:src]; }
 
 - (NSTimeInterval)nextStartOf:(NSString *)src {
     if (!_nextStart) _nextStart = [NSMutableDictionary new];
@@ -208,11 +210,34 @@ static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." s
     return n.doubleValue;
 }
 
-- (void)noteStartOf:(NSString *)src at:(NSTimeInterval)now {
+- (void)noteStartOf:(NSString *)src at:(NSTimeInterval)now subscription:(BOOL)sub {
     NSTimeInterval next = now + SFStartSpacing(src);
     if (!_nextStart) _nextStart = [NSMutableDictionary new];
     _nextStart[src] = @(next);
     [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", next] forKey:nextStartKey(src)];
+    if (!sub || !SFSubscriptionDownloadsPerDay([src stringByAppendingString:@":"])) return;
+    NSMutableArray *starts = [[self subscriptionStartsOf:src now:now] mutableCopy];
+    [starts addObject:@(now)];
+    _subStarts[src] = starts;
+    [[SFStore shared] setSetting:[starts componentsJoinedByString:@","] forKey:subStartsKey(src)];
+}
+
+// The source's subscription download starts within the last 24 h (oldest first).
+- (NSArray *)subscriptionStartsOf:(NSString *)src now:(NSTimeInterval)now {
+    if (!_subStarts) _subStarts = [NSMutableDictionary new];
+    NSArray *all = _subStarts[src];
+    if (!all) {
+        NSMutableArray *read = [NSMutableArray new];
+        for (NSString *t in [[[SFStore shared] setting:subStartsKey(src)] componentsSeparatedByString:@","]) if (t.doubleValue > 0) [read addObject:@(t.doubleValue)];
+        all = read;
+    }
+    return _subStarts[src] = SFDownloadBudgetRecent(all, now);
+}
+
+// When the source's daily subscription budget allows the next start (0 = now).
+- (NSTimeInterval)subscriptionBudgetFreeAt:(NSString *)src {
+    NSUInteger max = SFSubscriptionDownloadsPerDay([src stringByAppendingString:@":"]);
+    return SFDownloadBudgetFreeAt([self subscriptionStartsOf:src now:[NSDate date].timeIntervalSince1970], max);
 }
 
 - (NSString *)sourceOf:(SFDownloadRecord *)r {
@@ -225,11 +250,14 @@ static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." s
     return SFBackgroundPausedUntil([[self sourceOf:r] stringByAppendingString:@":"]);
 }
 
-// pausedUntil plus the per-source spacing of starts (not for the run an exit interrupted - the same
+// pausedUntil plus the per-source spacing of starts and, for subscription downloads, the daily
+// budget (not for the run an exit interrupted - the same
 // download going on, e.g. after an update, 2026-11-06: it waited 16 min)
 - (NSTimeInterval)notBefore:(SFDownloadRecord *)r {
     if ([r.identifier isEqualToString:_resumeID]) return [self pausedUntil:r];
-    return MAX([self pausedUntil:r], [self nextStartOf:[self sourceOf:r]]);
+    NSString *src = [self sourceOf:r];
+    NSTimeInterval t = MAX([self pausedUntil:r], [self nextStartOf:src]);
+    return r.sub ? MAX(t, [self subscriptionBudgetFreeAt:src]) : t;   // the daily budget: subscriptions only
 }
 
 - (void)pumpAt:(NSTimeInterval)when {

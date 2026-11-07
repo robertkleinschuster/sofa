@@ -21,6 +21,10 @@ NSTimeInterval SFDownloadSpacing(NSString *ref) {
     Class<SFApp> app = [SFAppRegistry appForRef:ref];
     return [app respondsToSelector:@selector(downloadSpacing)] ? [app downloadSpacing] : 30;
 }
+NSUInteger SFSubscriptionDownloadsPerDay(NSString *ref) {
+    Class<SFApp> app = [SFAppRegistry appForRef:ref];
+    return [app respondsToSelector:@selector(subscriptionDownloadsPerDay)] ? [app subscriptionDownloadsPerDay] : 0;
+}
 
 @implementation SFAppRegistry
 

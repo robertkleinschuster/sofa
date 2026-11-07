@@ -58,6 +58,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSTimer *_checkTimer;
     NSTimeInterval _pauseWake;
     NSTimeInterval _repairWake;  // retryDueRepairs scheduled for this time (epoch)
+    NSMutableDictionary *_subStarts;   // source prefix -> epochs of subscription download starts within 24 h (persisted)
     NSMutableDictionary *_nextStart;   // source prefix -> earliest next download start (epoch; persisted, a restart keeps the spacing)   // pump already scheduled for when a paused source may continue
     NSMutableDictionary *_itemCache; // id -> SFItem (from JSON), invalidated by save:
     NSUInteger _generation;          // storage of the generation property (also for the subscription category)
