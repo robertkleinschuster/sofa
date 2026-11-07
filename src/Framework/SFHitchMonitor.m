@@ -1,7 +1,7 @@
 #import "SFHitchMonitor.h"
 #import "SFCore.h"
 
-static const CFAbsoluteTime kHitch = 0.050;     // > 3 frames at 60 Hz: an animation visibly halts
+static const CFAbsoluteTime kHitch = 0.033;     // > 2 frames at 60 Hz: the micro-stutter the user sees
 static const CFAbsoluteTime kKeyWindow = 1.0;   // a stall this soon after a key press is "after" it
 
 void SFHitchMonitorStart(void (^lastKey)(NSString **, NSTimeInterval *)) {
