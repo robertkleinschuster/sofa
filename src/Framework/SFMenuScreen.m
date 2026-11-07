@@ -12,6 +12,7 @@
     NSArray *_options;
     NSMutableArray *_rows;
     CALayer *_panel, *_highlight;
+    CALayer *_dim;    // darkens the screen below; fades while the panel slides
     CALayer *_list;   // clips the rows; scrolls when they don't fit (long language lists, notes)
     CALayer *_listMask;   // edge fade, moves with the scroll offset
     NSInteger _sel;
@@ -33,12 +34,19 @@
     [_rows removeAllObjects];
     _listMask = nil;
     SFNoAnimate(^{
-        L.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.55].CGColor;
+        [self->_dim removeFromSuperlayer];
+        self->_dim = [CALayer layer];
+        self->_dim.frame = L.bounds;
+        self->_dim.backgroundColor = [NSColor colorWithDeviceWhite:0 alpha:0.55].CGColor;
+        [L addSublayer:self->_dim];
         CGFloat pw = U(720);
         self->_panel = [CALayer layer];
         self->_panel.frame = CGRectMake(size.width - pw, 0, pw, size.height);
         self->_panel.backgroundColor = (t.light ? SFHexA(0xffffff, 0.97) : [t.background colorWithAlphaComponent:0.97]).CGColor;
         self->_panel.shadowOpacity = 0.6; self->_panel.shadowRadius = U(40);
+        CGPathRef sp = CGPathCreateWithRect(self->_panel.bounds, NULL);   // a given shape: no offscreen pass per frame while it slides
+        self->_panel.shadowPath = sp;
+        CGPathRelease(sp);
         [L addSublayer:self->_panel];
 
         CGFloat x = U(64), w = pw - 2 * x, y = U(150);
@@ -104,10 +112,12 @@
     [self select:self.initialSelection animated:NO];
 }
 
-- (void)willAppear {
-    SFNoAnimate(^{ self->_panel.transform = CATransform3DMakeTranslation(U(200), 0, 0); });
-    SFAnimate(0.3, ^{ self->_panel.transform = CATransform3DIdentity; });
-}
+// A side panel: slides in from the right edge and out again, opaque all the way; only the
+// darkening of the screen below fades (user 2026-11-07: the slide in/out was missing)
+- (CATransform3D)offscreen { return CATransform3DMakeTranslation(_panel.bounds.size.width + U(60), 0, 0); }   // + its shadow
+- (void)prepareEntrance { _dim.opacity = 0; _panel.transform = [self offscreen]; }
+- (void)enter { _dim.opacity = 1; _panel.transform = CATransform3DIdentity; }
+- (void)exit { _dim.opacity = 0; _panel.transform = [self offscreen]; }
 
 - (void)select:(NSInteger)i animated:(BOOL)anim {
     if (!_rows.count) return;

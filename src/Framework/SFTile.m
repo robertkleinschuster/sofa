@@ -98,7 +98,7 @@ static id<SFTileStatusSource> gStatus;
         } else if (st == SFTileStyleApp) {
             SFTheme *t = [SFTheme themeNamed:item.themeName ?: @"home"];
             SFLabel *wm = [SFLabel labelWithFont:[t wordmarkFont:item.title.length > 9 ? 40 : 54]
-                                           color:item.tint ? [NSColor whiteColor] : t.text];
+                                           color:item.tint ? SFTextColorOn(item.tint) : t.text];
             if (t.light && !item.tint) wm.color = t.accent;
             wm.text = item.title;
             wm.alignment = NSCenterTextAlignment;
@@ -115,7 +115,7 @@ static id<SFTileStatusSource> gStatus;
             }
         } else if (st == SFTileStyleButton) {
             // action pill: title centred; active actions (tint) coloured, otherwise a neutral surface
-            SFLabel *bt = [SFLabel labelWithFont:[theme bold:26] color:item.tint ? [NSColor whiteColor] : theme.text];
+            SFLabel *bt = [SFLabel labelWithFont:[theme bold:26] color:item.tint ? SFTextColorOn(item.tint) : theme.text];
             bt.text = item.title; bt.alignment = NSCenterTextAlignment; bt.maxLines = 1;
             CGFloat h = [bt sizeToFitWidth:w - U(36)];
             bt.position = CGPointMake(U(18), (ih - h) / 2);
@@ -123,8 +123,9 @@ static id<SFTileStatusSource> gStatus;
         } else if (st == SFTileStyleWide) {
             // with image: white + shadow over the image. Without image: theme colour on the tile surface
             // (white on light grey was hardly readable in the light ORF theme)
-            BOOL plain = !item.image.length && !item.tint;   // coloured tiles (accent) keep white text
-            SFLabel *wt = [SFLabel labelWithFont:[theme bold:34] color:plain ? theme.text : [NSColor whiteColor]];
+            BOOL plain = !item.image.length && !item.tint;
+            NSColor *tc = item.image.length ? [NSColor whiteColor] : item.tint ? SFTextColorOn(item.tint) : theme.text;   // over a picture: white + shadow
+            SFLabel *wt = [SFLabel labelWithFont:[theme bold:34] color:tc];
             wt.text = item.title; wt.maxLines = 2; wt.shadow = !plain;
             CGFloat h = [wt sizeToFitWidth:w - U(48)];
             wt.position = CGPointMake(U(24), ih - h - U(20));

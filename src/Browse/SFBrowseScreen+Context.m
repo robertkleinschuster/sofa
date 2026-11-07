@@ -204,7 +204,7 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     SFShowRefLookup lookup = !it.showRef && !SFIsChannelPage(here) && it.kind == SFItemVideo ? SFShowRefLookupFor(it.source) : nil;
     if (lookup) {
         l->_lookup = lookup;
-        // channels (YouTube): the channel name is known; elsewhere `channel` may only be the genre (ORF lists)
+        // channels (YouTube): the channel name is known; elsewhere the show page names itself once found
         BOOL yt = SFItemShowsAreChannels(it);
         l->_title = yt ? (name ? [NSString stringWithFormat:@"Zum Kanal „%@“", name] : @"Zum Kanal") : @"Zur Sendung";
         return l;
@@ -232,7 +232,7 @@ static SFItem *SFShowFolder(SFItem *it, NSString *ref, SFPageLoader page) {
     SFItem *it = _episode;
     _lookup(it, ^(NSString *ref) {
         if (stillValid && !stillValid()) return;   // the user has moved on (e.g. started playback)
-        // outside channel apps `channel` may only be the genre (ORF lists): the show page names itself
+        // outside channel apps the show may be unnamed (ORF lists): the show page names itself
         BOOL ch = SFItemShowsAreChannels(it);
         SFPageLoader pl = ref ? SFShowPageLoader(ref, ch ? it.channel : nil) : nil;
         if (!pl) { [nav toast:ch ? @"Kanal nicht gefunden" : @"Keine Sendungsseite gefunden"]; return; }

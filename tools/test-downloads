@@ -209,13 +209,13 @@ if want b; then
 echo "==> 5. YouTube download during a bot-check pause"
 start
 cmd "ytblock 900"; sleep 0.5
-m=$(wc -l < "$LOG"); cmd "dlget $YTREF"
-for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "source paused" && break; sleep 0.5; done
+m=$(log_mark "$LOG"); cmd "dlget $YTREF"
+for i in $(seq 1 20); do log_since $m "$LOG" | grep -q "source paused" && break; sleep 0.5; done
 # at least the simulated 15 min; longer when a real bot check of the same IP is active (the breaker
 # file is shared on purpose: no dev instance may hammer YouTube while the real app is flagged)
-w=$(sed -n "$m,\$p" "$LOG" | sed -n 's/.*source paused - next attempt in \([0-9]*\) min.*/\1/p' | tail -1)
-[ -n "$w" ] && [ "$w" -ge 14 ] && ok "download waits for the end of the pause ($w min)" || bad "no wait: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
-sed -n "$m,\$p" "$LOG" | grep -q "yt: resolve\|yt: resolved\|downloads: loading" && bad "a YouTube request was made during the pause" || ok "no YouTube request during the pause"
+w=$(log_since $m "$LOG" | sed -n 's/.*source paused - next attempt in \([0-9]*\) min.*/\1/p' | tail -1)
+[ -n "$w" ] && [ "$w" -ge 14 ] && ok "download waits for the end of the pause ($w min)" || bad "no wait: $(log_since $m "$LOG" | grep downloads | tail -2)"
+log_since $m "$LOG" | grep -q "yt: resolve\|yt: resolved\|downloads: loading" && bad "a YouTube request was made during the pause" || ok "no YouTube request during the pause"
 quit
 st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads where id='$YTREF';")
 [ "$st" = "0 0" ] && ok "still queued, no attempt used up" || bad "unexpected record: $st"
@@ -225,23 +225,23 @@ echo "==> 6. storage guard (full disk)"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
 start
 cmd "dlreserve 1000000"; sleep 0.5    # 1 PB reserve: the disk counts as full
-m=$(wc -l < "$LOG"); cmd "dlget $REF"
-for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "storage full" && break; sleep 0.5; done
-sed -n "$m,\$p" "$LOG" | grep -q "storage full" && ok "full disk detected" || bad "not detected: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
+m=$(log_mark "$LOG"); cmd "dlget $REF"
+for i in $(seq 1 20); do log_since $m "$LOG" | grep -q "storage full" && break; sleep 0.5; done
+log_since $m "$LOG" | grep -q "storage full" && ok "full disk detected" || bad "not detected: $(log_since $m "$LOG" | grep downloads | tail -2)"
 sleep 2
-sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && bad "a download started on a full disk" || ok "no download started"
+log_since $m "$LOG" | grep -q "downloads: loading" && bad "a download started on a full disk" || ok "no download started"
 for i in $(seq 1 10); do grep -q "asking the user to make room" "$LOG" && break; sleep 0.5; done
 grep -q "asking the user to make room" "$LOG" && ok "user asked to make room" || bad "no prompt"
 shot "$T/full.png"
 cmd "key menu"; sleep 0.5
-m=$(wc -l < "$LOG"); cmd "dlreserve 10"   # room again
-for i in $(seq 1 60); do sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
-sed -n "$m,\$p" "$LOG" | grep -q "storage free again" && sed -n "$m,\$p" "$LOG" | grep -q "downloads: loading" \
-  && ok "continues by itself once there is room" || bad "did not continue: $(sed -n "$m,\$p" "$LOG" | grep downloads | tail -2)"
+m=$(log_mark "$LOG"); cmd "dlreserve 10"   # room again
+for i in $(seq 1 60); do log_since $m "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
+log_since $m "$LOG" | grep -q "storage free again" && log_since $m "$LOG" | grep -q "downloads: loading" \
+  && ok "continues by itself once there is room" || bad "did not continue: $(log_since $m "$LOG" | grep downloads | tail -2)"
 for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done   # the download is running
-m=$(wc -l < "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the run
-for i in $(seq 1 20); do sed -n "$m,\$p" "$LOG" | grep -q "deferred" && break; sleep 0.5; done
-sed -n "$m,\$p" "$LOG" | grep -q "disk nearly full while loading" && ok "running download stopped" || bad "running download not stopped"
+m=$(log_mark "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the run
+for i in $(seq 1 20); do log_since $m "$LOG" | grep -q "deferred" && break; sleep 0.5; done
+log_since $m "$LOG" | grep -q "disk nearly full while loading" && ok "running download stopped" || bad "running download not stopped"
 sleep 1
 [ -z "$(ffpids)" ] && ok "ffmpeg ended" || bad "ffmpeg still running"
 quit

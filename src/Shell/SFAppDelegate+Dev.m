@@ -24,6 +24,7 @@
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
 #import "SFAppDelegate.h"
+#import "SFFrameMeter.h"
 #import "SFApp.h"
 #import <ImageIO/ImageIO.h>
 
@@ -95,6 +96,8 @@ static NSString *fifoPath(void) {
         SFKey k = SFKeyFromName(arg);
         if ((NSInteger)k >= 0) [self.nav sendKey:k];
         else SFLog(@"dev: unknown key %@", arg);
+    } else if ([cmd isEqualToString:@"framemeter"] && arg) {   // Dev: frame meter on|off (SFFrameMeter)
+        SFFrameMeterSetEnabled([arg isEqualToString:@"on"]);
     } else if ([cmd isEqualToString:@"stall"] && arg) {   // Dev: block the main thread for <ms> (tests the hitch monitor's stacks)
         [self devStall:arg.doubleValue / 1000];
     } else if ([cmd isEqualToString:@"shot"] && arg) {

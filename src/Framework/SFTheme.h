@@ -51,3 +51,8 @@ typedef NS_ENUM(NSInteger, SFHeaderMark) { SFHeaderMarkNone, SFHeaderMarkPlayPil
 - (NSFont *)bold:(CGFloat)size;
 - (NSFont *)wordmarkFont:(CGFloat)size;
 @end
+
+// Readable text on `background`: near-black on light colours, white on dark ones (relative
+// luminance). A button's tint can be any colour - white text on the white ORF accent left the
+// "Folgen" button blank (user 2026-11-07).
+NSColor *SFTextColorOn(NSColor *background);

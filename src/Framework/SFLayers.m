@@ -1,4 +1,5 @@
 #import "SFLayers.h"
+#import "SFFrameMeter.h"
 #import "SFNet.h"
 #import <ImageIO/ImageIO.h>
 #import <CommonCrypto/CommonDigest.h>
@@ -191,7 +192,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 #pragma mark - SFImageLayer
 
 @interface SFImageLayer (Fade)
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded;
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated;
 @end
 
 @interface SFImageLayer (Adaptive)
@@ -199,6 +200,8 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
 @end
 
 @implementation SFImageLayer
+
+static const NSTimeInterval kFadeIn = 0.3;
 
 - (instancetype)init {
     if ((self = [super init])) {
@@ -228,19 +231,15 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     if (px < 1) px = 512;
     NSString *want = _source, *fallback = [_fallbackSource isEqualToString:source] ? nil : _fallbackSource;
     BOOL blurred = self.blurred;
+    __block BOOL inMemory = YES;   // answered within this call: the picture was decoded already
     __weak SFImageLayer *ws = self;
     void (^apply)(CGImageRef, NSString *) = ^(CGImageRef img, NSString *loaded) {
         SFImageLayer *s = ws;
         if (!s || ![s.source isEqualToString:want] || !img) return;
-        if (s.fadeEdges) { [s applyFaded:img source:want loaded:loaded]; return; }
+        BOOL animated = !inMemory || s.alwaysFadesIn;
+        if (s.fadeEdges) { [s applyFaded:img source:want loaded:loaded animated:animated]; return; }
         if (s.adaptiveBackground) [s adaptBackgroundTo:img source:want];
-        [CATransaction begin];
-        [CATransaction setDisableActions:YES];
-        s.contents = (__bridge id)img;
-        [CATransaction commit];
-        CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
-        fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.25;
-        [s addAnimation:fade forKey:@"fadein"];
+        [s present:(__bridge id)img animated:animated];
     };
     [[SFImageCache shared] imageForSource:source maxPixel:px blurred:blurred completion:^(CGImageRef img) {
         if (img || !fallback.length) { apply(img, want); return; }
@@ -248,6 +247,22 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
         if (!s || ![s.source isEqualToString:want]) return;
         [[SFImageCache shared] imageForSource:fallback maxPixel:px blurred:blurred completion:^(CGImageRef f) { apply(f, fallback); }];
     }];
+    inMemory = NO;
+}
+
+// Shows `img`: at once when it was in memory - a rebuilt row or a reopened panel shows the same
+// pictures again, and fading them in from nothing made every reload flicker (user 2026-11-07);
+// otherwise (and always for alwaysFadesIn) fading in.
+- (void)present:(id)img animated:(BOOL)animated {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.contents = img;
+    [CATransaction commit];
+    if (!animated || !img) return;
+    CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    fade.fromValue = @0; fade.toValue = @1; fade.duration = kFadeIn;
+    [self addAnimation:fade forKey:@"fadein"];
+    if (self.alwaysFadesIn) SFFrameMeterMeasure(@"fade-in", kFadeIn);
 }
 @end
 
@@ -337,27 +352,22 @@ static CGImageRef fadedImage(CGImageRef src) {
 @implementation SFImageLayer (Fade)
 // `want` = the layer's source (still current?), `loaded` = where the pixels came from (the source
 // or its fallback) - the faded result is cached by `loaded`.
-- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded {
+- (void)applyFaded:(CGImageRef)img source:(NSString *)want loaded:(NSString *)loaded animated:(BOOL)animated {
     static NSCache *cache;
     static dispatch_once_t o;
     dispatch_once(&o, ^{ cache = [NSCache new]; cache.countLimit = 12; });
-    void (^set)(id) = ^(id im) {
-        if (![self.source isEqualToString:want]) return;
-        [CATransaction begin]; [CATransaction setDisableActions:YES];
-        self.contents = im;
-        [CATransaction commit];
-        CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
-        fade.fromValue = @0; fade.toValue = @1; fade.duration = 0.35;
-        [self addAnimation:fade forKey:@"fadein"];
-    };
     id hit = [cache objectForKey:loaded];
-    if (hit) { set(hit); return; }
+    if (hit) { [self present:hit animated:animated]; return; }
     CGImageRef keep = CGImageRetain(img);
     SFBackground(^{
         CGImageRef f = fadedImage(keep);
         CGImageRelease(keep);
         id obj = (__bridge_transfer id)f;
-        dispatch_async(dispatch_get_main_queue(), ^{ if (obj) { [cache setObject:obj forKey:loaded]; set(obj); } });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!obj) return;
+            [cache setObject:obj forKey:loaded];
+            if ([self.source isEqualToString:want]) [self present:obj animated:YES];
+        });
     });
 }
 @end

@@ -1,5 +1,6 @@
 // SFBrowseScreen - focus and keys: moving between tiles, rows and the header.
 #import "SFBrowseScreen+Private.h"
+#import "SFFrameMeter.h"
 
 @implementation SFBrowseScreen (Focus)
 
@@ -33,6 +34,7 @@
         [self updateTilesInRow:r];
         CGFloat dx = -[self scrollOffsetForRow:r col:sc];
         void (^move)(void) = ^{ r.strip.position = CGPointMake(dx, r.titleHeight); };
+        if (anim && old == r && r.strip.position.x != dx) SFFrameMeterMeasure(@"col", 0.3);   // the rail scrolls
         if (anim) SFAnimate(0.3, move); else SFNoAnimate(move);
     }
     // hide rows above the content area (they do not run under header/hero)
@@ -44,6 +46,7 @@
             x.layer.opacity = (x.y - self->_scrollY < limit) ? 0 : 1;
         }
     };
+    if (anim && old != r) SFFrameMeterMeasure(@"row", 0.34);
     if (anim) SFAnimate(0.34, vmove); else SFNoAnimate(vmove);
 
     SFTileLayer *nt = r.tiles[@(col)];

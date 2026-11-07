@@ -59,3 +59,12 @@ static NSMutableDictionary *gBuilders;   // name -> void (^)(SFTheme *)
     return t;
 }
 @end
+
+NSColor *SFTextColorOn(NSColor *background) {
+    NSColor *c = [background colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+    if (!c) return [NSColor whiteColor];
+    double (^lin)(double) = ^double(double v) { return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4); };
+    double l = 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent) + 0.0722 * lin(c.blueComponent);
+    // the luminance where black and white text have equal contrast (WCAG): above it, dark text reads better
+    return l > 0.179 ? SFHex(0x111111) : [NSColor whiteColor];
+}

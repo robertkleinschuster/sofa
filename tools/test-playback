@@ -62,7 +62,9 @@ DEVDB="$SOFA_DATA_DIR/sofa.db"
 FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
 export SOFA_ONLY_APPS=example,youtube   # YouTube only for the offline end screen (section 8)
 ORF=example:1   # an online item (the Example app's test pattern)
-fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+fail=0; ok() { echo "  ok    $*"; }
+# a failure keeps the instance's log as it is now: the next start empties it
+nfail=0; bad() { echo "  FAIL  $*"; fail=1; nfail=$((nfail + 1)); [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$LOG" ] && cp "$LOG" "$PLAYTEST_SHOTS/$INST-fail$nfail.log"; return 0; }
 
 make -C "$SRC" >/dev/null || exit 1
 "$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine=frequency=440 \
@@ -92,14 +94,14 @@ cmd() {
   if ! kill -0 "$APP" 2>/dev/null; then [ -z "${dead:-}" ] && bad "app not running (crashed?)"; dead=1; return; fi
   echo "$*" 1<>"$FIFO"
 }
-since() { sed -n "$1,\$p" "$LOG"; }   # log lines from line $1 on
-mark() { wc -l < "$LOG" | tr -d ' '; }
+since() { log_since "$1" "$LOG"; }   # log lines written after mark $1
+mark() { log_mark "$LOG"; }
 # waitlog MARK PATTERN [TRIES]: until PATTERN appears after MARK (TRIES x 0.25 s, default 10 s)
 waitlog() { for i in $(seq 1 ${3:-40}); do since $1 | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
 # shot FILE: screenshot, waits until it is written (a fixed sleep was flaky under load)
 shot() { local m; m=$(mark); cmd "shot $1"; waitlog $m "dev: shot written $1" 40; }
 keep() { [ -n "${PLAYTEST_SHOTS:-}" ] && [ -s "$1" ] && cp "$1" "$PLAYTEST_SHOTS/$INST-$(basename "$1")"; return 0; }   # per part: both keep a sofa.log
-mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
+mpvtime() { since "$1" | grep 'mpv time-pos = ' | tail -1 | sed 's/.*= //'; }   # last reported position
 pos() { local n; n=$(mark); cmd "mpvprop time-pos"; waitlog $n 'mpv time-pos = ' 12; mpvtime $n; }   # asks mpv, waits for the answer
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {

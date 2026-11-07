@@ -11,6 +11,7 @@
 set -u
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
+. "$SRC/tools/lib/dev-instance.sh"
 DEV="$SRC/build/SofaDev.app"
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-updtest.XXXXXX")"
 PORT=47986 INST=updtest   # release server port (47995 is test-downloads' app)
@@ -53,8 +54,8 @@ trap 'kill $APP $SRV 2>/dev/null; wait $APP 2>/dev/null; { defaults delete de.so
       rm -rf "$DEV.update" "$DEV.update.tmp" "$DEV.staged"; [ $keep = 1 ] || rm -rf "$T"' EXIT
 for i in $(seq 1 60); do grep -q 'fifo ready' "$LOG" 2>/dev/null && break; sleep 0.5; done
 cmd() { echo "$*" 1<>"$FIFO"; }
-mark() { wc -l < "$LOG" | tr -d ' '; }
-waitlog() { for i in $(seq 1 ${3:-40}); do sed -n "$1,\$p" "$LOG" | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
+mark() { log_mark "$LOG"; }
+waitlog() { for i in $(seq 1 ${3:-40}); do log_since "$1" "$LOG" | grep -q "$2" && return 0; sleep 0.25; done; return 1; }
 shot() { local m; m=$(mark); cmd shot "$T/$1.png"; waitlog $m "dev: shot written" 40; }   # waits until written
 
 cmd open settings; sleep 0.5; shot 1-settings

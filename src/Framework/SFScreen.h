@@ -19,6 +19,12 @@
 - (BOOL)wantsCursorHidden;
 - (BOOL)isOpaque;                     // NO = the screen below stays visible (dialogs)
 - (CGFloat)toastCenterFromBottom;     // position of the toast (player: above the timeline/OSD)
+// Entrance and exit (navigator push/pop): the start state, set without animation, then the end
+// state, set inside the navigator's animation. Default: a fade with a slight zoom; a side panel
+// slides in instead (SFMenuScreen).
+- (void)prepareEntrance;
+- (void)enter;
+- (void)exit;
 @end
 
 @interface SFNavigator : NSView

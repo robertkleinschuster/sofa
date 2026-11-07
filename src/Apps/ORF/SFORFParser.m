@@ -31,7 +31,9 @@ static NSArray *listItems(id j) {
     i.plot = str(e[@"description"]) ?: str(e[@"teaser_text"]);
     i.image = [self image:e big:NO];
     i.backdrop = [self image:e big:YES];
-    i.channel = segment ? (str(e[@"sub_headline"]) ?: str(e[@"genre_title"])) : (str(e[@"profile_title"]) ?: str(e[@"genre_title"]));
+    // the show (a segment: its broadcast) - never the genre: lists without a profile title left
+    // "Serie" as the show name ("Zur Sendung „Serie“", user 2026-11-07); the genre is in the subtitle
+    i.channel = segment ? str(e[@"sub_headline"]) : str(e[@"profile_title"]);
     // the show: list entries carry no profile id field, only the HAL link ".../profile/<id>"
     NSString *ph = str(dict(dict(e[@"_links"])[@"profile"])[@"href"]);
     if (ph.length && str(e[@"profile_title"])) i.showRef = [@"orfprofile:" stringByAppendingString:ph.lastPathComponent];

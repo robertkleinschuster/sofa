@@ -1,4 +1,5 @@
 #import "SFDevServer.h"
+#import "SFFrameMeter.h"
 #import <ImageIO/ImageIO.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -115,6 +116,10 @@ static BOOL writeAll(int fd, const void *buf, size_t len) {
     } else if ([path isEqualToString:@"/key"]) {
         NSString *k = [[query stringByReplacingOccurrencesOfString:@"k=" withString:@""] stringByRemovingPercentEncoding];
         dispatch_async(dispatch_get_main_queue(), ^{ if (self.keyHandler && k) self.keyHandler(k); });
+        [self respond:fd type:@"text/plain" body:[@"ok" dataUsingEncoding:NSUTF8StringEncoding]];
+    } else if ([path isEqualToString:@"/framemeter"]) {   // frame meter on/off (SFFrameMeter): ?on=1 | ?on=0
+        BOOL on = [query isEqualToString:@"on=1"];
+        dispatch_async(dispatch_get_main_queue(), ^{ SFFrameMeterSetEnabled(on); });
         [self respond:fd type:@"text/plain" body:[@"ok" dataUsingEncoding:NSUTF8StringEncoding]];
     } else if ([path isEqualToString:@"/frame.jpg"]) {
         // asynchronous: main renders, writing in the background (no sync cross with _io)

@@ -5,12 +5,28 @@
 
 #pragma mark Hero / Backdrop
 
+// The backdrop follows the focus in two steps (user 2026-11-07): leaving a tile fades its picture
+// out at once; once the focus rests on the next one, that one's picture fades in. They never
+// overlap, and fast navigation does not flicker through pictures.
+static const NSTimeInterval kBackdropOut = 0.25;
+
+- (void)leaveBackdropFor:(SFItem *)next {
+    if (self.overlay) return;
+    NSString *src = (next.backdrop ?: next.image) ?: _page.backdrop;
+    if ([src isEqualToString:_backdrop.source] || _backdrop.opacity == 0) return;
+    SFAnimate(kBackdropOut, ^{ self->_backdrop.opacity = 0; });
+}
+
 - (void)updateBackdropFor:(SFItem *)it {
     if (self.overlay) return;   // the video itself is the backdrop
     NSString *src = it.backdrop ?: _page.backdrop;
-    if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) return;
+    if ([src isEqualToString:_backdrop.source] && _backdropBox.opacity > 0) {
+        if (_backdrop.opacity < 1) SFAnimate(0.3, ^{ self->_backdrop.opacity = 1; });   // back on the tile it left
+        return;
+    }
     if (!src.length) { SFAnimate(0.4, ^{ self->_backdropBox.opacity = 0; }); return; }
     _backdrop.fallbackSource = it.backdrop && it.image.length ? it.image : nil;   // big image missing -> the tile image
+    SFNoAnimate(^{ [self->_backdrop removeAnimationForKey:@"opacity"]; self->_backdrop.opacity = 1; });   // empty until it fades in
     _backdrop.source = src;
     CGFloat op = self.showsHero ? 0.75 : 0.4;   // more restrained on grid pages
     if (self.theme.light) op *= 0.6;
@@ -32,11 +48,15 @@
     [self.layer addSublayer:_hero];
 }
 
+static const NSTimeInterval kBackdropRest = 0.25;   // after the hero's 0.12 s: 0.37 s after the key
+
 - (void)updateHeroFor:(SFItem *)it {
     NSUInteger seq = ++_heroSeq;
+    [self leaveBackdropFor:it];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (seq != self->_heroSeq) return;
         CGFloat w = self.size.width * (self.overlay ? 0.6 : 0.5);
+        NSString *before = [NSString stringWithFormat:@"%@|%@|%@", self->_heroTitle.text, self->_heroMeta.text, self->_heroPlot.text];
         SFNoAnimate(^{
             self->_heroTitle.text = it.heroTitle ?: it.title ?: self->_page.title;
             CGFloat h1 = [self->_heroTitle sizeToFitWidth:w];
@@ -79,15 +99,23 @@
             self->_heroMeta.position = CGPointMake(U(96), y + h1 + U(10));
             self->_heroPlot.position = CGPointMake(U(96), y + h1 + h2 + U(26));
         });
-        CATransition *tr = [CATransition animation];
-        tr.type = kCATransitionFade; tr.duration = 0.25;
-        [self->_hero addAnimation:tr forKey:@"fade"];
+        // fades only when it says something new: a page rebuilt with more data keeps its hero still
+        NSString *after = [NSString stringWithFormat:@"%@|%@|%@", self->_heroTitle.text, self->_heroMeta.text, self->_heroPlot.text];
+        if (![before isEqualToString:after]) {
+            CATransition *tr = [CATransition animation];
+            tr.type = kCATransitionFade; tr.duration = 0.25;
+            [self->_hero addAnimation:tr forKey:@"fade"];
+        }
         // the big picture of the focused item (every app's backdrop is the TV-sized version of the
         // same picture), else its tile picture; the tile picture also stands in when the big one
         // fails to load (YouTube: old videos have no maxres version)
         SFItem *b = nil;
         if (it.backdrop.length || it.image.length) { b = [SFItem new]; b.backdrop = it.backdrop ?: it.image; b.image = it.image; }
-        [self updateBackdropFor:b];
+        // the next picture comes once the focus rests, after the scroll animation (0.34 s): fast
+        // navigation starts no load and no fade per step
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBackdropRest * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (seq == self->_heroSeq) [self updateBackdropFor:b];
+        });
     });
 }
 @end

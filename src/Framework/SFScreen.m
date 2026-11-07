@@ -1,5 +1,6 @@
 #import "SFScreen.h"
 #import "SFHitchMonitor.h"
+#import "SFFrameMeter.h"
 #import "SFLayers.h"
 #import "SFVolume.h"
 
@@ -21,6 +22,9 @@
 - (void)layoutForSize:(CGSize)size {}
 - (void)willAppear {}
 - (void)didAppear {}
+- (void)prepareEntrance { self.layer.opacity = 0; self.layer.transform = CATransform3DMakeScale(1.03, 1.03, 1); }
+- (void)enter { self.layer.opacity = 1; self.layer.transform = CATransform3DIdentity; }
+- (void)exit { self.layer.opacity = 0; self.layer.transform = CATransform3DMakeScale(1.03, 1.03, 1); }
 - (void)willDisappear {}
 - (BOOL)handleKey:(SFKey)key { return NO; }
 - (BOOL)wantsCursorHidden { return YES; }
@@ -108,14 +112,17 @@ static __weak SFNavigator *gMainNav;
     [s willAppear];
     [_stack addObject:s];
     SFNoAnimate(^{
-        s.layer.opacity = 0;
-        s.layer.transform = CATransform3DMakeScale(1.03, 1.03, 1);
+        [s prepareEntrance];
         if (self->_toastLayer) [self->_root insertSublayer:s.layer below:self->_toastLayer];
         else [self->_root addSublayer:s.layer];
     });
+    // the start state must reach the screen first: animating layers created in this same transaction
+    // runs from the end value to the end value - the menu panel jumped in instead of sliding (one
+    // frame in 0.32 s, frame meter 2026-11-07)
+    [CATransaction flush];
+    SFFrameMeterMeasure([@"open " stringByAppendingString:NSStringFromClass([s class])], 0.32);
     SFAnimate(0.32, ^{
-        s.layer.opacity = 1;
-        s.layer.transform = CATransform3DIdentity;
+        [s enter];
         if (old && s.isOpaque) {
             old.layer.opacity = 0;
             old.layer.transform = CATransform3DMakeScale(0.97, 0.97, 1);
@@ -139,9 +146,9 @@ static __weak SFNavigator *gMainNav;
     SFNoAnimate(^{
         if (!under.layer.superlayer) [self->_root insertSublayer:under.layer below:s.layer];
     });
+    SFFrameMeterMeasure([@"close " stringByAppendingString:NSStringFromClass([s class])], 0.28);
     SFAnimate(0.28, ^{
-        s.layer.opacity = 0;
-        s.layer.transform = CATransform3DMakeScale(1.03, 1.03, 1);
+        [s exit];
         under.layer.opacity = 1;
         under.layer.transform = CATransform3DIdentity;
     });
@@ -200,6 +207,7 @@ static __weak SFNavigator *gMainNav;
         s.layer.opacity = 0;
         [self->_root insertSublayer:s.layer above:old.layer];
     });
+    [CATransaction flush];   // start state first (see push:)
     SFAnimate(0.25, ^{ s.layer.opacity = 1; });
     [s didAppear];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

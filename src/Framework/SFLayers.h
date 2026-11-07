@@ -26,6 +26,7 @@
 @property (nonatomic) BOOL blurred;            // for background images
 @property (nonatomic) BOOL adaptiveBackground; // logos: background by the image's brightness (dark logo -> light)
 @property (nonatomic) BOOL fadeEdges;          // soft fade-out left + bottom (backdrops)
+@property (nonatomic) BOOL alwaysFadesIn;      // fades in also when cached (backdrops: a new picture, never a reload)
 @end
 
 @interface SFImageCache : NSObject

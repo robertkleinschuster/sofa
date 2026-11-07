@@ -12,3 +12,9 @@ dev_wait_ready() {
   done
   echo "dev instance not ready after 30 s:"; tail -5 "$log" 2>/dev/null | sed 's/^/    /'; exit 1
 }
+
+# log_mark LOG: a position in LOG; log_since MARK LOG: the lines written after it. (The suites had
+# "sed -n MARK,\$p", which includes line MARK itself - the last line before the mark: a negative
+# check "X did not happen after the mark" failed when X was logged just before it, 2026-11-07.)
+log_mark() { wc -l < "$1" | tr -d ' '; }
+log_since() { tail -n +$(($1 + 1)) "$2"; }
