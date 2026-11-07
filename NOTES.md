@@ -238,7 +238,8 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       `SFLocalHTTP` replace the node sidecar in Sofa, live-verified (test-playback 9); node sidecar,
       jsdom, identity/transport removed from the repo. OPEN, in order:
       1. Release bundle: Firefox + Xvfb + Mesa relocatable in Contents/Runtime (port patches: libGL
-         path relative to the firefox binary, xkbcomp relative to Xvfb; env for Mesa DRI, fonts,
+         path relative to the firefox binary - pending; Xvfb done 2026-11-07: -xkbbindir, the rest
+         by flag/env: -xkbdir, -fp, LIBGL_DRIVERS_PATH; env for Mesa DRI, fonts,
          GTK in SFYTBrowser - SFRuntimeSetup's neutralised paths must not reach Firefox).
          make-release and sofa-deploy refuse until then (the installed 0.3.10 keeps the sidecar).
       2. EU consent dialog in a fresh profile: answer once, like a user.
