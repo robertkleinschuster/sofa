@@ -210,6 +210,10 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 }
 
 - (BOOL)startDisplayAndBrowser {
+    // the previous run's log stays next to it: a run that ended badly is read after the restart
+    NSString *previous = [[self logFile] stringByAppendingString:@".1"];
+    [[NSFileManager defaultManager] removeItemAtPath:previous error:nil];
+    [[NSFileManager defaultManager] moveItemAtPath:[self logFile] toPath:previous error:nil];
     int log = open([self logFile].fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (log < 0) return NO;
     int p[2];
@@ -288,6 +292,26 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     SFLog(@"yt-browser: %@", why);
     [self stop];   // one without the other is of no use
     if (self.onExit) self.onExit(why);
+}
+
+- (NSString *)processSnapshot {
+    pid_t group = _firefox;   // Spawn gives Firefox a process group of its own: its children are in it
+    if (group <= 0) return nil;
+    NSTask *ps = [NSTask new];
+    ps.launchPath = @"/bin/ps";
+    ps.arguments = @[@"-o", @"pid=,pcpu=,rss=,command=", @"-g", @(group).stringValue];
+    NSPipe *out = [NSPipe pipe];
+    ps.standardOutput = out;
+    ps.standardError = [NSFileHandle fileHandleWithNullDevice];
+    @try { [ps launch]; } @catch (NSException *e) { return nil; }
+    NSData *d = [out.fileHandleForReading readDataToEndOfFile];
+    [ps waitUntilExit];
+    NSMutableArray *lines = [NSMutableArray new];
+    for (NSString *l in [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] componentsSeparatedByString:@"\n"]) {
+        NSString *t = [l stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (t.length) [lines addObject:[t substringToIndex:MIN(t.length, (NSUInteger)140)]];   // cpu + the process kind; no URLs/profile paths beyond
+    }
+    return [lines componentsJoinedByString:@" | "];
 }
 
 - (void)clickInRect:(CGRect)rect done:(void (^)(BOOL))done {

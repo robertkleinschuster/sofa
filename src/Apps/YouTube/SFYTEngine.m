@@ -25,8 +25,12 @@ static const NSUInteger kMaxPost = 16 * 1024 * 1024;
 // focus preloads: at most this many player requests per window
 static const NSUInteger kPreloadBudget = 8;
 static const NSTimeInterval kPreloadWindow = 600;
-// a call timed out: the page must answer this liveness check within this time, or it hangs
-static const NSTimeInterval kAliveTimeout = 5;
+// a call timed out: the page must answer this liveness check within this time, or it hangs - long:
+// a page starved of CPU (software video decode next to it) answers late but is not stuck
+static const NSTimeInterval kAliveTimeout = 30;
+// at most one restart for an unresponsive page in this time: every restart is a new page and a new
+// BotGuard attestation for YouTube (2026-11-07: three within minutes -> bot check)
+static const NSTimeInterval kUnresponsiveRestartGap = 15 * 60;
 // the consent dialog is read for a moment before it is answered (seconds, uniform)
 static const double kConsentReadMin = 2.5, kConsentReadMax = 5.5;
 
@@ -46,6 +50,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     NSMutableArray *_preloads;    // times of recent focus preloads
     BOOL _consentPending;         // a consent click is scheduled or in progress
     BOOL _aliveCheck;             // a liveness check after a timed-out call is running
+    NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
 }
 
 + (instancetype)shared {
@@ -237,10 +242,12 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     }];
 }
 
-// A call went unanswered. That alone proves nothing (a read waits for data); a page that does not
-// even answer health within kAliveTimeout hangs - its browser is restarted like one that died
-// (incident 2026-11-07: after a page reload every open stalled until the browser was restarted by
-// hand). Hangs inside a live page are the engine's own deadlines' (lib/webpo.ts, youtube.ts).
+// A call went unanswered. That alone proves nothing (a read waits for data, a page short of CPU
+// answers late); a page that does not even answer health within kAliveTimeout hangs (incident
+// 2026-11-07 08:28: every open stalled for minutes) - its browser is restarted like one that died,
+// at most once per kUnresponsiveRestartGap: restarts are what YouTube sees (08:44-08:46: three
+// 5-s-check restarts, then a bot check). What the browser was doing goes to the log either way.
+// Hangs inside a live page are the engine's own deadlines' (lib/webpo.ts, youtube.ts).
 - (void)checkAliveAfter:(NSString *)method {
     if (_state != SFYTEngineReady || _aliveCheck) return;
     _aliveCheck = YES;
@@ -248,6 +255,13 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     [self request:@"health" args:@[] timeout:kAliveTimeout done:^(id h, NSError *e) { SFMain(^{
         self->_aliveCheck = NO;
         if (run != self->_run || !e) return;
+        SFLog(@"yt-engine: page unresponsive (no answer to %@, nor to health within %.0f s); browser: %@",
+              method, kAliveTimeout, [self->_browser processSnapshot] ?: @"-");
+        if (self->_unresponsiveRestartAt && -[self->_unresponsiveRestartAt timeIntervalSinceNow] < kUnresponsiveRestartGap) {
+            SFLog(@"yt-engine: no restart - the last one for an unresponsive page was %.0f s ago", -[self->_unresponsiveRestartAt timeIntervalSinceNow]);
+            return;
+        }
+        self->_unresponsiveRestartAt = [NSDate date];
         [self runFailed:[NSString stringWithFormat:@"engine page unresponsive (no answer to %@, nor to health within %.0f s)", method, kAliveTimeout]];
     }); }];
 }
