@@ -17,7 +17,7 @@ import os, re, sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SRC = os.path.join(ROOT, 'src')
-FOUNDATION = {'SFCore', 'SFModel', 'SFStore', 'SFNet', 'SFCurl', 'SFUserAgent', 'SFRuntime', 'SFVolume', 'SFJSON'}
+FOUNDATION = {'SFCore', 'SFModel', 'SFStore', 'SFNet', 'SFCurl', 'SFUserAgent', 'SFHostFetch', 'SFRuntime', 'SFVolume', 'SFJSON'}
 CORE_DIRS = {'Core', 'Library', 'Player', 'Browse'}
 REGISTRATION = {'src/Shell/SFApps.m'}            # the one place that names app classes
 LEGACY = {'src/Shell/SFMigration.m'}             # documented exception: one-time Kodi import (YouTube library)

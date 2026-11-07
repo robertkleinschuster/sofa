@@ -72,6 +72,7 @@ the same.
 | `innertube(endpoint, body, {bg})` | `POST /yt/<endpoint>` | raw InnerTube JSON |
 | `suggest(q)` | `GET /suggest` | suggestions |
 | `availability(v)` | (libcurl oEmbed in Sofa) | oEmbed HTTP status: 200 online, 400/404 gone, else unknown |
+| `image(url)` | (NSURLSession in Sofa) | `{mimeType, data: base64}`: a picture of i.ytimg.com / yt3.ggpht.com / yt3.googleusercontent.com, the page's fetch (status of the host on failure) |
 | `block(state)` | (breaker file) | Sofa's breaker file changed |
 | `health()` | `GET /health` | libraries, user agent, origin, on youtube.com, engine counters |
 

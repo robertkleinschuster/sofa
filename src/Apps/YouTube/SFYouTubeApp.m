@@ -11,6 +11,7 @@
 #import "SFLounge.h"
 #import "SFFollows.h"
 #import "SFNet.h"
+#import "SFHostFetch.h"
 
 @implementation SFYouTubeApp
 
@@ -43,6 +44,10 @@
 
 + (void)start {
     [self removeYTDLPLeftovers];
+    // YouTube's pictures come from the engine's Firefox like the rest of YouTube: one client
+    SFRegisterHostFetcher(@[@".ytimg.com", @".ggpht.com", @"yt3.googleusercontent.com"], ^(NSURL *url, SFHostFetchDone done) {
+        [[SFYTEngine shared] image:url done:done];
+    });
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
 }
 

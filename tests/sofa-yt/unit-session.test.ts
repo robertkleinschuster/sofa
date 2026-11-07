@@ -376,6 +376,33 @@ test('session limit: a session in use is never evicted, a never-read preload goe
   } finally { await app.close(); }
 });
 
+test('image: YouTube pictures through the page fetch, only their hosts, no player request', async () => {
+  const asked: string[] = [];
+  const pageFetch = (async (u: URL | string) => {
+    asked.push(String(u));
+    if (String(u).includes('offline')) throw new TypeError('NetworkError');
+    if (String(u).includes('gone')) return new Response('', { status: 404 });
+    return new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  }) as typeof fetch;
+  const { app, youtube } = await setup({ appOpts: { pageFetch } });
+  try {
+    const r = await app.engine.image(`https://i.ytimg.com/vi/${ID}/hqdefault.jpg`);
+    assert.equal(r.mimeType, 'image/jpeg');
+    assert.deepEqual([...r.bytes], [0xff, 0xd8, 0xff]);
+    await app.engine.image('https://yt3.ggpht.com/abc=s88-c-k');
+    await app.engine.image('https://yt3.googleusercontent.com/abc=s88');
+    assert.equal(asked.length, 3);
+    const status = (p: Promise<unknown>) => p.then(() => 0, (e: { status?: number }) => e.status ?? -1);
+    assert.equal(await status(app.engine.image('https://i.ytimg.com/vi/gone/hqdefault.jpg')), 404, 'the host\'s status');
+    assert.equal(await status(app.engine.image('https://i.ytimg.com/vi/offline/x.jpg')), 502, 'no answer');
+    assert.equal(await status(app.engine.image('https://www.youtube.com/watch?v=x')), 400, 'not a picture host');
+    assert.equal(await status(app.engine.image('https://example.com/i.ytimg.com.jpg')), 400, 'another host');
+    assert.equal(await status(app.engine.image('http://i.ytimg.com/vi/x/a.jpg')), 400, 'https only');
+    assert.equal(asked.length, 5, 'refused hosts are never fetched');
+    assert.equal(youtube.requests, 0, 'never a player request');
+  } finally { await app.close(); }
+});
+
 test('availability: the oEmbed status through the page fetch, no player request', async () => {
   const asked: string[] = [];
   const pageFetch = (async (u: URL | string) => {

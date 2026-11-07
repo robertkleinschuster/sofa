@@ -46,7 +46,7 @@ src/Shell       The Sofa product: AppDelegate (player host, dev FIFO, update rel
 
 Dependency rules, enforced by `tools/check-arch` (part of `tools/test-all`):
 - Framework imports only Framework + the Core foundation headers (SFCore, SFModel, SFStore, SFUserAgent,
-  SFNet, SFCurl, SFRuntime, SFVolume, SFJSON). Data it shows comes in through small
+  SFNet, SFCurl, SFHostFetch, SFRuntime, SFVolume, SFJSON). Data it shows comes in through small
   protocols set by the core (e.g. `SFTileStatusSource`: download chip + progress on tiles).
 - Core (Core/Library/Player/Browse) never imports Apps or Shell; it reaches apps only through
   `SFAppRegistry` and the `SFApp` protocol.
@@ -136,9 +136,12 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   tests/units/useragent.m) - on NSURLSession, curl, images and mpv. Until 2026-11-06 it was a Safari 17
   string over a TLS stack no Safari has, with app credentials (ZDF, ORF) next to it. A source that
   must speak to its service as a browser does it from that browser (YouTube: the engine's Firefox,
-  for InnerTube and media); Sofa's own requests to the same service (thumbnails, avatars, the lounge)
-  stay the native app. They borrowed the engine's Firefox user agent until 2026-11-07 - a Firefox whose
-  TLS handshake was libcurl's or SecureTransport's, next to the real Firefox on the same IP.
+  for InnerTube and media) - and everything else of that service goes through the same client:
+  `SFHostFetch` routes a source's hosts to its own client (YouTube: pictures of i.ytimg.com,
+  yt3.ggpht.com, yt3.googleusercontent.com from the engine page, 2026-11-07), with no native
+  fallback. Before, thumbnails, avatars and the lounge went out natively - first with the engine's
+  Firefox user agent over libcurl's or SecureTransport's TLS, then as the native app: a second
+  client next to the real Firefox on the same IP.
 - **Cadence**: follows on their own schedule (`SFRefreshPlan`), Home rows only while the screen is
   awake, a source's background pause (`backgroundPausedUntil`) respected by follows and downloads.
 

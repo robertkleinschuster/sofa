@@ -1,6 +1,7 @@
 // SFDownloads - the worker: picks the next download (per-source gaps, pauses, storage), runs ffmpeg
 // into a part file, installs and verifies the result, fetches the thumbnail, records the outcome.
 #import "SFDownloads+Private.h"
+#import "SFHostFetch.h"
 #import <signal.h>
 
 @implementation SFDownloads (Worker)
@@ -171,14 +172,19 @@
     if (![img hasPrefix:@"http"] || !r.path) return;
     NSString *thumb = [[r.path stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
     NSString *ident = r.identifier;
-    SFBackground(^{
-        NSInteger st = 0;
-        NSData *d = SFCurlFetch(img, @"GET", nil, nil, &st, NULL);
+    void (^got)(NSData *, NSInteger) = ^(NSData *d, NSInteger st) {
         if (d.length && st < 400 && [d writeToFile:thumb atomically:YES]) SFMain(^{
             SFDownloadRecord *rr = self->_recs[ident];
             if (!rr) return;
             rr.thumb = thumb; [self save:rr]; [self changed:ident];
         });
+    };
+    SFHostFetcher own = SFHostFetcherFor([NSURL URLWithString:img]);
+    if (own) { own([NSURL URLWithString:img], got); return; }   // the source's own client (SFHostFetch.h)
+    SFBackground(^{
+        NSInteger st = 0;
+        NSData *d = SFCurlFetch(img, @"GET", nil, nil, &st, NULL);
+        got(d, st);
     });
 }
 

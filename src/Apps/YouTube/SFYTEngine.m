@@ -394,6 +394,18 @@ static id Clean(id v) {
     [self call:@"suggest" args:@[prefix ?: @""] timeout:10 done:done];
 }
 
+- (void)image:(NSURL *)url done:(void (^)(NSData *, NSInteger))done {
+    SFMain(^{
+        [self call:@"image" args:@[url.absoluteString ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
+            NSString *b64 = str(dict(v)[@"data"]);
+            NSData *d = b64 ? [[NSData alloc] initWithBase64EncodedString:b64 options:0] : nil;
+            // an engine error carries the host's status; unanswered/not ready: none
+            NSInteger st = d ? 200 : (e && ![e.userInfo[@"unanswered"] boolValue] && e.code >= 400 && e.code < 500) ? e.code : 0;
+            done(d, st);
+        }];
+    });
+}
+
 - (void)availability:(NSString *)vid done:(void (^)(NSInteger))done {
     [self call:@"availability" args:@[vid ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
         NSInteger st = [v isKindOfClass:[NSNumber class]] ? [v integerValue] : 0;

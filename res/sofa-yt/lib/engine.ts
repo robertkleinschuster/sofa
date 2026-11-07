@@ -199,9 +199,21 @@ export interface Engine {
    * unlisted, 400/404 gone, anything else unknown (401/403 also covers private videos).
    */
   availability(v: string): Promise<number>;
+  /**
+   * A YouTube picture (thumbnail, avatar, banner) as the page loads it: the page's own fetch -
+   * Firefox's connection, cache and Referer, CORS as youtube.com (both picture hosts allow it).
+   * Only those hosts; not paused by the breaker (pictures are what every visit loads).
+   */
+  image(url: string): Promise<{ mimeType: string; bytes: Uint8Array }>;
   health(): EngineHealth;
   shutdown(): void;
 }
+
+/** YouTube's picture hosts: i.ytimg.com (video thumbnails), yt3.ggpht.com and
+ * yt3.googleusercontent.com (avatars, banners). */
+const IMAGE_HOST = /^(i\d?\.ytimg\.com|yt\d\.ggpht\.com|yt\d\.googleusercontent\.com)$/;
+const IMAGE_TIMEOUT_MS = 20000;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;   // one channel answer (base64) stays below Sofa's post limit
 
 export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS,
   sweepMs = 30000, fetchFn = fetch, liveCfg = {}, pageFetch = fetch, memoryMB }: EngineOptions): Engine {
@@ -507,6 +519,20 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
   }
 
+  async function image(url: string): Promise<{ mimeType: string; bytes: Uint8Array }> {
+    let u: URL;
+    try { u = new URL(url); } catch { throw new EngineError(400, { error: 'not a URL' }); }
+    if (u.protocol !== 'https:' || !IMAGE_HOST.test(u.hostname)) throw new EngineError(400, { error: `not a YouTube picture host: ${u.hostname}` });
+    let r: Response;
+    try {
+      r = await pageFetch(u, { signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
+    } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
+    if (!r.ok) throw new EngineError(r.status, { error: `picture: HTTP ${r.status}` });
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes.length > MAX_IMAGE_BYTES) throw new EngineError(502, { error: `picture too large (${bytes.length} bytes)` });
+    return { mimeType: r.headers.get('content-type') ?? '', bytes };
+  }
+
   return {
     sessions,
     open,
@@ -523,6 +549,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     innertube,
     suggest,
     availability,
+    image,
     health: () => ({
       ok: true, session: youtube.sessionState, poToken: po.state, sessions: sessions.size,
       blocked_until: breaker.blockedUntil(), ...(memoryMB ? { rssMB: memoryMB() } : {}),

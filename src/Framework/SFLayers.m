@@ -7,6 +7,7 @@
 #import "SFRuntime.h"
 #import "SFUserAgent.h"
 #import "SFWebP.h"
+#import "SFHostFetch.h"
 
 #pragma mark - Image cache
 
@@ -15,6 +16,7 @@
     NSMutableSet *_missing;   // remote sources the server answered 404/410 for (this session): no refetch
     NSOperationQueue *_decode;
     NSOperationQueue *_net;
+    NSOperationQueue *_routed;   // hosts with a source's own client (SFHostFetch): their waits never hold up _net
     NSString *_diskDir;
     NSURLSession *_session;
     NSMutableDictionary *_pending;
@@ -35,6 +37,8 @@
         _decode.maxConcurrentOperationCount = 3;
         _net = [NSOperationQueue new];
         _net.maxConcurrentOperationCount = 6;
+        _routed = [NSOperationQueue new];
+        _routed.maxConcurrentOperationCount = 6;
         _diskDir = [SFCacheDir() stringByAppendingPathComponent:@"img"];
         [[NSFileManager defaultManager] createDirectoryAtPath:_diskDir withIntermediateDirectories:YES attributes:nil error:nil];
         NSURLSessionConfiguration *c = [NSURLSessionConfiguration defaultSessionConfiguration];
@@ -154,34 +158,39 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             if (img) CGImageRelease(img);
         }];
     };
+    NSURL *url = [NSURL URLWithString:src];
+    SFHostFetcher own = url ? SFHostFetcherFor(url) : nil;
+    void (^stored)(NSData *, NSInteger) = ^(NSData *data, NSInteger st) {
+        if (data.length && st < 400) { [data writeToFile:disk atomically:YES]; decodeData(data); return; }
+        if (st == 404 || st == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
+        finish(NULL);
+    };
+    if (own) {   // the source's own client, never natively (SFHostFetch.h)
+        [_routed addOperationWithBlock:^{
+            NSData *cached = [NSData dataWithContentsOfFile:disk];
+            if (cached.length) { decodeData(cached); return; }
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            own(url, ^(NSData *data, NSInteger st) { stored(data, st); dispatch_semaphore_signal(sem); });   // always answers (its calls time out)
+            dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+        }];
+        return;
+    }
     [_net addOperationWithBlock:^{
         NSData *cached = [NSData dataWithContentsOfFile:disk];
         if (cached.length) { decodeData(cached); return; }
-        NSURL *u = [NSURL URLWithString:src];
-        if (!u) { finish(NULL); return; }
-        if (SFHostNeedsCurl(u.host)) {   // TLS bridge (e.g. ORF images)
+        if (!url) { finish(NULL); return; }
+        if (SFHostNeedsCurl(url.host)) {   // TLS bridge (e.g. ORF images)
             NSInteger st = 0;
-            NSData *data = SFCurlFetch(src, @"GET", nil, nil, &st, NULL);
-            if (data.length && st < 400) { [data writeToFile:disk atomically:YES]; decodeData(data); }
-            else {
-                if (st == 404 || st == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
-                finish(NULL);
-            }
+            stored(SFCurlFetch(src, @"GET", nil, nil, &st, NULL), st);
             return;
         }
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-        NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:u];
+        NSMutableURLRequest *rq = [NSMutableURLRequest requestWithURL:url];
         [rq setValue:SFNativeUserAgent() forHTTPHeaderField:@"User-Agent"];
         [[self->_session dataTaskWithRequest:rq completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
             NSInteger code = [(NSHTTPURLResponse *)r statusCode];
-            if (SFIsTLSError(e)) SFMarkHostNeedsCurl(u.host);   // next attempt via curl
-            if (data.length && code < 400) {
-                [data writeToFile:disk atomically:YES];
-                decodeData(data);
-            } else {
-                if (code == 404 || code == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
-                finish(NULL);
-            }
+            if (SFIsTLSError(e)) SFMarkHostNeedsCurl(url.host);   // next attempt via curl
+            stored(data, data ? code : 0);
             dispatch_semaphore_signal(sem);
         }] resume];
         dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));

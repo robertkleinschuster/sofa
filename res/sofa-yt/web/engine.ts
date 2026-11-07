@@ -78,6 +78,7 @@ export interface SofaEngine {
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
   availability(v: string): Promise<Reply<number>>;
+  image(url: string): Promise<Reply<{ mimeType: string; data: string }>>;
   stop(): void;
 }
 
@@ -176,6 +177,10 @@ export const sofaEngine: SofaEngine = {
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),
   availability: (v) => replyAsync(() => core!.availability(v)),
+  image: (url) => replyAsync(async () => {
+    const r = await core!.image(url);
+    return { mimeType: r.mimeType, data: toBase64(r.bytes) };
+  }),
 
   stop() {
     core?.shutdown();
