@@ -16,11 +16,18 @@ fail=0
 ok()  { echo "  ok    $*"; }
 bad() { echo "  FAIL  $*"; fail=1; }
 PIDS=
-cleanup() { [ -n "$PIDS" ] && kill $PIDS 2>/dev/null; rm -rf "$T"; }
+stop() {   # TERM, then KILL whatever is left after 5 s
+  [ -n "$PIDS" ] || return 0
+  kill $PIDS 2>/dev/null
+  for _ in $(seq 25); do kill -0 $PIDS 2>/dev/null || break; sleep 0.2; done
+  kill -9 $PIDS 2>/dev/null; PIDS=
+}
+cleanup() { stop; rm -rf "$T"; }
 trap cleanup EXIT
 
 printf '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/local"))\n' > "$T/nomp.sb"
-np() { sandbox-exec -f "$T/nomp.sb" "$@"; }
+NP=(sandbox-exec -f "$T/nomp.sb")   # an array, not a function: "${NP[@]}" cmd & leaves the command's own pid in $!
+np() { "${NP[@]}" "$@"; }
 # the same environment SFRuntimeSetup() sets
 export PATH="$RT/bin:/usr/bin:/bin:/usr/sbin:/sbin" SSL_CERT_FILE="$RT/etc/cert.pem" \
        FONTCONFIG_FILE="$RT/etc/fonts/fonts.conf" FONTCONFIG_PATH="$RT/etc/fonts" \
@@ -57,7 +64,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(s, *a): pass
 srv = http.server.HTTPServer(("127.0.0.1", 0), H); print(srv.server_port, flush=True); srv.timeout = 90; srv.handle_request()
 ' "$T/probe.json" > "$T/port" & PIDS="$PIDS $!"; disown
-np "$RT/bin/Xvfb" -displayfd 3 -terminate -screen 0 1280x720x24 -nolisten tcp -xkbdir "$RT/share/X11/xkb" -xkbbindir "$RT/bin" \
+"${NP[@]}" "$RT/bin/Xvfb" -displayfd 3 -terminate -screen 0 1280x720x24 -nolisten tcp -xkbdir "$RT/share/X11/xkb" -xkbbindir "$RT/bin" \
    -fp "$RT/share/fonts/misc,built-ins" 3>"$T/display" >"$T/xvfb.log" 2>&1 & PIDS="$PIDS $!"; disown
 for _ in $(seq 50); do [ -s "$T/display" ] && [ -s "$T/port" ] && break; sleep 0.2; done
 if [ -s "$T/display" ] && [ -s "$T/port" ]; then
@@ -74,7 +81,7 @@ fetch('http://127.0.0.1:$(cat "$T/port")/', { method: 'POST', body: JSON.stringi
   webgl: g ? g.getParameter(g.RENDERER) : null }) });
 </script>
 HTML
-  DISPLAY=":$(cat "$T/display")" LIBGL_DRIVERS_PATH="$RT/lib/dri" np "$RT/lib/firefox/firefox" --no-remote --profile "$T/profile" \
+  DISPLAY=":$(cat "$T/display")" LIBGL_DRIVERS_PATH="$RT/lib/dri" "${NP[@]}" "$RT/lib/firefox/firefox" --no-remote --profile "$T/profile" \
     "file://$T/probe.html" >"$T/firefox.log" 2>&1 & PIDS="$PIDS $!"; disown
   for _ in $(seq 300); do [ -s "$T/probe.json" ] && break; sleep 0.2; done
 fi
@@ -92,5 +99,7 @@ else
   bad "engine browser did not load the probe page"; tail -5 "$T/xvfb.log" "$T/firefox.log" 2>/dev/null | sed 's/^/        /'
 fi
 
+stop
+/bin/ps -axo command= | /usr/bin/grep -q "^$RT/" && bad "processes from the bundle outlive the test" || ok "no bundle process left"
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
