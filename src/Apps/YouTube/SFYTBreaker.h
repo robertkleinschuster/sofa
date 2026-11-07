@@ -1,7 +1,8 @@
 // YouTube's bot check, seen from Sofa: one shared circuit breaker.
 // YouTube answers player requests from a flagged IP with "Sign in to confirm you're not a bot";
 // every further request while flagged prolongs the flag. The YouTube engine decides the pause
-// ({until, backoff}, 1 h doubling to 8 h, reset by the first success) and reports each change;
+// ({until, backoff}, 1 h doubling to 8 h, reset by the first success, then 6 h of calm for the
+// background: {until, backoff 0, calm}) and reports each change;
 // Sofa keeps it in one file (Caches/Sofa/youtube-block.json) that every instance reads: background work (follow checks, preloads, downloads)
 // waits, playback the user starts still tries once (the flag is often intermittent).
 #import "SFCore.h"

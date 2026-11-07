@@ -1,6 +1,8 @@
 #import "SFRefreshPlan.h"
 
-const NSTimeInterval SFRefreshMin = 45 * 60, SFRefreshMax = 6 * 3600;
+// a person's volume (2026-11-07: 135 followed YouTube channels were several hundred page loads a
+// day): never more often than every 2 h, a slow channel once a day
+const NSTimeInterval SFRefreshMin = 2 * 3600, SFRefreshMax = 24 * 3600;
 const NSTimeInterval SFRefreshGapMin = 20;
 
 NSTimeInterval SFRefreshInterval(NSArray *dates) {

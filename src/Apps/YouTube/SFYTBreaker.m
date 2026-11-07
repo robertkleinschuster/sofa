@@ -38,7 +38,8 @@
     if (![d writeToFile:[SFYTBreaker filePath] atomically:YES]) SFLog(@"yt: cannot write the bot-check pause");
     _readAt = 0;
     if ([state[@"until"] doubleValue] > [NSDate date].timeIntervalSince1970)
-        SFLog(@"yt: bot check - background requests paused until %@", [NSDate dateWithTimeIntervalSince1970:[state[@"until"] doubleValue]]);
+        SFLog([state[@"calm"] boolValue] ? @"yt: pause lifted - background stays calm until %@" : @"yt: bot check - background requests paused until %@",
+              [NSDate dateWithTimeIntervalSince1970:[state[@"until"] doubleValue]]);
 }
 
 - (void)simulateBlockForTesting:(NSTimeInterval)secs {

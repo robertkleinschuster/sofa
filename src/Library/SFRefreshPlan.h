@@ -5,7 +5,7 @@
 // come from the caller, so the plan is testable (tests/units/refreshplan.m).
 #import <Foundation/Foundation.h>
 
-extern const NSTimeInterval SFRefreshMin, SFRefreshMax;   // 45 min ... 6 h
+extern const NSTimeInterval SFRefreshMin, SFRefreshMax;   // 2 h ... 24 h
 extern const NSTimeInterval SFRefreshGapMin;              // between any two checks: 20 s (+ up to 20 s)
 
 // interval from the show's upload dates (any order): a quarter of the median gap between its

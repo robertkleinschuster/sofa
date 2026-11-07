@@ -47,7 +47,7 @@ the sidecar got no answer. Fixed causes:
   every InnerTube call goes through `POST /yt/<endpoint>` (`player` refused there - only the sidecar
   asks it, with a PO token; the watch details come from `next`).
 - **Cadence like a person** (`SFRefreshPlan`, `SFFollows`): each followed channel is checked on its
-  own schedule - a quarter of its median upload gap, 45 min .. 6 h (2 h with fewer than 3 dates),
+  own schedule - a quarter of its median upload gap, 2 h .. 24 h (2 h with fewer than 3 dates; was 45 min .. 6 h until 2026-11-07),
   ±20 % jitter, doubled at night (0-6 h), at least 20-40 s between two checks; `follows.checked`
   persists it across launches; during a bot-check pause the due follow waits for its end
   (`backgroundPausedUntil`, also what downloads wait for). Subscriptions use the followed lists (no

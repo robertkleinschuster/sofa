@@ -332,7 +332,19 @@ test('breaker: bg=1 sends nothing while blocked; bot answers open it; live is re
     const live = await openJson<OpenFailure>(app, 'v=aaaaaaaaaaa');
     assert.deepEqual([live.error, live.live], ['live', true]);
     breaker.note(false);
-    assert.deepEqual(reported.at(-1), { until: 0, backoff: 0 }, 'a success closes it and is reported');
+    const calm = must(reported.at(-1));
+    assert.deepEqual([calm.backoff, calm.calm], [0, true], 'a success lifts the pause and is reported');
+    assert.ok(calm.until > Date.now() / 1000 + 6 * 3600 - 60, 'the background stays calm for 6 h');
+    const quiet = youtube.requests;
+    assert.equal((await openJson<OpenFailure>(app, 'v=ccccccccccc&bg=1')).bot, true, 'calm: the background sends nothing (an uncached video)');
+    assert.equal(youtube.requests, quiet);
+    blocks.state = { ...calm };
+    breaker.note(false);
+    assert.deepEqual(reported.at(-1), calm, 'a success during the calm does not end it');
+    await openJson(app, 'v=bbbbbbbbbbb');
+    assert.equal(youtube.requests, quiet + 1, 'calm: user playback is not held (its player request goes out)');
+    breaker.note(true);
+    assert.equal(must(reported.at(-1)).backoff, 3600, 'a bot check in the calm starts at 1 h again');
   } finally { await app.close(); }
 });
 

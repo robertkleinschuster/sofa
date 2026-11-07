@@ -18,10 +18,10 @@ int main(void) {
     @autoreleasepool {
         NSDate *now = at(@"2026-11-06T08:00:00+01:00");
         NSTimeZone *vie = [NSTimeZone timeZoneWithName:@"Europe/Vienna"];
-        expect(SFRefreshInterval(every(7 * 86400, 10, now)) == SFRefreshMax, @"weekly uploads: the longest interval");
-        expect(SFRefreshInterval(every(86400, 10, now)) == SFRefreshMax, @"daily: 6 h");
+        expect(SFRefreshInterval(every(7 * 86400, 10, now)) == SFRefreshMax && SFRefreshMax == 24 * 3600, @"weekly uploads: the longest interval, once a day");
+        expect(SFRefreshInterval(every(86400, 10, now)) == 6 * 3600, @"daily: 6 h");
         expect(SFRefreshInterval(every(8 * 3600, 10, now)) == 2 * 3600, @"three a day: 2 h");
-        expect(SFRefreshInterval(every(600, 10, now)) == SFRefreshMin, @"news ticker: never more often than 45 min");
+        expect(SFRefreshInterval(every(600, 10, now)) == SFRefreshMin, @"news ticker: never more often than 2 h");
         expect(SFRefreshInterval(@[now]) == 2 * 3600, @"unknown rhythm: 2 h");
         NSMutableArray *outlier = [every(8 * 3600, 9, now) mutableCopy];
         [outlier addObject:[now dateByAddingTimeInterval:-400 * 86400]];
