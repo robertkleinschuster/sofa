@@ -37,8 +37,8 @@ if [ -d "$APP/Contents/Runtime" ]; then
   cp -R "$APP/Contents/Runtime" "$APP/Contents/Frameworks" "$NEW/Contents/"
   # YouTube runs in the engine's browser (docs/youtube-engine.md): a runtime without it would turn
   # YouTube off in the installed app - that needs a new release bundle first (make-release)
-  for t in firefox Xvfb; do
-    [ -x "$NEW/Contents/Runtime/bin/$t" ] || { echo "ERROR: the installed runtime has no $t - deploy refused (YouTube would stop working)"; exit 1; }
+  for t in lib/firefox/firefox bin/Xvfb; do   # make-release's layout (SFRuntimePath)
+    [ -x "$NEW/Contents/Runtime/$t" ] || { echo "ERROR: the installed runtime has no ${t##*/} - deploy refused (YouTube would stop working)"; exit 1; }
   done
   rm -rf "$NEW/Contents/Runtime/Python.framework"   # no longer shipped (yt-dlp removed 2026-11-06, make-release)
   /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" "$NEW/Contents/MacOS" "$NEW/Contents/Frameworks" >/dev/null
