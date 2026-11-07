@@ -267,11 +267,13 @@ test('prefetch hint: /open starts pulling at the resume position before mpv conn
     // header read is served from the hinted run (every run begins with the init segment)
     const h = await get(r.video, { range: `bytes=0-${VINIT.length - 1}` });
     assert.ok(h.body.equals(VINIT));
-    assert.equal(pumps.log.starts.length, 1, 'no extra run for the header');
+    // a failure says which runs started (flaked once under test-all load, 2026-11-07: 2 runs)
+    const runs = (): string => JSON.stringify(pumps.log.starts);
+    assert.equal(pumps.log.starts.length, 1, `no extra run for the header: ${runs()}`);
     const off = must(VSEGS.find((x) => x.startMs <= 600000 && 600000 < x.startMs + x.durationMs)).start;
     const b = await get(r.video, { range: `bytes=${off}-${off + 99999}` });
     assert.ok(b.body.equals(expectedBytes(VINIT, off, off + 100000)));
-    assert.equal(pumps.log.starts.length, 1, 'resume position served by the prefetch run');
+    assert.equal(pumps.log.starts.length, 1, `resume position served by the prefetch run: ${runs()}`);
   } finally { await app.close(); }
 });
 
