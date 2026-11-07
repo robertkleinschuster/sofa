@@ -32,11 +32,22 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
   (`health().onYouTube`) and `start()` answered; then waiting calls go out. A page reload or a
   browser exit loses every session (`SFYTEngineSessionsLostNotification`: the player reopens);
   failed runs restart after a backoff (5 s doubling to 10 min; reset after 5 min of healthy run).
+- **Hand-over across Sofa restarts.** An update (`_exit` after the save) or a crash leaves the
+  browser running: the next Sofa takes it over (`profile-processes.json`: Firefox and Xvfb alive by
+  name, the installed extension this build's on the same channel) and asks the loaded page
+  `health` + `start` (409 = already started) - the same document, no new BotGuard attestation, no
+  youtube.com load. The extension's background finds the new Sofa by itself (same port and token,
+  poll retried every <= 2 s). A changed extension build is not taken over (Firefox would update it
+  into the loaded page: two engines) - that start ends the old browser and starts anew. Sessions of
+  the earlier Sofa are not carried over (its player reopens after the update anyway).
 - **No orphans.** Sofa ends browser and display when it quits (`SFApp` `stop`). However else it
-  ends (crash, kill -9), a watcher (`/bin/sh` reading a pipe only Sofa holds) sees the pipe close
-  and ends them; Xvfb also ends with its last client (`-terminate`), and the next launch ends
-  whatever `profile-processes.json` records and still runs (checked by name). Firefox can't watch
-  for itself while it hangs; the kernel's pipe close needs nothing from it.
+  ends (crash, kill -9, the update's `_exit`), a watcher (`SFYTWatcher`: `/bin/sh` reading a pipe
+  only Sofa holds) sees the pipe close and ends them after the hand-over grace (3 min; at once in
+  dev instances and tests, which never take a browser over) unless the next Sofa ended the watcher
+  first; it kills a pid only while it still runs that executable. Xvfb also ends with its last
+  client (`-terminate`), and a launch that does not take over ends whatever
+  `profile-processes.json` records and still runs (checked by name). Firefox can't watch for
+  itself while it hangs; the kernel's pipe close needs nothing from it.
   Children are spawned with a clean signal mask (a GCD thread's blocked mask made them ignore
   SIGTERM).
 

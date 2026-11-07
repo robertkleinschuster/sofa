@@ -2,13 +2,9 @@
 #import "SFYTBrowser.h"
 #import "SFRuntime.h"
 #import "SFYTPointer.h"
-#include <spawn.h>
-#include <signal.h>
+#import "SFYTProcess.h"
 #include <poll.h>
-#include <libproc.h>
 #include <sys/wait.h>
-
-extern char **environ;
 
 static NSString *const kExtensionID = @"youtube-engine@sofa";
 static const int kScreenW = 1920, kScreenH = 1080;   // the TV's screen is what the page sees
@@ -50,78 +46,18 @@ static NSString *UserJS(NSDictionary *prefs) {
     return s;
 }
 
-// The environment of Sofa minus what must not reach the browser, plus `extra`.
-static char **Environment(NSDictionary *extra) {
-    NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
-    for (NSString *k in @[@"DYLD_INSERT_LIBRARIES", @"MOZ_HEADLESS", @"DISPLAY"]) [env removeObjectForKey:k];
-    [env addEntriesFromDictionary:extra];
-    char **e = calloc(env.count + 1, sizeof(char *));
-    __block size_t i = 0;
-    [env enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSString *v, BOOL *stop) { e[i++] = strdup([NSString stringWithFormat:@"%@=%@", k, v].UTF8String); }];
-    return e;
-}
-
-static void FreeStrings(char **a) { for (char **p = a; *p; p++) free(*p); free(a); }
-
-// posix_spawn with only stdin (`in`, or /dev/null when < 0), stdout+stderr (`log`) and, if >= 0,
-// `fd3` as fd 3.
-static pid_t Spawn(NSString *path, NSArray *args, NSDictionary *env, int in, int log, int fd3) {
-    posix_spawn_file_actions_t fa;
-    posix_spawn_file_actions_init(&fa);
-    if (in >= 0) posix_spawn_file_actions_adddup2(&fa, in, 0);
-    else posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
-    posix_spawn_file_actions_adddup2(&fa, log, 1);
-    posix_spawn_file_actions_adddup2(&fa, log, 2);
-    if (fd3 >= 0) posix_spawn_file_actions_adddup2(&fa, fd3, 3);
-    posix_spawnattr_t at;
-    posix_spawnattr_init(&at);
-    // nothing else inherited, an own process group, and signals as a fresh process has them: the
-    // caller is a GCD thread with most signals blocked, and a child inheriting that mask ignored
-    // SIGTERM (measured 2026-11-07: Firefox and Xvfb outlived every stop)
-    posix_spawnattr_setflags(&at, POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
-    posix_spawnattr_setpgroup(&at, 0);
-    sigset_t none, all;
-    sigemptyset(&none); sigfillset(&all);
-    posix_spawnattr_setsigmask(&at, &none);
-    posix_spawnattr_setsigdefault(&at, &all);
-    char **argv = calloc(args.count + 2, sizeof(char *));
-    argv[0] = strdup(path.UTF8String);
-    for (NSUInteger i = 0; i < args.count; i++) argv[i + 1] = strdup([args[i] UTF8String]);
-    char **envp = Environment(env);
-    pid_t pid = 0;
-    int rc = posix_spawn(&pid, path.UTF8String, &fa, &at, argv, envp);
-    FreeStrings(argv); FreeStrings(envp);
-    posix_spawn_file_actions_destroy(&fa);
-    posix_spawnattr_destroy(&at);
-    if (rc != 0) { SFLog(@"yt-browser: cannot start %@: %s", path.lastPathComponent, strerror(rc)); return 0; }
-    return pid;
-}
-
-// Ends `pid` if it still is one of ours (its executable's name), TERM then KILL.
-static void EndProcess(pid_t pid, NSString *name) {
-    if (pid <= 0) return;
-    char path[PROC_PIDPATHINFO_MAXSIZE];
-    if (proc_pidpath(pid, path, sizeof path) <= 0) return;   // gone
-    if (![[@(path) lastPathComponent] isEqualToString:name]) return;   // the pid was reused by another program
-    kill(pid, SIGTERM);
-    for (int i = 0; i < 50 && kill(pid, 0) == 0; i++) {
-        if (waitpid(pid, NULL, WNOHANG) == pid) return;
-        usleep(100000);
-    }
-    if (kill(pid, 0) == 0) { kill(pid, SIGKILL); waitpid(pid, NULL, WNOHANG); }
-}
-
 @implementation SFYTBrowser {
     NSString *_profile;
-    pid_t _xvfb, _firefox, _watcher;
-    int _lifeline;              // Sofa's end of the watcher's pipe; -1 without a watcher
+    pid_t _xvfb, _firefox;
+    int _display;
+    SFYTWatcher *_watcher;
     dispatch_source_t _xvfbWatch, _firefoxWatch;
     BOOL _stopping;
     SFYTPointer *_pointer;      // on the running display; set on the launch queue (@synchronized)
 }
 
 - (instancetype)initWithProfile:(NSString *)profileDir {
-    if ((self = [super init])) { _profile = profileDir; _lifeline = -1; }
+    if ((self = [super init])) { _profile = profileDir; _display = -1; }
     return self;
 }
 
@@ -145,6 +81,18 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 
 #pragma mark Profile
 
+static NSData *ExtensionConfig(uint16_t port, NSString *token) {
+    return [NSJSONSerialization dataWithJSONObject:@{@"port": @(port), @"token": token} options:0 error:nil];
+}
+
+// The installed extension is this build's, pointed at this channel.
+- (BOOL)extensionCurrentForPort:(uint16_t)port token:(NSString *)token {
+    NSString *ext = [self extensionCopy];
+    NSString *stamp = [NSString stringWithContentsOfFile:[BuiltExtension() stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil];
+    return stamp && [stamp isEqualToString:[NSString stringWithContentsOfFile:[ext stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil]]
+        && [ExtensionConfig(port, token) isEqualToData:[NSData dataWithContentsOfFile:[ext stringByAppendingPathComponent:@"config.json"]]];
+}
+
 // The profile as the engine needs it: prefs, and the extension installed unpacked (a copy with
 // config.json, referenced by a proxy file). MV2: its host permissions come with the install.
 - (BOOL)prepareProfileForPort:(uint16_t)port token:(NSString *)token {
@@ -159,12 +107,9 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     // both kept across starts by SFYTEngine): Firefox takes a changed unpacked extension for an
     // update and injects its content scripts into the already loaded tab - a second engine in the
     // same document (measured 2026-11-07).
-    NSData *cfg = [NSJSONSerialization dataWithJSONObject:@{@"port": @(port), @"token": token} options:0 error:nil];
-    NSString *stamp = [NSString stringWithContentsOfFile:[BuiltExtension() stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil];
-    BOOL same = stamp && [stamp isEqualToString:[NSString stringWithContentsOfFile:[ext stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil]]
-        && [cfg isEqualToData:[NSData dataWithContentsOfFile:[ext stringByAppendingPathComponent:@"config.json"]]];
+    NSData *cfg = ExtensionConfig(port, token);
     NSError *e = nil;
-    if (!same) {
+    if (![self extensionCurrentForPort:port token:token]) {
         [fm removeItemAtPath:ext error:nil];
         if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
         if (![cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]) return NO;
@@ -179,25 +124,65 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 
 #pragma mark Processes
 
-- (void)launchWithChannelPort:(uint16_t)port token:(NSString *)token done:(void (^)(BOOL))done {
+- (void)launchWithChannelPort:(uint16_t)port token:(NSString *)token done:(void (^)(BOOL, BOOL))done {
     _stopping = NO;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [self endLeftovers];
-        BOOL ok = [self prepareProfileForPort:port token:token] && [self startDisplayAndBrowser];
+        BOOL adopted = self.handoverGrace > 0 && [self adoptForPort:port token:token];
+        BOOL ok = adopted;
+        if (!adopted) {
+            [self endLeftovers];
+            ok = [self prepareProfileForPort:port token:token] && [self startDisplayAndBrowser];
+        }
         SFMain(^{
             if (ok) [self watchProcesses];
             else [self stop];
-            done(ok);
+            done(ok, adopted);
         });
     });
 }
 
-// What a crashed Sofa left running on this profile (Firefox would refuse a locked profile).
+- (NSDictionary *)record {
+    NSData *d = [NSData dataWithContentsOfFile:[self pidFile]];
+    NSDictionary *r = d ? [NSJSONSerialization JSONObjectWithData:d options:0 error:nil] : nil;
+    return [r isKindOfClass:[NSDictionary class]] ? r : nil;
+}
+
+- (void)writeRecord {
+    NSData *d = [NSJSONSerialization dataWithJSONObject:@{@"xvfb": @(_xvfb), @"firefox": @(_firefox), @"display": @(_display),
+                                                          @"watcher": @(_watcher.pid)} options:0 error:nil];
+    [d writeToFile:[self pidFile] atomically:YES];
+}
+
+// The browser an earlier Sofa left running (an update, a crash: its watcher waits out the grace)
+// is taken over as it is - the same page, no new document, no new attestation for YouTube - if
+// display and browser still run and the installed extension is this build's on this channel (a
+// changed one would be updated into the loaded page: a second engine, see prepareProfile).
+- (BOOL)adoptForPort:(uint16_t)port token:(NSString *)token {
+    NSDictionary *r = [self record];
+    pid_t ff = [r[@"firefox"] intValue], xv = [r[@"xvfb"] intValue];
+    int display = r[@"display"] ? [r[@"display"] intValue] : -1;
+    if (!r || display < 0 || !SFYTProcessIs(ff, @"firefox") || !SFYTProcessIs(xv, @"Xvfb")) return NO;
+    if (![self extensionCurrentForPort:port token:token]) { SFLog(@"yt-browser: the running browser has another extension build - starting anew"); return NO; }
+    [SFYTWatcher endEarlier:[r[@"watcher"] intValue]];   // its processes are this Sofa's now
+    _firefox = ff; _xvfb = xv; _display = display;
+    NSString *name = [NSString stringWithFormat:@":%d", display];
+    @synchronized (self) { _pointer = [[SFYTPointer alloc] initWithDisplay:name]; }
+    int log = open([self logFile].fileSystemRepresentation, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    [self startWatcher:log];
+    if (log >= 0) close(log);
+    [self writeRecord];
+    SFLog(@"yt-browser: took over the running Firefox %d on display %@ (Xvfb %d)", ff, name, xv);
+    return YES;
+}
+
+// What an earlier Sofa left running on this profile and is not taken over (Firefox would refuse
+// a locked profile), with its watcher.
 - (void)endLeftovers {
-    NSDictionary *old = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[self pidFile]] ?: [NSData data] options:0 error:nil];
-    if (![old isKindOfClass:[NSDictionary class]]) return;
-    EndProcess([old[@"firefox"] intValue], @"firefox");
-    EndProcess([old[@"xvfb"] intValue], @"Xvfb");
+    NSDictionary *old = [self record];
+    if (!old) return;
+    [SFYTWatcher endEarlier:[old[@"watcher"] intValue]];
+    SFYTEndProcess([old[@"firefox"] intValue], @"firefox");
+    SFYTEndProcess([old[@"xvfb"] intValue], @"Xvfb");
     [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
 }
 
@@ -211,9 +196,9 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     int p[2];
     if (pipe(p) != 0) { close(log); return NO; }
     // -displayfd: Xvfb picks a free display and writes its number once it accepts clients;
-    // -terminate: it ends with its last client (the browser) - no display outlives a crashed Sofa;
+    // -terminate: it ends with its last client (the browser) - no display outlives the browser;
     // keymaps, xkbcomp and fonts from where Xvfb is (bundle or MacPorts: same as its built-in paths there)
-    _xvfb = Spawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH],
+    _xvfb = SFYTSpawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH],
                                      @"-nolisten", @"tcp", @"-xkbdir", SFRuntimePath(@"share/X11/xkb"), @"-xkbbindir", SFRuntimePath(@"bin"),
                                      @"-fp", [NSString stringWithFormat:@"%@,built-ins", SFRuntimePath(@"share/fonts/misc")]],
                   MesaEnv(), -1, log, p[1]);
@@ -232,50 +217,36 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
         n += r;
     }
     close(p[0]);
-    int display = n > 0 ? atoi(buf) : -1;
-    if (display < 0 || !(n > 0 && buf[0] >= '0' && buf[0] <= '9')) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
+    _display = n > 0 && buf[0] >= '0' && buf[0] <= '9' ? atoi(buf) : -1;
+    if (_display < 0) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
     NSMutableDictionary *ffEnv = [MesaEnv() mutableCopy];
-    ffEnv[@"DISPLAY"] = [NSString stringWithFormat:@":%d", display];
+    ffEnv[@"DISPLAY"] = [NSString stringWithFormat:@":%d", _display];
     @synchronized (self) { _pointer = [[SFYTPointer alloc] initWithDisplay:ffEnv[@"DISPLAY"]]; }
-    _firefox = Spawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
+    _firefox = SFYTSpawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
                                            @"--height", @(kScreenH).stringValue, @"https://www.youtube.com/"],
                      ffEnv, -1, log, -1);
     if (_firefox > 0) [self startWatcher:log];
     close(log);
-    NSData *pids = [NSJSONSerialization dataWithJSONObject:@{@"xvfb": @(_xvfb), @"firefox": @(_firefox)} options:0 error:nil];
-    [pids writeToFile:[self pidFile] atomically:YES];
+    [self writeRecord];
     if (_firefox <= 0) return NO;
-    SFLog(@"yt-browser: Firefox %d on display :%d (Xvfb %d)", _firefox, display, _xvfb);
+    SFLog(@"yt-browser: Firefox %d on display :%d (Xvfb %d)", _firefox, _display, _xvfb);
     return YES;
 }
 
-// Watcher: a shell that reads a pipe only Sofa writes to. However Sofa ends - quit, crash, kill -9 -
-// the kernel closes its end, the read returns and the shell ends browser and display. (Sofa's end
-// is close-on-exec: no other child keeps it open.) The kernel notices even when Firefox hangs.
+// No browser outlives Sofa for long: the watcher (SFYTProcess.h) ends browser and display when
+// Sofa is gone - after the hand-over grace (the next Sofa takes them over), at once without one.
 - (void)startWatcher:(int)log {
-    int p[2];
-    if (pipe(p) != 0) return;
-    fcntl(p[1], F_SETFD, FD_CLOEXEC);
-    _watcher = Spawn(@"/bin/sh", @[@"-c", @"read _; kill $0 $1 2>/dev/null", @(_firefox).stringValue, @(_xvfb).stringValue], @{}, p[0], log, -1);
-    close(p[0]);
-    if (_watcher > 0) _lifeline = p[1]; else close(p[1]);
-}
-
-- (void)endWatcher {
-    if (_lifeline >= 0) close(_lifeline);   // the watcher's read returns; what it kills is ending anyway
-    _lifeline = -1;
-    pid_t w = _watcher;
-    _watcher = 0;
-    if (w > 0) dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{ waitpid(w, NULL, 0); });
+    _watcher = [SFYTWatcher watch:@{@(_firefox): @"firefox", @(_xvfb): @"Xvfb"} grace:self.handoverGrace log:log];
 }
 
 - (dispatch_source_t)watch:(pid_t)pid name:(NSString *)name {
     dispatch_source_t s = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, (uintptr_t)pid, DISPATCH_PROC_EXIT, dispatch_get_main_queue());
     __weak SFYTBrowser *ws = self;
     dispatch_source_set_event_handler(s, ^{
-        int st = 0;
-        waitpid(pid, &st, WNOHANG);
-        [ws exited:pid why:[NSString stringWithFormat:@"%@ exited (%d)", name, WIFEXITED(st) ? WEXITSTATUS(st) : -WTERMSIG(st)]];
+        int st = 0;   // a taken-over process is not our child: no status
+        NSString *why = waitpid(pid, &st, WNOHANG) == pid ? [NSString stringWithFormat:@"%@ exited (%d)", name, WIFEXITED(st) ? WEXITSTATUS(st) : -WTERMSIG(st)]
+                                                         : [name stringByAppendingString:@" exited"];
+        [ws exited:pid why:why];
     });
     dispatch_resume(s);
     if (kill(pid, 0) != 0) dispatch_async(dispatch_get_main_queue(), ^{ [ws exited:pid why:[name stringByAppendingString:@" ended at once"]]; });
@@ -326,10 +297,12 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     @synchronized (self) { _pointer = nil; }
     for (dispatch_source_t s in @[_xvfbWatch ?: [NSNull null], _firefoxWatch ?: [NSNull null]]) if ((id)s != [NSNull null]) dispatch_source_cancel(s);
     _xvfbWatch = _firefoxWatch = nil;
-    EndProcess(_firefox, @"firefox");
-    EndProcess(_xvfb, @"Xvfb");
+    [_watcher cancel];   // this stop ends them, nobody takes them over
+    _watcher = nil;
+    SFYTEndProcess(_firefox, @"firefox");
+    SFYTEndProcess(_xvfb, @"Xvfb");
     _firefox = _xvfb = 0;
-    [self endWatcher];
+    _display = -1;
     [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
 }
 @end

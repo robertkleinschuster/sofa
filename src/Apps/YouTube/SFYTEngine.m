@@ -31,6 +31,9 @@ static const NSTimeInterval kAliveTimeout = 30;
 // at most one restart for an unresponsive page in this time: every restart is a new page and a new
 // BotGuard attestation for YouTube (2026-11-07: three within minutes -> bot check)
 static const NSTimeInterval kUnresponsiveRestartGap = 15 * 60;
+// how long the browser waits for the next Sofa after an update's or a crash's end (the update
+// handover takes ~1 s, launchd restarts a crashed Sofa at once); a real quit ends it at once
+static const int kHandoverGrace = 180;
 // the consent dialog is read for a moment before it is answered (seconds, uniform)
 static const double kConsentReadMin = 2.5, kConsentReadMax = 5.5;
 
@@ -84,6 +87,9 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         }];
         _browser = [[SFYTBrowser alloc] initWithProfile:[dir stringByAppendingPathComponent:@"profile"]];
         _browser.onExit = ^(NSString *why) { [ws runFailed:why]; };
+        // the engine page outlives a Sofa update or crash (its next start takes it over: no new
+        // document, no new attestation); dev instances and tests keep theirs tied to them
+        _browser.handoverGrace = SFDevMode ? 0 : kHandoverGrace;
     }
     return self;
 }
@@ -129,16 +135,20 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     _state = SFYTEngineStarting;
     _launchedAt = [NSDate date];
     NSUInteger run = ++_run;
-    [_browser launchWithChannelPort:_server.port token:_channel.token done:^(BOOL ok) {
-        if (!ok && run == self->_run) [self runFailed:@"browser did not start"];
+    [_browser launchWithChannelPort:_server.port token:_channel.token done:^(BOOL ok, BOOL adopted) {
+        if (run != self->_run) return;
+        if (!ok) [self runFailed:@"browser did not start"];
+        // the page is loaded and will not report itself again: its engine is started (409) or
+        // starts now; the extension's background finds this Sofa on the same port by itself
+        else if (adopted) [self startPage:++self->_page polls:kPagePolls];
     }];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kLaunchTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (run == self->_run && self->_state == SFYTEngineStarting) [self runFailed:@"engine page not ready in time"];
     });
 }
 
-// After a crash nothing calls this: the extension closes Firefox once Sofa stays unreachable, and
-// Xvfb ends with its last client.
+// Quit: the browser ends now. An update's or a crash's end does not come here - the browser waits
+// out the hand-over grace for the next Sofa (SFYTBrowser).
 - (void)stop {
     _state = SFYTEngineIdle;
     _run++;

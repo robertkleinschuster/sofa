@@ -14,7 +14,9 @@ declare const browser: { runtime: { getURL(path: string): string; onConnect: { a
 
 interface BridgeConfig { port: number; token: string }
 
-const POLL_RETRY_MAX_MS = 10000;
+// Sofa unreachable: retried at most this far apart - a restarted Sofa takes the running browser
+// over (SFYTBrowser) and is back within seconds; loopback retries cost nothing
+const POLL_RETRY_MAX_MS = 2000;
 const config: Promise<BridgeConfig> = fetch(browser.runtime.getURL('config.json')).then((r) => r.json() as Promise<BridgeConfig>);
 
 let current: RuntimePort | null = null;   // the engine page; a newer one replaces it
@@ -40,7 +42,7 @@ browser.runtime.onConnect.addListener((page) => {
           const batch = pending;
           pending = { answers: [], events: [] };
           await fetch(`${base}/post?${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(batch) })
-            .catch(() => { /* Sofa gone: it restarts Firefox */ });
+            .catch(() => { /* Sofa gone: the next one takes this browser over, or its watcher ends it */ });
         }
       } finally { flushing = false; }
     };
