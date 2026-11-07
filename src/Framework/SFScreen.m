@@ -1,4 +1,5 @@
 #import "SFScreen.h"
+#import "SFHitchMonitor.h"
 #import "SFLayers.h"
 #import "SFVolume.h"
 
@@ -47,6 +48,7 @@ NSCursor *SFBlankCursor(void) {
     CALayer *_volHUD, *_volFill;
     SFLabel *_volLabel;
     NSUInteger _volSeq;
+    SFKey _lastKey;
 }
 
 // No mouse cursor in the TV UI (see main.m hideCursor)
@@ -57,7 +59,15 @@ static __weak SFNavigator *gMainNav;
 
 - (instancetype)initWithFrame:(NSRect)f {
     if ((self = [super initWithFrame:f])) {
-        if (!gMainNav) gMainNav = self;
+        if (!gMainNav) {
+            gMainNav = self;
+            __weak SFNavigator *ws = self;
+            SFHitchMonitorStart(^(NSString **name, NSTimeInterval *at) {
+                SFNavigator *s = ws;
+                if (!s || !s->_lastInput) return;
+                *name = SFKeyName(s->_lastKey); *at = s->_lastInput;
+            });
+        }
         _stack = [NSMutableArray new];
         _root = [CALayer layer];
         _root.geometryFlipped = YES;
@@ -199,6 +209,7 @@ static __weak SFNavigator *gMainNav;
 
 - (void)sendKey:(SFKey)key {
     _lastInput = [NSDate timeIntervalSinceReferenceDate];
+    _lastKey = key;
     SFScreen *t = self.top;
     if (!t) return;
     if ([t handleKey:key]) return;

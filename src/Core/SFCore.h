@@ -10,6 +10,9 @@ typedef NS_ENUM(NSInteger, SFKey) {
     SFKeyNext, SFKeyPrev,      // seeking (remote hold left/right, keyboard ,/.)
     SFKeyUpHold, SFKeyDownHold,
 };
+// Names of the keys (log, dev FIFO "key <name>"): "up", "selecthold", ...; unknown -> nil / -1
+NSString *SFKeyName(SFKey key);
+SFKey SFKeyFromName(NSString *name);
 
 // All layout measures are given in "design units" of a 1920x1080 canvas
 // and are scaled to the real screen height with SFScale.

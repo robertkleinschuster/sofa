@@ -5,6 +5,13 @@ CGFloat SFScale = 1.0;
 static dispatch_queue_t gLogQueue;   // set by the first SFLog
 void SFLogFlush(void) { if (gLogQueue) dispatch_sync(gLogQueue, ^{}); }
 
+static NSArray *KeyNames(void) {   // in SFKey order
+    return @[@"up", @"down", @"left", @"right", @"select", @"menu", @"play", @"selecthold", @"menuhold",
+             @"next", @"prev", @"uphold", @"downhold"];
+}
+NSString *SFKeyName(SFKey key) { NSArray *n = KeyNames(); return key >= 0 && (NSUInteger)key < n.count ? n[key] : nil; }
+SFKey SFKeyFromName(NSString *name) { NSUInteger i = [KeyNames() indexOfObject:name.lowercaseString]; return i == NSNotFound ? -1 : (SFKey)i; }
+
 void SFLog(NSString *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];

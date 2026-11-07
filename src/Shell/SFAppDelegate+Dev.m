@@ -86,13 +86,9 @@ static NSString *fifoPath(void) {
         [out writeToFile:a[3] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         SFLog(@"dev: parse written %@", a[3]);
     } else if ([cmd isEqualToString:@"key"]) {
-        NSDictionary *m = @{@"up": @(SFKeyUp), @"down": @(SFKeyDown), @"left": @(SFKeyLeft), @"right": @(SFKeyRight),
-                            @"select": @(SFKeySelect), @"menu": @(SFKeyMenu), @"play": @(SFKeyPlayPause),
-                            @"selecthold": @(SFKeySelectHold), @"menuhold": @(SFKeyMenuHold),
-                            @"next": @(SFKeyNext), @"prev": @(SFKeyPrev), @"uphold": @(SFKeyUpHold), @"downhold": @(SFKeyDownHold)};
-        NSNumber *k = m[arg.lowercaseString];
-        if (k) [self.nav sendKey:k.integerValue];
-        else SFLog(@"dev: unknown key %@ (one of: %@)", arg, [m.allKeys componentsJoinedByString:@", "]);
+        SFKey k = SFKeyFromName(arg);
+        if ((NSInteger)k >= 0) [self.nav sendKey:k];
+        else SFLog(@"dev: unknown key %@", arg);
     } else if ([cmd isEqualToString:@"shot"] && arg) {
         [self screenshot:arg];
     } else if ([cmd isEqualToString:@"mpvset"] && arg) {   // dev: set an mpv property, e.g. "mpvset vid no" (tests self-healing)
