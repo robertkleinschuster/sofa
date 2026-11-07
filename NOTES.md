@@ -243,7 +243,8 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
          the engine, no node). Leftovers: libepoxy (GTK's GL loader) still names
          /opt/local/lib/libGL.1.dylib (a stat under the sandbox; on a Mac WITH MacPorts GTK could
          load MacPorts' libGL next to the bundle's libX11 - port patch like firefox-x11's);
-         relink.py copies libmozglue + libnss3 into Frameworks although nothing links them there.
+         ~~relink.py copied libmozglue + libnss3 into Frameworks~~ (gmp-clearkey reached them through
+         MacPorts rpaths; now linked to the copies in Runtime/lib/firefox - next release build).
       2. ~~EU consent dialog in a fresh profile~~: accepted with a trusted XTest click (2026-11-07,
          consent.ts + SFYTPointer; LIVE 08:27 on the real profile's first start: detected, 4.9 s
          read, clicked, page reload, new lasting visitor id). Minor: a background open before the

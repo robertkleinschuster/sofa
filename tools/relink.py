@@ -4,7 +4,8 @@
 relink.py <root> <libdir>   copy every /opt/local dylib that any Mach-O under <root> needs
                             (transitively) into <libdir>, rewrite all references to
                             @loader_path-relative paths, drop every LC_RPATH. An @rpath
-                            reference to a library next to the file (Firefox's own) stays there.
+                            reference to a library of the same program (next to the file, or
+                            elsewhere in the tree under its MacPorts layout) stays there.
 relink.py --check <root>    fail if any Mach-O under <root> still depends on anything outside
                             /usr/lib, /System and @loader_path, or carries an LC_RPATH.
 
@@ -78,6 +79,13 @@ def rpaths(p):
     return res
 
 
+def bundled_as(files, dep):
+    """The file under the tree that is MacPorts' `dep` copied with its prefix-relative path."""
+    rel = '/' + os.path.relpath(dep, PREFIX)
+    hits = [f for f in files if f.endswith(rel)]
+    return hits[0] if len(hits) == 1 else None
+
+
 def relink(root, libdir):
     root, libdir = os.path.abspath(root), os.path.abspath(libdir)
     os.makedirs(libdir, exist_ok=True)
@@ -116,6 +124,13 @@ def relink(root, libdir):
                     errors.append('%s: unresolved %s' % (p, ref))
                     continue
                 dep = found[0]
+                # a library of the same program that the tree already carries under its MacPorts
+                # layout (Firefox's gmp-clearkey/0.1/libclearkey.dylib -> lib/firefox/libnss3.dylib
+                # in Runtime): that copy, not a second one in <libdir>
+                same = bundled_as(files, dep)
+                if same:
+                    args += ['-change', ref, '@loader_path/' + os.path.relpath(same, os.path.dirname(p))]
+                    continue
             if not dep.startswith(PREFIX + '/'):
                 continue
             if not os.path.exists(dep):
