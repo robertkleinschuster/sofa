@@ -46,6 +46,8 @@
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
 }
 
++ (void)stop { [[SFYTEngine shared] stop]; }
+
 // yt-dlp was removed on 2026-11-06 (docs/youtube.md): what it kept on disk goes too - its updated
 // copies, caches (with the bot-check file's old place), resolved-URL cache and update stamp.
 // Idempotent; costs a few stat calls once there is nothing left.

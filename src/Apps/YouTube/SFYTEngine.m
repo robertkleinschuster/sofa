@@ -67,10 +67,6 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
         _browser = [[SFYTBrowser alloc] initWithProfile:[dir stringByAppendingPathComponent:@"profile"]];
         _browser.onExit = ^(NSString *why) { [ws runFailed:why]; };
-        // Sofa quits: the browser goes with it (a crash leaves it to the extension: it closes
-        // Firefox once Sofa stays unreachable, and Xvfb ends with its last client)
-        [[NSNotificationCenter defaultCenter] addObserverForName:NSApplicationWillTerminateNotification object:nil queue:nil
-                                                      usingBlock:^(NSNotification *n) { SFYTEngine *s = ws; if (s) [s->_browser stop]; }];
     }
     return self;
 }
@@ -102,6 +98,15 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kLaunchTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (run == self->_run && self->_state == SFYTEngineStarting) [self runFailed:@"engine page not ready in time"];
     });
+}
+
+// After a crash nothing calls this: the extension closes Firefox once Sofa stays unreachable, and
+// Xvfb ends with its last client.
+- (void)stop {
+    _state = SFYTEngineIdle;
+    _run++;
+    _nextStartAt = DBL_MAX;   // no restart
+    [_browser stop];
 }
 
 // The run ended or is of no use: browser down, waiting callers told, restart after a backoff.

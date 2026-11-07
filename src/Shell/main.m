@@ -177,6 +177,7 @@ static uint16_t gPort = 8765;
     SFClearRunningMarker();
     [[SFDownloads shared] stopForExit];
     [SFAppRegistry stopRemotes];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
+    [SFAppRegistry stopAll];       // processes the apps started (YouTube's browser)
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
     [self stopFifo];

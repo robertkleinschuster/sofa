@@ -29,6 +29,7 @@ static NSDictionary *EnginePrefs(void) {
         // nobody looks at this browser: no first-run pages, prompts or crash-restore dialogs
         @"browser.shell.checkDefaultBrowser": @NO, @"browser.aboutwelcome.enabled": @NO,
         @"browser.startup.homepage_override.mstone": @"ignore", @"browser.sessionstore.resume_from_crash": @NO,
+        @"browser.startup.page": @0,
         @"datareporting.policy.dataSubmissionEnabled": @NO, @"toolkit.telemetry.reportingpolicy.firstRun": @NO,
         @"app.update.enabled": @NO, @"toolkit.telemetry.enabled": @NO,
         // the TV's languages
@@ -61,11 +62,13 @@ static char **Environment(NSDictionary *extra) {
 
 static void FreeStrings(char **a) { for (char **p = a; *p; p++) free(*p); free(a); }
 
-// posix_spawn with only stdin (/dev/null), stdout+stderr (`log`) and, if >= 0, `fd3` as fd 3.
-static pid_t Spawn(NSString *path, NSArray *args, NSDictionary *env, int log, int fd3) {
+// posix_spawn with only stdin (`in`, or /dev/null when < 0), stdout+stderr (`log`) and, if >= 0,
+// `fd3` as fd 3.
+static pid_t Spawn(NSString *path, NSArray *args, NSDictionary *env, int in, int log, int fd3) {
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
-    posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+    if (in >= 0) posix_spawn_file_actions_adddup2(&fa, in, 0);
+    else posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
     posix_spawn_file_actions_adddup2(&fa, log, 1);
     posix_spawn_file_actions_adddup2(&fa, log, 2);
     if (fd3 >= 0) posix_spawn_file_actions_adddup2(&fa, fd3, 3);
@@ -109,13 +112,14 @@ static void EndProcess(pid_t pid, NSString *name) {
 
 @implementation SFYTBrowser {
     NSString *_profile;
-    pid_t _xvfb, _firefox;
+    pid_t _xvfb, _firefox, _watcher;
+    int _lifeline;              // Sofa's end of the watcher's pipe; -1 without a watcher
     dispatch_source_t _xvfbWatch, _firefoxWatch;
     BOOL _stopping;
 }
 
 - (instancetype)initWithProfile:(NSString *)profileDir {
-    if ((self = [super init])) _profile = profileDir;
+    if ((self = [super init])) { _profile = profileDir; _lifeline = -1; }
     return self;
 }
 
@@ -139,12 +143,25 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 // the user, and a sideloaded extension starts without them (its content scripts never run).
 - (BOOL)prepareProfileForPort:(uint16_t)port token:(NSString *)token {
     NSFileManager *fm = [NSFileManager defaultManager];
+    // one tab, the one Sofa opens: no session restore after a hard end (it brought the previous
+    // tab back next to the new one - two engine pages, the second replacing the first mid-start,
+    // measured 2026-11-07). Cookies and storage are elsewhere and stay.
+    for (NSString *f in @[@"sessionstore.jsonlz4", @"sessionstore-backups"]) [fm removeItemAtPath:[_profile stringByAppendingPathComponent:f] error:nil];
     NSString *ext = [self extensionCopy], *exts = [_profile stringByAppendingPathComponent:@"extensions"];
     [fm createDirectoryAtPath:exts withIntermediateDirectories:YES attributes:nil error:nil];
-    [fm removeItemAtPath:ext error:nil];
-    NSError *e = nil;
-    if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
+    // The installed copy changes only when its content does (a new build, another port or token):
+    // Firefox takes a changed unpacked extension for an update and injects its content scripts
+    // into the already loaded tab - a second engine in the same document (measured 2026-11-07).
     NSData *cfg = [NSJSONSerialization dataWithJSONObject:@{@"port": @(port), @"token": token} options:0 error:nil];
+    NSString *stamp = [NSString stringWithContentsOfFile:[BuiltExtension() stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil];
+    BOOL same = stamp && [stamp isEqualToString:[NSString stringWithContentsOfFile:[ext stringByAppendingPathComponent:@"STAMP"] encoding:NSUTF8StringEncoding error:nil]]
+        && [cfg isEqualToData:[NSData dataWithContentsOfFile:[ext stringByAppendingPathComponent:@"config.json"]]];
+    NSError *e = nil;
+    if (!same) {
+        [fm removeItemAtPath:ext error:nil];
+        if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
+        if (![cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]) return NO;
+    }
     NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[ext stringByAppendingPathComponent:@"manifest.json"]] ?: [NSData data] options:0 error:nil];
     NSArray *origins = [manifest isKindOfClass:[NSDictionary class]] ? manifest[@"host_permissions"] : nil;
     if (![origins isKindOfClass:[NSArray class]]) { SFLog(@"yt-browser: extension manifest without host_permissions"); return NO; }
@@ -153,8 +170,10 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
                                                                     options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     if (![grants isKindOfClass:[NSMutableDictionary class]]) grants = [NSMutableDictionary new];
     grants[kExtensionID] = @{@"permissions": @[], @"origins": origins};
-    return [cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]
-        && [ext writeToFile:[exts stringByAppendingPathComponent:kExtensionID] atomically:YES encoding:NSUTF8StringEncoding error:nil]
+    NSString *proxy = [exts stringByAppendingPathComponent:kExtensionID];   // unchanged unless it must (as above)
+    BOOL proxyOK = [[NSString stringWithContentsOfFile:proxy encoding:NSUTF8StringEncoding error:nil] isEqualToString:ext]
+        || [ext writeToFile:proxy atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    return proxyOK
         && [[NSJSONSerialization dataWithJSONObject:grants options:0 error:nil] writeToFile:grantsFile atomically:YES]
         && [UserJS(EnginePrefs()) writeToFile:[_profile stringByAppendingPathComponent:@"user.js"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
@@ -190,7 +209,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     if (pipe(p) != 0) { close(log); return NO; }
     // -displayfd: Xvfb picks a free display and writes its number once it accepts clients;
     // -terminate: it ends with its last client (the browser) - no display outlives a crashed Sofa
-    _xvfb = Spawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH], @"-nolisten", @"tcp"], @{}, log, p[1]);
+    _xvfb = Spawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH], @"-nolisten", @"tcp"], @{}, -1, log, p[1]);
     close(p[1]);
     char buf[16] = {0};
     ssize_t n = 0;
@@ -201,13 +220,35 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     if (display < 0 || !(n > 0 && buf[0] >= '0' && buf[0] <= '9')) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
     _firefox = Spawn(SFTool(@"firefox"), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
                                            @"--height", @(kScreenH).stringValue, @"https://www.youtube.com/"],
-                     @{@"DISPLAY": [NSString stringWithFormat:@":%d", display]}, log, -1);
+                     @{@"DISPLAY": [NSString stringWithFormat:@":%d", display]}, -1, log, -1);
+    if (_firefox > 0) [self startWatcher:log];
     close(log);
     NSData *pids = [NSJSONSerialization dataWithJSONObject:@{@"xvfb": @(_xvfb), @"firefox": @(_firefox)} options:0 error:nil];
     [pids writeToFile:[self pidFile] atomically:YES];
     if (_firefox <= 0) return NO;
     SFLog(@"yt-browser: Firefox %d on display :%d (Xvfb %d)", _firefox, display, _xvfb);
     return YES;
+}
+
+// Watcher: a shell that reads a pipe only Sofa writes to. However Sofa ends - quit, crash, kill -9 -
+// the kernel closes its end, the read returns and the shell ends browser and display. (Sofa's end
+// is close-on-exec: no other child keeps it open.) Firefox could not do this itself reliably: an
+// MV3 background is an event page and may sleep between polls.
+- (void)startWatcher:(int)log {
+    int p[2];
+    if (pipe(p) != 0) return;
+    fcntl(p[1], F_SETFD, FD_CLOEXEC);
+    _watcher = Spawn(@"/bin/sh", @[@"-c", @"read _; kill $0 $1 2>/dev/null", @(_firefox).stringValue, @(_xvfb).stringValue], @{}, p[0], log, -1);
+    close(p[0]);
+    if (_watcher > 0) _lifeline = p[1]; else close(p[1]);
+}
+
+- (void)endWatcher {
+    if (_lifeline >= 0) close(_lifeline);   // the watcher's read returns; what it kills is ending anyway
+    _lifeline = -1;
+    pid_t w = _watcher;
+    _watcher = 0;
+    if (w > 0) dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{ waitpid(w, NULL, 0); });
 }
 
 - (dispatch_source_t)watch:(pid_t)pid name:(NSString *)name {
@@ -242,6 +283,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     EndProcess(_firefox, @"firefox");
     EndProcess(_xvfb, @"Xvfb");
     _firefox = _xvfb = 0;
+    [self endWatcher];
     [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
 }
 @end

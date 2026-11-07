@@ -49,6 +49,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)homeFeatures:(void (^)(NSDictionary *itemsByTopic))done;
 // --- lifecycle ---
 + (void)start;                   // launch (services, warm-up); called once, in registry order
++ (void)stop;                    // quit: end what the app started (processes); once, before exit, blocking briefly
 // --- search ---
 + (SFPageLoader)searchLoader:(NSString *)query;
 + (void)suggestions:(NSString *)prefix done:(void (^)(NSArray *list))done;   // done on main, never nil
@@ -105,6 +106,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (Class)appForRef:(NSString *)ref;        // by the namespace before ':'
 + (Class)appForItem:(SFItem *)item;        // by item.source, else by its ref/identifier namespace
 + (void)startAll;
++ (void)stopAll;                           // quit (applicationWillTerminate)
 // remote control services of all apps
 + (void)startRemotesWithHost:(id<SFPlayerHost>)host;
 + (void)stopRemotes;

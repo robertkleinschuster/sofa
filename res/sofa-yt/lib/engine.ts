@@ -181,7 +181,11 @@ export interface Engine {
   close(sid: string): boolean;
   /** `key`: 'video', 'audio' (the main audio track) or an audio format key. */
   track(sid: string, key: string): MediaTrack;
-  /** Bytes [offset, offset + maxBytes) of a track (at most READ_MAX); waits for SABR like a streaming reader. */
+  /**
+   * Bytes from `offset` of a track, like a stream read: what is buffered there now (up to maxBytes,
+   * at most READ_MAX); only when nothing is, it waits for SABR's first piece. Waiting for the whole
+   * range stalled the player: 1 MB of audio is a minute, more than SABR fetches ahead of the reader.
+   */
   read(sid: string, key: string, offset: number, maxBytes: number): Promise<MediaBytes>;
   playlist(sid: string): Promise<string>;
   subtitles(sid: string, key: string): Promise<string>;
@@ -397,7 +401,20 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     if (start >= t.total) throw new EngineError(416, { error: `offset ${start} beyond ${t.total}` });
     const end = Math.min(t.total, start + Math.min(READ_MAX, Math.max(1, Math.floor(maxBytes) || READ_MAX)));
     const parts: Uint8Array[] = [];
-    const n = await t.serve(start, end, { write(c) { parts.push(c.slice()); return true; }, on() {}, off() {} });
+    // serve() writes every buffered piece in one go and then awaits more: end the read at that point
+    let stop: (() => void) | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const n = await t.serve(start, end, {
+      write(c) {
+        parts.push(c.slice());
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => stop?.(), 0);
+        return true;
+      },
+      on(ev, f) { if (ev === 'close') stop = f; },
+      off(ev) { if (ev === 'close') stop = null; },
+    });
+    if (timer) clearTimeout(timer);
     const bytes = new Uint8Array(n);
     let at = 0;
     for (const p of parts) { bytes.set(p, at); at += p.length; }

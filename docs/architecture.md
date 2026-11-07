@@ -70,7 +70,7 @@ Required: identity (`appIdentifier`, `appName`, `appSummary`), `refPrefixes`,
 Optional capabilities (absent = feature hidden, never a stub) – see docs/new-app.md for the
 full table: search, resolve, shows/feeds, downloads/availability, player hooks, focus
 preload, stored-item refresh, remote control, home sections, dev commands, lifecycle
-(`start`).
+(`start`, `stop` at quit).
 
 ## Player hooks
 

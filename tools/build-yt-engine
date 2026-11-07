@@ -32,5 +32,8 @@ NODE_PATH="$DEV/node_modules" "$NODE" "$DEV/node_modules/esbuild-wasm/bin/esbuil
   --bundle --format=iife --platform=browser --target=firefox140 --minify --legal-comments=none \
   --log-level=warning --outdir="$OUT.tmp"
 cp "$W/extension/manifest.json" "$OUT.tmp/extension/"
-rm -rf "$OUT" && mv "$OUT.tmp" "$OUT" && touch "$OUT/STAMP"
+# STAMP = the extension's content hash: Sofa reinstalls the extension into its profile only when it
+# changes (SFYTBrowser.m: a changed unpacked extension is an update that re-injects into open tabs)
+(cd "$OUT.tmp/extension" && cat manifest.json page.js bridge.js background.js | shasum -a 256 | cut -d' ' -f1) > "$OUT.tmp/STAMP"
+rm -rf "$OUT" && mv "$OUT.tmp" "$OUT"
 echo "yt engine -> $OUT: extension/page.js $(( $(wc -c < "$OUT/extension/page.js") / 1024 )) KB, extension/bridge.js, engine.js (tests)"

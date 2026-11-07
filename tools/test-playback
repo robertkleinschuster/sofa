@@ -34,7 +34,7 @@
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x PLAYTEST_PORT=n   own dev instance (parallel runs)
-#   PLAYTEST_SHOTS=dir             keep the screenshots there
+#   PLAYTEST_SHOTS=dir             keep the screenshots there (and the logs of a failed run)
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -95,6 +95,8 @@ mpvtime() { sed -n "$1,\$p" "$LOG" | grep 'mpv time-pos = ' | tail -1 | sed 's/.
 ESCH=UCsofaEndscreenTest0000001   # fake channel of the end screen check (follow/unfollow)
 cleanup() {
   [ -n "$APP" ] && { kill $APP 2>/dev/null; wait $APP 2>/dev/null; }
+  # a failed run keeps its logs next to the screenshots (the app's, the engine browser's)
+  [ "${fail:-0}" != 0 ] && { keep "$LOG"; keep "$SOFA_DATA_DIR/youtube-engine/profile-firefox.log"; }
   # this instance's settings (section 6) - after the app is gone, or its last write brings them back
   { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
   rm -rf "$T"
@@ -277,7 +279,18 @@ if [ -n "${SOFA_YT_LIVE:-}" ]; then
   sleep 6
   m2=$(mark); cmd "mpvprop time-pos"; sleep 1; a=$(mpvtime $m2); sleep 3; m3=$(mark); cmd "mpvprop time-pos"; sleep 1; b=$(mpvtime $m3)
   awk "BEGIN{exit !($b > $a + 1)}" 2>/dev/null && ok "playing again after the restart ($a -> $b s)" || bad "not playing after the restart ($a -> $b)"
+  # no browser outlives Sofa: quit ends it (SFApp stop), a crash too (SFYTBrowser's watcher: its
+  # pipe from Sofa closes) - 2026-11-07: browsers outlived every test run
+  browser() { pgrep -f "firefox --no-remote --profile $SOFA_DATA_DIR/" >/dev/null; }
   stop
+  for i in $(seq 1 20); do browser || break; sleep 0.5; done
+  browser && bad "browser still running after quit" || ok "quit ends the browser"
+  start
+  m=$(mark); cmd "play yt:OzCYsIrrRyw"
+  for i in $(seq 1 240); do since $m | grep -q 'yt-engine: opened OzCYsIrrRyw\|yt-engine: open OzCYsIrrRyw failed' && break; sleep 0.5; done
+  kill -9 $APP; wait $APP 2>/dev/null; APP=
+  for i in $(seq 1 20); do browser || break; sleep 0.5; done
+  browser && { bad "browser still running after Sofa crashed"; pkill -9 -f "firefox --no-remote --profile $SOFA_DATA_DIR/"; } || ok "a crash of Sofa ends the browser"
 fi
 
 if [ -n "${SOFA_YT_LIVE_STREAM:-}" ]; then

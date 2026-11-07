@@ -17,10 +17,20 @@ function loadScript(url: string): Promise<void> {
   });
 }
 
+/**
+ * The page's markup once it is parsed: the challenge sits in a script late in the document, and the
+ * engine may start as soon as ytcfg exists (measured 2026-11-07: a page from a warm profile started
+ * the engine mid-parse - "challenge not found in page").
+ */
+async function parsedPage(): Promise<string> {
+  if (document.readyState === 'loading') await new Promise<void>((ok) => document.addEventListener('DOMContentLoaded', () => ok(), { once: true }));
+  return document.documentElement.outerHTML;
+}
+
 export function documentMinter(): Promise<MinterSetup> {
   return attest({
     globalObject: globalThis as unknown as Record<string, unknown>,
-    page: async () => document.documentElement.outerHTML,
+    page: parsedPage,
     loadInterpreter: loadScript,
   });
 }

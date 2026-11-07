@@ -29,6 +29,7 @@ const base = fixtureInfo(ID);
 const v248 = must(base.formats.find((f) => f.itag === 248));
 const a251 = must(base.formats.find((f) => f.itag === 251 && !f.xtags));
 const VLEN = Number(v248.contentLength);
+const ALEN = Number(a251.contentLength);
 const VSEGS = segmentTable(parseIndex(VINIT, 'video/webm'), VLEN, base.durationMs);
 const ASEGS = segmentTable(parseIndex(AINIT, 'audio/webm'), Number(a251.contentLength), base.durationMs);
 const V = (i: number) => nth(VSEGS, i);
@@ -143,11 +144,22 @@ test('engine.read (media path of the browser engine): the same bytes in chunks, 
     const first = await app.engine.read(r.sid, 'video', 0, 1 << 20);
     assert.equal(first.total, VLEN);
     assert.equal(first.mimeType, 'video/webm');
-    assert.equal(first.bytes.length, 1 << 20);
-    const next = await app.engine.read(r.sid, 'video', 1 << 20, 1 << 20);   // the caller reads on in a loop
-    assert.ok(Buffer.concat([first.bytes, next.bytes]).equals(expectedBytes(VINIT, 0, 2 << 20)), 'chunks join to the track bytes');
+    assert.ok(first.bytes.length > 0 && first.bytes.length <= 1 << 20, 'a read never exceeds maxBytes');
+    // a read answers what is buffered (possibly less): the caller reads on in a loop
+    const parts = [first.bytes];
+    for (let at = first.bytes.length; at < 2 << 20;) {
+      const next = await app.engine.read(r.sid, 'video', at, (2 << 20) - at);
+      parts.push(next.bytes); at += next.bytes.length;
+    }
+    assert.ok(Buffer.concat(parts).equals(expectedBytes(VINIT, 0, 2 << 20)), 'chunks join to the track bytes');
     const audio = await app.engine.read(r.sid, 'audio', 0, 1000);   // 'audio' = the main audio track
     assert.ok(Buffer.from(audio.bytes).equals(expectedBytes(AINIT, 0, 1000)));
+    // 2026-11-07: a read waited for its whole range - 1 MB of audio is a minute, more than SABR pulls
+    // ahead of a reader, so the player's first reads never came back. Now it answers what is there.
+    const t0 = Date.now();
+    const lead = await app.engine.read(r.sid, 'audio', 0, ALEN);
+    assert.ok(lead.bytes.length > 0 && lead.bytes.length < ALEN, `answers the buffered lead (${lead.bytes.length} of ${ALEN})`);
+    assert.ok(Date.now() - t0 < 2000, 'without waiting for the rest of the range');
     const status = (p: Promise<unknown>) => p.then(() => 0, (e: unknown) => (e instanceof EngineError ? e.status : -1));
     assert.equal(await status(app.engine.read(r.sid, 'video', VLEN, 10)), 416);
     assert.equal(await status(app.engine.read('nope', 'video', 0, 10)), 404);

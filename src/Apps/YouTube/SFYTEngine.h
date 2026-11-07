@@ -13,6 +13,7 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 + (instancetype)shared;
 @property (nonatomic, readonly) BOOL available;   // Firefox, Xvfb and the extension are installed
 - (void)start;                                     // idempotent; the real app starts early, dev instances on first use
+- (void)stop;                                      // Sofa quits: browser and display end (blocking, a few seconds at most)
 // The chosen tracks (video, audio, height, fps, vcodec, acodec, alang, audios, subs) plus id, sid,
 // title, duration, published, endscreen; all URLs local. Lives and post-live DVR recordings carry
 // `hls` (a local HLS playlist) and `live` instead of video/audio.

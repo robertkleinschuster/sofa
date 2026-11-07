@@ -32,9 +32,11 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
   (`health().onYouTube`) and `start()` answered; then waiting calls go out. A page reload or a
   browser exit loses every session (`SFYTEngineSessionsLostNotification`: the player reopens);
   failed runs restart after a backoff (5 s doubling to 10 min; reset after 5 min of healthy run).
-- **No orphans.** Sofa ends browser and display when it quits. After a crash: the extension closes
-  Firefox once Sofa stays unreachable for 30 s (`background.ts`), Xvfb ends with its last client,
-  and the next launch ends whatever is recorded in `profile-processes.json` (checked by name).
+- **No orphans.** Sofa ends browser and display when it quits (`SFApp` `stop`). However else it
+  ends (crash, kill -9), a watcher (`/bin/sh` reading a pipe only Sofa holds) sees the pipe close
+  and ends them; Xvfb also ends with its last client (`-terminate`), and the next launch ends
+  whatever `profile-processes.json` records and still runs (checked by name). Firefox can't watch
+  for itself: an MV3 background is an event page and may sleep between polls.
   Children are spawned with a clean signal mask (a GCD thread's blocked mask made them ignore
   SIGTERM).
 

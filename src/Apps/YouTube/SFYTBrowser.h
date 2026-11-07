@@ -2,7 +2,8 @@
 // display of its own (Xvfb, port xorg-server-xvfb), started the way a user starts it - no remote
 // agent: YouTube refuses a browser under remote control - on Sofa's engine profile, with the engine
 // extension installed and pointed at Sofa's channel. One profile = one identity (cookies, storage).
-// A run's processes are recorded next to the profile; a later launch ends what a crashed Sofa left.
+// No orphans: a watcher ends browser and display when Sofa dies, and a later launch ends whatever a
+// run recorded next to the profile and still runs.
 #import "SFCore.h"
 
 @interface SFYTBrowser : NSObject
