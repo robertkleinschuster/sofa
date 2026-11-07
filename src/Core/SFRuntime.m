@@ -15,10 +15,11 @@ NSString *SFRuntimeDir(void) {
     return dir;
 }
 
-NSString *SFTool(NSString *name) {
-    NSString *rt = SFRuntimeDir();
-    return [(rt ?: kPrefix) stringByAppendingPathComponent:[@"bin" stringByAppendingPathComponent:name]];
+NSString *SFRuntimePath(NSString *rel) {
+    return [(SFRuntimeDir() ?: kPrefix) stringByAppendingPathComponent:rel];
 }
+
+NSString *SFTool(NSString *name) { return SFRuntimePath([@"bin" stringByAppendingPathComponent:name]); }
 
 NSString *SFCABundle(void) {
     NSString *rt = SFRuntimeDir();

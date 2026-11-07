@@ -123,6 +123,11 @@ static void EndProcess(pid_t pid, NSString *name) {
     return self;
 }
 
+// The browser itself, not MacPorts' bin/firefox wrapper script: one path in the bundle and in dev.
+static NSString *FirefoxPath(void) { return SFRuntimePath(@"lib/firefox/firefox"); }
+// Mesa's software driver for GLX (Xvfb) and WebGL (Firefox's libGL)
+static NSDictionary *MesaEnv(void) { return @{@"LIBGL_DRIVERS_PATH": SFRuntimePath(@"lib/dri")}; }
+
 static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"youtube-engine"]; }
 - (NSString *)extensionCopy { return [_profile stringByAppendingString:@"-extension"]; }
 - (NSString *)pidFile { return [_profile stringByAppendingString:@"-processes.json"]; }
@@ -130,7 +135,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 
 - (BOOL)available {
     NSFileManager *fm = [NSFileManager defaultManager];
-    return [fm isExecutableFileAtPath:SFTool(@"firefox")] && [fm isExecutableFileAtPath:SFTool(@"Xvfb")]
+    return [fm isExecutableFileAtPath:FirefoxPath()] && [fm isExecutableFileAtPath:SFTool(@"Xvfb")]
         && [fm fileExistsAtPath:[BuiltExtension() stringByAppendingPathComponent:@"manifest.json"]];
 }
 
@@ -208,8 +213,12 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     int p[2];
     if (pipe(p) != 0) { close(log); return NO; }
     // -displayfd: Xvfb picks a free display and writes its number once it accepts clients;
-    // -terminate: it ends with its last client (the browser) - no display outlives a crashed Sofa
-    _xvfb = Spawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH], @"-nolisten", @"tcp"], @{}, -1, log, p[1]);
+    // -terminate: it ends with its last client (the browser) - no display outlives a crashed Sofa;
+    // keymaps, xkbcomp and fonts from where Xvfb is (bundle or MacPorts: same as its built-in paths there)
+    _xvfb = Spawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH],
+                                     @"-nolisten", @"tcp", @"-xkbdir", SFRuntimePath(@"share/X11/xkb"), @"-xkbbindir", SFRuntimePath(@"bin"),
+                                     @"-fp", [NSString stringWithFormat:@"%@,built-ins", SFRuntimePath(@"share/fonts/misc")]],
+                  MesaEnv(), -1, log, p[1]);
     close(p[1]);
     char buf[16] = {0};
     ssize_t n = 0;
@@ -218,9 +227,11 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
     close(p[0]);
     int display = n > 0 ? atoi(buf) : -1;
     if (display < 0 || !(n > 0 && buf[0] >= '0' && buf[0] <= '9')) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
-    _firefox = Spawn(SFTool(@"firefox"), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
+    NSMutableDictionary *ffEnv = [MesaEnv() mutableCopy];
+    ffEnv[@"DISPLAY"] = [NSString stringWithFormat:@":%d", display];
+    _firefox = Spawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
                                            @"--height", @(kScreenH).stringValue, @"https://www.youtube.com/"],
-                     @{@"DISPLAY": [NSString stringWithFormat:@":%d", display]}, -1, log, -1);
+                     ffEnv, -1, log, -1);
     if (_firefox > 0) [self startWatcher:log];
     close(log);
     NSData *pids = [NSJSONSerialization dataWithJSONObject:@{@"xvfb": @(_xvfb), @"firefox": @(_firefox)} options:0 error:nil];

@@ -3,7 +3,8 @@
 
 relink.py <root> <libdir>   copy every /opt/local dylib that any Mach-O under <root> needs
                             (transitively) into <libdir>, rewrite all references to
-                            @loader_path-relative paths, drop /opt/local LC_RPATHs.
+                            @loader_path-relative paths, drop every LC_RPATH. An @rpath
+                            reference to a library next to the file (Firefox's own) stays there.
 relink.py --check <root>    fail if any Mach-O under <root> still depends on anything outside
                             /usr/lib, /System and @loader_path, or carries an LC_RPATH.
 
@@ -101,10 +102,20 @@ def relink(root, libdir):
         i = install_id(p)
         if i and not i.startswith('@'):
             args += ['-id', '@rpath/' + os.path.basename(p)]
-        for rp in rpaths(p):
-            if rp.startswith(PREFIX):
-                args += ['-delete_rpath', rp]
-        for dep in deps(p):
+        for ref in deps(p):   # as written in the file; dep = the MacPorts file it means
+            dep = ref
+            if ref.startswith('@rpath/'):
+                # a library of the same program next to it (Firefox: libxul, libmozglue, ...)
+                name = ref[len('@rpath/'):]
+                if os.path.exists(os.path.join(os.path.dirname(p), name)):
+                    args += ['-change', ref, '@loader_path/' + name]
+                    continue
+                # else what the file's MacPorts rpaths resolve it to: an ordinary MacPorts dependency
+                found = [os.path.join(rp, name) for rp in rpaths(p) if rp.startswith(PREFIX) and os.path.exists(os.path.join(rp, name))]
+                if not found:
+                    errors.append('%s: unresolved %s' % (p, ref))
+                    continue
+                dep = found[0]
             if not dep.startswith(PREFIX + '/'):
                 continue
             if not os.path.exists(dep):
@@ -136,11 +147,17 @@ def relink(root, libdir):
                     todo.append(tgt)
                 placed[real] = tgt
             rel = os.path.relpath(tgt, os.path.dirname(p))
-            args += ['-change', dep, '@loader_path/' + rel]
+            args += ['-change', ref, '@loader_path/' + rel]
         if args:
             r = subprocess.run(['install_name_tool'] + args + [p], capture_output=True, text=True)
             if r.returncode or 'error' in r.stderr:
                 errors.append('%s: install_name_tool: %s' % (p, r.stderr.strip()))
+        # every reference is @loader_path now: no rpath is used any more (MacPorts ones, Firefox's
+        # @executable_path). One per call - a path can be listed twice (Firefox).
+        for rp in rpaths(p):
+            r = subprocess.run(['install_name_tool', '-delete_rpath', rp, p], capture_output=True, text=True)
+            if r.returncode or 'error' in r.stderr:
+                errors.append('%s: delete_rpath %s: %s' % (p, rp, r.stderr.strip()))
     print('%d Mach-O files, %d libraries in %s' % (len(done), sum(1 for _ in machos(libdir)), libdir))
     return errors
 

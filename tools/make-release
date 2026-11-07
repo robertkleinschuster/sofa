@@ -36,10 +36,21 @@ mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
 echo "==> tools"
 for t in ffmpeg rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 
-echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa)"
+echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa; SFYTBrowser finds them in Runtime)"
 [ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] || { echo "ERROR: engine extension missing in the build"; exit 1; }
-# the browser must come along relocatable (docs/youtube-engine.md "Still open"): no release without YouTube
-echo "ERROR: the engine's browser is not bundled yet"; exit 1
+# WebGL: Firefox opens Mesa's libGL by a path relative to itself (firefox-x11 patch) - a build that
+# still names the MacPorts path would lose WebGL in the bundle (a signal YouTube can see)
+if /usr/bin/grep -q "$MP/lib/libGL" "$MP/lib/firefox/libxul.dylib" "$MP/lib/firefox/glxtest"; then
+  echo "ERROR: firefox-x11 still opens libGL from $MP (needs its relative-path patch)"; exit 1
+fi
+mkdir -p "$RT/lib/dri" "$RT/share/X11" "$RT/share/fonts"
+cp -RL "$MP/lib/firefox" "$RT/lib/firefox"
+rm -rf "$RT/lib/firefox/"{nsinstall,certutil,xpcshell,gmp-fake,gmp-fakeopenh264,dependentlibs.list.gtest}   # build/test tools
+for t in Xvfb xkbcomp; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
+cp -L "$MP/lib/libGL.1.dylib" "$RT/lib/"                       # opened by Firefox (dlopen)
+cp -L "$MP"/lib/dri/*_dri.dylib "$RT/lib/dri/"                  # LIBGL_DRIVERS_PATH (Xvfb GLX, Firefox WebGL)
+cp -RL "$MP/share/X11/xkb" "$RT/share/X11/xkb"                  # Xvfb -xkbdir
+cp -RL "$MP/share/fonts/misc" "$RT/share/fonts/misc"            # Xvfb -fp ("fixed", "cursor")
 
 echo "==> CA certificates, fontconfig, empty module/config paths (against MacPorts modules, see SFRuntime)"
 mkdir -p "$RT/lib/gio/modules"

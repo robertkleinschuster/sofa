@@ -2,7 +2,8 @@
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
 #   bundle dependencies, ffmpeg/rsvg-convert, nothing of the retired YouTube paths left (Python,
-#   yt-dlp, node sidecar), the engine extension.
+#   yt-dlp, node sidecar), the engine extension, the engine's browser (Xvfb + Firefox from the bundle:
+#   starts, renders with the system fonts, has WebGL).
 # Needs internet. Touches nothing outside a temp folder.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -14,7 +15,8 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-test.XXXXXX")"
 fail=0
 ok()  { echo "  ok    $*"; }
 bad() { echo "  FAIL  $*"; fail=1; }
-cleanup() { rm -rf "$T"; }
+PIDS=
+cleanup() { [ -n "$PIDS" ] && kill $PIDS 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
 
 printf '(version 1)\n(allow default)\n(deny file-read* (subpath "/opt/local"))\n' > "$T/nomp.sb"
@@ -40,6 +42,55 @@ left=; for x in "$RT/Python.framework" "$APP/Contents/Resources/yt-dlp" "$APP/Co
 done
 [ -z "$left" ] && ok "no Python / yt-dlp / PO token server / node sidecar in the bundle" || bad "obsolete parts still in the bundle:$left"
 [ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] && ok "engine extension in the bundle" || bad "engine extension missing"
+
+# The engine's browser as SFYTBrowser starts it: Xvfb picks a display (-displayfd) and ends with its
+# last client, Firefox on a fresh profile with the engine's graphics prefs. A local page measures
+# what YouTube's scripts could see - generic families resolving to different system fonts, WebGL -
+# and posts it to a one-shot receiver here (file:// -> loopback, a simple request: no preflight).
+PY=/opt/local/bin/python3.14
+"$PY" -I -c '
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(s):
+        open(sys.argv[1], "wb").write(s.rfile.read(int(s.headers["Content-Length"])))
+        s.send_response(204); s.end_headers()
+    def log_message(s, *a): pass
+srv = http.server.HTTPServer(("127.0.0.1", 0), H); print(srv.server_port, flush=True); srv.timeout = 90; srv.handle_request()
+' "$T/probe.json" > "$T/port" & PIDS="$PIDS $!"; disown
+np "$RT/bin/Xvfb" -displayfd 3 -terminate -screen 0 1280x720x24 -nolisten tcp -xkbdir "$RT/share/X11/xkb" -xkbbindir "$RT/bin" \
+   -fp "$RT/share/fonts/misc,built-ins" 3>"$T/display" >"$T/xvfb.log" 2>&1 & PIDS="$PIDS $!"; disown
+for _ in $(seq 50); do [ -s "$T/display" ] && [ -s "$T/port" ] && break; sleep 0.2; done
+if [ -s "$T/display" ] && [ -s "$T/port" ]; then
+  mkdir "$T/profile"
+  printf 'user_pref("%s", %s);\n' layers.gpu-process.enabled true webgl.disabled false webgl.force-enabled true \
+    browser.shell.checkDefaultBrowser false datareporting.policy.dataSubmissionEnabled false > "$T/profile/user.js"
+  cat > "$T/probe.html" <<HTML
+<meta charset="utf-8"><script>
+const x = document.createElement('canvas').getContext('2d');
+const w = (f) => { x.font = '32px ' + f; return Math.round(x.measureText('Sofa Schrift-Test äöü').width); };
+const g = document.createElement('canvas').getContext('webgl');
+fetch('http://127.0.0.1:$(cat "$T/port")/', { method: 'POST', body: JSON.stringify({
+  sans: w('sans-serif'), serif: w('serif'), mono: w('monospace'), helvetica: w('Helvetica, monospace'),
+  webgl: g ? g.getParameter(g.RENDERER) : null }) });
+</script>
+HTML
+  DISPLAY=":$(cat "$T/display")" LIBGL_DRIVERS_PATH="$RT/lib/dri" np "$RT/lib/firefox/firefox" --no-remote --profile "$T/profile" \
+    "file://$T/probe.html" >"$T/firefox.log" 2>&1 & PIDS="$PIDS $!"; disown
+  for _ in $(seq 300); do [ -s "$T/probe.json" ] && break; sleep 0.2; done
+fi
+if [ -s "$T/probe.json" ]; then
+  ok "engine browser starts (Xvfb display :$(cat "$T/display"), Firefox)"
+  "$PY" -I - "$T/probe.json" <<'CHECK' && ok "engine browser: system fonts for sans-serif/serif/monospace" || bad "engine browser: fonts (see above)"
+import json, sys
+p = json.load(open(sys.argv[1]))
+print("        measured:", p)
+sys.exit(0 if len({p["sans"], p["serif"], p["mono"]}) == 3 and p["helvetica"] != p["mono"] else 1)
+CHECK
+  "$PY" -I -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["webgl"] else 1)' "$T/probe.json" \
+    && ok "engine browser: WebGL" || bad "engine browser: no WebGL (YouTube can see that)"
+else
+  bad "engine browser did not load the probe page"; tail -5 "$T/xvfb.log" "$T/firefox.log" 2>/dev/null | sed 's/^/        /'
+fi
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
