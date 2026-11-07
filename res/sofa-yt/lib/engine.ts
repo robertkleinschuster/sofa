@@ -44,7 +44,8 @@ export interface EngineOptions {
   sweepMs?: number;
   fetchFn?: PlaylistFetch;
   liveCfg?: Partial<HlsConfig>;
-  suggestFetch?: typeof fetch;
+  /** The fetch for requests the youtube.com page makes itself (suggestions, oEmbed): the page's own. */
+  pageFetch?: typeof fetch;
   /** Resident memory in MB for health(), where the runtime can tell. */
   memoryMB?: () => number;
 }
@@ -190,12 +191,18 @@ export interface Engine {
   status(sid: string): object;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<object>;
   suggest(q: string): Promise<object>;
+  /**
+   * Whether a video is still online, as its oEmbed answer tells (the request a share preview makes;
+   * no player request, so it is fine during a bot-check pause): the HTTP status - 200 public or
+   * unlisted, 400/404 gone, anything else unknown (401/403 also covers private videos).
+   */
+  availability(v: string): Promise<number>;
   health(): EngineHealth;
   shutdown(): void;
 }
 
 export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS,
-  sweepMs = 30000, fetchFn = fetch, liveCfg = {}, suggestFetch = fetch, memoryMB }: EngineOptions): Engine {
+  sweepMs = 30000, fetchFn = fetch, liveCfg = {}, pageFetch = fetch, memoryMB }: EngineOptions): Engine {
   const sessions = new Map<string, Session>();
   const fetchedTotal = { ms: 0, bytes: 0, runs: 0 }; // media pulled by closed sessions
 
@@ -470,10 +477,20 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     for (const [k, v] of Object.entries({ client: 'youtube', ds: 'yt', hl: 'de', gl: 'AT', oe: 'utf-8', xhr: 't', q })) u.searchParams.set(k, v);
     let r: Response;
     try {
-      r = await suggestFetch(u, { headers: { referer: 'https://www.youtube.com/' }, signal: AbortSignal.timeout(8000) });
+      r = await pageFetch(u, { headers: { referer: 'https://www.youtube.com/' }, signal: AbortSignal.timeout(8000) });
     } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
     if (!r.ok) throw new EngineError(502, { error: `suggestions: HTTP ${r.status}` });
     try { return (await r.json()) as object; } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
+  }
+
+  async function availability(v: string): Promise<number> {
+    if (!/^[\w-]{11}$/.test(v)) throw new EngineError(400, { error: 'not a video id' });
+    const u = new URL('https://www.youtube.com/oembed');
+    u.searchParams.set('format', 'json');
+    u.searchParams.set('url', `https://www.youtube.com/watch?v=${v}`);
+    try {
+      return (await pageFetch(u, { signal: AbortSignal.timeout(10000) })).status;
+    } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
   }
 
   return {
@@ -490,6 +507,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     status: (sid) => session(sid).status(),
     innertube,
     suggest,
+    availability,
     health: () => ({
       ok: true, session: youtube.sessionState, poToken: po.state, sessions: sessions.size,
       blocked_until: breaker.blockedUntil(), ...(memoryMB ? { rssMB: memoryMB() } : {}),

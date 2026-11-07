@@ -287,4 +287,11 @@ static id Clean(id v) {
 - (void)suggest:(NSString *)prefix done:(void (^)(id, NSError *))done {
     [self call:@"suggest" args:@[prefix ?: @""] timeout:10 done:done];
 }
+
+- (void)availability:(NSString *)vid done:(void (^)(NSInteger))done {
+    [self call:@"availability" args:@[vid ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
+        NSInteger st = [v isKindOfClass:[NSNumber class]] ? [v integerValue] : 0;
+        done(st == 200 ? 1 : (st == 400 || st == 404) ? 0 : -1);
+    }];
+}
 @end

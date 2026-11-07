@@ -71,6 +71,7 @@ export interface SofaEngine {
   close(sid: string): Reply<boolean>;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
+  availability(v: string): Promise<Reply<number>>;
   stop(): void;
 }
 
@@ -162,6 +163,7 @@ export const sofaEngine: SofaEngine = {
   close: (sid) => reply(() => core!.close(sid)),
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),
+  availability: (v) => replyAsync(() => core!.availability(v)),
 
   stop() {
     core?.shutdown();

@@ -59,6 +59,7 @@ the same.
 | `close(sid)` | `GET /close` | closed or not |
 | `innertube(endpoint, body, {bg})` | `POST /yt/<endpoint>` | raw InnerTube JSON |
 | `suggest(q)` | `GET /suggest` | suggestions |
+| `availability(v)` | (libcurl oEmbed in Sofa) | oEmbed HTTP status: 200 online, 400/404 gone, else unknown |
 | `block(state)` | (breaker file) | Sofa's breaker file changed |
 | `health()` | `GET /health` | libraries, user agent, origin, on youtube.com, engine counters |
 
@@ -183,8 +184,6 @@ the GPU process, fission); no first-run pages or prompts; `intl.accept_languages
 
 - The EU consent dialog in a fresh profile (no `SOCS` cookie): answer it once, like a user.
 - Release: the bundle's Runtime has no Firefox/Xvfb yet (`SFTool` falls back to MacPorts).
-- `availabilityOfItem` (Platz schaffen) asks oEmbed over libcurl - a second client; move it into
-  the engine.
 
 - Live HLS: today mpv fetches segments from googlevideo itself - a second client. Segments go
   through the engine (`read`-like) so every request is the browser's.

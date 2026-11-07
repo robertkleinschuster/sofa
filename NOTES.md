@@ -243,7 +243,8 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
          make-release and sofa-deploy refuse until then (the installed 0.3.10 keeps the sidecar).
       2. EU consent dialog in a fresh profile: answer once, like a user.
       3. Live HLS segments through the engine (mpv fetches googlevideo itself today: a second client).
-      4. "Platz schaffen" availability (oEmbed over libcurl) through the engine.
+      4. ~~"Platz schaffen" availability (oEmbed over libcurl)~~ through the engine (2026-11-07,
+         `availability`; unit-tested, not yet live).
       5. Port multimedia/sofa with the release: nodejs26 -> depends_build, firefox-x11 +
          xorg-server-xvfb as dependencies, distfile = the engine's build dependencies.
 - [x] 2026-11-05 **Storage: never delete automatically, "Behalten" + "Platz schaffen"** (user 2026-11-05; done: SFDownloads+Storage.m, SFHome+Downloads.m "Platz schaffen", test-downloads 6+7):

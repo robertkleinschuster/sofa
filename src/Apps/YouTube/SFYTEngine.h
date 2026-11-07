@@ -33,4 +33,7 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (void)innertube:(NSString *)endpoint body:(NSDictionary *)body background:(BOOL)bg done:(void (^)(id json, NSError *e))done;
 // What youtube.com's search box suggests for `prefix` (its raw answer).
 - (void)suggest:(NSString *)prefix done:(void (^)(id json, NSError *e))done;
+// Still online? The video's oEmbed answer, asked by the page (no player request): 1 online (public or
+// unlisted), 0 gone (deleted, bad id), -1 unknown (401/403 also covers private videos; no answer).
+- (void)availability:(NSString *)videoID done:(void (^)(NSInteger online))done;
 @end

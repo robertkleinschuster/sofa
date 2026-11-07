@@ -361,3 +361,22 @@ test('session limit: a session in use is never evicted, a never-read preload goe
     assert.equal((await get(b.video, { range: 'bytes=0-999' }).catch(() => ({ status: 0 }))).status, 404, 'preload evicted');
   } finally { await app.close(); }
 });
+
+test('availability: the oEmbed status through the page fetch, no player request', async () => {
+  const asked: string[] = [];
+  const pageFetch = (async (u: URL | string) => {
+    asked.push(String(u));
+    if (String(u).includes('offline0000')) throw new TypeError('NetworkError');
+    return new Response('', { status: String(u).includes('gone0000000') ? 404 : 200 });
+  }) as typeof fetch;
+  const { app, youtube } = await setup({ appOpts: { pageFetch } });
+  try {
+    assert.equal(await app.engine.availability(ID), 200);
+    assert.equal(await app.engine.availability('gone0000000'), 404);
+    assert.equal(nth(asked, 0), `https://www.youtube.com/oembed?format=json&url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${ID}`);
+    const status = (p: Promise<unknown>) => p.then(() => 0, (e: { status?: number }) => e.status ?? -1);
+    assert.equal(await status(app.engine.availability('offline0000')), 502, 'no answer: unknown, not gone');
+    assert.equal(await status(app.engine.availability('../x')), 400);
+    assert.equal(youtube.requests, 0, 'never a player request');
+  } finally { await app.close(); }
+});

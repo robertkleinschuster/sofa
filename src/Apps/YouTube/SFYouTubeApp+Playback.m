@@ -11,7 +11,6 @@
 #import "SFStats.h"
 #import "SFDownloads.h"
 #import "SFEngine.h"
-#import "SFCurl.h"
 
 static NSString *const kBotMsg = @"YouTube lässt gerade keine Wiedergabe zu – bitte in ein paar Minuten noch einmal versuchen.";
 
@@ -169,19 +168,15 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 #pragma mark Downloads
 
-// still online? oEmbed answers without a player request (bot-flagged IP): 200 = public or
-// unlisted -> online; 400/404 = gone (deleted, bad id). 401/403 is ambiguous (embedding off, but
-// also private videos) -> unknown: never deletable in bulk, the copy may be the only one
-// (review 2026-11-05). Used by "Platz schaffen" (SFDownloads+Storage.m).
+// still online? oEmbed answers without a player request (bot-flagged IP), asked by the engine's
+// page like everything else of YouTube: 200 = public or unlisted -> online; 400/404 = gone (deleted,
+// bad id). 401/403 is ambiguous (embedding off, but also private videos) -> unknown: never deletable
+// in bulk, the copy may be the only one (review 2026-11-05). Used by "Platz schaffen"
+// (SFDownloads+Storage.m).
 + (void)availabilityOfItem:(SFItem *)item done:(SFAvailabilityDone)done {
     NSString *vid = item.externalID ?: SFRefID(item.identifier);
     if (vid.length != 11) { done(-1); return; }
-    SFBackground(^{
-        NSInteger st = 0;
-        NSString *u = [NSString stringWithFormat:@"https://www.youtube.com/oembed?format=json&url=https%%3A%%2F%%2Fwww.youtube.com%%2Fwatch%%3Fv%%3D%@", vid];
-        SFCurlFetch(u, @"GET", nil, nil, &st, NULL);
-        done(st == 200 ? 1 : (st == 400 || st == 404) ? 0 : -1);
-    });
+    SFMain(^{ [[SFYTEngine shared] availability:vid done:done]; });
 }
 
 + (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done {

@@ -4,7 +4,7 @@
 import type { SofaEngine } from './engine.ts';
 
 /** The engine calls Sofa may make (everything of SofaEngine except connect). */
-export const METHODS = ['health', 'start', 'block', 'open', 'read', 'playlist', 'subtitles', 'status', 'close', 'innertube', 'suggest', 'stop'] as const;
+export const METHODS = ['health', 'start', 'block', 'open', 'read', 'playlist', 'subtitles', 'status', 'close', 'innertube', 'suggest', 'availability', 'stop'] as const;
 export type Method = typeof METHODS[number];
 
 export interface Command { id: number; method: Method; args: unknown[] }
