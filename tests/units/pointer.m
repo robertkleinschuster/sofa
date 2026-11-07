@@ -44,8 +44,14 @@ int main(void) {
         pid_t xvfb = startXvfb(name, sizeof name);
         CHECK(xvfb > 0, "Xvfb starts");
         if (xvfb <= 0) return 1;
-        Display *d = XOpenDisplay(name);
+        // -displayfd says the server is up; with other suites starting their own Xvfb in parallel
+        // the first connection was seen failing (test-all 2026-11-07): connect like any readiness,
+        // a few tries within 3 s
+        Display *d = NULL;
+        for (int i = 0; i < 30 && !(d = XOpenDisplay(name)); i++) usleep(100000);
+        if (!d) fprintf(stderr, "XOpenDisplay(%s) failed for 3 s\n", name);
         CHECK(d != NULL, "display opens");
+        if (!d) { kill(xvfb, SIGTERM); return 1; }
         // the "button": a window at 300,200 120x40, far from where the pointer starts (centre)
         const CGRect target = CGRectMake(300, 200, 120, 40);
         Window w = XCreateSimpleWindow(d, DefaultRootWindow(d), 300, 200, 120, 40, 0, 0, 0);

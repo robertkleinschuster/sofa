@@ -39,6 +39,7 @@ NSString *gInstance = @"view";
 static uint16_t gPort = 8765;
 
 #import "SFAppDelegate.h"
+#include <sys/file.h>
 
 @implementation SFWindow
 - (BOOL)canBecomeKeyWindow { return YES; }
@@ -54,6 +55,9 @@ static uint16_t gPort = 8765;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n {
     SFCurlGlobalInit();   // before any worker thread uses curl/OpenSSL
+    // Starting at login is the autostart agent's job (setting "Beim Anmelden starten"); macOS
+    // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
+    if (!SFDevMode) [NSApp disableRelaunchOnLogin];
     SFRegisterApps();   // first: themes and apps are looked up from here on
     // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
     // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
@@ -286,6 +290,25 @@ static void SFSetRunningMarker(void) {
     if (!SFDevMode) [[NSFileManager defaultManager] createFileAtPath:SFRunningMarker() contents:nil attributes:nil];
 }
 
+#pragma mark One instance per data directory
+// Two Sofas on one data directory share the database and - worse - the YouTube engine's profile:
+// two browsers, one identity (2026-11-07: after a reboot macOS reopened Sofa next to the one the
+// autostart agent started; they fought over the engine and the database). The lock is an flock on
+// a file in the data directory, held for the process' lifetime - the kernel drops it when the
+// process ends, also on a crash. A second start waits a little (an update hands over: the old
+// instance is still ending) and then quits before touching anything.
+static BOOL SFAcquireInstanceLock(NSTimeInterval wait) {
+    NSString *path = [SFAppSupportDir() stringByAppendingPathComponent:@"instance.lock"];
+    int fd = open(path.fileSystemRepresentation, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (fd < 0) return YES;   // cannot tell - a broken lock file must not stop Sofa
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:wait];
+    while (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        if ([until timeIntervalSinceNow] <= 0) { close(fd); return NO; }
+        usleep(100000);
+    }
+    return YES;   // fd stays open: the lock lives as long as this process
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         SFRuntimeSetup();
@@ -303,11 +326,18 @@ int main(int argc, const char *argv[]) {
         if (SFDevMode) {
             SFSetDevInstance(gInstance);   // own data directory and log (docs/architecture.md, Dev instances)
         }
+        const char *lockWait = getenv("SOFA_INSTANCE_LOCK_WAIT");   // tests: shorter than an update's handover
+        if (!SFAcquireInstanceLock(lockWait ? atof(lockWait) : 10)) {
+            SFLog(@"start: another Sofa runs on this data directory – quitting");
+            SFLogFlush();   // SFLog writes asynchronously; the process ends right here
+            return 0;   // exit 0: launchd (KeepAlive SuccessfulExit=false) doesn't relaunch
+        }
         BOOL autostart = NO;
         for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--autostart")) autostart = YES;
         if (autostart && !SFDevMode && !SFAutostartEnabled()) {
             if (![[NSFileManager defaultManager] fileExistsAtPath:SFRunningMarker()]) {
                 SFLog(@"start: autostart is off – quitting");
+                SFLogFlush();
                 return 0;   // exit 0: launchd (KeepAlive SuccessfulExit=false) doesn't relaunch
             }
             SFLog(@"start: autostart off, but the last run ended unexpectedly – starting anyway");
