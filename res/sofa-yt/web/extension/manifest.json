@@ -1,5 +1,5 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "Sofa YouTube engine",
   "version": "1.0",
   "description": "Sofa's YouTube client in this browser profile (docs/youtube-engine.md).",
@@ -9,7 +9,7 @@
       "strict_min_version": "128.0"
     }
   },
-  "host_permissions": [
+  "permissions": [
     "https://www.youtube.com/*",
     "http://127.0.0.1/*"
   ],
@@ -38,6 +38,7 @@
   "background": {
     "scripts": [
       "background.js"
-    ]
+    ],
+    "persistent": true
   }
 }

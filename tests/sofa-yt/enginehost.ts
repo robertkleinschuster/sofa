@@ -95,14 +95,6 @@ export function installExtension(profile: string, built: string, host: Pick<Engi
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ port: host.port, token: host.token }));
   fs.mkdirSync(path.join(profile, 'extensions'), { recursive: true });
   fs.writeFileSync(path.join(profile, 'extensions', EXTENSION_ID), dir);
-  // MV3 host permissions are the user's to grant; a sideloaded extension starts without them (its
-  // content scripts never run). Firefox keeps the grant here - recorded as a user's "allow" would be.
-  const prefsFile = path.join(profile, 'extension-preferences.json');
-  let grants: Record<string, { permissions: string[]; origins: string[] }> = {};
-  try { grants = JSON.parse(fs.readFileSync(prefsFile, 'utf8')) as typeof grants; } catch { /* first install */ }
-  const manifest = JSON.parse(fs.readFileSync(path.join(built, 'manifest.json'), 'utf8')) as { host_permissions: string[] };
-  grants[EXTENSION_ID] = { permissions: [], origins: manifest.host_permissions };
-  fs.writeFileSync(prefsFile, JSON.stringify(grants));
   return dir;
 }
 

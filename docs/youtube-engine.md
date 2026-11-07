@@ -36,7 +36,7 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
   ends (crash, kill -9), a watcher (`/bin/sh` reading a pipe only Sofa holds) sees the pipe close
   and ends them; Xvfb also ends with its last client (`-terminate`), and the next launch ends
   whatever `profile-processes.json` records and still runs (checked by name). Firefox can't watch
-  for itself: an MV3 background is an event page and may sleep between polls.
+  for itself while it hangs; the kernel's pipe close needs nothing from it.
   Children are spawned with a clean signal mask (a GCD thread's blocked mask made them ignore
   SIGTERM).
 
@@ -164,7 +164,12 @@ Sofa loopback server  <-- long poll / POST (token) --  background.js   (extensio
                                                        page.js         (content script, page world: the engine)
 ```
 
-- `extension/manifest.json` (MV3, id `youtube-engine@sofa`): content scripts on www.youtube.com at
+- `extension/manifest.json` (MV2 with a persistent background, id `youtube-engine@sofa`): the
+  background is a relay that must outlive idle minutes. An MV3 background is an event page that
+  Firefox stops after 30 s without extension events (`extensions.background.idle.timeout`, max
+  5 min, no off switch; a pending fetch does not count) - the bridge's port then closes and the
+  page is cut off for good (2026-11-07: dead within ~1 min of every idle start, the watchdog
+  restarted it every 15 min). Content scripts on www.youtube.com at
   `document_start` - `page.js` in the page's world (the engine, no global), `bridge.js` isolated;
   `background.js` does all traffic to Sofa (host permission: no CORS, invisible to pages - a content
   script's request would be the page's and need Sofa to allow YouTube's origin).
@@ -172,8 +177,8 @@ Sofa loopback server  <-- long poll / POST (token) --  background.js   (extensio
   events (`ready`, `log`, `block`) as JSON strings. Sofa: `GET /engine/poll?token=` (held up to 20 s)
   and `POST /engine/post?token=` with `{answers, events}`.
 - Profile setup (Sofa, like `tests/sofa-yt/enginehost.ts`): the extension unpacked with
-  `config.json` ({port, token}), a proxy file `extensions/youtube-engine@sofa`, the host permission
-  grant in `extension-preferences.json` (MV3 grants are the user's; recorded as an "allow"), prefs
+  `config.json` ({port, token}), a proxy file `extensions/youtube-engine@sofa` (MV2: host
+  permissions come with the install), prefs
   `xpinstall.signatures.required=false` (ESR) and `extensions.autoDisableScopes=0`.
 
 Prefs (`SFYTBrowser.m`): the extension's (above); the firefox-x11 port's remote-X defaults that a

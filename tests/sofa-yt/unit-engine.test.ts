@@ -67,3 +67,12 @@ test('the engine injects as a preload script, says ready over its channel, answe
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('extension: the relay background is persistent (an MV3 event page is stopped when idle)', () => {
+  // 2026-11-07: as an MV3 event page Firefox stopped the background after 30 s without extension
+  // events; the bridge's port closed and the engine page was cut off from Sofa for good
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../res/sofa-yt/web/extension/manifest.json'), 'utf8')) as
+    { manifest_version: number; background: { persistent?: boolean } };
+  assert.equal(manifest.manifest_version, 2);
+  assert.equal(manifest.background.persistent, true);
+});

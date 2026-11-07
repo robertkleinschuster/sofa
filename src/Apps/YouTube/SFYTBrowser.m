@@ -146,8 +146,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 #pragma mark Profile
 
 // The profile as the engine needs it: prefs, and the extension installed unpacked (a copy with
-// config.json, referenced by a proxy file) with its host permissions granted - MV3 leaves them to
-// the user, and a sideloaded extension starts without them (its content scripts never run).
+// config.json, referenced by a proxy file). MV2: its host permissions come with the install.
 - (BOOL)prepareProfileForPort:(uint16_t)port token:(NSString *)token {
     NSFileManager *fm = [NSFileManager defaultManager];
     // one tab, the one Sofa opens: no session restore after a hard end (it brought the previous
@@ -169,19 +168,10 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
         if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
         if (![cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]) return NO;
     }
-    NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[ext stringByAppendingPathComponent:@"manifest.json"]] ?: [NSData data] options:0 error:nil];
-    NSArray *origins = [manifest isKindOfClass:[NSDictionary class]] ? manifest[@"host_permissions"] : nil;
-    if (![origins isKindOfClass:[NSArray class]]) { SFLog(@"yt-browser: extension manifest without host_permissions"); return NO; }
-    NSString *grantsFile = [_profile stringByAppendingPathComponent:@"extension-preferences.json"];
-    NSMutableDictionary *grants = [[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:grantsFile] ?: [NSData data]
-                                                                    options:NSJSONReadingMutableContainers error:nil] mutableCopy];
-    if (![grants isKindOfClass:[NSMutableDictionary class]]) grants = [NSMutableDictionary new];
-    grants[kExtensionID] = @{@"permissions": @[], @"origins": origins};
     NSString *proxy = [exts stringByAppendingPathComponent:kExtensionID];   // unchanged unless it must (as above)
     BOOL proxyOK = [[NSString stringWithContentsOfFile:proxy encoding:NSUTF8StringEncoding error:nil] isEqualToString:ext]
         || [ext writeToFile:proxy atomically:YES encoding:NSUTF8StringEncoding error:nil];
     return proxyOK
-        && [[NSJSONSerialization dataWithJSONObject:grants options:0 error:nil] writeToFile:grantsFile atomically:YES]
         && [UserJS(EnginePrefs()) writeToFile:[_profile stringByAppendingPathComponent:@"user.js"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -250,8 +240,7 @@ static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePa
 
 // Watcher: a shell that reads a pipe only Sofa writes to. However Sofa ends - quit, crash, kill -9 -
 // the kernel closes its end, the read returns and the shell ends browser and display. (Sofa's end
-// is close-on-exec: no other child keeps it open.) Firefox could not do this itself reliably: an
-// MV3 background is an event page and may sleep between polls.
+// is close-on-exec: no other child keeps it open.) The kernel notices even when Firefox hangs.
 - (void)startWatcher:(int)log {
     int p[2];
     if (pipe(p) != 0) return;
