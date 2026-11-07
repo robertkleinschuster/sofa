@@ -34,7 +34,7 @@ enum { kPropTime = 1, kPropDuration, kPropPause, kPropCacheWait, kPropEOF, kProp
     SFEngineStatus _status;
     NSError *_error;
     double _time, _dur, _cacheTime;
-    BOOL _paused, _waiting, _eof, _loaded, _started;
+    BOOL _paused, _waiting, _eof, _loaded, _started, _statsLogged;
     NSDate *_openedAt;
     NSTimer *_tick;
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
@@ -105,7 +105,7 @@ static void onWakeup(void *ctx) {
 }
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
-    _status = SFEngineLoading; _error = nil; _loaded = NO; _started = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
+    _status = SFEngineLoading; _error = nil; _loaded = NO; _started = NO; _statsLogged = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
     _openedAt = [NSDate date]; _stallSince = nil; _stallFired = NO;
     if (!_mpv) { _status = SFEngineFailed; _error = SFError(@"mpv nicht verfügbar"); [self.delegate engineStatusChanged]; return; }
     // Options for the next file (start, pause, separate audio track). URLs contain ':' and ',' ->
@@ -303,9 +303,21 @@ static void onWakeup(void *ctx) {
     [self command:@[@"seek", [NSString stringWithFormat:@"%.3f", MAX(0, t)], exact ? @"absolute+exact" : @"absolute"]];
 }
 
+// What a playback cost the display: frames mpv dropped (decoder too slow vs. output too late) over
+// the playing time - measured on the real screen (an offscreen dev window drops at output by
+// design), so stutter is judged by numbers. Once per open, when it ends.
+- (void)logPlaybackStats {
+    if (!_mpv || !_started || _statsLogged) return;
+    _statsLogged = YES;
+    SFLog(@"mpv: played to %.0f s at %@ fps - dropped %@ (decoder %@), delayed %@", _time,
+          [self prop:@"estimated-vf-fps"] ?: @"?", [self prop:@"frame-drop-count"] ?: @"?",
+          [self prop:@"decoder-frame-drop-count"] ?: @"?", [self prop:@"vo-delayed-frame-count"] ?: @"?");
+}
+
 - (void)close {
     [_tick invalidate]; _tick = nil;
     if (!_mpv) return;
+    [self logPlaybackStats];
     [self command:@[@"stop"]];
     _loaded = NO; _started = NO; _status = SFEngineLoading;
 }
@@ -313,6 +325,7 @@ static void onWakeup(void *ctx) {
 - (void)shutdown {
     [_tick invalidate]; _tick = nil;
     if (!_mpv) return;
+    [self logPlaybackStats];
     mpv_set_wakeup_callback(_mpv, NULL, NULL);
     _layer.mpv = NULL;
     [_layer freeRenderContext];          // before terminate (the layer's GL context)
