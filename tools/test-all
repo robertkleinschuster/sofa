@@ -45,6 +45,6 @@ for t in $SUITES; do
     grep -E '^ *(FAIL|not ok) ' "$OUT/$t.log" | head -n 10 | sed 's/^ */        > /'
     tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
 done
-if [ $fail = 0 ]; then echo "==> all suites ok ($(( $(date +%s) - t0 ))s)"
+if [ $fail = 0 ]; then rm -rf "${KEPT:?}"; echo "==> all suites ok ($(( $(date +%s) - t0 ))s)"   # an older failure's logs would mislead
 else rm -rf "${KEPT:?}"; mv "$OUT/kept" "$KEPT"; echo "==> SOME SUITES FAILED (kept logs: $KEPT)"; fi
 exit $fail

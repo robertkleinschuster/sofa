@@ -28,6 +28,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=hometest
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-hometest.XXXXXX")"
+trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data"   # fresh state per run: no region findings or rows from earlier runs
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -41,7 +42,7 @@ start() {   # start [env ...]
   env SOFA_ONLY_APPS=example "$@" "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
   dev_wait_ready $APP "$LOG"
 }
-quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
+quit() { echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP; APP=; }
 cmd() { echo "$*" 1<>"$FIFO"; }
 waitlog() {   # waitlog PATTERN: until the pattern appears in the log (5 s)
   for i in $(seq 1 50); do grep -q "$1" "$LOG" && return 0; sleep 0.1; done; return 1

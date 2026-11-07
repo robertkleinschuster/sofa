@@ -55,6 +55,7 @@ fi
 want() { [ "$PART" = "$1" ]; }
 INST=${PLAYTEST_INSTANCE:-playtest-$PART}
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-playtest.XXXXXX")"
+trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state, fresh per run (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -84,10 +85,10 @@ mpvstalls() {
   local s; s=$(grep 'hitch: main thread blocked' "$LOG" | grep -E 'SFMPVEngine shutdown|SFMPVLayer retire' | head -3)
   [ -z "$s" ] && ok "closing players never stalled the main thread" || bad "main thread stalled in mpv teardown: $s"
 }
-stop() {   # quit, then wait for the process (up to 5 s) instead of a fixed pause
+stop() {   # quit, then wait for the process (dev_wait_exit) instead of a fixed pause
   mpvstalls
   echo quit 1<>"$FIFO" 2>/dev/null
-  for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done
+  dev_wait_exit $APP
   kill $APP 2>/dev/null; APP=
 }
 cmd() {

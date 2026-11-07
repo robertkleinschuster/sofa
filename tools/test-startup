@@ -14,6 +14,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=starttest
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-starttest.XXXXXX")"
+trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data" SOFA_ONLY_APPS=example
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
@@ -27,15 +28,14 @@ cleanup() {
 }
 trap cleanup EXIT
 start() { : > "$LOG"; "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!; dev_wait_ready $APP "$LOG"; }
-quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
+quit() { echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null; APP=; }
 
 echo "==> 1. one instance per data directory"
 start
 # the second start: same data directory, another remote port; a short lock wait (an update's
 # handover gets 10 s)
 SOFA_INSTANCE_LOCK_WAIT=0.5 "$BIN" --dev --instance $INST >/dev/null 2>&1 & SECOND=$!
-for i in $(seq 1 50); do kill -0 $SECOND 2>/dev/null || break; sleep 0.1; done
-if kill -0 $SECOND 2>/dev/null; then bad "a second instance on the same data directory keeps running"; kill $SECOND 2>/dev/null
+if ! dev_wait_exit $SECOND; then bad "a second instance on the same data directory keeps running"; kill $SECOND 2>/dev/null
 else wait $SECOND; rc=$?; [ $rc = 0 ] && ok "the second start quits (exit 0: launchd does not relaunch it)" || bad "the second start exited $rc"; fi
 grep -q 'another Sofa runs on this data directory' "$LOG" && ok "it says so in the log" || bad "no log line for the refused start"
 kill -0 $APP 2>/dev/null && ok "the first instance keeps running" || bad "the first instance ended"

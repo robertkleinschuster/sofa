@@ -38,6 +38,7 @@ want() { [ "$PART" = "$1" ]; }
 INST=dltest-$PART
 if want a; then MEDIA_PORT=47982; else MEDIA_PORT=47983; fi
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
+trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -61,7 +62,7 @@ start() {
   "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
   dev_wait_ready $APP "$LOG"
 }
-quit() { echo quit 1<>"$FIFO" 2>/dev/null; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=; }
+quit() { echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP; APP=; }
 cmd() { echo "$*" 1<>"$FIFO"; }
 # shot FILE: screenshot, waits until it is written; kept in DLTEST_SHOTS
 shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1" "$LOG" && break; sleep 0.25; done
@@ -115,7 +116,7 @@ S=$(pgrep -f "part998")
 O=$(pgrep -f "orphan-test.part999")
 [ -n "$O" ] && [ "$(ps -o ppid= -p $O | tr -d ' ')" = 1 ] && ok "orphan running (pid $O, parent launchd)" || bad "could not create the orphan"
 start
-for i in $(seq 1 40); do kill -0 $O 2>/dev/null || break; sleep 0.25; done   # swept at start (10 s at most)
+dev_wait_exit $O 10   # swept at start
 kill -0 $O 2>/dev/null && bad "orphan still alive" || ok "orphan killed at start"
 grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
 # reaping runs off the main thread: Sofa is ready before the SIGTERM grace (1 s) is over
@@ -168,7 +169,7 @@ running() {
 cmd "dlget $REF"
 running && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
 # the update handover waits half a second before exiting - ffmpeg's end is handled meanwhile
-cmd updatequit; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=
+cmd updatequit; dev_wait_exit $APP; APP=
 [ -z "$(ffpids)" ] && ok "no ffmpeg left after the update handover" || bad "ffmpeg survived the handover: $(ffpids)"
 grep -q "downloads: FAILED $REF" "$LOG" && bad "stopping it counted as a failure" || ok "stopping it is no failure"
 check "still running in the database, no attempt used" "$(/opt/local/bin/sqlite3 "$DEVDB" "select state || '/' || tries from downloads where id='$REF'")" "1/0"

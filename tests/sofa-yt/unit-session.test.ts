@@ -273,7 +273,14 @@ test('prefetch hint: /open starts pulling at the resume position before mpv conn
     const off = must(VSEGS.find((x) => x.startMs <= 600000 && 600000 < x.startMs + x.durationMs)).start;
     const b = await get(r.video, { range: `bytes=${off}-${off + 99999}` });
     assert.ok(b.body.equals(expectedBytes(VINIT, off, off + 100000)));
-    assert.equal(pumps.log.starts.length, 1, `resume position served by the prefetch run: ${runs()}`);
+    // counted: runs with video. Once this video read is over (the test reads no audio), the combined
+    // run is not needed any more and stops; if it had buffered less than LOW_MS of audio by then, the
+    // audio hint (unconsumed) starts an audio-only run where that audio ends - correct, and timing-
+    // dependent: under load (2026-11-07) the run had delivered two audio segments. Reproduced with
+    // a 200-ms fake run and a pause before this check. mpv reads audio along with video, so in
+    // playback the audio hint is consumed as well.
+    const videoRuns = pumps.log.starts.filter((s) => s.video);
+    assert.equal(videoRuns.length, 1, `resume position served by the prefetch run: ${runs()}`);
   } finally { await app.close(); }
 });
 

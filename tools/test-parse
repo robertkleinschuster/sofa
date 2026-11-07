@@ -14,6 +14,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
 INST=parse
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-parse.XXXXXX")"
+trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data" SOFA_OFFLINE=1
 # the instance keeps its log and dev FIFO in its data directory (SFDevPrivateDir): gone with $T
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
@@ -41,7 +42,7 @@ for gz in "$SRC"/tests/fixtures/*/*.json.gz; do
   elif diff -u "$want" "$out" > "$T/$app-$n.diff"; then ok "$app/$n ($(grep -c '^item' "$out") items)"
   else bad "$app/$n differs:"; head -20 "$T/$app-$n.diff" | sed 's/^/        /'; fi
 done
-echo quit 1<>"$FIFO"; for i in $(seq 1 50); do kill -0 $APP 2>/dev/null || break; sleep 0.1; done; APP=
+echo quit 1<>"$FIFO"; dev_wait_exit $APP; APP=
 
 [ $fail = 0 ] && echo "==> test-parse ok" || echo "==> test-parse FAILED"
 exit $fail
