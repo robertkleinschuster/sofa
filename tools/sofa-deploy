@@ -10,7 +10,17 @@
 #    "ready", this script swaps via sudo. sudo non-interactively: set SUDO_PW.
 # On a port installation this is a development state; `port -n upgrade --force sofa`
 # restores the port state.
+#
+# Usage: tools/sofa-deploy                 the current build, with the installed app's runtime
+#        tools/sofa-deploy --bundle <App>  a complete bundle (tools/make-release [--local]), e.g.
+#                                          when the installed runtime lacks a part the build needs
 set -eu
+BUNDLE=
+case "${1:-}" in
+  --bundle) BUNDLE="$(cd "${2:?usage: sofa-deploy --bundle <App>}" && pwd)" ;;
+  "") ;;
+  *) echo "usage: sofa-deploy [--bundle <App>]"; exit 2 ;;
+esac
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/Library/Logs/SofaRemote.log"
@@ -25,24 +35,33 @@ as_root() {
   if [ -n "${SUDO_PW:-}" ]; then echo "$SUDO_PW" | sudo -S -k -p '' "$@"; else sudo "$@"; fi
 }
 
-make -C "$SRC" >/dev/null
 echo "target: $APP"
 
-# Release bundle (tools/make-release, with Contents/Runtime): take over the target's runtime + libraries
-# and relink only the new programs against them (seconds instead of rebuilding the release).
-NEW="$SRC/build/Sofa.app"
-if [ -d "$APP/Contents/Runtime" ]; then
+if [ -n "$BUNDLE" ]; then
+  # a complete bundle as it is (its own runtime and libraries)
+  NEW="$BUNDLE"
+  for t in lib/firefox/firefox bin/Xvfb; do
+    [ -x "$NEW/Contents/Runtime/$t" ] || { echo "ERROR: $NEW has no Runtime/$t - not a release bundle (make-release)"; exit 1; }
+  done
+  echo "complete bundle: $NEW"
+elif [ -d "$APP/Contents/Runtime" ]; then
+  # release bundle installed: take over its runtime + libraries and relink only the new programs
+  # against them (seconds instead of rebuilding the release)
+  make -C "$SRC" >/dev/null
   NEW="$SRC/build/Sofa-release.app"
   rm -rf "$NEW"; cp -R "$SRC/build/Sofa.app" "$NEW"
   cp -R "$APP/Contents/Runtime" "$APP/Contents/Frameworks" "$NEW/Contents/"
   # YouTube runs in the engine's browser (docs/youtube-engine.md): a runtime without it would turn
-  # YouTube off in the installed app - that needs a new release bundle first (make-release)
+  # YouTube off in the installed app - that needs a new release bundle first (--bundle)
   for t in lib/firefox/firefox bin/Xvfb; do   # make-release's layout (SFRuntimePath)
-    [ -x "$NEW/Contents/Runtime/$t" ] || { echo "ERROR: the installed runtime has no ${t##*/} - deploy refused (YouTube would stop working)"; exit 1; }
+    [ -x "$NEW/Contents/Runtime/$t" ] || { echo "ERROR: the installed runtime has no ${t##*/} - deploy refused (YouTube would stop working; deploy a make-release bundle with --bundle)"; exit 1; }
   done
   rm -rf "$NEW/Contents/Runtime/Python.framework"   # no longer shipped (yt-dlp removed 2026-11-06, make-release)
   /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" "$NEW/Contents/MacOS" "$NEW/Contents/Frameworks" >/dev/null
   echo "release bundle: runtime taken over, programs relinked"
+else
+  make -C "$SRC" >/dev/null
+  NEW="$SRC/build/Sofa.app"
 fi
 
 if [ -w "$(dirname "$APP")" ]; then
