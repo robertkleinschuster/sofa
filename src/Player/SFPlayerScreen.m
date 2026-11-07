@@ -218,6 +218,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 }
 
 - (void)willDisappear {
+    SFLog(@"player: closed %@ at %.0f s", _item.identifier, [self current]);   // the log shows whether a player was open
     [self saveProgress];
     [self teardown];
     [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerStateNotification object:self userInfo:@{@"closed": @YES}];
