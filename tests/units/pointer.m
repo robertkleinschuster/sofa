@@ -16,6 +16,8 @@ static int fails = 0;
 
 static const char *kXvfb = "/opt/local/bin/Xvfb";
 
+static char gXvfbLog[] = "/tmp/sofa-pointer-xvfb.XXXXXX";   // its stderr, shown when the display fails
+
 // Xvfb on a free display (-displayfd); its pid, the display name in `name`.
 static pid_t startXvfb(char *name, size_t len) {
     int p[2];
@@ -23,12 +25,14 @@ static pid_t startXvfb(char *name, size_t len) {
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
     posix_spawn_file_actions_adddup2(&fa, p[1], 3);
-    posix_spawn_file_actions_addopen(&fa, 2, "/dev/null", O_WRONLY, 0);
+    int lf = mkstemp(gXvfbLog);
+    if (lf >= 0) { posix_spawn_file_actions_adddup2(&fa, lf, 2); } else posix_spawn_file_actions_addopen(&fa, 2, "/dev/null", O_WRONLY, 0);
     char *argv[] = {(char *)kXvfb, "-displayfd", "3", "-screen", "0", "800x600x24", "-nolisten", "tcp", NULL};
     pid_t pid = -1;
     int rc = posix_spawn(&pid, kXvfb, &fa, NULL, argv, NULL);
     posix_spawn_file_actions_destroy(&fa);
     close(p[1]);
+    if (lf >= 0) close(lf);
     char buf[16] = {0};
     ssize_t n = rc == 0 ? read(p[0], buf, sizeof buf - 1) : -1;
     close(p[0]);
@@ -49,9 +53,15 @@ int main(void) {
         // a few tries within 3 s
         Display *d = NULL;
         for (int i = 0; i < 30 && !(d = XOpenDisplay(name)); i++) usleep(100000);
-        if (!d) fprintf(stderr, "XOpenDisplay(%s) failed for 3 s\n", name);
+        if (!d) {
+            // the cause, for the next time (seen under test-all load): server gone, or what it said
+            fprintf(stderr, "XOpenDisplay(%s) failed for 3 s; Xvfb %d %s; its stderr:\n", name, xvfb, kill(xvfb, 0) == 0 ? "alive" : "gone");
+            FILE *f = fopen(gXvfbLog, "r"); char line[256];
+            while (f && fgets(line, sizeof line, f)) fprintf(stderr, "  %s", line);
+            if (f) fclose(f);
+        }
         CHECK(d != NULL, "display opens");
-        if (!d) { kill(xvfb, SIGTERM); return 1; }
+        if (!d) { kill(xvfb, SIGTERM); unlink(gXvfbLog); return 1; }
         // the "button": a window at 300,200 120x40, far from where the pointer starts (centre)
         const CGRect target = CGRectMake(300, 200, 120, 40);
         Window w = XCreateSimpleWindow(d, DefaultRootWindow(d), 300, 200, 120, 40, 0, 0, 0);
@@ -89,6 +99,7 @@ int main(void) {
 
         XCloseDisplay(d);
         kill(xvfb, SIGTERM);
+        unlink(gXvfbLog);
     }
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     printf("pointer ok\n");

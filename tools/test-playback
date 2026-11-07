@@ -117,6 +117,8 @@ grep -q 'mpv vo-configured = yes' "$LOG" && ok "video output configured" || bad 
 grep -q 'No render context set' "$LOG" && bad "mpv started before the render context" || ok "no render-context race"
 # the spinner stays until the first frame (user 2026-11-07: seconds of black screen after it vanished
 # at "file loaded"): its "off" comes after mpv's first frame, never before
+# (playback-restart may follow vo-configured by a moment: wait for the spinner to go, then compare)
+waitlog $m 'player: spinner off' 40
 ff=$(since $m | grep -n 'mpv: first frame' | head -1 | cut -d: -f1); so=$(since $m | grep -n 'player: spinner off' | head -1 | cut -d: -f1)
 [ -n "$ff" ] && [ -n "$so" ] && [ "$so" -gt "$ff" ] && ok "spinner until the first frame" || bad "spinner gone before the first frame (frame line ${ff:-none}, off line ${so:-none})"
 

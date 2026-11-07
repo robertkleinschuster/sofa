@@ -6,10 +6,11 @@
 // the engine's own tests.
 #import "SFLocalHTTP.h"
 
-// A call nothing answered within its timeout (domain SFYTChannelErrorDomain) - as opposed to an
-// error the page answered or a channel that failed all calls (failAll).
+// Calls that got no answer (domain SFYTChannelErrorDomain): TimedOut = nothing within the call's
+// timeout (slow, or a hung page); PageGone = the document that had it is gone (the engine fails
+// its calls with failAll) - as opposed to an error the page answered.
 extern NSString *const SFYTChannelErrorDomain;
-enum { SFYTChannelTimedOut = 1 };
+enum { SFYTChannelTimedOut = 1, SFYTChannelPageGone = 2 };
 
 @interface SFYTChannel : NSObject
 // `queue` (serial, the HTTP server's) runs everything: requests, events, call completions.

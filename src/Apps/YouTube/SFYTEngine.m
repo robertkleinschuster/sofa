@@ -148,6 +148,10 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
         if (_state == SFYTEngineReady) {   // a new document: the old page's sessions are gone
             SFLog(@"yt-engine: page reloaded - sessions lost");
+            // and its calls: one it had fetched would wait out its whole timeout (an open: 60 s,
+            // seen 2026-11-07) for an answer no document will send
+            [_channel failAll:[NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelPageGone
+                                              userInfo:@{NSLocalizedDescriptionKey: @"engine: the page reloaded"}]];
             [[NSNotificationCenter defaultCenter] postNotificationName:SFYTEngineSessionsLostNotification object:self];
         }
         _state = SFYTEngineStarting;
