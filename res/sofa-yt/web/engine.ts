@@ -11,6 +11,8 @@ import { BotGuardClient } from 'bgutils-js/botguard';
 import { WebPoMinter } from 'bgutils-js/webpo';
 import { createEngine, EngineError } from '../lib/engine.ts';
 import type { Engine, EngineHealth, OpenAnswer, OpenRequest } from '../lib/engine.ts';
+import type { PlayerState } from '../lib/report.ts';
+import { pageReporting } from './pagereport.ts';
 import { sabrPumps } from '../lib/pump.ts';
 import { YouTube, PlayerBudget } from '../lib/youtube.ts';
 import { PoTokenProvider } from '../lib/webpo.ts';
@@ -76,6 +78,8 @@ export interface SofaEngine {
   segment(sid: string, n: number): Promise<Reply<{ mimeType: string; data: Uint8Array }>>;
   subtitles(sid: string, key: string): Promise<Reply<string>>;
   status(sid: string): Reply<object>;
+  /** Sofa's player state for a session: the view's stats pings (lib/report.ts); `closed` ends the view. */
+  report(sid: string, state: PlayerState | { state: 'closed' }): Promise<Reply<boolean>>;
   close(sid: string): Reply<boolean>;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
@@ -158,7 +162,7 @@ export const sofaEngine: SofaEngine = {
       if (cfg.aheadLowS) sessionCfg.LOW_MS = cfg.aheadLowS * 1000;
       if (cfg.aheadHighS) sessionCfg.HIGH_MS = cfg.aheadHighS * 1000;
       const base = cfg.base.replace(/\/+$/, '');
-      core = createEngine({ youtube, po, breaker, startPump: sabrPumps({ youtube, po }), sessionCfg, base: () => base });
+      core = createEngine({ youtube, po, breaker, startPump: sabrPumps({ youtube, po }), sessionCfg, base: () => base, reporting: pageReporting() });
       log(`engine started on ${location.origin} (${navigator.userAgent})`);
       return { ok: true, value: { userAgent: navigator.userAgent } };
     } catch (e) {
@@ -180,6 +184,7 @@ export const sofaEngine: SofaEngine = {
   }),
   subtitles: (sid, key) => replyAsync(() => core!.subtitles(sid, key)),
   status: (sid) => reply(() => core!.status(sid)),
+  report: (sid, state) => replyAsync(() => core!.report(sid, state)),
   close: (sid) => reply(() => core!.close(sid)),
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),

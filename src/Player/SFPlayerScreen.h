@@ -17,6 +17,7 @@
 extern NSString *const SFPlayerStateNotification;   // object = SFPlayerScreen; on every state change
 typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnded = 0, SFPlaybackPlaying = 1, SFPlaybackPaused = 2, SFPlaybackBuffering = 3 };
 @property (nonatomic, readonly) SFPlaybackState playbackState;
+@property (nonatomic, readonly) NSDictionary *playbackSource;   // the app's description of the opened stream (SFMPVSourceFor), nil before
 @property (nonatomic, copy) NSString *remoteListID;      // set when started from the phone
 @property (nonatomic, readonly) NSArray *queue;
 @property (nonatomic, readonly) NSUInteger queueIndex;

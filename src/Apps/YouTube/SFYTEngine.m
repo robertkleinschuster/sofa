@@ -391,6 +391,11 @@ static id Clean(id v) {
     [self request:@"close" args:@[sid] timeout:kCallTimeout done:^(id v, NSError *e) {}];
 }
 
+- (void)report:(NSString *)sid state:(NSDictionary *)state {
+    if (!sid.length || _state != SFYTEngineReady) return;
+    [self request:@"report" args:@[sid, state] timeout:kCallTimeout done:^(id v, NSError *e) {}];
+}
+
 - (void)sessionStatus:(NSString *)sid done:(void (^)(NSDictionary *))done {
     if (!sid.length || _state != SFYTEngineReady) { done(nil); return; }
     // a hanging engine must not hold up the player's decision

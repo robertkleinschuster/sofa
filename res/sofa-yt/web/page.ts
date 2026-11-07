@@ -10,6 +10,11 @@ function ytcfg(): YtCfg | null {
   return isRecord(c) && typeof c.get === 'function' ? (c as unknown as YtCfg) : null;
 }
 
+/** A ytcfg value as it is (undefined when the page has none). */
+export function pageValue(key: string): unknown {
+  return ytcfg()?.get(key);
+}
+
 /** A ytcfg value as a string ('' when the page has none). */
 export function pageString(key: string): string {
   const v = ytcfg()?.get(key);

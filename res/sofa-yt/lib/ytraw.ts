@@ -94,7 +94,8 @@ export interface RawPlayerResponse {
   captions?: RawCaptions;
   endscreen?: { endscreenRenderer?: { elements?: RawEndscreenElement[] } };
   /** Where youtube.com's player reports a view (stats/playback, watchtime, ptracking, atr, qoe). */
-  playbackTracking?: Partial<Record<'videostatsPlaybackUrl' | 'videostatsWatchtimeUrl' | 'ptrackingUrl' | 'atrUrl' | 'qoeUrl', { baseUrl?: string }>>;
+  playbackTracking?: Partial<Record<'videostatsPlaybackUrl' | 'videostatsWatchtimeUrl' | 'ptrackingUrl' | 'atrUrl' | 'qoeUrl', { baseUrl?: string }>>
+    & { videostatsScheduledFlushWalltimeSeconds?: unknown[]; videostatsDefaultFlushIntervalSeconds?: unknown };
 }
 
 const CONTAINERS = ['playabilityStatus', 'videoDetails', 'microformat', 'streamingData', 'playerConfig',

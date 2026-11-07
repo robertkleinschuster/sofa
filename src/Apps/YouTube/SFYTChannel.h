@@ -8,7 +8,8 @@
 
 // Calls that got no answer (domain SFYTChannelErrorDomain): TimedOut = nothing within the call's
 // timeout (slow, or a hung page); PageGone = the document that had it is gone (the engine fails
-// its calls with failAll) - as opposed to an error the page answered.
+// its calls with failAll, or the connection a call went out on ended before its answer) - as opposed
+// to an error the page answered.
 extern NSString *const SFYTChannelErrorDomain;
 enum { SFYTChannelTimedOut = 1, SFYTChannelPageGone = 2 };
 

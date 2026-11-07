@@ -249,6 +249,19 @@ class Pump {
     const to = Math.max(this.startMs, this.frontier.get(t) ?? 0) + slack;
     return ms >= from && ms <= to;
   }
+
+  /**
+   * Will this run still deliver `ms` of `t`? Only what lies ahead of its newest segment (or, before
+   * its first one, around its start). Media it already passed comes only once: missing there
+   * (evicted, or read on another track meanwhile), it needs a run of its own - waiting on this one
+   * hung the reader while the run, never paced by it, pulled far ahead (2026-11-07: an audio switch
+   * and back, 400 SABR segments in 70 s up to 25 min ahead, the player stalled until its watchdog).
+   */
+  willDeliver(t: Track, ms: number, slack: number): boolean {
+    if (!this.covers(t, ms, slack)) return false;
+    const front = this.frontier.get(t);
+    return front === undefined || ms >= front - slack;
+  }
 }
 
 export interface PlaybackSessionOptions {
@@ -396,7 +409,9 @@ export class PlaybackSession {
         const sat = t.satisfied(d);
         if (sat && sat.aheadMs === Infinity) continue;
         const target = sat ? sat.endMs : d.ms;
-        const p = [...this.pumps].find((x) => x.covers(t, target, cfg.COVER_SLACK_MS));
+        // the run still coming to `target` (missing media, or where the buffer ends): one that passed it
+        // already left a hole there and delivers it never again
+        const p = [...this.pumps].find((x) => x.willDeliver(t, target, cfg.COVER_SLACK_MS));
         const enough = sat && (sat.aheadMs >= cfg.HIGH_MS || sat.aheadBytes >= cfg.HIGH_BYTES[t.kind]);
         if (p) {
           // video pumps are kept alive by video demands only (audio is read in sync anyway)
@@ -411,6 +426,7 @@ export class PlaybackSession {
       }
     }
     for (const p of [...this.pumps]) {
+      if (this.ranAhead(p, now)) { this.stopPump(p, 'ran ahead of every reader'); continue; }
       if (useful.has(p) && now - p.lastDataAt > cfg.STALL_MS) {
         // googlevideo would only give up after 30 s request timeouts x retries
         this.stopPump(p, `stalled: no data for ${Math.round((now - p.lastDataAt) / 1000)} s`);
@@ -420,6 +436,18 @@ export class PlaybackSession {
       else if (now - p.lastUseful > cfg.GRACE_MS) this.stopPump(p, 'not needed');
     }
     this.evict(now);
+  }
+
+  /**
+   * A run whose newest segment is further ahead of every reader of its driver than pacing allows
+   * (HIGH_MS twice over): whatever keeps it alive, it pulls media nobody will read soon - YouTube
+   * sees a client racing through the video. Measured from the foremost demand - readers, a pending
+   * resume hint, a lingering position - so a header read or mpv's probe at 0 never counts alone.
+   */
+  ranAhead(p: Pump, now: number): boolean {
+    const front = p.frontier.get(p.driver);
+    const ms = p.driver.demands(now).map((d) => d.ms);
+    return front !== undefined && ms.length > 0 && front - Math.max(...ms) > 2 * this.cfg.HIGH_MS;
   }
 
   startPump(t: Track, ms: number, now: number): Pump | null {
@@ -620,6 +648,21 @@ export class PlaybackSession {
     for (const t of this.tracks.values()) t.file.clear();
     this.subCache.clear();
     log(`${this.tag}: closed (${why})`);
+  }
+
+  /** Media buffered ahead of the readers in seconds: the least of the tracks (qoe's buffer health). */
+  bufferedAheadS(): number {
+    const now = Date.now();
+    let least = Infinity;
+    for (const t of this.tracks.values()) {
+      let most = 0;
+      for (const d of t.demands(now)) {
+        const a = t.satisfied(d)?.aheadMs ?? 0;
+        most = Math.max(most, a === Infinity ? Math.max(0, (t.fmt.durationMs || this.info.durationMs) - d.ms) : a);
+      }
+      least = Math.min(least, most);
+    }
+    return least === Infinity ? 0 : least / 1000;
   }
 
   status(): SessionStatus {

@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mod, fixtureInit, fixtureInfo, segmentTable, expectedBytes, fakePumps, fakeYouTube, startApp, get, sleep, until,
-  xtags, FakeRes, json, must, nth,
+  xtags, FakeRes, json, must, nth, patternBuf,
 } from './helpers.ts';
 import type { TestApp, TestAppOptions } from './helpers.ts';
 import type { OpenAnswer, OpenFailure, VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
@@ -200,6 +200,50 @@ test('pacing: pull pauses ~HIGH ahead of a stalled reader, resumes below LOW; me
     res.destroy();
     await done;
   }
+});
+
+test('media a running pump already passed but that is missing gets a run of its own (2026-11-07 audio switch hang)', async () => {
+  const pumps = fakePumps(MEDIA, { intervalMs: 15 });
+  const formats = describeFormats(info.formats);
+  const s = new PlaybackSession({ info, formats, video: must(pickVideo(formats)), audio: must(pickAudio(formats)),
+    audioChoices: audioTracks(formats).map((t) => t.format), startPump: (o) => pumps.start(info, formats, o), cfg: { ...CFG, WAIT_MS: 3000 } });
+  const r1 = new FakeRes();
+  const d1 = s.serve(s.video, V(100).start, s.video.file.total, r1);
+  const r2 = new FakeRes();
+  r2.keep = true;
+  let d2: Promise<unknown> | null = null;
+  try {
+    assert.ok(await until(() => !!s.video.file.entryAt(V(112).start), 5000), 'the first run passed segment 112');
+    // segments 102-105 gone (evicted / never kept) while the run is further on
+    s.video.file.entries = s.video.file.entries.filter((e) => e.init || e.start < V(102).start || e.start > V(105).start);
+    const starts = pumps.log.starts.length;
+    d2 = s.serve(s.video, V(103).start, V(103).start + 1000, r2);
+    assert.ok(await until(() => r2.bytes >= 1000, 2500), `the reader got the missing bytes (${r2.bytes})`);
+    const fresh = pumps.log.starts.slice(starts);
+    assert.ok(fresh.some((x) => x.video !== null && x.startMs === V(103).startMs), `a run at the missing segment: ${JSON.stringify(fresh)}`);
+    assert.ok(Buffer.concat(r2.chunks).equals(patternBuf(V(103).start, 1000)), 'the right bytes');
+  } finally {
+    s.close('test');
+    r1.destroy(); r2.destroy();
+    await d1; if (d2) await d2;
+  }
+});
+
+test('a run far ahead of every reader is stopped, whatever kept it alive', () => {
+  const pumps = fakePumps(MEDIA, { stall: true });
+  const formats = describeFormats(info.formats);
+  const s = new PlaybackSession({ info, formats, video: must(pickVideo(formats)), audio: must(pickAudio(formats)),
+    audioChoices: audioTracks(formats).map((t) => t.format), startPump: (o) => pumps.start(info, formats, o), cfg: CFG });
+  try {
+    const p = must(s.startPump(s.video, 0, Date.now()));
+    s.video.readers.add({ pos: V(10).start, since: Date.now(), last: Date.now() } as never);
+    p.frontier.set(s.video, V(10).startMs + CFG.HIGH_MS);
+    assert.equal(s.ranAhead(p, Date.now()), false, 'within pacing');
+    p.frontier.set(s.video, V(10).startMs + 2 * CFG.HIGH_MS + 1000);
+    assert.equal(s.ranAhead(p, Date.now()), true, 'far beyond pacing');
+    s.hint(V(10).startMs + 2 * CFG.HIGH_MS);   // a resume position further on: the foremost demand counts
+    assert.equal(s.ranAhead(p, Date.now()), false, 'a pending resume hint near the front');
+  } finally { s.close('test'); }
 });
 
 test('language switch: another audio track is fed by an audio-only SABR run', async () => {

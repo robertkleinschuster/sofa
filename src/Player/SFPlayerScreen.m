@@ -401,6 +401,8 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerStateNotification object:self];
 }
 
+- (NSDictionary *)playbackSource { return _openURL ? SFMPVSourceFor(_openURL) : nil; }
+
 - (SFPlaybackState)playbackState {
     if (_closing || !_item) return SFPlaybackIdle;
     if (_ended) return SFPlaybackEnded;

@@ -215,6 +215,15 @@ static void testChannel(void) {
     [ch call:@"health" args:@[] timeout:5 done:^(id v, NSError *e) {}];
     CHECK(readFrame(fd2, &p) == SFWSText && [[[NSString alloc] initWithData:p encoding:NSUTF8StringEncoding] rangeOfString:@"health"].location != NSNotFound,
           "commands go to the newer");
+    // the connection ends with a command unanswered: the call fails at once (PageGone), no timeout
+    __block NSError *lost = nil;
+    [ch call:@"open" args:@[] timeout:30 done:^(id v, NSError *e) { lost = e; }];
+    CHECK(readFrame(fd2, &p) == SFWSText, "the command went out");
+    int fd3 = connectTo(port);
+    CHECK([upgrade(fd3, path) hasPrefix:@"HTTP/1.1 101 "], "a newer connection replaces it");
+    CHECK(waitFor(^{ return (BOOL)(lost != nil); }, 3) && lost.code == SFYTChannelPageGone, "a call sent on a closed connection fails at once");
+    close(fd2);
+    fd2 = fd3;
     // a protocol error (unmasked frame) closes with 1002
     sendAll(fd2, [NSData dataWithBytes:"\x81\x02hi" length:4]);
     CHECK(readFrame(fd2, &p) == SFWSClose && p.length == 2 && ((const uint8_t *)p.bytes)[1] == 0xea, "protocol error: close 1002");

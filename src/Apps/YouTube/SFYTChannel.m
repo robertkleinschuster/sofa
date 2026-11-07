@@ -9,6 +9,7 @@ NSString *const SFYTChannelErrorDomain = @"SFYTChannel";
     dispatch_queue_t _queue;
     NSMutableArray *_queued;            // commands not yet sent (no connection)
     NSMutableDictionary *_pending;      // id -> block(value, error), answered or timed out once
+    NSMutableDictionary *_sentOn;       // id -> the connection the command went out on (until answered)
     SFWebSocket *_socket;               // the extension's connection, if any
     NSUInteger _maxMessage;
     long _nextID;
@@ -28,6 +29,7 @@ NSString *SFYTChannelNewToken(void) {
         _maxMessage = max;
         _queued = [NSMutableArray new];
         _pending = [NSMutableDictionary new];
+        _sentOn = [NSMutableDictionary new];
         _token = [token copy];
     }
     return self;
@@ -51,14 +53,30 @@ NSString *SFYTChannelNewToken(void) {
     [_socket close];
     _socket = ws;
     __weak SFYTChannel *wself = self;
-    __weak SFWebSocket *wws = ws;
     ws.onMessage = ^(BOOL binary, NSData *payload) { [wself received:payload binary:binary]; };
-    ws.onClose = ^{ SFYTChannel *s = wself; if (s && s->_socket == wws) s->_socket = nil; };
+    __weak SFWebSocket *wws = ws;   // alive while a command sent on it waits (_sentOn holds it)
+    ws.onClose = ^{ SFYTChannel *s = wself; if (s) [s closed:wws]; };
     [self flush];
+}
+
+// A connection ended: commands that went out on it are never answered (the extension answers only on
+// the connection that asked) - they fail now instead of waiting out their timeouts.
+- (void)closed:(SFWebSocket *)ws {
+    if (!ws) return;   // gone: nothing waited on it (_sentOn would have kept it)
+    if (_socket == ws) _socket = nil;
+    NSError *gone = [NSError errorWithDomain:SFYTChannelErrorDomain code:SFYTChannelPageGone
+                                    userInfo:@{NSLocalizedDescriptionKey: @"engine: the connection ended before the answer"}];
+    for (NSNumber *cid in [_sentOn allKeys]) {
+        if (_sentOn[cid] != ws) continue;
+        [_sentOn removeObjectForKey:cid];
+        void (^f)(id, NSError *) = _pending[cid];
+        if (f) f(nil, gone);
+    }
 }
 
 - (void)flush {
     if (!_socket || !_queued.count) return;
+    for (NSDictionary *c in _queued) _sentOn[c[@"id"]] = _socket;
     NSData *d = [NSJSONSerialization dataWithJSONObject:_queued options:0 error:nil];
     [_queued removeAllObjects];
     [_socket sendText:[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]];
@@ -134,6 +152,7 @@ id SFYTChannelDecodeBinary(NSData *d) {
             if (answered) return;
             answered = YES;
             [self->_pending removeObjectForKey:cid];
+            [self->_sentOn removeObjectForKey:cid];
             done(v, e);
         };
         self->_pending[cid] = [once copy];

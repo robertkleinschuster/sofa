@@ -41,6 +41,7 @@ interface Modules {
   'lib/bytes.ts': typeof import('../../res/sofa-yt/lib/bytes.ts');
   'lib/sabrpump.ts': typeof import('../../res/sofa-yt/lib/sabrpump.ts');
   'lib/lounge.ts': typeof import('../../res/sofa-yt/lib/lounge.ts');
+  'lib/report.ts': typeof import('../../res/sofa-yt/lib/report.ts');
   'lib/formats.ts': typeof import('../../res/sofa-yt/lib/formats.ts');
   'lib/hls.ts': typeof import('../../res/sofa-yt/lib/hls.ts');
   'lib/mediaindex.ts': typeof import('../../res/sofa-yt/lib/mediaindex.ts');

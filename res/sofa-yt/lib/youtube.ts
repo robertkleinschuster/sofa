@@ -73,15 +73,23 @@ export interface VodInfo extends InfoBase {
   tracking?: PlaybackTracking;
 }
 
-export interface PlaybackTracking { playback?: string; watchtime?: string; ptracking?: string; atr?: string; qoe?: string }
+export interface PlaybackTracking {
+  playback?: string; watchtime?: string; ptracking?: string; atr?: string; qoe?: string;
+  /** watchtime flush walltimes (videostatsScheduledFlushWalltimeSeconds), then every flushInterval s */
+  flushSlots?: number[];
+  flushInterval?: number;
+}
 
 /** The reporting URLs of a player response; the ones it lacks stay absent. */
 export function trackingOf(raw: RawPlayerResponse): PlaybackTracking {
   const t = raw.playbackTracking || {};
   const out: PlaybackTracking = {};
-  const pick = (k: keyof PlaybackTracking, v: { baseUrl?: string } | undefined) => { if (typeof v?.baseUrl === 'string' && v.baseUrl.startsWith('https://')) out[k] = v.baseUrl; };
+  const pick = (k: 'playback' | 'watchtime' | 'ptracking' | 'atr' | 'qoe', v: { baseUrl?: string } | undefined) => { if (typeof v?.baseUrl === 'string' && v.baseUrl.startsWith('https://')) out[k] = v.baseUrl; };
   pick('playback', t.videostatsPlaybackUrl); pick('watchtime', t.videostatsWatchtimeUrl); pick('ptracking', t.ptrackingUrl);
   pick('atr', t.atrUrl); pick('qoe', t.qoeUrl);
+  const slots = t.videostatsScheduledFlushWalltimeSeconds;
+  if (Array.isArray(slots) && slots.every((n): n is number => typeof n === 'number' && n > 0)) out.flushSlots = slots;
+  if (typeof t.videostatsDefaultFlushIntervalSeconds === 'number' && t.videostatsDefaultFlushIntervalSeconds > 0) out.flushInterval = t.videostatsDefaultFlushIntervalSeconds;
   return out;
 }
 

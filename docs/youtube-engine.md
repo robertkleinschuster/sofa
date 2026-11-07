@@ -75,6 +75,7 @@ the same.
 | `image(url)` | (NSURLSession in Sofa) | `{mimeType, data: bytes}`: a picture of i.ytimg.com / yt3.ggpht.com / yt3.googleusercontent.com, the page's fetch (status of the host on failure) |
 | `loungeRequest(method, url, body)` | (libcurl in Sofa) | `{status, data: bytes}`: a request to www.youtube.com/api/lounge (docs/youtube-lounge.md) |
 | `loungePoll(id, url)` | (libcurl in Sofa) | `true`; the bind channel's bytes follow as `lounge {id, data}` events, then `lounge {id, end, status, error?}` (status 0 = cut off); a new poll ends the earlier |
+| `report(sid, state)` | (none - the web player's own pings) | `{state: playing\|paused\|buffering\|ended, position, lactMs}` or `{state: closed}` from Sofa's player (SFYTViewReport): the view's stats pings (below); false = not reported |
 | `block(state)` | (breaker file) | Sofa's breaker file changed |
 | `health()` | `GET /health` | libraries, user agent, origin, on youtube.com, engine counters |
 
@@ -167,6 +168,27 @@ the design: **the engine is not driven over WebDriver BiDi/Marionette** but thro
 **Measured through the extension** (`live-extension.test.ts`, 2026-11-06, no remote agent, Xvfb):
 `sps=1` - stream protection accepts the engine's token; 110 s of 1080p VP9 + Opus in one SABR run,
 14 MB in 12 s, no CSP violation.
+
+## Playback reporting
+
+A view of Sofa's player reports itself as youtube.com's player does (`lib/report.ts`, page side
+`web/pagereport.ts`), modelled on captures of the real player (2026-11-07, Firefox 153, fresh
+profile): `stats/playback` + `ptracking` when it first plays; `stats/watchtime` on the player
+response's flush slots (`videostatsScheduledFlushWalltimeSeconds` 10/20/30 - measured ~2 s earlier
+from the player's start - then every `videostatsDefaultFlushIntervalSeconds`), at a pause or the end
+(`state=paused`, the pending slot as `rti`, no `rtn`) and on leaving (`pe=1`, then `final=1`);
+`stats/qoe` (streamingstats) ~1 s after the start, after ~10 s, every 30 s, at the end and on leaving.
+Same parameters and order as the player (base URL params it does not set appended, empty ones
+dropped, `euri` bare), sent to www.youtube.com (not the base's s.youtube.com) with body
+`session_token=<XSRF_TOKEN>` - XHR (form) for playback/watchtime, fetch for qoe (text) and ptracking
+(GET). From the page: `cl` = the player script's build (`cl:(N).toString()` in base.js, not
+PAGE_CL), `fexp` = the watch player's `serializedExperimentIds` ("v1", ids >= 1e8 first, deltas),
+`hl` from the player script's locale path, the client fields from INNERTUBE_CONTEXT. Sofa reports
+state changes and every 10 s while playing; `lact` = ms since the last remote key press; segments
+(`st`/`et`) as lists across seeks; a rebuffer keeps the segment open. One cpn per view (the SABR
+session's). Not sent: `stats/atr` (a BotGuard attestation; its challenge is not in the player
+response - source unknown) and qoe's `ctmp`/`vfs`/`afs` details (counters of the player's internal
+state). Local copies, lives and downloads report nothing.
 
 ## Channel: Sofa <-> engine (WebExtension, no remote control)
 

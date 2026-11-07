@@ -9,6 +9,7 @@
 #import "SFYTEngine.h"
 #import "SFYTBreaker.h"
 #import "SFLounge.h"
+#import "SFYTViewReport.h"
 #import "SFFollows.h"
 #import "SFNet.h"
 #import "SFHostFetch.h"
@@ -48,6 +49,7 @@
     SFRegisterHostFetcher(@[@".ytimg.com", @".ggpht.com", @"yt3.googleusercontent.com"], ^(NSURL *url, SFHostFetchDone done) {
         [[SFYTEngine shared] image:url done:done];
     });
+    [SFYTViewReport start];   // the player's state -> the view's stats pings, like youtube.com's player
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
 }
 

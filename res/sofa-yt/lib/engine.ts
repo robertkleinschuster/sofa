@@ -12,6 +12,8 @@ import { fetchVtt } from './subs.ts';
 import { errorMessage, toError } from './errors.ts';
 import { log } from './log.ts';
 import { background } from './timers.ts';
+import { ViewReporter } from './report.ts';
+import type { PlayerState, ReportClient, ReportDeps } from './report.ts';
 import type { Breaker } from './breaker.ts';
 import type { PoTokenProvider } from './webpo.ts';
 import type { AppEndpoint, EndscreenElement, HlsInfo, VodInfo, YouTube, YouTubeErrorFlags } from './youtube.ts';
@@ -48,9 +50,17 @@ export interface EngineOptions {
   pageFetch?: typeof fetch;
   /** Resident memory in MB for health(), where the runtime can tell. */
   memoryMB?: () => number;
+  /** A view's stats pings (lib/report.ts): the page's client facts and the transport. Absent: no reporting. */
+  reporting?: Reporting;
 }
 
 export type Session = PlaybackSession | LiveSession;
+
+/** What report() needs from the page: its client facts (once; null = not available) and the requests. */
+export interface Reporting {
+  client(): Promise<ReportClient | null>;
+  deps: Omit<ReportDeps, 'media'>;
+}
 
 /** An engine failure: the status and body an adapter answers with. */
 export class EngineError extends Error {
@@ -205,6 +215,12 @@ export interface Engine {
    * Only those hosts; not paused by the breaker (pictures are what every visit loads).
    */
   image(url: string): Promise<{ mimeType: string; bytes: Uint8Array }>;
+  /**
+   * The player's state for session `sid` (Sofa's player, docs/youtube-engine.md "Playback
+   * reporting"): the view's stats pings follow from it like youtube.com's player sends them;
+   * `closed` ends the view. false: not reported (no such VOD session, no tracking, no reporting).
+   */
+  report(sid: string, state: PlayerState | { state: 'closed' }): Promise<boolean>;
   health(): EngineHealth;
   shutdown(): void;
 }
@@ -216,8 +232,16 @@ const IMAGE_TIMEOUT_MS = 20000;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;   // one channel answer (base64) stays below Sofa's post limit
 
 export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg = {}, idleMs = SESSION_IDLE_MS, maxSessions = MAX_SESSIONS,
-  sweepMs = 30000, fetchFn = fetch, liveCfg = {}, pageFetch = fetch, memoryMB }: EngineOptions): Engine {
+  sweepMs = 30000, fetchFn = fetch, liveCfg = {}, pageFetch = fetch, memoryMB, reporting }: EngineOptions): Engine {
   const sessions = new Map<string, Session>();
+  const views = new Map<string, ViewReporter>();   // sid -> the view of Sofa's player on it
+  let reportClient: Promise<ReportClient | null> | null = null;
+  // the views' clock: their pings are due within a fraction of a second, so a 250-ms tick while there is a view
+  let viewTicker: ReturnType<typeof setInterval> | null = null;
+  const tickViews = (): void => {
+    if (views.size && !viewTicker) viewTicker = background(setInterval(() => { for (const v of views.values()) v.tick(); }, 250));
+    if (!views.size && viewTicker) { clearInterval(viewTicker); viewTicker = null; }
+  };
   const fetchedTotal = { ms: 0, bytes: 0, runs: 0 }; // media pulled by closed sessions
 
   function sweep() {
@@ -230,6 +254,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
   const sweeper = background(setInterval(sweep, sweepMs));
 
   function forget(s: Session): void {
+    endView(s.sid);
     if (!sessions.delete(s.sid)) return;
     fetchedTotal.ms += s.fetched.video.ms; fetchedTotal.bytes += s.fetched.video.bytes + s.fetched.audio.bytes;
     fetchedTotal.runs += s.runs || 0;
@@ -239,6 +264,47 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     const f = { ...fetchedTotal };
     for (const s of sessions.values()) { f.ms += s.fetched.video.ms; f.bytes += s.fetched.video.bytes + s.fetched.audio.bytes; f.runs += s.runs || 0; }
     return { videoSec: Math.round(f.ms / 1000), MB: +(f.bytes / 1048576).toFixed(1), sabrRuns: f.runs };
+  }
+
+  function endView(sid: string): void {
+    const v = views.get(sid);
+    if (!v) return;
+    views.delete(sid);
+    v.close();
+    tickViews();
+  }
+
+  async function report(sid: string, st: PlayerState | { state: 'closed' }): Promise<boolean> {
+    if (st.state === 'closed') { const had = views.has(sid); endView(sid); return had; }
+    const s = sessions.get(sid);
+    if (!reporting || !s || s.closed || s.kind !== 'sabr') return false;
+    let v = views.get(sid);
+    if (!v) {
+      const tracking = (s.info as VodInfo).tracking;
+      if (!tracking?.playback || !tracking.watchtime) return false;
+      reportClient ??= reporting.client().catch((e: unknown) => { log('report: no client facts:', errorMessage(e)); return null; });
+      const client = await reportClient;
+      if (!client) { reportClient = null; return false; }   // asked again next time
+      if (views.has(sid)) v = views.get(sid)!;   // another report got here first
+      else {
+        if (s.closed) return false;
+        let last = { bytes: s.fetched.video.bytes + s.fetched.audio.bytes, at: Date.now() };
+        v = new ViewReporter({ cpn: s.cpn, tracking, lenS: (s.video.fmt.durationMs || s.info.durationMs) / 1000, fmt: s.video.fmt.itag,
+          afmt: s.audioFormats.get(s.mainAudioKey)?.itag ?? 0 }, client, {
+          ...reporting.deps,
+          media: () => {   // throughput since the last qoe ping
+            const bytes = s.fetched.video.bytes + s.fetched.audio.bytes, at = Date.now();
+            const m = { aheadS: s.bufferedAheadS(), bytes: bytes - last.bytes, seconds: (at - last.at) / 1000 };
+            last = { bytes, at };
+            return m;
+          },
+        });
+        views.set(sid, v);
+        tickViews();
+      }
+    }
+    v.update(st);
+    return true;
   }
 
   /** The open session `sid` (404 otherwise). */
@@ -546,6 +612,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     segment,
     subtitles,
     status: (sid) => session(sid).status(),
+    report,
     innertube,
     suggest,
     availability,
@@ -557,6 +624,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     }),
     shutdown() {
       clearInterval(sweeper);
+      for (const sid of [...views.keys()]) endView(sid);
       for (const s of sessions.values()) s.close('shutdown');
       log('media pulled this run:', JSON.stringify(fetchedNow()));
       sessions.clear();
