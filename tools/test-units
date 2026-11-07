@@ -2,20 +2,31 @@
 # test-units -- unit tests of pure functions (no app instance): tests/units/*.m are linked against
 # SFCore.m plus the sources named in their first line ("// sources: src/Library/X.m ...") and must exit 0.
 # A "// flags: ..." line (second line) adds compiler/linker flags, e.g. a library the sources link
-# (paths relative to the repository).
+# (paths relative to the repository). Built and run in parallel (SFCore compiled once).
 set -u
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-units.XXXXXX")"; trap 'rm -rf "$OUT"' EXIT
+# SFCore once, then every test built and run in parallel; results printed in file order
+CFLAGS=(-fobjc-arc -I"$SRC/src/Core" -I"$SRC/src/Framework")
+/usr/bin/clang "${CFLAGS[@]}" -c "$SRC/src/Core/SFCore.m" -o "$OUT/SFCore.o" 2>"$OUT/SFCore.log" || { echo "FAIL SFCore (build)"; cat "$OUT/SFCore.log"; exit 1; }
+unit() {   # unit TEST: build and run; its verdict line in $OUT/NAME.verdict, details after it
+  local t=$1 n; n=$(basename "$1" .m)
+  local extra=() flags=() s f
+  for s in $(sed -n '1s|^// sources: ||p' "$t"); do extra+=("$SRC/$s"); done
+  for f in $(sed -n '2s|^// flags: ||p' "$t"); do flags+=("$f"); done
+  if ! /usr/bin/clang "${CFLAGS[@]}" "$t" "$OUT/SFCore.o" ${extra[@]+"${extra[@]}"} ${flags[@]+"${flags[@]}"} \
+       -framework AppKit -framework QuartzCore -undefined dynamic_lookup -o "$OUT/$n" 2>"$OUT/$n.log"; then
+    { echo "FAIL $n (build)"; cat "$OUT/$n.log"; } > "$OUT/$n.verdict"; return; fi
+  if "$OUT/$n" > "$OUT/$n.out" 2>&1; then echo "ok   $n" > "$OUT/$n.verdict"
+  else { echo "FAIL $n"; cat "$OUT/$n.out"; } > "$OUT/$n.verdict"; fi
+}
+for t in "$SRC"/tests/units/*.m; do unit "$t" & done
+wait
 fail=0
 for t in "$SRC"/tests/units/*.m; do
-  n=$(basename "$t" .m)
-  extra=(); for s in $(sed -n '1s|^// sources: ||p' "$t"); do extra+=("$SRC/$s"); done
-  flags=(); for f in $(sed -n '2s|^// flags: ||p' "$t"); do flags+=("$f"); done
-  if ! /usr/bin/clang -fobjc-arc -I"$SRC/src/Core" -I"$SRC/src/Framework" "$t" "$SRC/src/Core/SFCore.m" ${extra[@]+"${extra[@]}"} \
-       ${flags[@]+"${flags[@]}"} -framework AppKit -framework QuartzCore -undefined dynamic_lookup -o "$OUT/$n" 2>"$OUT/$n.log"; then
-    echo "FAIL $n (build)"; cat "$OUT/$n.log"; fail=1; continue; fi
-  if "$OUT/$n" > "$OUT/$n.out" 2>&1; then echo "ok   $n"; else echo "FAIL $n"; cat "$OUT/$n.out"; fail=1; fi
+  v="$OUT/$(basename "$t" .m).verdict"
+  cat "$v"; head -1 "$v" | grep -q '^ok' || fail=1
 done
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail
