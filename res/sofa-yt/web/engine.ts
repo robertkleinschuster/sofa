@@ -25,6 +25,8 @@ import { pageSessions } from './pagesession.ts';
 import { documentMinter } from './pagebotguard.ts';
 import { onYouTubePage } from './page.ts';
 import { initTrustedTypes } from './trusted.ts';
+import { watchConsent } from './consent.ts';
+import type { ConsentTarget } from './consent.ts';
 
 /** How Sofa starts the engine. */
 export interface EngineConfig {
@@ -44,7 +46,8 @@ export interface EngineConfig {
 export type EngineEvent =
   | { type: 'ready'; userAgent: string; url: string }   // injected into a document (preload script ran)
   | { type: 'log'; line: string }
-  | { type: 'block'; state: BlockState };
+  | { type: 'block'; state: BlockState }
+  | ({ type: 'consent' } & ConsentTarget);   // the consent dialog's accept button, for Sofa to click (consent.ts)
 
 /** Every call's answer: a value or the status + body an HTTP server would answer with. */
 export type Reply<T> = { ok: true; value: T } | { ok: false; status: number; body: { error: string } & Record<string, unknown> };
@@ -125,6 +128,7 @@ export const sofaEngine: SofaEngine = {
     });
     setLogSink((line) => send({ type: 'log', line }));
     send({ type: 'ready', userAgent: navigator.userAgent, url: location.href });
+    watchConsent((target) => send({ type: 'consent', ...target }));
   },
 
   start(cfg) {
