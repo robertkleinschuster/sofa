@@ -202,10 +202,14 @@ static void onWakeup(void *ctx) {
     [self.delegate engineStatusChanged];
 }
 
-// Self-healing: the file has a video track but no video output is configured (vo init failed,
-// e.g. a render-context race) -> re-select the video track so mpv re-creates the vo. Up to 3 tries.
+// Self-healing: playback runs, the file has a video track, but no video output is configured (vo
+// init failed, e.g. a render-context race: audio only) -> re-select the video track so mpv
+// re-creates the vo. Up to 3 tries.
 - (void)healVideoOutput {
     if (_voHeals >= 3 || !_layer.hasRenderContext) return;
+    // only once playback runs: before it, mpv has simply not decoded a first frame yet - a slow
+    // stream start looked "missing" and re-selecting the track restarted its decoding (2026-11-07)
+    if (!_started) { _voDownTicks = 0; return; }
     BOOL hasVideo = NO;
     NSInteger n = [[self prop:@"track-list/count"] integerValue];
     for (NSInteger i = 0; i < n && !hasVideo; i++)
