@@ -87,10 +87,13 @@ static NSArray *marked(NSArray *items) {
 
 + (SFScreen *)homeScreen {
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
-        [[SFLibrary shared] whenReady:^{
-            NSArray *shelves = [SFHomeSection shelvesFrom:[self homeSections]];
-            SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
-            done(p, nil);
+        // one build with everything Home shows at once: the library and the stored feature rows
+        [[SFHomeFeatures shared] whenRestored:^{
+            [[SFLibrary shared] whenReady:^{
+                NSArray *shelves = [SFHomeSection shelvesFrom:[self homeSections]];
+                SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
+                done(p, nil);
+            }];
         }];
     } theme:[SFTheme themeNamed:@"home"]];
     s.showsHero = YES;

@@ -58,6 +58,8 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
     NSTimer *_timer, *_boundary;
     NSDate *_lastRefresh;
     BOOL _asleep;               // the screen sleeps: nobody sees Home, nothing is asked
+    BOOL _restored;             // the stored rows are in (or there were none)
+    NSMutableArray *_whenRestored;
 }
 
 + (instancetype)shared {
@@ -230,9 +232,28 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
     [[SFStore shared] cacheJSON:d forKey:kStoreKey];
 }
 
+- (void)whenRestored:(dispatch_block_t)block {
+    if (_restored) { block(); return; }
+    if (!_whenRestored) _whenRestored = [NSMutableArray new];
+    [_whenRestored addObject:[block copy]];
+}
+
+// The stored rows are read off the main thread: at launch the cache read (sqlite on the cold HDD)
+// held the main thread 1.1-1.9 s (hitch monitor 2026-11-08). Home waits for them (whenRestored:)
+// and builds once - with the rows, not without and then again.
 - (void)restore {
-    NSDictionary *d = [[SFStore shared] cachedJSON:kStoreKey maxAge:7 * 86400];
-    if (![d isKindOfClass:[NSDictionary class]]) return;
+    SFBackground(^{
+        NSDictionary *d = [[SFStore shared] cachedJSON:kStoreKey maxAge:7 * 86400];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self->_lists && [d isKindOfClass:[NSDictionary class]]) [self adoptStored:d];   // a refresh that came first is newer
+            self->_restored = YES;
+            NSArray *waiting = self->_whenRestored; self->_whenRestored = nil;
+            for (dispatch_block_t b in waiting) b();
+        });
+    });
+}
+
+- (void)adoptStored:(NSDictionary *)d {
     NSMutableDictionary *lists = [NSMutableDictionary new];
     for (NSString *topic in d) {
         if (![d[topic] isKindOfClass:[NSDictionary class]]) continue;

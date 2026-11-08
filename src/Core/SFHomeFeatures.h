@@ -29,6 +29,7 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page);
 + (instancetype)shared;
 - (void)start;                                   // restore the stored rows, refresh now + periodically
 - (void)refresh;                                 // ask every app again (coalesced while running)
+- (void)whenRestored:(dispatch_block_t)block;    // main thread: once the stored rows are in (at once after that)
 - (NSArray *)itemsForTopic:(NSString *)topic;    // merged; main thread; copies, marked showsSourceMark; only
                                                  // what plays here (no drm, no geoRegion the device is outside of),
                                                  // nothing watched already
