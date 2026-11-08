@@ -90,6 +90,9 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
 
   const client = (url: string): string => clientSabrUrl(url, o.cpn, o.info.clientVersion);
   const reload = freshReloads(o.reload, o.info.sabrUrl, client);
+  // a run's first media: how long a start (or seek) waits on YouTube - one line per run
+  const t0 = Date.now();
+  let requests = 0;
   const sabr = new SabrStream({
     videoId: o.info.id,
     formats: o.formats.map((f) => f.sabr),
@@ -99,9 +102,21 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     poToken: o.poToken,
     // SabrStream calls this.fetchFunction(...): the browser's fetch must not run with `this` set to the
     // stream ("does not implement interface Window"; node does not care) - always call the global one
-    fetchFunction: (input, init) => fetch(input, init),
+    // timed (debug): where a run's ~4 s before its first segment go - the token, the request's
+    // answer, or after it (2026-11-08: every run waited 4.05 s)
+    fetchFunction: async (input, init) => {
+      const n = ++requests, at = Date.now();
+      const r = await fetch(input, init);
+      if (n <= 2) debug(`${tag}: request ${n} answered after ${Date.now() - at} ms (${Date.now() - t0} ms into the run, HTTP ${r.status})`);
+      return r;
+    },
     callbacks: {
-      onMintPoToken: () => o.mintPoToken(),
+      onMintPoToken: async () => {
+        const at = Date.now();
+        const token = await o.mintPoToken();
+        debug(`${tag}: PO token in ${Date.now() - at} ms (${Date.now() - t0} ms into the run)`);
+        return token;
+      },
       onReloadPlayerResponse: (ctx?: ReloadPlaybackContext) => { reloads++; log(`${tag}: SABR asks for a player reload`); return reload(ctx); },
     },
   });
@@ -166,8 +181,6 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
   }
   debug(`${tag}: started`);
 
-  // a run's first media: how long a start (or seek) waits on YouTube - one line per run
-  const t0 = Date.now();
   let firstLogged = false;
   const pumpReader = async (kind: TrackKind, stream: ReadableStream<ArrayBufferView>): Promise<void> => {
     const reader = stream.getReader();
