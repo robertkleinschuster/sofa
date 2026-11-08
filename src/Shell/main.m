@@ -16,6 +16,7 @@
 #import "SFRemote.h"
 #import "SFQuickMenu.h"
 #import "SFAudioOutput.h"
+#import "SFBluetooth.h"
 #import "SFStore.h"
 #import "SFMigration.h"
 #import "SFMPVEngine.h"
@@ -93,6 +94,12 @@ NSString *gInstance = @"view";
     self.nav.rootMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU on Home
     self.nav.holdMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU held, anywhere (user 2026-11-08)
     [SFAudioOutput start];
+    [SFBluetooth start];
+    // the headphones' own events, said on screen: another device took them, they are back
+    [[NSNotificationCenter defaultCenter] addObserverForName:SFBluetoothAudioConnectionNotification object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *n) {
+        [wnav toast:[NSString stringWithFormat:[n.userInfo[@"connected"] boolValue] ? @"%@ verbunden" : @"%@ getrennt", n.userInfo[@"name"]]];
+    }];
     [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputFellBackNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) {
         [wnav toast:[NSString stringWithFormat:@"%@ spielt gerade keinen Ton – Ton über %@", n.userInfo[@"from"], n.userInfo[@"to"]]];

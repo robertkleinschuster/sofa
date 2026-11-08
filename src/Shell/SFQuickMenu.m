@@ -119,10 +119,7 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
     [nav toast:[NSString stringWithFormat:pair ? @"Kopple %@ …" : @"Verbinde %@ …", name]];
     void (^connected)(BOOL) = ^(BOOL ok) {
         if (!ok) { [nav toast:[NSString stringWithFormat:pair ? @"Koppeln mit %@ hat nicht geklappt" : @"%@ ist nicht erreichbar – eingeschaltet?", name]]; return; }
-        [SFAudioOutput waitForOutput:d.address timeout:10 done:^(SFAudioOutput *o) {
-            if (!o) { SFLog(@"bluetooth: %@ connected, no sound output", name); [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", name]]; return; }
-            [self useOutput:o takeOver:YES on:nav];
-        }];
+        [self whenReady:d.address name:name on:nav done:^(SFAudioOutput *o) { [self useOutput:o takeOver:YES on:nav]; }];
     };
     if (pair) [SFBluetooth pair:d done:connected]; else [SFBluetooth connect:d done:connected];
 }
@@ -148,11 +145,18 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
         [nav toast:[NSString stringWithFormat:@"Hole %@ zum Mac …", o.name]];
         [SFBluetooth reconnect:address done:^(BOOL ok) {
             if (!ok) { [nav toast:[NSString stringWithFormat:@"%@ ist nicht erreichbar – eingeschaltet?", o.name]]; return; }
-            [SFAudioOutput waitForOutput:address timeout:10 done:^(SFAudioOutput *again) {
-                if (!again) { [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", o.name]]; return; }
-                [self useOutput:again takeOver:NO on:nav];
-            }];
+            [self whenReady:address name:o.name on:nav done:^(SFAudioOutput *again) { [self useOutput:again takeOver:NO on:nav]; }];
         }];
+    }];
+}
+
+// A just connected headset's output, once its audio link is up: macOS makes it the default then
+// (~5 s). Checked earlier, its start hung 15 s and failed - a working connection taken for a dead
+// one (2026-11-08). Not the default after 8 s: the output as it is (the check decides).
++ (void)whenReady:(NSString *)address name:(NSString *)name on:(SFNavigator *)nav done:(void (^)(SFAudioOutput *))done {
+    [SFAudioOutput waitForOutput:address timeout:10 done:^(SFAudioOutput *o) {
+        if (!o) { SFLog(@"bluetooth: %@ connected, no sound output", name); [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", name]]; return; }
+        [SFAudioOutput waitForCurrent:address timeout:8 done:^(SFAudioOutput *cur) { done(cur ?: o); }];
     }];
 }
 @end

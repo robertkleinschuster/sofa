@@ -14,11 +14,15 @@ NSString *const SFAudioOutputFellBackNotification = @"SFAudioOutputFellBack";
 
 @implementation SFAudioOutput
 
-static volatile int32_t gIOCalls;   // the verify IO callback's count (one verify at a time: on Queue)
+// The verify IO callback (one verify at a time: on its queue): counts the device's calls and signals
+// the waiting verify once it has seen enough - the device's own sign that it takes audio
+static const int32_t kPlaysAfter = 5;
+static volatile int32_t gIOCalls;
+static dispatch_semaphore_t gPlays;
 static OSStatus verifyIO(AudioObjectID d, const AudioTimeStamp *now, const AudioBufferList *in, const AudioTimeStamp *inTime,
                          AudioBufferList *out, const AudioTimeStamp *outTime, void *ctx) {
     for (UInt32 i = 0; i < out->mNumberBuffers; i++) memset(out->mBuffers[i].mData, 0, out->mBuffers[i].mDataByteSize);   // silence
-    OSAtomicIncrement32(&gIOCalls);
+    if (OSAtomicIncrement32(&gIOCalls) == kPlaysAfter) dispatch_semaphore_signal(gPlays);
     return noErr;
 }
 
@@ -113,6 +117,29 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
     });
 }
 
++ (void)waitForCurrent:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *))done {
+    __block id obs = nil;
+    __block BOOL over = NO;
+    void (^finish)(SFAudioOutput *) = ^(SFAudioOutput *o) {
+        if (over) return;
+        over = YES;
+        if (obs) [[NSNotificationCenter defaultCenter] removeObserver:obs];
+        obs = nil;
+        done(o);
+    };
+    void (^look)(BOOL) = ^(BOOL last) {
+        [self outputs:^(NSArray *outputs) {
+            SFAudioOutput *cur = outputs.firstObject;
+            if (cur.current && [cur.uid rangeOfString:part options:NSCaseInsensitiveSearch].location != NSNotFound) finish(cur);
+            else if (last) finish(nil);
+        }];
+    };
+    obs = [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputChangedNotification object:nil
+                                                             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { look(NO); }];
+    look(NO);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ look(YES); });
+}
+
 + (void)waitForOutput:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *))done {
     __block id obs = nil;
     __block BOOL over = NO;
@@ -135,19 +162,24 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ finish(nil); });
 }
 
-// A healthy device calls back ~40-90 times a second (512-1024 frames at 44.1 kHz); 0.6 s with
-// fewer than 5 calls is a device that takes no audio. A hanging start (StartIO timeout) blocks
-// AudioDeviceStart itself for seconds - on Queue, never on main.
+// A healthy device calls back ~40-90 times a second (512-1024 frames at 44.1 kHz): the verdict comes
+// with its 5th call (~0.1 s). No calls within 2 s is a device that takes no audio (the limit is
+// only the net for that case). A hanging start (StartIO timeout) blocks AudioDeviceStart itself
+// for seconds - on the verify queue, never on main.
 + (void)verify:(SFAudioOutput *)o done:(void (^)(BOOL))done {
-    dispatch_async(Queue(), ^{
+    // a queue of its own: a device whose start hangs (15 s, AirPods Max right after connecting,
+    // 2026-11-08) must not hold up listing and choosing outputs
+    static dispatch_queue_t vq; static dispatch_once_t once;
+    dispatch_once(&once, ^{ vq = dispatch_queue_create("sofa.audio-verify", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(vq, ^{
         AudioDeviceIOProcID proc = NULL;
         BOOL plays = NO;
         NSDate *t0 = [NSDate date];
         if (AudioDeviceCreateIOProcID(o.deviceID, verifyIO, NULL, &proc) == noErr) {
             gIOCalls = 0;
+            gPlays = dispatch_semaphore_create(0);
             if (AudioDeviceStart(o.deviceID, proc) == noErr) {
-                usleep(600000);
-                plays = gIOCalls >= 5;
+                plays = dispatch_semaphore_wait(gPlays, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0;
                 AudioDeviceStop(o.deviceID, proc);
             }
             AudioDeviceDestroyIOProcID(o.deviceID, proc);

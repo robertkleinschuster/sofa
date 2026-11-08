@@ -22,11 +22,17 @@
 - (void)pair:(NSString *)address done:(void (^)(BOOL ok))done;
 - (void)search:(void (^)(SFBluetoothDevice *device))found done:(void (^)(void))done;   // one search at a time
 - (void)stopSearch;
+- (void)watchConnections:(void (^)(SFBluetoothDevice *device))changed;   // connects and disconnects of paired audio devices
 @end
+
+// A paired audio device connected or disconnected (IOBluetooth's own events, posted on main):
+// userInfo "name", "address", "connected" (NSNumber) - e.g. another device took the headphones over
+extern NSString *const SFBluetoothAudioConnectionNotification;
 
 NSString *SFBluetoothName(NSString *name);   // a device name, repaired when IOBluetooth decoded UTF-8 as Latin-1
 
 @interface SFBluetooth : NSObject
++ (void)start;                                                          // listen for connections (at launch); idempotent
 + (BOOL)poweredOn;
 + (NSArray *)pairedAudioDevices;                                       // SFBluetoothDevice, most recently used first
 + (void)connect:(SFBluetoothDevice *)device done:(void (^)(BOOL ok))done;

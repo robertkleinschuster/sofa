@@ -23,6 +23,9 @@ extern NSString *const SFAudioOutputFellBackNotification;
 // The output whose UID contains `part` (a Bluetooth device's address: its CoreAudio UID is
 // "<address>:output"), as soon as it exists - nil after `timeout` seconds
 + (void)waitForOutput:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *output))done;
+// The same output once it is the default one - macOS makes a connecting headset the default when
+// its audio link is up (~5 s after the connection, AirPods Max); nil if it is not after `timeout`
++ (void)waitForCurrent:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *output))done;
 // Does the output take audio? Started briefly with an IO callback of its own: a device that is
 // there but plays nothing (Bluetooth headphones whose audio link hangs - "StartIO timeout",
 // AirPods Max 2026-11-08) calls it back rarely or never. mpv's audio clock stands still on such a

@@ -1,6 +1,8 @@
 #import "SFBluetooth.h"
 #import <IOBluetooth/IOBluetooth.h>
 
+NSString *const SFBluetoothAudioConnectionNotification = @"SFBluetoothAudioConnection";
+
 @implementation SFBluetoothDevice
 + (instancetype)deviceWithAddress:(NSString *)address name:(NSString *)name paired:(BOOL)paired connected:(BOOL)connected {
     SFBluetoothDevice *d = [self new];
@@ -95,6 +97,23 @@ static IOReturn OpenAuthenticated(IOBluetoothDevice *d, id target) {
     IOBluetoothDeviceInquiry *_inquiry;
     void (^_found)(SFBluetoothDevice *);
     void (^_done)(void);
+    void (^_changed)(SFBluetoothDevice *);
+}
+
+- (void)watchConnections:(void (^)(SFBluetoothDevice *))changed {
+    _changed = [changed copy];
+    [IOBluetoothDevice registerForConnectNotifications:self selector:@selector(connected:device:)];
+    for (IOBluetoothDevice *d in [IOBluetoothDevice pairedDevices])   // those connected already: their disconnect
+        if (d.isConnected && d.deviceClassMajor == kBluetoothDeviceClassMajorAudio) [d registerForDisconnectNotification:self selector:@selector(disconnected:device:)];
+}
+- (void)connected:(IOBluetoothUserNotification *)n device:(IOBluetoothDevice *)d {
+    if (d.deviceClassMajor != kBluetoothDeviceClassMajorAudio) return;
+    [d registerForDisconnectNotification:self selector:@selector(disconnected:device:)];
+    if (_changed) _changed([SFBluetoothDevice deviceWithAddress:d.addressString name:SFBluetoothName(d.name) paired:d.isPaired connected:YES]);
+}
+- (void)disconnected:(IOBluetoothUserNotification *)n device:(IOBluetoothDevice *)d {
+    [n unregister];
+    if (_changed) _changed([SFBluetoothDevice deviceWithAddress:d.addressString name:SFBluetoothName(d.name) paired:d.isPaired connected:NO]);
 }
 
 - (BOOL)poweredOn { return [IOBluetoothHostController defaultController].powerState == kBluetoothHCIPowerStateON; }
@@ -178,6 +197,16 @@ static id<SFBluetoothRadio> Radio(void) {
 static NSString *Label(SFBluetoothDevice *d) { return d.name.length ? d.name : d.address; }
 
 @implementation SFBluetooth
++ (void)start {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        [Radio() watchConnections:^(SFBluetoothDevice *d) {
+            SFLog(@"bluetooth: %@ %@", Label(d), d.connected ? @"connected" : @"disconnected");
+            [[NSNotificationCenter defaultCenter] postNotificationName:SFBluetoothAudioConnectionNotification object:nil
+                userInfo:@{@"name": Label(d), @"address": d.address ?: @"", @"connected": @(d.connected)}];
+        }];
+    });
+}
 + (BOOL)poweredOn { return [Radio() poweredOn]; }
 + (NSArray *)pairedAudioDevices { return [Radio() pairedAudioDevices]; }
 

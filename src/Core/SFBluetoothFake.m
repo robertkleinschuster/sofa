@@ -55,4 +55,5 @@ static void After(double s, dispatch_block_t b) { dispatch_after(dispatch_time(D
 }
 
 - (void)stopSearch { _search++; }
+- (void)watchConnections:(void (^)(SFBluetoothDevice *))changed {}   // (the fake's connects answer their callers directly)
 @end
