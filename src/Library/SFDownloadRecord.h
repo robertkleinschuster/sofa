@@ -24,7 +24,6 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 @property (nonatomic) double progress;              // 0..1 while loading
 @property (nonatomic) NSTimeInterval expires;       // a pre-buffered episode goes then (sooner once watched); 0 = kept
 @property (nonatomic, copy) NSString *thumb;        // local thumbnail
-@property (nonatomic) unsigned long long bytes;     // its tracks' size in the store (Done)
 @property (nonatomic) NSTimeInterval added;         // when it was requested (queue order)
 @property (nonatomic) NSTimeInterval published;     // publication time (exact when the source gave one); 0 = unknown
 @property (nonatomic, copy) NSString *sub;          // the subscription that fetched it; nil = manual

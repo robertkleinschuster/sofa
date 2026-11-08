@@ -89,14 +89,14 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
         if (o == 0) { gone++; continue; }
         if (o < 0) { unchecked++; continue; }
         [ok addObject:i];
-        bytes += [dl recordFor:i].bytes;
+        bytes += [dl bytesOf:i];
     }
     return @{@"ids": ok, @"bytes": @(bytes), @"gone": @(gone), @"unchecked": @(unchecked)};
 }
 
 + (unsigned long long)bytesOf:(NSArray *)ids {
     unsigned long long n = 0;
-    for (NSString *i in ids) n += [[SFDownloads shared] recordFor:i].bytes;
+    for (NSString *i in ids) n += [[SFDownloads shared] bytesOf:i];
     return n;
 }
 
@@ -183,7 +183,7 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
             SFDownloadRecord *r = [dl recordFor:i];
             if (!r) continue;
             SFItem *c = [it copy];
-            c.subtitle = SFDotJoin(c.channel, SFFormatBytes(r.bytes));
+            c.subtitle = SFDotJoin(c.channel, SFFormatBytes([dl bytesOf:i]));
             if ([dl isKept:i]) { [keptItems addObject:c]; continue; }
             if ([dl onlineStateFor:i] == 0) [goneItems addObject:c];
             if ([st progressFor:i] >= 1) [watched addObject:i];

@@ -103,7 +103,6 @@
             // a subscription episode is pre-buffered: it goes after a while (SFDownloads+Subscriptions
             // expirePrebuffers); a manual download stays
             r.expires = r.sub ? [NSDate date].timeIntervalSince1970 + kPrebufferDays * 86400.0 : 0;
-            r.bytes = (unsigned long long)[self.mediaStore bytesOfItem:ident];
             [self fetchThumb:item rec:r];
             [self finish:ident ok:YES error:nil];
         });

@@ -166,6 +166,11 @@
             [self exec:@"ALTER TABLE downloads DROP COLUMN path"];
             [self exec:@"ALTER TABLE downloads DROP COLUMN store"];
         },
+        // 17: a download's size is the media store's (its per-item byte sums, read live) - the copy
+        // taken when a download finished went stale once its bytes changed (eviction, a refill)
+        ^{
+            [self exec:@"ALTER TABLE downloads DROP COLUMN bytes"];
+        },
     ];
 }
 

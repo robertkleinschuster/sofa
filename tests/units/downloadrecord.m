@@ -14,12 +14,12 @@ static NSDictionary *written(NSArray *w) {   // the statement's columns -> value
 int main(void){ @autoreleasepool {
   // a finished subscription episode after a failed attempt, checked online, kept, expiring
   NSDictionary *full = @{@"id": @"example:1", @"source": @"example", @"channel": @"Show", @"item": @"{\"id\":\"example:1\"}",
-                         @"state": @2, @"progress": @1.0, @"thumb": @"/x/1.jpg", @"bytes": @123456789012LL,
+                         @"state": @2, @"progress": @1.0, @"thumb": @"/x/1.jpg",
                          @"added": @100.5, @"published": @90.0, @"sub": @"exampleshow:a", @"error": @"timeout", @"tries": @2,
                          @"retryAt": @2000.0, @"keep": @1, @"online": @0, @"onlineAt": @1500.0, @"expires": @3000.0};
   SFDownloadRecord *r = [SFDownloadRecord recordWithRow:full];
   expect(r.state == SFDLDone && r.retryAt == 2000 && r.tries == 2, "state, next attempt, attempts");
-  expect(r.bytes == 123456789012ULL && r.keep && r.online == 0, "bytes (> 4 GB), kept, gone at its source");
+  expect(r.keep && r.online == 0, "kept, gone at its source");
   NSDictionary *w = written(r.writeStatement);
   NSMutableDictionary *expected = [full mutableCopy]; [expected removeObjectForKey:@"item"];   // the item lives in items
   BOOL same = w.count == expected.count;

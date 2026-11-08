@@ -224,7 +224,7 @@ for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0
 grep -q "downloads: done $REF" "$LOG" && ok "fill resumed and finished" || bad "fill not finished: $(grep "$REF\|downloads" "$LOG" | tail -3)"
 grep -q "example: filled $REF piece 0" "$LOG" && bad "the resume fetched stored pieces again" || ok "the resume fetched only the rest"
 check "a download: its tile has the download mark" "$(chip $REF)" "↓ Offline"
-check "done, its bytes" "$(SQ "select state || '/' || bytes from downloads where id='$REF'")" "2/8388608"
+check "done" "$(SQ "select state from downloads where id='$REF'")" "2"
 check "its track in the store, complete" "$(SS "select count(*) || '/' || sum(e.end - e.start) from tracks t join extents e on e.track = t.id where t.item='$REF'")" "1/8388608"
 quit
 # the second block file (pieces 4-7) deleted from outside: noticed at start, queued again, only the
@@ -287,7 +287,7 @@ grep -q "media-proxy: filling example:2" "$LOG" && grep -q "downloads: done exam
   || bad "not filled: $(grep 'example:2\|media-proxy' "$LOG" | tail -3)"
 pgrep -f "ffmpeg.*example" >/dev/null && bad "an ffmpeg ran" || ok "no ffmpeg"
 SIZE=$(stat -f %z "$T/good.mp4")
-check "a download of the whole file" "$(SQ "select state || '/' || bytes from downloads where id='example:2'")" "2/$SIZE"
+check "a download of the whole file" "$(SQ "select state from downloads where id='example:2'")/$(SS "select sum(e.end - e.start) from tracks t join extents e on e.track = t.id where t.item='example:2'")" "2/$SIZE"
 check "its manifest: a file item" "$(SS "select json_extract(json, '$.kind') || '/' || json_extract(json, '$.total') from manifests where item='example:2'")" "file/$SIZE"
 # playing (online) buffers through the proxy: what the player read is on disk afterwards
 m=$(wc -l < "$LOG")

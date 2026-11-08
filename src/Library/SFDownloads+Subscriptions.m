@@ -136,7 +136,7 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
         BOOL due = now >= r.expires || (seen > 0 && now >= seen + kAfterWatchedDays * 86400.0);
         if (!due) continue;
         SFLog(@"downloads: pre-buffered %@ expired (%@) - its bytes are buffer now", r.identifier, seen > 0 ? @"watched" : @"not watched in time");
-        r.state = SFDLDismissed; r.expires = 0; r.bytes = 0; r.progress = 0;   // unpinned: evicted when room is needed
+        r.state = SFDLDismissed; r.expires = 0; r.progress = 0;   // unpinned: evicted when room is needed
         [writes addObject:[self write:r]];
         [self changed:r.identifier];
     }

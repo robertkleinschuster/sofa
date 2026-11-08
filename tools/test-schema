@@ -17,9 +17,11 @@
 #  15  downloads.expires: pre-buffered episodes expire; existing rows kept (NULL)
 #  16  one kind of download (the media store's): file downloads' files and thumbnails deleted, empty
 #      folders too; a subscription episode stays dismissed, a manual one leaves; path and store go
+#  17  downloads.bytes goes: a download's size is the media store's (read live)
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
+LATEST=17   # the newest schema step (SFStore+Schema.m migrations)
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
@@ -94,7 +96,7 @@ ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 16
+check "schema version" "$(Q 'pragma user_version')" $LATEST
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
@@ -133,9 +135,10 @@ check "13: original titles (id -> the uploader's title)" "$(Q "select group_conc
 check "15: downloads.expires, existing downloads kept" "$(Q "select count(*) || '/' || sum(expires is null) from downloads where id in ('example:6')")" "1/1"
 check "16: files, thumbnail and the emptied folders deleted, others kept" \
   "$(cd "$SOFA_DATA_DIR/Downloads" && find . -type f -not -path './.store/*' | sort | tr '\n' ' ')" "./other/keep.mp4 "
-check "16: the subscription episode dismissed, the manual one gone" "$(Q "select group_concat(id || '=' || state || '/' || bytes || '/' || ifnull(thumb, '-'), ' ') from downloads where id in ('example:8','example:9')")" "example:9=4/0/-"
+check "16: the subscription episode dismissed, the manual one gone" "$(Q "select group_concat(id || '=' || state || '/' || ifnull(thumb, '-'), ' ') from downloads where id in ('example:8','example:9')")" "example:9=4/-"
 check "11+16: a file with a pending repair: dismissed, nothing pending" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || tries || ' ' || ifnull(retryAt, '-') from downloads where id='example:10'")" "4 - 0 -"
 check "16: no path, no store column" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('path','store')")" 0
+check "17: no bytes column (a download's size is the media store's)" "$(Q "select count(*) from pragma_table_info('downloads') where name = 'bytes'")" 0
 check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2722"
 
 echo "==> restart (no step runs twice)"
@@ -147,7 +150,7 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 16
+check "schema version" "$(Q 'pragma user_version')" $LATEST
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
   "downloads follow_items follows items original_titles progress recent_searches settings stats subscriptions watch_later"

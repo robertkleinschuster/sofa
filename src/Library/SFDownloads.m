@@ -194,10 +194,15 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     return out;
 }
 
+- (unsigned long long)bytesOf:(NSString *)ident {
+    long long n = ident ? [self.mediaStore bytesOfItem:ident] : 0;
+    return n > 0 ? (unsigned long long)n : 0;
+}
+
 - (unsigned long long)bytesUsedFor:(NSString *)source {
     unsigned long long n = 0;
     for (SFDownloadRecord *r in _recs.allValues)
-        if (r.state == SFDLDone && (!source || [r.source isEqualToString:source])) n += r.bytes;
+        if (r.state == SFDLDone && (!source || [r.source isEqualToString:source])) n += [self bytesOf:r.identifier];
     return n;
 }
 
@@ -302,7 +307,7 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
     [self pruneEmptyDirs:[r.thumb stringByDeletingLastPathComponent]];
     if (r.sub) {   // subscription episode: remember it so it does not come back
-        r.state = SFDLDismissed; r.bytes = 0; r.thumb = nil;
+        r.state = SFDLDismissed; r.thumb = nil;
         [self save:r];
     } else {
         [_recs removeObjectForKey:identifier];
