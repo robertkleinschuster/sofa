@@ -94,6 +94,13 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
     return CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)o);
 }
 
+// How long one picture fetch may hold a fetch slot (tests shorten it)
+static NSTimeInterval SFImageFetchLimit(void) {
+    static NSTimeInterval t; static dispatch_once_t o;
+    dispatch_once(&o, ^{ t = SFDevSeconds(@"SOFA_IMAGE_FETCH_LIMIT", 30); });
+    return t;
+}
+
 - (void)imageForSource:(NSString *)src maxPixel:(CGFloat)px blurred:(BOOL)blur
             completion:(void (^)(CGImageRef))done {
     if (!src.length) { done(NULL); return; }
@@ -173,8 +180,8 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             own(url, ^(NSData *data, NSInteger st) { stored(data, st); dispatch_semaphore_signal(sem); });   // promises an answer (its calls time out)
             // bounded like _net below: a fetcher that broke its promise must not hold one of the
             // six slots for the session; the waiters get no picture, a late answer still fills the cache
-            if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC))) {
-                SFLog(@"images: %@ gave no answer in 30 s", url.host);
+            if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SFImageFetchLimit() * NSEC_PER_SEC)))) {
+                SFLog(@"images: %@ gave no answer in %.0f s", url.host, SFImageFetchLimit());
                 finish(NULL);
             }
         }];
@@ -198,7 +205,7 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             stored(data, data ? code : 0);
             dispatch_semaphore_signal(sem);
         }] resume];
-        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
+        dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SFImageFetchLimit() * NSEC_PER_SEC)));
     }];
 }
 @end

@@ -181,6 +181,10 @@ m=$(mark); cmd "play example:2"; waitlog $m 'mpv: first frame' 40; cmd "mpvset t
 waitlog $m 'player: end ' 60
 since $m | grep -q 'player: end waits for the recommendation' && ok "the end waits for it" || bad "did not wait: $(since $m | grep 'player:\|example:' | tail -3 | tr '\n' '|')"
 waitlog $m 'player: end -> up next: Mandelbrot' 40 && ok "then shows it" || bad "no up-next card: $(since $m | grep 'player: end' | tail -2 | tr '\n' '|')"
+# a jump collected on the card (RIGHT = +30 s, committed after 0.7 s) must not carry into the video
+# OK starts right away: it begins at its start, not 30 s in
+m=$(mark); cmd "key right"; cmd "key select"; waitlog $m 'mpv: first frame' 40; sleep 1.5; p=$(pos)
+awk "BEGIN{exit !($p < 10)}" 2>/dev/null && ok "a jump pending on the card stays with the old video ($p s)" || bad "the next video jumped to $p s"
 stop
 export SOFA_EXAMPLE_UPNEXT=30   # an answer that does not come in time
 start
