@@ -117,6 +117,10 @@ static void onWakeup(void *ctx) {
             // media at 0 first - on a streamed track a whole fetch (5-6 s each for video and audio,
             // 2026-11-07); YouTube's and the media libraries' files start at 0
             {"demuxer-mkv-probe-start-time", "no"},
+            // nor the first video packets (still-image check): with the engine serving the first
+            // Cluster ID, opening reads nothing past the headers - option of our mpv overlay port
+            // (patch-mkv-probe-image.diff); the start point's media is all a resumed start fetches
+            {"demuxer-mkv-probe-image", "no"},
         };
         for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
         // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
