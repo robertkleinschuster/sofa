@@ -7,7 +7,6 @@
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
-#import "SFMigration.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
@@ -175,12 +174,6 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         [SFHome showSettingsOn:self.nav];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
-    } else if ([cmd isEqualToString:@"dlverify"] && arg) {   // Dev: run the download verifier on a file
-        NSString *path = arg;
-        SFBackground(^{
-            NSString *p = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:[SFDownloads ffmpegToolPath]];
-            SFLog(@"dev: dlverify %@ -> %@", path.lastPathComponent, p ?: @"ok");
-        });
     } else if ([cmd isEqualToString:@"proctest"]) {          // Dev: SFRunProcess timeout path (sleep 30 with 1 s limit)
         SFBackground(^{
             NSDate *t0 = [NSDate date];
@@ -198,9 +191,6 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         NSInteger days = arg.integerValue > 0 ? arg.integerValue : 30;
         [SFStatsTotals(days) enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSNumber *n, BOOL *stop) { SFLog(@"stats: %@ = %@", k, n); }];
         SFLog(@"stats: end (%ld days)", (long)days);
-    } else if ([cmd isEqualToString:@"dlretry"]) {          // Dev: let every pending repair's backoff expire, retry now
-        [[SFDownloads shared] expireRepairBackoffForTesting];
-        [[SFDownloads shared] retryDueRepairs];
     } else if ([cmd isEqualToString:@"homerows"]) {          // Dev: the mixed Home rows as Home shows them (ids per topic)
         for (NSString *t in [SFHomeFeatures topics]) {
             NSMutableArray *ids = [NSMutableArray new];

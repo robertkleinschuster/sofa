@@ -19,7 +19,6 @@ static id timeOrNull(NSTimeInterval t) { return t > 0 ? @(t) : [NSNull null]; }
     r.itemJSON = str(row[@"item"]);
     r.state = [row[@"state"] integerValue];
     r.progress = [row[@"progress"] doubleValue];
-    r.path = str(row[@"path"]);
     r.thumb = str(row[@"thumb"]);
     r.bytes = [row[@"bytes"] unsignedLongLongValue];
     r.added = [row[@"added"] doubleValue];
@@ -29,29 +28,28 @@ static id timeOrNull(NSTimeInterval t) { return t > 0 ? @(t) : [NSNull null]; }
     r.tries = [row[@"tries"] integerValue];
     r.retryAt = [row[@"retryAt"] doubleValue];
     r.keep = [row[@"keep"] boolValue];
-    r.inStore = [row[@"store"] boolValue];
     r.expires = [row[@"expires"] doubleValue];
     r.online = row[@"online"] ? [row[@"online"] integerValue] : -1;
     r.onlineAt = [row[@"onlineAt"] doubleValue];
     return r;
 }
 
-static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,channel,path,thumb,state,progress,bytes,added,"
-                                 "published,sub,error,tries,retryAt,keep,online,onlineAt,store,expires) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,channel,thumb,state,progress,bytes,added,"
+                                 "published,sub,error,tries,retryAt,keep,online,onlineAt,expires) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
 - (NSArray *)writeStatement {
     return @[kWrite,
-             @[_identifier, _source ?: @"", _channel ?: @"", orNull(_path), orNull(_thumb), @(_state), @(_progress),
+             @[_identifier, _source ?: @"", _channel ?: @"", orNull(_thumb), @(_state), @(_progress),
                @(_bytes), @(_added), timeOrNull(_published), orNull(_sub), orNull(_error), @(_tries), timeOrNull(_retryAt),
-               @(_keep), _online >= 0 ? @(_online) : [NSNull null], timeOrNull(_onlineAt), @(_inStore), timeOrNull(_expires)]];
+               @(_keep), _online >= 0 ? @(_online) : [NSNull null], timeOrNull(_onlineAt), timeOrNull(_expires)]];
 }
 
 - (id)copyWithZone:(NSZone *)zone {
     SFDownloadRecord *c = [[self class] new];
     c.identifier = _identifier; c.source = _source; c.channel = _channel; c.itemJSON = _itemJSON;
-    c.state = _state; c.progress = _progress; c.path = _path; c.thumb = _thumb; c.bytes = _bytes;
+    c.state = _state; c.progress = _progress; c.thumb = _thumb; c.bytes = _bytes;
     c.added = _added; c.published = _published; c.sub = _sub; c.error = _error; c.tries = _tries;
-    c.retryAt = _retryAt; c.keep = _keep; c.online = _online; c.onlineAt = _onlineAt; c.inStore = _inStore; c.expires = _expires;
+    c.retryAt = _retryAt; c.keep = _keep; c.online = _online; c.onlineAt = _onlineAt; c.expires = _expires;
     return c;
 }
 

@@ -23,7 +23,7 @@ static const NSTimeInterval kCallTimeout = 30;
 static const NSTimeInterval kHealthyRun = 300;
 // largest channel message: a media read (8 MB at most) with its answer and events
 static const NSUInteger kMaxMessage = 16 * 1024 * 1024;
-// the loopback server's own requests (media GETs of mpv/ffmpeg) carry no body worth the name
+// the loopback server's own requests (media GETs of mpv) carry no body worth the name
 static const NSUInteger kMaxRequestBody = 64 * 1024;
 // focus preloads: at most this many player requests per window
 static const NSUInteger kPreloadBudget = 8;
@@ -406,18 +406,14 @@ static id Clean(id v) {
     return v;
 }
 
-- (void)open:(NSString *)vid background:(BOOL)bg done:(void (^)(NSDictionary *, NSError *))done {
+- (void)open:(NSString *)vid background:(BOOL)bg stored:(BOOL)stored done:(void (^)(NSDictionary *, NSError *))done {
+    if (stored && [self openStored:vid done:done]) return;   // complete on disk: Sofa serves it alone
     // prefetch off: mpv's own reads (at the resume position) drive what SABR pulls
     [self open:vid request:@{@"v": vid ?: @"", @"bg": @(bg), @"maxHeight": @1080, @"lang": @"de", @"prefetch": @NO} done:done];
 }
 
-- (void)openForDownload:(NSString *)vid done:(void (^)(NSDictionary *, NSError *))done {
-    [self open:vid request:@{@"v": vid ?: @"", @"bg": @YES, @"maxHeight": @1080, @"lang": @"de", @"prefetch": @NO} done:done];
-}
-
 - (void)open:(NSString *)vid request:(NSDictionary *)req done:(void (^)(NSDictionary *, NSError *))done {
     if (!vid.length) { done(nil, SFError(@"Video nicht abspielbar.")); return; }
-    if ([self openStored:vid done:done]) return;   // complete on disk: Sofa serves it alone
     NSDate *t0 = [NSDate date];
     [self call:@"open" args:@[req] timeout:kOpenTimeout done:^(id v, NSError *e) {
         NSDictionary *j = dict(v);
@@ -447,7 +443,7 @@ static id Clean(id v) {
     if (_preloads.count >= kPreloadBudget) return NO;
     [_preloads addObject:@(now)];
     // the engine caches the player response: the click then opens without a player request
-    [self open:vid background:YES done:^(NSDictionary *r, NSError *e) {}];
+    [self open:vid background:YES stored:YES done:^(NSDictionary *r, NSError *e) {}];   // (stored: no request)
     return YES;
 }
 

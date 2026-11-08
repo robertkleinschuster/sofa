@@ -4,7 +4,6 @@
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
 #import "SFStore.h"
-#import "SFMigration.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"

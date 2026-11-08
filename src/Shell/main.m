@@ -18,7 +18,6 @@
 #import "SFAudioOutput.h"
 #import "SFBluetooth.h"
 #import "SFStore.h"
-#import "SFMigration.h"
 #import "SFMPVEngine.h"
 #import "SFNet.h"
 #import "SFFollows.h"
@@ -105,7 +104,6 @@ NSString *gInstance = @"view";
         [wnav toast:[NSString stringWithFormat:@"%@ spielt gerade keinen Ton – Ton über %@", n.userInfo[@"from"], n.userInfo[@"to"]]];
     }];
     [SFPower setNavigator:self.nav];
-    SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
     [[SFFollows shared] start];   // after the apps (feeds)
     [[SFHomeFeatures shared] start];   // live + highlights rows of Home (after the apps)

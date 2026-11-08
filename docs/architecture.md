@@ -51,8 +51,7 @@ Dependency rules, enforced by `tools/check-arch` (part of `tools/test-all`):
 - Core (Core/Library/Player/Browse) never imports Apps or Shell; it reaches apps only through
   `SFAppRegistry` and the `SFApp` protocol.
 - An app imports Framework + Core, never Shell or another app.
-- Shell names app classes only in `SFApps.m` (registration). `SFMigration.m` (one-time Kodi
-  import) is the documented legacy exception.
+- Shell names app classes only in `SFApps.m` (registration).
 - No app identifiers or ref namespaces as string literals (`@"youtube"`, `@"yt:…"`) outside
   `src/Apps`.
 

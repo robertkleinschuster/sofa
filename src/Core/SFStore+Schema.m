@@ -137,6 +137,35 @@
         // 15: pre-buffering (docs/media-store.md phase 3): a subscription episode in the media store
         // goes at `expires` (epoch; sooner once watched); NULL = kept until the user deletes it
         ^{ [self exec:@"ALTER TABLE downloads ADD COLUMN expires REAL"]; },
+        // 16: one kind of download - the media store's (agreed with the user 2026-11-08: the MP4
+        // downloads go, "um auf das neue System umzusteigen und zu vereinfachen"). Their files and
+        // thumbnails are deleted; a subscription episode stays dismissed (not fetched again), a manual
+        // one leaves. path and store go (every download is the store's now).
+        ^{
+            NSFileManager *fm = [NSFileManager defaultManager];
+            NSMutableSet *dirs = [NSMutableSet new];
+            for (NSDictionary *r in [self rowsNow:@"SELECT path, thumb FROM downloads WHERE path IS NOT NULL AND store = 0" args:nil])
+                for (NSString *k in @[@"path", @"thumb"]) {
+                    NSString *f = [r[k] isKindOfClass:[NSString class]] ? r[k] : nil;
+                    if (!f.length) continue;
+                    [fm removeItemAtPath:f error:nil];
+                    [dirs addObject:[f stringByDeletingLastPathComponent]];
+                }
+            for (NSString *d in dirs) {   // a show folder left empty, then its source folder (artwork does not count)
+                NSString *dir = d;
+                for (int up = 0; up < 2; up++, dir = [dir stringByDeletingLastPathComponent]) {
+                    NSArray *left = [[fm contentsOfDirectoryAtPath:dir error:nil] filteredArrayUsingPredicate:
+                                     [NSPredicate predicateWithFormat:@"NOT (SELF IN %@)", @[@".DS_Store", @"poster.jpg", @"fanart.jpg"]]];
+                    if (left.count) break;
+                    [fm removeItemAtPath:dir error:nil];
+                }
+            }
+            [self exec:@"DELETE FROM downloads WHERE path IS NOT NULL AND store = 0 AND sub IS NULL"];
+            [self exec:@"UPDATE downloads SET state = 4, bytes = 0, thumb = NULL, progress = 0, error = NULL, tries = 0, retryAt = NULL "
+                        "WHERE path IS NOT NULL AND store = 0"];
+            [self exec:@"ALTER TABLE downloads DROP COLUMN path"];
+            [self exec:@"ALTER TABLE downloads DROP COLUMN store"];
+        },
     ];
 }
 

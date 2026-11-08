@@ -256,7 +256,8 @@ static NSString *SFSig(SFItem *i) {
 // Other episodes: library show (downloads) or the online show page (loadShowEpisodesFor:)
 - (SFShelf *)episodesShelf {
     SFItem *cur = _item;
-    SFShow *show = cur.channel.length && (cur.localPath || [_player canSwitchToStream]) ? [[SFLibrary shared] showNamed:cur.channel source:cur.source] : nil;
+    BOOL downloaded = [[SFDownloads shared] stateFor:cur.identifier progress:NULL] == SFDLDone;
+    SFShow *show = cur.channel.length && downloaded ? [[SFLibrary shared] showNamed:cur.channel source:cur.source] : nil;
     NSArray *episodes = show.episodes.count >= 2 ? show.episodes : _showEpisodes;
     NSString *name = show.episodes.count >= 2 ? show.name : _showTitle;
     if (episodes.count < 2) return nil;
@@ -265,7 +266,7 @@ static NSString *SFSig(SFItem *i) {
     NSMutableArray *items = [NSMutableArray new];
     NSUInteger focus = 0;
     for (SFItem *e in episodes) {
-        BOOL running = (cur.localPath && [e.localPath isEqualToString:cur.localPath]) || (e.identifier && [e.identifier isEqualToString:cur.identifier]);
+        BOOL running = e.identifier && [e.identifier isEqualToString:cur.identifier];
         if (running) focus = items.count;
         [items addObject:[self tile:e badge:running ? kRunningBadge : nil action:^{
             SFPlayerInfoScreen *s = ws; SFPlayerScreen *pl = wp;

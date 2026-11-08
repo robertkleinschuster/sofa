@@ -1,8 +1,7 @@
-// Offline layer ("premium"): downloading is a state of an item, not a separate program.
-// Applies to all sources. Files in Sofa's own storage (~/Movies/Sofa), metadata in the DB
-// (tables downloads/subscriptions). Identity = source ID (yt:…, zdf:…, ard:…, orf:…),
-// hence shared progress online/offline.
-// Subscriptions ("download new episodes automatically") replace ytdl-sub.
+// Offline layer ("premium"): downloading is a state of an item, not a separate program - its tracks
+// in the media store, pinned (docs/media-store.md: buffer and download are one). Applies to all
+// sources; metadata in the DB (tables downloads/subscriptions). Identity = source ID (yt:…, zdf:…,
+// ard:…, orf:…), hence shared progress online/offline. Subscriptions pre-buffer new episodes.
 #import "SFModel.h"
 #import "SFApp.h"
 #import "SFDownloadRecord.h"   // SFDLState, the record of one download
@@ -20,9 +19,9 @@ void SFFetchFeed(NSString *ref, SFFeedDone done);
 // feed from a page loader (show page): all videos of the page, newest first - for apps whose
 // show page already lists the episodes
 void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
-// Download source, download pause and online check: SFApp downloadSourceForItem:,
-// backgroundPausedUntil, availabilityOfItem: (without a check the app's online resolver answers:
-// a resolvable stream = online).
+// The fill, download pause and online check: SFApp fillItem: (else the media proxy fills what the
+// app resolves to), backgroundPausedUntil, availabilityOfItem: (without a check the app's online
+// resolver answers: a resolvable stream = online).
 
 @class SFMediaStore;
 
@@ -32,15 +31,14 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 // root (.store); it keeps the storage reserve free and never evicts a downloaded item
 @property (nonatomic, readonly) SFMediaStore *mediaStore;
 - (void)start;                                   // queue + subscription check
-- (void)stopForExit;                             // terminate the running ffmpeg before the app exits (no orphans)
+- (void)stopForExit;                             // let go of the running fill (it resumes on the next start)
 
 // Single items
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress;
 - (BOOL)willRetry:(NSString *)identifier;   // failed subscription episode, another attempt follows
-- (NSString *)fileFor:(NSString *)identifier;   // finished file (exists) or nil
 - (SFItem *)itemFor:(NSString *)identifier;      // downloaded content as an item (local)
 - (void)download:(SFItem *)item;
-- (void)remove:(NSString *)identifier;           // cancel, or delete the file
+- (void)remove:(NSString *)identifier;           // cancel, or delete it (its tracks leave the store)
 - (NSArray *)items:(NSString *)source;           // finished downloads (SFItem, newest first); nil = all
 - (NSArray *)active;                             // running/waiting (SFItem)
 @property (nonatomic, readonly) NSUInteger generation;   // changes on every state change (not on progress)
@@ -51,8 +49,6 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (SFDownloadRecord *)recordFor:(NSString *)identifier;   // finished download (a copy); nil otherwise
 - (NSString *)folderForSource:(NSString *)source channel:(NSString *)channel;   // folder of a show in Sofa's storage
 
-// Migration (one-time): adopt an existing file (moved into Sofa's storage)
-- (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err;
 @end
 
 // Storage (SFDownloads+Storage.m) - downloads are never deleted automatically
@@ -89,6 +85,4 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (void)checkSubscriptionsNow;
 - (NSString *)subscriptionIDForChannel:(NSString *)channel source:(NSString *)source;
 
-// Migration (one-time): adopt a subscription - its follow first (title, picture), then the auto-download
-- (void)addSubscription:(SFFollow *)follow keepDays:(NSInteger)keepDays since:(NSTimeInterval)since;
 @end

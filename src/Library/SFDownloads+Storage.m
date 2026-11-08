@@ -7,6 +7,7 @@
 //  - online availability per download (cached 30 days), so "Platz schaffen" can tell what is
 //    replaceable (still online) from what is not. YouTube asks oEmbed (no player request).
 #import "SFDownloads+Private.h"
+#import "SFMediaStore.h"
 
 
 static const unsigned long long kGB = 1000ULL * 1000ULL * 1000ULL;
@@ -54,17 +55,15 @@ static unsigned long long gReserve = 10 * kGB;
 
 - (void)storageTick:(NSTimer *)t { [self pump]; }   // pump re-checks and continues when there is room
 
-// Room a download needs before it may start: the reserve plus twice its expected size (ffmpeg's
-// +faststart rewrites the finished file, ~2x at the very end). Expected size from the duration at
-// ~1 MB/s (1080p60 VP9 + Opus measured 0.4-0.9 MB/s), 2 GB when unknown. After a disk stop at least
-// 2.5x what that run had written - hysteresis: removing its part file frees the room again, and
-// without it the same download started over and over (review 2026-11-05).
+// Room a download needs before it may start: the reserve plus what it still has to load - expected
+// from the duration at ~1 MB/s (1080p60 VP9 + Opus measured 0.4-0.9 MB/s; 2 GB when unknown) less
+// what the store holds of it already. After a disk stop a margin on top (_diskNeed) - hysteresis:
+// without it the same download would start and stop again at the edge (review 2026-11-05).
 - (unsigned long long)roomNeededFor:(SFDownloadRecord *)r {
     SFItem *item = [self itemFromRec:r];
-    unsigned long long est = item.duration > 0 ? (unsigned long long)(item.duration * 1e6) : 2 * kGB;
-    unsigned long long need = self.storageReserve + 2 * est;
-    unsigned long long stopped = [_diskNeed[r.identifier] unsignedLongLongValue];
-    return MAX(need, self.storageReserve + stopped);
+    long long est = item.duration > 0 ? (long long)(item.duration * 1e6) : (long long)(2 * kGB);
+    long long left = MAX(0, est - [self.mediaStore bytesOfItem:r.identifier]);
+    return self.storageReserve + (unsigned long long)left + [_diskNeed[r.identifier] unsignedLongLongValue];
 }
 
 - (BOOL)checkStorageFor:(SFDownloadRecord *)next {
@@ -73,19 +72,20 @@ static unsigned long long gReserve = 10 * kGB;
     return _storageFull;
 }
 
-// While a download runs (timer, every 10 s - also for unknown durations and the faststart phase, which
-// report no progress): stop it when the reserve is half used up.
+// While a download runs (timer, every 10 s - also for fills that report no progress): stop it when the
+// reserve is half used up.
 - (void)stopIfDiskRunsOut {
-    if (!(_task.isRunning || _fillCancel) || self.freeBytes >= self.storageReserve / 2) return;
-    unsigned long long written = _runningPart ? [[[NSFileManager defaultManager] attributesOfItemAtPath:_runningPart error:nil] fileSize] : 0;
-    SFLog(@"downloads: disk nearly full while loading %@ (%llu MB written) - stopping it (continues when there is room)", _runningID, written / 1000000ULL);
+    if (!_fillCancel || self.freeBytes >= self.storageReserve / 2) return;
+    unsigned long long stored = (unsigned long long)[self.mediaStore bytesOfItem:_runningID];
+    SFLog(@"downloads: disk nearly full while loading %@ (%llu MB stored) - stopping it (continues when there is room)", _runningID, stored / 1000000ULL);
     if (_runningID) {
         if (!_diskNeed) _diskNeed = [NSMutableDictionary new];
-        _diskNeed[_runningID] = @((unsigned long long)(written * 2.5) + kGB);
+        _diskNeed[_runningID] = @(kGB);   // a margin before it starts again (hysteresis)
     }
     [self setStorageFull:YES];
-    if (_fillCancel) { NSString *ident = _runningID; [self abortRun]; [self finish:ident ok:NO error:@"Speicher voll"]; return; }   // -> deferred (disk)
-    [_task terminate];   // termination -> finish:ok:NO -> deferred (disk), the part file is removed
+    NSString *ident = _runningID;
+    [self abortRun];
+    [self finish:ident ok:NO error:@"Speicher voll"];   // -> deferred (disk); what it stored stays
 }
 
 - (void)watchDiskDuringRun:(BOOL)on {

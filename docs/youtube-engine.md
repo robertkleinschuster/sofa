@@ -12,9 +12,9 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
 ├─ SFYTEngine: lifecycle + API (main thread)              started as a user starts it (no remote agent)
 │   ├─ SFYTBrowser: Xvfb + Firefox, profile setup        └─ one tab on https://www.youtube.com/
 │   ├─ SFYTChannel: WebSocket /engine/ws  ◄─────────────     extension youtube-engine@sofa:
-│   └─ +Media: /s/<sid>/... for mpv/ffmpeg               background.js ↔ bridge.js ↔ page.js (the engine:
+│   └─ +Media: /s/<sid>/... for mpv                      background.js ↔ bridge.js ↔ page.js (the engine:
 ├─ SFLocalHTTP: loopback server (127.0.0.1, free port)       youtubei.js web build, SABR, BotGuard in the
-├─ libmpv, ffmpeg                                            real DOM, sessions, pacing)
+├─ libmpv                                                    real DOM, sessions, pacing)
 └─ SFYTBreaker: the bot-check pause file (written on the engine's `block` events)
 ```
 
@@ -24,7 +24,7 @@ Sofa.app (ObjC)                                      Xvfb (own display, 1920x108
 - **The page is a real youtube.com document**, the engine runs in it (same-origin requests, like
   YouTube's own player). The extension injects it - not WebDriver: YouTube refuses a browser under
   remote control (measured below).
-- **Sofa owns the local plumbing.** mpv and ffmpeg read `http://127.0.0.1:<port>/s/<sid>/<track>`
+- **Sofa owns the local plumbing.** mpv reads `http://127.0.0.1:<port>/s/<sid>/<track>`
   from Sofa's loopback server, which pulls the bytes from the page (`read`, 1 MB pieces, as the
   reader consumes them; a reader that goes away stops the reading).
 - **Lifecycle.** Started early by the real app (dev instances on first use, never with

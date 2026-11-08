@@ -97,10 +97,12 @@ static void watchPageSoon(NSString *vid) {
 
 // SABR via the engine (like the web player: one request per video): local WebM/MP4
 // tracks for mpv; a video that turned out to be live comes back as HLS.
-static void playOnline(NSString *vid, SFURLDone done) {
+// fromStore: a video complete in the media store plays from there (no engine, offline too); NO =
+// "Online abspielen" (every audio and subtitle track - what is on disk is still read from there)
+static void playOnline(NSString *vid, BOOL fromStore, SFURLDone done) {
     SFYTEngine *engine = [SFYTEngine shared];
     if (![engine canOpen:vid]) { SFCount(@"yt.play.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
-    [engine open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+    [engine open:vid background:NO stored:fromStore done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.play." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
@@ -115,7 +117,7 @@ static void playOnline(NSString *vid, SFURLDone done) {
 static void playLive(NSString *vid, SFURLDone done) {
     SFYTEngine *engine = [SFYTEngine shared];
     if (!engine.available) { SFCount(@"yt.live.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
-    [engine open:vid background:NO done:^(NSDictionary *r, NSError *e) {
+    [engine open:vid background:NO stored:NO done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.live." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
@@ -133,19 +135,17 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 @implementation SFYouTubeApp (Playback)
 
-// yt:<id> plays a local download when there is one; ytlive:<id> = live/DVR via the engine
+// yt:<id> plays from the media store when it is complete there; ytlive:<id> = live/DVR via the engine
 + (void)resolve:(NSString *)ref done:(SFURLDone)done {
     NSString *p = SFRefPrefix(ref), *vid = SFRefID(ref);
     if ([p isEqualToString:@"ytlive"]) { playLive(vid, done); return; }
     if (![p isEqualToString:@"yt"]) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
-    SFItem *local = [[SFDownloads shared] itemFor:[@"yt:" stringByAppendingString:vid]];
-    if (local.localPath && [[NSFileManager defaultManager] fileExistsAtPath:local.localPath]) { done([NSURL fileURLWithPath:local.localPath], nil); return; }
-    playOnline(vid, done);
+    playOnline(vid, YES, done);
 }
 
-// "Online abspielen": skip downloads
+// "Online abspielen": not the store's session
 + (void)resolveOnline:(NSString *)ref done:(SFURLDone)done {
-    if ([SFRefPrefix(ref) isEqualToString:@"yt"]) playOnline(SFRefID(ref), done);
+    if ([SFRefPrefix(ref) isEqualToString:@"yt"]) playOnline(SFRefID(ref), NO, done);
     else [self resolve:ref done:done];
 }
 

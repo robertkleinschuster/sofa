@@ -16,8 +16,7 @@
 #      entry used to stop a phone playlist)
 #   4c. the end waits (up to 4 s) for an up-next recommendation still on its way, then leaves without
 #      it (the end used to leave at once when the answer came a moment late)
-#   5. a downloaded item switches to the online stream at the same position, chosen in the info
-#      panel ("Online abspielen" used to restart the local file because the download lookup found it again)
+#   (5. "Online abspielen" on a download: test-downloads 8c, a download is the media store's)
 #   6. a remembered subtitle preference is applied automatically
 #   6b. audio/subtitle tracks chosen by hand stay chosen when the stream is reopened (dev breakstream)
 #   7. a stream that stops delivering is detected (stall watchdog) and handled (2026-11-05: a dead
@@ -27,7 +26,7 @@
 #      message (until 2026-11-08 a plain stream broken midway showed a dead "Verbindung unterbrochen")
 #   8. YouTube end screen (fake /open data via the dev command, offline, no YouTube request):
 #      tiles follow the timeline (also while paused), DOWN enters, arrows move, follow toggles,
-#      MENU leaves without touching playback, OK on a video plays it (a "downloaded" test video),
+#      MENU leaves without touching playback, OK on a video opens it in the player,
 #      the end of the video waits while the tiles have focus
 #   8c. a phone queue (Lounge setPlaylist, offline) fetches watch pages only for the playing and the
 #      next video, never the whole list (2026-11-06: 100 pages in a minute -> bot checks)
@@ -229,21 +228,6 @@ since $m | grep -q 'player: no recommendation after 4 s' && ok "the limit ended 
 stop
 unset SOFA_EXAMPLE_MEDIA SOFA_EXAMPLE_UPNEXT
 
-echo "==> 5. download -> online stream at the same position (via the info panel)"
-sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('$ORF','{\"id\":\"$ORF\",\"kind\":0,\"title\":\"Playtest\",\"ref\":\"$ORF\",\"source\":\"orf\"}');
-  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('$ORF','orf','ORF','$T/local.mp4',2,1,strftime('%s','now'));"
-start
-m=$(mark); cmd "play $ORF"; waitlog $m 'player: play local.mp4'
-grep -q 'player: play local.mp4' "$LOG" && ok "download preferred when present" || bad "download not used"
-m=$(mark); cmd "key selecthold"; waitlog $m 'info: panel for'; shot "$T/info-download.png"; keep "$T/info-download.png"
-cmd "key select"   # first action of a downloaded video with one audio track: "Online abspielen"
-waitlog $m 'player: play apasfiis\|player: play .*via mpv' 60
-since $m | grep -q 'Download -> online' && ok "switched to online" || bad "no switch"
-since $m | grep -q 'player: play apasfiis\|player: play .*via mpv' && ! since $m | grep -q 'player: play local.mp4' \
-  && ok "online stream playing (not the file again)" || bad "the local file was played again"
-
-stop
-
 echo "==> 6. remembered subtitle preference"
 # local file: German audio + German subtitles; preference "subtitles in the audio language" set
 printf '1\n00:00:00,000 --> 00:01:30,000\nUntertitel\n' > "$T/de.srt"
@@ -283,13 +267,10 @@ fi   # part a
 if want b; then
 start; stop   # the instance creates its database (section 8 writes a download into it before its start)
 echo "==> 8. YouTube end screen (fake data, offline)"
-# thumbnails + a "downloaded" copy of the first tile's video: OK on it plays a local file, no network
+# thumbnails (offline: OK on a video tile opens it in the player, its resolve fails without network)
 "$FF" -hide_banner -loglevel error -y -f lavfi -i mandelbrot=size=640x360 -frames:v 1 "$T/es1.png"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i smptehdbars=size=640x360 -frames:v 1 "$T/es2.png"
 "$FF" -hide_banner -loglevel error -y -f lavfi -i "cellauto=size=300x300:rule=110" -frames:v 1 "$T/esav.png"
-cp "$T/local.mp4" "$T/endvid.mp4"
-sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('yt:esTestVid01','{\"id\":\"yt:esTestVid01\",\"kind\":0,\"title\":\"Endscreen-Testvideo\",\"ref\":\"yt:esTestVid01\",\"source\":\"youtube\"}');
-  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('yt:esTestVid01','youtube','Testkanal','$T/endvid.mp4',2,1,strftime('%s','now'));"
 ES='[{"kind":"video","ref":"yt:esTestVid01","title":"Erstes Video","left":0.05,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es1.png"},'\
 '{"kind":"video","ref":"yt:esTestVid02","title":"Zweites Video","left":0.55,"top":0.2,"width":0.4,"aspectRatio":1.7778,"startMs":2000,"endMs":0,"image":"'$T'/es2.png"},'\
 '{"kind":"follow","ref":"ytchannel:'$ESCH'","title":"Endscreen-Testkanal","left":0.05,"top":0.7,"width":0.1,"aspectRatio":1,"startMs":2500,"endMs":0,"image":"'$T'/esav.png"}]'
@@ -316,7 +297,7 @@ awk "BEGIN{exit !($t2 > $t1 + 0.5)}" 2>/dev/null && ok "playback goes on after l
 m=$(mark); cmd "key play"; sleep 0.8; cmd "key prev"; waitlog $m 'endscreen: hidden' && ok "seeking back before the end screen hides it (paused)" || bad "tiles stayed after seeking back"
 cmd "key play"
 m=$(mark); waitlog $m 'endscreen: shown at' 60; cmd "key down"; sleep 0.4; cmd "key select"
-waitlog $m 'player: play endvid.mp4' && ok "OK on a video tile plays it" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
+waitlog $m 'player: resolve .*(yt:esTestVid01)' && ok "OK on a video tile opens it in the player" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
 m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"; waitlog $m 'endscreen: 3 tiles' 
 # the jump only once the file is loaded: a time-pos set right after the play (25 ms) is ignored by
 # mpv - the video ran on from 2 s and the end never came (test-all flake 2026-11-08)

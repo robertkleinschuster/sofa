@@ -2,7 +2,7 @@
 // TLS 1.3) are unreachable with 10.9's SecureTransport. For these hosts
 // Sofa uses libcurl from MacPorts (OpenSSL).
 //  * SFCurlFetch: synchronous fetch (call in the background only)
-//  * SFStreamProxy: local HTTP proxy (127.0.0.1) for readers without curl, incl. HLS rewriting
+//  * SFCurlStream: a streamed range GET (the media proxy's source reads, SFMediaProxy)
 #import "SFCore.h"
 
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
@@ -36,8 +36,3 @@ void SFMarkHostNeedsCurl(NSString *host);
 void SFMarkDomainNeedsCurl(NSString *domain);
 BOOL SFIsTLSError(NSError *e);
 
-@interface SFStreamProxy : NSObject
-+ (instancetype)shared;
-// Returns a local proxy URL for https URLs of a curl host, otherwise the URL itself.
-- (NSURL *)playableURLFor:(NSURL *)url;
-@end

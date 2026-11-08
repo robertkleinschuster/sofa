@@ -108,7 +108,7 @@ static NSArray *videos(NSString *filter) {
 + (void)resolve:(NSString *)ref done:(SFURLDone)done {
     for (NSArray *e in catalogue())
         if ([e[0] isEqualToString:SFRefID(ref)]) {
-            // tests: a real file/URL (downloads need something ffmpeg can fetch), else mpv's test pattern, 60 s
+            // tests: a real file/URL (downloads fill from it through the media proxy), else mpv's test pattern, 60 s
             NSString *media = SFDevEnv(@"SOFA_EXAMPLE_MEDIA");
             // ...as a DASH pair like YouTube's engine serves it: SOFA_EXAMPLE_AUDIO=<separate audio track>
             NSString *audio = SFDevEnv(@"SOFA_EXAMPLE_AUDIO");
@@ -122,7 +122,7 @@ static NSArray *videos(NSString *filter) {
 }
 
 // Downloads into the media store (fillItem:, docs/media-store.md) - tests only: SOFA_EXAMPLE_FILL=<s
-// per piece> makes the Example app a filling source (else its downloads are files via ffmpeg). One
+// per piece> makes the Example app fill itself (else the media proxy fills from its file). One
 // track of 8 synthetic 1-MB pieces (two store blocks) plus the manifest naming it; a piece already stored is skipped
 // (a resumed download fetches only the rest), every fetched one is logged.
 + (BOOL)respondsToSelector:(SEL)sel {

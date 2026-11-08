@@ -74,11 +74,9 @@ component only because it already exists.
   VOD, live streams Das Erste/ZDF/ORF1/3sat (HLS) and the media.ccc.de CDN → 10.9 TLS
   is enough — EXCEPT ORF (api-tvthek, *.mdn.ors.at, *.sf.apa.at: only AES-GCM/TLS1.3).
 - **TLS bridge (`SFCurl`)**: libcurl from MacPorts (OpenSSL). `SFNet`/`SFImageCache`
-  use curl for known hosts or hosts learned from an SSL error; the player goes through
-  `SFStreamProxy` (127.0.0.1, rewrites m3u8, segments streamed incl. Range).
-  The proxy caps `#EXT-X-VERSION` at 6: otherwise CoreMedia 10.9 reports
-  "Unsupported version: 7" → -12642 (ORF live streams are v7, but plain TS).
-  Diagnostic tool: `docs/probes/avtest.m` (prints the AVPlayerItem errorLog).
+  use curl for known hosts or hosts learned from an SSL error. mpv reads ORF itself (its own
+  TLS); VOD goes through `SFMediaProxy` (127.0.0.1, curl, the media store; docs/media-store.md).
+  (The old `#EXT-X-VERSION` cap was for CoreMedia 10.9 - gone with AVFoundation.) Diagnostic tool: `docs/probes/avtest.m` (prints the AVPlayerItem errorLog).
 
 ## Code structure (`~/src/sofa`)
 Layered since 2026-11-05 – contract and rules in **docs/architecture.md**, how to add an app in
@@ -261,7 +259,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       videos disappear from YouTube (deleted, private, region-locked) - then the local copy is the
       only one. Today `SFDownloads -cleanup` deletes subscription episodes after `keepDays` (default
       90) and, with "delete watched" on, 1 day after watching -> both go.
-      - Disk monitoring: free space checked before every download start and while ffmpeg writes;
+      - Disk monitoring: free space checked before every download start and while a fill writes;
         below a reserve (e.g. 10 GB or 5 %), downloads pause ("Speicher voll"), resume by themselves
         once space is free again. The user is asked on screen (banner/notification) to make room.
       - "Behalten" (keep forever): a mark per download (context menu + info panel, pin icon on the

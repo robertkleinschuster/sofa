@@ -1,7 +1,7 @@
 // Sofa's YouTube client (docs/youtube-engine.md): the engine runs inside a real Firefox on a real
 // youtube.com page (SFYTBrowser) - the one identity every request to YouTube comes from (playback,
 // lives, downloads, InnerTube, suggestions). Sofa talks to it over the extension's channel
-// (SFYTChannel) and serves its media to mpv/ffmpeg as local Range-capable URLs from the same
+// (SFYTChannel) and serves its media to mpv as local Range-capable URLs from the same
 // loopback server (SFYTEngine+Media). Replaced the node sidecar (docs/sofa-yt.md, retired 2026-11-07).
 // Main thread API.
 #import "SFCore.h"
@@ -20,9 +20,9 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // Error userInfo: @"bot" = YouTube answered with a bot check; @"unanswered" = no answer at all;
 // @"live" for streams that can't be played (@"upcoming" + @"startTime" epoch or 0; offline:
 // message "offline").
-- (void)open:(NSString *)videoID background:(BOOL)bg done:(void (^)(NSDictionary *r, NSError *e))done;
-// Download: the same choice as playback, no prefetch; the session lives while ffmpeg reads.
-- (void)openForDownload:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
+// stored: a video complete in the media store comes from there (`stored` set, no engine, offline too);
+// NO: always a session of the engine (its reads still come from disk where stored).
+- (void)open:(NSString *)videoID background:(BOOL)bg stored:(BOOL)stored done:(void (^)(NSDictionary *r, NSError *e))done;
 - (void)closeSession:(NSString *)sid;   // a retry then opens a fresh session
 // Playback of session `sid` starts at `seconds` (the player's start point): the engine fetches from
 // there at once, as youtube.com's player does, instead of after mpv's probe and seek. Fire and forget.

@@ -2,25 +2,20 @@
 # test-downloads -- robustness regression tests for the download layer, in an invisible dev instance
 # (a fresh data directory per run: database + download folder, removed at exit). No YouTube requests.
 #
-# Incident 2026-11-04: an update restart (_exit) left ffmpeg running as an orphan; it kept writing the
-# same .part file as the restarted download -> corrupt 1.2 GB file. Checks:
-#   1. an orphaned ffmpeg writing into the download folder is killed at start, its part file swept
-#   2. the verifier accepts a healthy file and rejects a corrupted one
-#   3. quitting during a download (update handover, plain quit) leaves no ffmpeg behind, uses no
-#      attempt, and the download resumes on the next start
-#   4. a failed repair keeps the old file and is retried later (YouTube's bot check blocks for hours)
+# Every download fills the media store (docs/media-store.md) - no files, no ffmpeg. Checks:
+#   0. a hung child process (SFRunProcess, used by the updater) is killed at its timeout
 #   5. during a YouTube bot-check pause a queued YouTube download waits without any request
 #   6. storage guard: below the reserve no download starts and a running one stops - both stay
 #      queued without using an attempt, the user is asked to make room, and the queue continues
 #      by itself once there is room (user 2026-11-05: never fill the disk, never delete by itself)
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
-#   8. media store downloads (docs/media-store.md; the Example app fills like YouTube, SOFA_EXAMPLE_FILL):
-#      a file download of a filling source is retired once at start; a fill completes as a store
-#      download (no file, pinned bytes); a quit mid-fill uses no attempt and the resume fetches only
-#      the rest; tracks gone from outside are noticed at start and filled again; removal frees them
+#   8. media store downloads (the Example app fills like YouTube, SOFA_EXAMPLE_FILL): a fill completes
+#      as a download (pinned bytes); a quit mid-fill uses no attempt and the resume fetches only the
+#      rest; tracks gone from outside are noticed at start and filled again; removal frees them
 #   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
-#      by ranges (no ffmpeg), the item then plays from the store without its source
+#      by ranges (no ffmpeg); it plays from the store, "Online abspielen" (info panel) switches to the
+#      source, and it plays from the store without its source
 #   8d. an HLS source (ORF) through the media proxy: a master with two variants, AES-128 segments and
 #      their key - the download takes the better variant into the store (no ffmpeg), it then plays
 #      from the store without its source
@@ -28,7 +23,8 @@
 #      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
 #      episode keeps it without loading again
 #   tools/test-downloads   the parts side by side, each with its own instance and media server
-#                          (part a: 1-4, part b: 5-7, 4b, part c: 8); DLTEST_PART=a|b|c runs one part here
+#                          (part a: 0, 5, 6; part b: 7, 4b, 8, 8b; part c: 8c, 8d); DLTEST_PART=a|b|c
+#                          runs one part here
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -57,12 +53,11 @@ mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/so
 export SOFA_SOURCE_GAP=3         # per-source spacing of download starts: 3 s instead of 30
 ROOT="$SOFA_DATA_DIR/Downloads"
 DEVDB="$SOFA_DATA_DIR/sofa.db"
-FF=/opt/local/bin/ffmpeg; [ -x "$FF" ] || FF=/Applications/Sofa.app/Contents/Runtime/bin/ffmpeg
+FF=/opt/local/bin/ffmpeg   # test media only (Sofa itself has no ffmpeg)
 # Offline: the Example app serves its items from a local, throttled HTTP server (SOFA_EXAMPLE_MEDIA);
 # YouTube is registered for section 5 only (and stays paused there).
 export SOFA_ONLY_APPS=example,youtube
-REF=example:1      # downloadable (local server, slow enough to quit during the download)
-BADREF=example:0   # an id the Example app does not know: its download always fails
+REF=example:1      # downloadable (the Example app fills it piece by piece, SOFA_EXAMPLE_FILL)
 YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube paused)
 fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
 check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
@@ -80,20 +75,19 @@ cmd() { echo "$*" 1<>"$FIFO"; }
 shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1" "$LOG" && break; sleep 0.25; done
          [ -s "$1" ] || { bad "no screenshot $(basename "$1")"; return 1; }
          [ -n "${DLTEST_SHOTS:-}" ] && cp "$1" "$DLTEST_SHOTS/" 2>/dev/null; return 0; }
-ffpids() { pgrep -f "ffmpeg.*$ROOT" ; }   # ffmpeg processes writing into the dev download folder
+SQ() { /opt/local/bin/sqlite3 "$DEVDB" "$@"; }
+SS() { /opt/local/bin/sqlite3 "$ROOT/.store/store.db" "$@"; }
 SRV=
 cleanup() {
   [ -n "$APP" ] && { kill $APP 2>/dev/null; wait $APP 2>/dev/null; }
   { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1   # this instance's settings (after the app is gone)
   [ -n "$SRV" ] && { kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; }
-  for p in $(ffpids); do kill $p 2>/dev/null; done
-  for p in $(pgrep -f "$ROOT/orphan-test.part"); do kill -9 $p 2>/dev/null; done   # this part's only
   rm -rf "$T"
 }
 trap cleanup EXIT
 mkdir -p "$ROOT"
 
-# test media: a healthy 60 s file (also the verifier's good case)
+# test media: a 60 s file
 "$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t 60 \
       -c:v libx264 -preset ultrafast -c:a aac -movflags +faststart "$T/good.mp4"
 # the Example app's media for the download sections: served at ~256 KB/s (a download takes a while)
@@ -131,109 +125,14 @@ MEDIA_PORT=$(cat "$T/media.port" 2>/dev/null)
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$MEDIA_PORT/good.mp4
 
 if want a; then
-echo "==> 1. orphaned ffmpeg from an earlier run"
-( "$FF" -nostdin -v error -re -f lavfi -i testsrc=size=320x240:rate=10 -t 300 -c:v mpeg4 -y "$ROOT/orphan-test.part999.mp4" & )
-# a second orphan that ignores SIGTERM like ffmpeg stuck in a dead network read (copy of perl named ffmpeg)
-PERL=$(ls /usr/bin/perl5.* 2>/dev/null | head -1); cp "$PERL" "$T/ffmpeg"
-( "$T/ffmpeg" -e '$SIG{TERM}="IGNORE"; sleep 300' "$ROOT/orphan-test.part998.mp4" & )
-sleep 1
-S=$(pgrep -f "part998")
-O=$(pgrep -f "orphan-test.part999")
-[ -n "$O" ] && [ "$(ps -o ppid= -p $O | tr -d ' ')" = 1 ] && ok "orphan running (pid $O, parent launchd)" || bad "could not create the orphan"
+echo "==> 0. process timeout"
 start
-dev_wait_exit $O 10   # swept at start
-kill -0 $O 2>/dev/null && bad "orphan still alive" || ok "orphan killed at start"
-grep -q "killing orphaned ffmpeg $O" "$LOG" && ok "logged" || bad "not logged"
-# reaping runs off the main thread: Sofa is ready before the SIGTERM grace (1 s) is over
-for i in $(seq 1 40); do [ -z "$S" ] || ! kill -0 $S 2>/dev/null && break; sleep 0.25; done
-[ -n "$S" ] && ! kill -0 $S 2>/dev/null && grep -q "ffmpeg $S ignored SIGTERM - SIGKILL" "$LOG" && ok "SIGTERM-ignoring orphan escalated to SIGKILL" \
-  || bad "SIGTERM-ignoring orphan survived (pid ${S:-none})"
-# the sweep walks the download tree in the background (off the main thread): wait for its line
-for i in $(seq 1 40); do grep -q 'removed [0-9]* stale partial file' "$LOG" && break; sleep 0.25; done
-[ -e "$ROOT/orphan-test.part999.mp4" ] && bad "stale part file left" || ok "stale part file swept"
-
-echo "==> 2. verifier"
-cp "$T/good.mp4" "$T/bad.mp4"
-S=$(stat -f %z "$T/bad.mp4")
-for f in 0.2 0.5; do   # overwrite chunks of payload with garbage (container stays readable)
-  dd if=/dev/urandom of="$T/bad.mp4" bs=1 count=200000 seek=$(python3 -c "print(int($S*$f))") conv=notrunc 2>/dev/null
-done
-# metadata cut inside a UTF-8 sequence (ffmpeg does that with long YouTube descriptions): healthy
-# files were reported "unreadable" and downloaded again (2026-11-04)
-"$FF" -hide_banner -loglevel error -y -i "$T/good.mp4" -c copy -metadata comment="$(printf 'ab\xc3')" "$T/latin.mp4"
-# VP9 + Opus in MP4 muxed from WebM tracks like the SABR downloads: the null muxer warns about
-# timestamps after -ss (ms timebase), which used to count as decode errors
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=426x240:rate=15 -t 19 -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -b:v 300k "$T/v.webm"
-"$FF" -hide_banner -loglevel error -y -f lavfi -i sine -t 19 -c:a libopus "$T/a.webm"
-"$FF" -hide_banner -loglevel error -y -i "$T/v.webm" -i "$T/a.webm" -map 0:v:0 -map 1:a:0 -shortest -c copy -movflags +faststart "$T/vp9.mp4"
-cmd "dlverify $T/good.mp4"; cmd "dlverify $T/bad.mp4"; cmd "dlverify $T/latin.mp4"; cmd "dlverify $T/vp9.mp4"
-for i in $(seq 1 80); do [ "$(grep -c 'dlverify .* -> ' "$LOG")" -ge 4 ] && break; sleep 0.25; done
-grep -q "dlverify vp9.mp4 -> ok" "$LOG" && ok "healthy VP9/Opus MP4 accepted" || bad "vp9.mp4 rejected: $(grep 'dlverify vp9' "$LOG")"
-grep -q "dlverify latin.mp4 -> ok" "$LOG" && ok "invalid UTF-8 in metadata is no reason to reject" || bad "latin.mp4 rejected: $(grep 'dlverify latin' "$LOG")"
-grep -q "dlverify good.mp4 -> ok" "$LOG" && ok "healthy file accepted" || bad "healthy file rejected: $(grep 'dlverify good' "$LOG")"
-grep -q "dlverify bad.mp4 -> .*\(decode errors\|duration\|unreadable\|bitrate\)" "$LOG" && ok "corrupted file rejected ($(grep -o 'dlverify bad.mp4 -> .*' "$LOG" | cut -c20-))" \
-  || bad "corrupted file accepted"
-
-# many verifications back to back: NSTask -waitUntilExit used to hang forever on a GCD thread
-for i in $(seq 1 15); do cmd "dlverify $T/good.mp4"; done
-for i in $(seq 1 120); do [ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16 ] && break; sleep 0.5; done
-[ "$(grep -c 'dlverify good.mp4 -> ok' "$LOG")" -ge 16 ] && ok "15 verifications in a row finished (no hang)" \
-  || bad "verifier hung ($(grep -c 'dlverify good.mp4 -> ok' "$LOG")/16 finished)"
-
 cmd proctest
 for i in $(seq 1 20); do grep -q 'proctest status' "$LOG" && break; sleep 0.5; done
 grep -q 'proctest status -2 after [12]\.' "$LOG" && ok "hung child process is killed at its timeout" \
   || bad "process timeout did not work: $(grep 'proctest' "$LOG")"
-
-echo "==> 3. quit during a download (update handover, then a plain quit)"
-running() {
-  for i in $(seq 1 60); do grep -q "downloads: loading" "$LOG" && break; sleep 0.5; done
-  for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done
-  [ -n "$(ffpids)" ]
-}
-cmd "dlget $REF"
-running && ok "download ffmpeg running" || bad "download did not start: $(grep 'downloads' "$LOG" | tail -2)"
-# the update handover waits half a second before exiting - ffmpeg's end is handled meanwhile
-cmd updatequit; dev_wait_exit $APP; APP=
-[ -z "$(ffpids)" ] && ok "no ffmpeg left after the update handover" || bad "ffmpeg survived the handover: $(ffpids)"
-grep -q "downloads: FAILED $REF" "$LOG" && bad "stopping it counted as a failure" || ok "stopping it is no failure"
-check "still running in the database, no attempt used" "$(/opt/local/bin/sqlite3 "$DEVDB" "select state || '/' || tries from downloads where id='$REF'")" "1/0"
-# the source's spacing says "not for an hour" - an interrupted run goes on anyway (2026-11-06)
-/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into settings (k,v) values ('downloads.nextStart.example', strftime('%s','now') + 3600);"
-start
-running && ok "download resumed on the next start (despite the source's spacing)" || bad "download not resumed"
-quit; sleep 1
-[ -z "$(ffpids)" ] && ok "no ffmpeg left after quit" || bad "ffmpeg survived the quit: $(ffpids)"
-
-echo "==> 4. a failed repair keeps the file and is retried"
-# nothing else in the dev queue may run first (dev database only)
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
-mkdir -p "$ROOT/dev/Dev"; cp "$T/good.mp4" "$ROOT/dev/Dev/repair.mp4"
-/opt/local/bin/sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('$BADREF','{\"id\":\"$BADREF\",\"kind\":0,\"title\":\"Repair\",\"ref\":\"$BADREF\",\"source\":\"dev\"}');
-  insert or replace into downloads (id,source,channel,path,state,progress,added) values ('$BADREF','dev','Dev','$ROOT/dev/Dev/repair.mp4',0,0,strftime('%s','now'));"
-start
-for i in $(seq 1 60); do grep -q "repair of $BADREF failed" "$LOG" && break; sleep 0.5; done
-grep -q "repair of $BADREF failed.*retry in 15 min" "$LOG" && ok "failed repair scheduled for a retry" || bad "no retry scheduled: $(grep "$BADREF" "$LOG" | tail -2)"
-[ -s "$ROOT/dev/Dev/repair.mp4" ] && ok "existing file kept" || bad "existing file lost"
-cmd dlretry
-# the retry starts only after the per-source spacing of starts (SOFA_SOURCE_GAP since the first attempt)
-for i in $(seq 1 60); do grep -q "repair of $BADREF failed.*retry in 30 min" "$LOG" && break; sleep 0.5; done
-grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && grep -q "retry in 30 min" "$LOG" && ok "retried with a longer backoff" || bad "not retried: $(grep "$BADREF" "$LOG" | tail -2)"
-quit
-st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries||' '||(retryAt > strftime('%s','now')) from downloads where id='$BADREF';")
-[ "$st" = "2 2 1" ] && ok "repair pending persisted (state done, 2 tries, next attempt in the future)" || bad "unexpected record: $st"
-
-# without a manual trigger: the next retry is scheduled for exactly when it is due (it used to wait for
-# the next app start or the 3-hourly subscription check). Base delay 3 s instead of 15 min.
-/opt/local/bin/sqlite3 "$DEVDB" "update downloads set tries=1, retryAt=strftime('%s','now') + 3 where id='$BADREF';"
-SOFA_RETRY_BASE=3 start
-for i in $(seq 1 120); do grep -q "retrying the repair of $BADREF" "$LOG" && break; sleep 0.5; done
-grep -q "retrying the repair of $BADREF (attempt 2)" "$LOG" && ok "retry ran on its own when due" || bad "no scheduled retry: $(grep "$BADREF" "$LOG" | tail -2)"
 quit
 
-fi   # part a
-
-if want b; then
 echo "==> 5. YouTube download during a bot-check pause"
 start
 cmd "ytblock 900"; sleep 0.5
@@ -250,8 +149,8 @@ st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads wh
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$YTREF';"
 
 echo "==> 6. storage guard (full disk)"
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);"
-start
+SQ "delete from downloads where state in (0,1);"
+SOFA_EXAMPLE_FILL=1 start   # a fill of 8 s: long enough to stop it on the way
 cmd "dlreserve 1000000"; sleep 0.5    # 1 PB reserve: the disk counts as full
 m=$(log_mark "$LOG"); cmd "dlget $REF"
 for i in $(seq 1 20); do log_since $m "$LOG" | grep -q "storage full" && break; sleep 0.5; done
@@ -263,30 +162,37 @@ grep -q "asking the user to make room" "$LOG" && ok "user asked to make room" ||
 shot "$T/full.png"
 cmd "key menu"; sleep 0.5
 m=$(log_mark "$LOG"); cmd "dlreserve 10"   # room again
-for i in $(seq 1 60); do log_since $m "$LOG" | grep -q "downloads: loading" && break; sleep 0.5; done
+for i in $(seq 1 60); do log_since $m "$LOG" | grep -q "example: filled $REF piece" && break; sleep 0.25; done
 log_since $m "$LOG" | grep -q "storage free again" && log_since $m "$LOG" | grep -q "downloads: loading" \
   && ok "continues by itself once there is room" || bad "did not continue: $(log_since $m "$LOG" | grep downloads | tail -2)"
-for i in $(seq 1 40); do [ -n "$(ffpids)" ] && break; sleep 0.25; done   # the download is running
-m=$(log_mark "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the run
+m=$(log_mark "$LOG"); cmd "dlreserve 1000000"   # the disk fills up during the fill
 for i in $(seq 1 20); do log_since $m "$LOG" | grep -q "deferred" && break; sleep 0.5; done
 log_since $m "$LOG" | grep -q "disk nearly full while loading" && ok "running download stopped" || bad "running download not stopped"
-sleep 1
-[ -z "$(ffpids)" ] && ok "ffmpeg ended" || bad "ffmpeg still running"
+m=$(log_mark "$LOG"); sleep 2.5
+log_since $m "$LOG" | grep -q "example: filled" && bad "the fill went on" || ok "the fill ended"
 quit
-st=$(/opt/local/bin/sqlite3 "$DEVDB" "select state||' '||tries from downloads where id='$REF';")
-[ "$st" = "0 0" ] && ok "still queued, no attempt used up" || bad "unexpected record: $st"
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id='$REF';"
+check "still queued, no attempt used up" "$(SQ "select state||' '||tries from downloads where id='$REF';")" "0 0"
+SQ "delete from downloads where id='$REF';"
 
+fi   # part a
+
+if want b; then
 echo "==> 7. Platz schaffen: only replaceable videos are deleted"
-mkdir -p "$ROOT/dev/Room"
-for v in online gone kept; do cp "$T/good.mp4" "$ROOT/dev/Room/$v.mp4"; done
+# three downloads in the store (example:1-3, the ids the Example app knows), all watched: online, no longer online, kept
+start; quit   # the database
 now=$(date +%s)
-for v in online:1:0 gone:0:0 kept:1:1; do
-  IFS=: read name on keep <<< "$v"
-  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('room:$name','{\"id\":\"room:$name\",\"kind\":0,\"title\":\"Room $name\",\"ref\":\"room:$name\",\"source\":\"dev\",\"channel\":\"Room\"}');
-    insert or replace into downloads (id,source,channel,path,state,progress,bytes,added,keep,online,onlineAt) values ('room:$name','dev','Room','$ROOT/dev/Room/$name.mp4',2,1,$(stat -f %z "$T/good.mp4"),$now,$keep,$on,$now);"
-  /opt/local/bin/sqlite3 "$DEVDB" "insert or replace into progress (id,pos,dur,watched,updated,source) values ('room:$name',60,60,1,$now,'dev');"
+for v in 1:online 2:gone 3:kept; do
+  IFS=: read n name <<< "$v"
+  SQ "insert or replace into items (id,json) values ('example:$n','{\"id\":\"example:$n\",\"kind\":0,\"title\":\"Room $name\",\"source\":\"example\",\"channel\":\"Room\"}');
+    insert or replace into downloads (id,source,channel,state,progress,added) values ('example:$n','example','Room',0,0,$now);"
 done
+SOFA_EXAMPLE_FILL=0.02 start
+for i in $(seq 1 120); do [ "$(grep -c 'downloads: done example:[123]' "$LOG")" -ge 3 ] && break; sleep 0.25; done
+quit
+SQ "update downloads set online = (id <> 'example:2'), onlineAt = $now, keep = (id = 'example:3') where id in ('example:1','example:2','example:3');
+    insert or replace into progress (id,pos,dur,watched,updated,source) select id,60,60,1,$now,'example' from downloads where id in ('example:1','example:2','example:3');"
+tracks() { SS "select count(*) from tracks where item='$1'"; }
+check "three downloads in the store" "$(tracks example:1)$(tracks example:2)$(tracks example:3)" "111"
 start
 cmd "open room"; sleep 2
 shot "$T/room.png"
@@ -294,10 +200,13 @@ cmd "key select"; sleep 1        # first tile of "Aufräumen": "Gesehen"
 shot "$T/room-confirm.png"
 cmd "key down"; sleep 0.3; cmd "key select"; sleep 1.5   # "Ja, 1 Video löschen"
 grep -q "Platz schaffen: 1 deleted" "$LOG" && ok "bulk deletion ran (1 video)" || bad "no bulk deletion: $(grep -i 'platz\|downloads' "$LOG" | tail -3)"
-[ ! -e "$ROOT/dev/Room/online.mp4" ] && ok "the online video was deleted" || bad "online video still there"
-[ -e "$ROOT/dev/Room/gone.mp4" ] && ok "the video that is no longer online stays" || bad "irreplaceable video deleted!"
-[ -e "$ROOT/dev/Room/kept.mp4" ] && ok "the kept video stays" || bad "kept video deleted!"
+check "the online video was deleted (its tracks too)" "$(tracks example:1)/$(SQ "select count(*) from downloads where id='example:1'")" "0/0"
+check "the video that is no longer online stays" "$(tracks example:2)" "1"
+check "the kept video stays" "$(tracks example:3)" "1"
+cmd "dlremove example:2"; cmd "dlremove example:3"
+for i in $(seq 1 20); do [ "$(grep -c 'dev: removed download example:[23]' "$LOG")" -ge 2 ] && break; sleep 0.25; done
 quit
+SQ "delete from progress where id in ('example:1','example:2','example:3');"   # unwatched again for 8b
 
 echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
@@ -318,30 +227,18 @@ st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||t
 nx=$(/opt/local/bin/sqlite3 "$DEVDB" "select v > strftime('%s','now') - 60 from settings where k='downloads.nextStart.example'")
 check "next start of the source stored" "$nx" "1"
 
-fi   # part b
-
-if want c; then
 echo "==> 8. downloads into the media store"
 export SOFA_EXAMPLE_FILL=0.4   # the Example app fills (8 pieces, 0.4 s apart)
-SQ() { /opt/local/bin/sqlite3 "$DEVDB" "$@"; }
-SS() { /opt/local/bin/sqlite3 "$ROOT/.store/store.db" "$@"; }
-start; quit   # the database
-SQ "delete from settings where k='downloadsFilesOfFillingSourcesRetired'"   # as on the first start after the update
-mkdir -p "$ROOT/dev/Dev"; cp "$T/good.mp4" "$ROOT/dev/Dev/old.mp4"
-SQ "insert into items (id,json) values ('example:2','{\"id\":\"example:2\",\"kind\":0,\"title\":\"Alt\",\"source\":\"example\"}');
-    insert into downloads (id,source,channel,path,state,progress,bytes,added) values ('example:2','example','Dev','$ROOT/dev/Dev/old.mp4',2,1,1,strftime('%s','now'));"
 start
-for i in $(seq 1 40); do grep -q "file download(s) of media store sources removed" "$LOG" && break; sleep 0.25; done
-check "a filling source's file download retired at start" "$(SQ "select count(*) from downloads where id='example:2'")/$([ -e "$ROOT/dev/Dev/old.mp4" ] && echo file || echo gone)" "0/gone"
 cmd "dlget $REF"
 for i in $(seq 1 40); do grep -q "example: filled $REF piece 2" "$LOG" && break; sleep 0.25; done
 cmd updatequit; dev_wait_exit $APP; APP=
-check "quit mid-fill: still running, no attempt used" "$(SQ "select state || '/' || tries || '/' || store from downloads where id='$REF'")" "1/0/1"
+check "quit mid-fill: still running, no attempt used" "$(SQ "select state || '/' || tries from downloads where id='$REF'")" "1/0"
 start
 for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0.25; done
 grep -q "downloads: done $REF" "$LOG" && ok "fill resumed and finished" || bad "fill not finished: $(grep "$REF\|downloads" "$LOG" | tail -3)"
 grep -q "example: filled $REF piece 0" "$LOG" && bad "the resume fetched stored pieces again" || ok "the resume fetched only the rest"
-check "a store download: done, no file, its bytes" "$(SQ "select state || '/' || store || '/' || coalesce(path, '-') || '/' || bytes from downloads where id='$REF'")" "2/1/-/8388608"
+check "done, its bytes" "$(SQ "select state || '/' || bytes from downloads where id='$REF'")" "2/8388608"
 check "its track in the store, complete" "$(SS "select count(*) || '/' || sum(e.end - e.start) from tracks t join extents e on e.track = t.id where t.item='$REF'")" "1/8388608"
 quit
 # the second block file (pieces 4-7) deleted from outside: noticed at start, queued again, only the
@@ -366,8 +263,8 @@ SQ "insert or replace into items (id,json) values ('example:3','{\"id\":\"exampl
 start
 for i in $(seq 1 80); do [ "$(grep -c 'downloads: done example:[34]' "$LOG")" -ge 2 ] && break; sleep 0.25; done
 check "subscription episodes pre-buffered: expiry in 14 days" \
-  "$(SQ "select group_concat(id || '=' || store || '/' || (abs(expires - strftime('%s','now') - 14*86400) < 120), ' ') from (select * from downloads where id in ('example:3','example:4') order by id)")" \
-  "example:3=1/1 example:4=1/1"
+  "$(SQ "select group_concat(id || '=' || (abs(expires - strftime('%s','now') - 14*86400) < 120), ' ') from (select * from downloads where id in ('example:3','example:4') order by id)")" \
+  "example:3=1 example:4=1"
 quit
 # example:3 past its expiry; example:4 watched four days ago (3 days after watching)
 SQ "update downloads set expires = strftime('%s','now') - 1 where id='example:3';
@@ -377,7 +274,7 @@ for i in $(seq 1 40); do [ "$(grep -c 'pre-buffered example:[34] expired' "$LOG"
 grep -q "pre-buffered example:3 expired (not watched in time)" "$LOG" && grep -q "pre-buffered example:4 expired (watched)" "$LOG" \
   && ok "expired: past the 14 days, and 3 days after watching" || bad "not expired: $(grep 'pre-buffered\|example:[34]' "$LOG" | tail -3)"
 check "expired: dismissed (not fetched again), bytes left as buffer" \
-  "$(SQ "select group_concat(state || '/' || store, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4/0 4/0/2"
+  "$(SQ "select group_concat(state, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4 4/2"
 # "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
 SQ "insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
     insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"
@@ -386,12 +283,15 @@ for i in $(seq 1 60); do grep -q "downloads: done example:1" "$LOG" && break; sl
 m=$(wc -l < "$LOG")
 cmd "dlget example:1"
 for i in $(seq 1 20); do grep -q "example:1 pre-buffered -> downloaded" "$LOG" && break; sleep 0.25; done
-check "Herunterladen on a pre-buffered episode: kept, no expiry" "$(SQ "select state || '/' || store || '/' || coalesce(sub, '-') || '/' || coalesce(expires, '-') from downloads where id='example:1'")" "2/1/-/-"
+check "Herunterladen on a pre-buffered episode: kept, no expiry" "$(SQ "select state || '/' || coalesce(sub, '-') || '/' || coalesce(expires, '-') from downloads where id='example:1'")" "2/-/-"
 sleep 1; tail -n +$((m + 1)) "$LOG" | grep -q "example: filled example:1" && bad "it was loaded again" || ok "nothing loaded again"
 quit
 
+fi   # part b
+
+if want c; then
 echo "==> 8c. a progressive file through the media proxy"
-unset SOFA_EXAMPLE_FILL; export SOFA_PROXY_LOOPBACK=1   # the Example app's file (local server) counts as a source's
+export SOFA_PROXY_LOOPBACK=1   # the Example app's file (local server) counts as a source's
 start
 cmd "dlget example:2"
 for i in $(seq 1 120); do grep -q "downloads: done example:2\|downloads: FAILED example:2" "$LOG" && break; sleep 0.25; done
@@ -399,7 +299,7 @@ grep -q "media-proxy: filling example:2" "$LOG" && grep -q "downloads: done exam
   || bad "not filled: $(grep 'example:2\|media-proxy' "$LOG" | tail -3)"
 pgrep -f "ffmpeg.*example" >/dev/null && bad "an ffmpeg ran" || ok "no ffmpeg"
 SIZE=$(stat -f %z "$T/good.mp4")
-check "a store download of the whole file" "$(SQ "select state || '/' || store || '/' || bytes from downloads where id='example:2'")" "2/1/$SIZE"
+check "a download of the whole file" "$(SQ "select state || '/' || bytes from downloads where id='example:2'")" "2/$SIZE"
 check "its manifest: a file item" "$(SS "select json_extract(json, '$.kind') || '/' || json_extract(json, '$.total') from manifests where item='example:2'")" "file/$SIZE"
 # playing (online) buffers through the proxy: what the player read is on disk afterwards
 m=$(wc -l < "$LOG")
@@ -408,6 +308,18 @@ for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame"
 sleep 1
 n=$(SS "select coalesce(sum(e.end - e.start), 0) from tracks t join extents e on e.track = t.id where t.item='example:3' and t.kind='file'")
 [ "${n:-0}" -gt 0 ] && ok "playback buffered through the proxy ($n bytes on disk)" || bad "nothing buffered while playing: $(SS "select group_concat(key || ' ' || kind) from tracks") / $(tail -n +$((m + 1)) "$LOG" | grep 'player\|media-proxy\|media-store\|mpv' | head -12)"
+cmd "key menu"; sleep 0.5
+# a download plays from the store; "Online abspielen" (info panel) switches to the source at the same position
+m=$(wc -l < "$LOG")
+cmd "play example:2"
+for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "player: play .* from the store" && ok "a download plays from the store" || bad "not from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player:' | tail -2)"
+m=$(wc -l < "$LOG"); cmd "key selecthold"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "info: panel for" && break; sleep 0.25; done
+cmd "key select"   # first action of a downloaded video: "Online abspielen"
+for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "Download -> online" && tail -n +$((m + 1)) "$LOG" | grep "player: play " | grep -qv "from the store" \
+  && ok "Online abspielen: the source plays" || bad "no switch to the source: $(tail -n +$((m + 1)) "$LOG" | grep 'player:\|info:' | tail -3)"
 cmd "key menu"; sleep 0.5
 # it plays from the store without its source
 kill $SRV; wait $SRV 2>/dev/null; SRV=
@@ -442,7 +354,7 @@ grep -q "media-proxy: filling example:4 (HLS" "$LOG" && grep -q "downloads: done
 check "the better variant, its segments and key are the manifest's required tracks" \
   "$(SS "select json_extract(json, '$.kind') || '/' || json_array_length(json, '$.required') || '/' || json_extract(json, '$.bandwidth') from manifests where item='example:4'")" \
   "hls/$(( $(grep -c EXTINF "$H/v0/index.m3u8") + 1 ))/$(grep -o 'BANDWIDTH=[0-9]*' "$H/master.m3u8" | cut -d= -f2 | sort -n | tail -1)"
-check "a store download" "$(SQ "select state || '/' || store from downloads where id='example:4'")" "2/1"
+check "a download" "$(SQ "select state from downloads where id='example:4'")" "2"
 kill $HSRV; wait $HSRV 2>/dev/null
 m=$(wc -l < "$LOG")
 cmd "play example:4"

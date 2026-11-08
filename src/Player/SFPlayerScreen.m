@@ -321,8 +321,9 @@ static const NSTimeInterval kFailedMoveOn = 5;
         CALayer *v = self->_engine.videoLayer;
         if (v) { [v removeFromSuperlayer]; v.frame = self->_videoHost.bounds; [self->_videoHost addSublayer:v]; }
     });
-    SFLog(@"player: play %@ via %@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
-          _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, audio %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"");
+    SFLog(@"player: play %@ via %@%@%@", open.isFileURL ? open.path.lastPathComponent : open.host, _engine.engineName,
+          _openedDash ? [NSString stringWithFormat:@" (%@p%@ %@, audio %@)", src[@"height"], src[@"fps"], src[@"vcodec"], src[@"alang"] ?: @"?"] : @"",
+          [src[@"stored"] boolValue] ? @" from the store" : @"");
     __weak SFPlayerScreen *wself = self;
     // the service behind the app's session streams died: its local URLs are gone - reopen right
     // away instead of waiting for mpv's reconnects and the stall watchdog

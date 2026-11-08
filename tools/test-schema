@@ -15,6 +15,8 @@
 #  13  original_titles: the uploader's title of a video (YouTube lists carry a localized one)
 #  14  downloads.store: a download's kind explicit (media store tracks or a file); existing rows files
 #  15  downloads.expires: pre-buffered episodes expire; existing rows kept (NULL)
+#  16  one kind of download (the media store's): file downloads' files and thumbnails deleted, empty
+#      folders too; a subscription episode stays dismissed, a manual one leaves; path and store go
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
@@ -46,7 +48,9 @@ run() {   # start the instance until its store is open, then quit
 trap '[ -n "$APP" ] && kill $APP 2>/dev/null; { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1; rm -rf "$T"' EXIT
 
 echo "==> legacy database (0.3.8)"
-mkdir -p "$SOFA_DATA_DIR"
+mkdir -p "$SOFA_DATA_DIR/Downloads/example/Show" "$SOFA_DATA_DIR/Downloads/other"
+for f in a.mp4 b.mp4 b.jpg c.mp4 poster.jpg; do echo x > "$SOFA_DATA_DIR/Downloads/example/Show/$f"; done
+echo x > "$SOFA_DATA_DIR/Downloads/other/keep.mp4"   # not a download's: untouched
 NOW=$(date +%s)
 Q <<SQL
 CREATE TABLE progress (id TEXT PRIMARY KEY, pos REAL, dur REAL, watched INTEGER DEFAULT 0, updated REAL, source TEXT, item TEXT);
@@ -63,7 +67,11 @@ INSERT INTO downloads (id, source, state) VALUES ('example:2', 'example', 2);
 -- repair (1 failed attempt), a subscription episode that gave up (6 attempts)
 INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('example:5', 'example', 3, 'exampleshow:a', 2, $NOW, 'HTTP 403');
 INSERT INTO downloads (id, source, state, tries, failedAt, error) VALUES ('example:6', 'example', 2, 1, $NOW, 'repair: timeout');
+INSERT INTO downloads (id, source, state, sub, path, tries, failedAt, error) VALUES ('example:10', 'example', 2, 'exampleshow:a', '$SOFA_DATA_DIR/Downloads/example/Show/c.mp4', 1, $NOW, 'repair: timeout');
 INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('example:7', 'example', 3, 'exampleshow:a', 6, $NOW, 'HTTP 404');
+-- step 16: file downloads (files below), a manual one and a subscription episode
+INSERT INTO downloads (id, source, state, path, thumb, bytes) VALUES ('example:8', 'example', 2, '$SOFA_DATA_DIR/Downloads/example/Show/a.mp4', NULL, 9);
+INSERT INTO downloads (id, source, state, sub, path, thumb, bytes) VALUES ('example:9', 'example', 2, 'exampleshow:a', '$SOFA_DATA_DIR/Downloads/example/Show/b.mp4', '$SOFA_DATA_DIR/Downloads/example/Show/b.jpg', 9);
 -- step 12: an item kept twice - an older history copy (a plot, local paths) and a newer download copy (renamed)
 INSERT INTO progress VALUES ('example:4', 10, 60, 0, $NOW - 1000, 'example', '{"id":"example:4","kind":0,"title":"Alter Titel","plot":"Nur hier","localPath":"/x/4.mp4","image":"/x/4.jpg","url":"file:///x/4.mp4"}');
 INSERT INTO downloads (id, source, state, added, item) VALUES ('example:4', 'example', 2, $NOW, '{"id":"example:4","kind":0,"title":"Neuer Titel","image":"https://img.example/4.jpg"}');
@@ -86,7 +94,7 @@ ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 15
+check "schema version" "$(Q 'pragma user_version')" 16
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
@@ -111,7 +119,8 @@ check "10: no cache table in the user database" "$(Q "select count(*) from sqlit
 check "10: cache entry moved along" "$(QC "select CAST(v AS TEXT) from jcache where k='GET https://fresh.example/'")" '{"a":1}'
 check "10: settings of removed code gone, others kept" "$(Q "select group_concat(k) from (select k from settings where k in ('kodi.imported','yt.feeds.v2','welcome.shown') order by k)")" "welcome.shown"
 check "11: retrying, next attempt after 2 failures (30 min)" "$(Q "select state || ' ' || (retryAt - $NOW) from downloads where id='example:5'")" "5 1800.0"
-check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "select state || ' ' || error || ' ' || (retryAt - $NOW) from downloads where id='example:6'")" "2 timeout 900.0"
+# (a finished download is checked against the media store once the app runs: example:6 is queued again)
+check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || ifnull(retryAt - $NOW, '-') from downloads where id='example:6'")" "0 - -"
 check "11: gave up: failed, nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "3 -"
 check "11: failedAt gone" "$(Q "select count(*) from pragma_table_info('downloads') where name='failedAt'")" 0
 check "12: items columns" "$(Q "select group_concat(name) from pragma_table_info('items')")" "id,json"
@@ -121,9 +130,13 @@ check "12: newest title wins, older fields kept, no local paths" \
   "Neuer Titel|Nur hier|https://img.example/4.jpg|"
 check "12: no item column left" "$(Q "select count(*) from pragma_table_info('progress') p where name='item'") $(Q "select count(*) from pragma_table_info('downloads') where name='item'") $(Q "select count(*) from pragma_table_info('watch_later') where name='item'") $(Q "select count(*) from pragma_table_info('follow_items') where name='item'")" "0 0 0 0"
 check "13: original titles (id -> the uploader's title)" "$(Q "select group_concat(name) from pragma_table_info('original_titles')")" "id,title"
-check "14: downloads.store, existing downloads are files" "$(Q "select count(*) || '/' || sum(store = 0) from downloads where id in ('example:6')")" "1/1"
 check "15: downloads.expires, existing downloads kept" "$(Q "select count(*) || '/' || sum(expires is null) from downloads where id in ('example:6')")" "1/1"
-check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2522"
+check "16: files, thumbnail and the emptied folders deleted, others kept" \
+  "$(cd "$SOFA_DATA_DIR/Downloads" && find . -type f -not -path './.store/*' | sort | tr '\n' ' ')" "./other/keep.mp4 "
+check "16: the subscription episode dismissed, the manual one gone" "$(Q "select group_concat(id || '=' || state || '/' || bytes || '/' || ifnull(thumb, '-'), ' ') from downloads where id in ('example:8','example:9')")" "example:9=4/0/-"
+check "11+16: a file with a pending repair: dismissed, nothing pending" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || tries || ' ' || ifnull(retryAt, '-') from downloads where id='example:10'")" "4 - 0 -"
+check "16: no path, no store column" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('path','store')")" 0
+check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2722"
 
 echo "==> restart (no step runs twice)"
 run
@@ -134,7 +147,7 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 15
+check "schema version" "$(Q 'pragma user_version')" 16
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
   "downloads follow_items follows items original_titles progress recent_searches settings stats subscriptions watch_later"

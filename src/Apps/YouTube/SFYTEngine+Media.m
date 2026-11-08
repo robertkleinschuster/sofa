@@ -1,4 +1,4 @@
-// The engine's sessions as local URLs for mpv and ffmpeg (the URLs open() answers, under the
+// The engine's sessions as local URLs for mpv and the downloads' fill (the URLs open() answers, under the
 // loopback server's base):
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
 //   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the HLS media playlist, naming...)

@@ -1,6 +1,7 @@
 # Media store: buffer and download are one thing
 
-Status: agreed with the user 2026-11-08; phases 1-3 built for YouTube and the mediatheks' progressive files (ZDF, ARD, CCC); ORF's HLS follows (4b).
+Status: agreed with the user 2026-11-08; phases 1-4 built - every download is the store's (YouTube, the
+mediatheks' progressive files, ORF's HLS); the UI (5) follows.
 
 ## What the user sees
 
@@ -110,6 +111,12 @@ store can hold; existing downloads may be deleted (no migration of old files).
       item plays from the store without its source (SFDownloads localCopyOf:); the download worker fills
       generically (no ffmpeg) when an app has no fillItem: but resolves to a progressive file.
       Loopback sources stay unproxied (local already; tests opt in with SOFA_PROXY_LOOPBACK).
-   b. HLS (ORF): SFStreamProxy's playlist rewriting moves into SFMediaProxy (segments as tracks, one
-      variant for downloads); SFStreamProxy and the ffmpeg/MP4 path go.
+   b. Done - HLS (ORF): SFMediaProxy+HLS.m rewrites the playlists (resources as tracks
+      "hls:<item>:<hash>", keys included; VOD only stored); a download takes the best variant <= 1080p
+      plus the default audio rendition, manifest kind "hls". SFStreamProxy went.
+   c. Done - one kind of download (schema step 16): the file downloads' files and thumbnails deleted
+      (a subscription episode stays dismissed, a manual one leaves), `downloads.path`/`store` dropped;
+      ffmpeg (no longer bundled), the verifier, repairs, orphan reaping and the ytdl-sub migration went.
+      A source that neither fills (fillItem:) nor resolves to a file/HLS the proxy serves cannot be
+      downloaded.
 5. UI: tile mark, timeline shade, "noch X MB".

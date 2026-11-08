@@ -1,6 +1,6 @@
 // SFDownloads – subscriptions ("download new episodes automatically"): feed registry,
 // subscription management, periodic checks (keepDays = download window: older episodes are not
-// fetched), and the expiry of pre-buffered episodes (sources that fill the media store).
+// fetched), and the expiry of pre-buffered episodes.
 #import "SFDownloads+Private.h"
 
 BOOL SFHasFeed(NSString *ref) {
@@ -59,12 +59,6 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     _subs[identifier] = s;
     [self saveSub:s];
     return s;
-}
-
-- (void)addSubscription:(SFFollow *)follow keepDays:(NSInteger)keepDays since:(NSTimeInterval)since {
-    if (!follow.identifier.length) return;
-    [[SFFollows shared] adopt:follow];   // following is a prerequisite of auto-download (title, picture)
-    [self newSub:follow.identifier keepDays:keepDays since:since];
 }
 
 - (void)subscribe:(SFItem *)folder {
@@ -137,12 +131,12 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
         if (row[@"id"]) watchedAt[row[@"id"]] = row[@"updated"];
     NSMutableArray *writes = [NSMutableArray new];
     for (SFDownloadRecord *r in _recs.allValues) {
-        if (r.state != SFDLDone || !r.inStore || r.expires <= 0 || r.keep) continue;
+        if (r.state != SFDLDone || r.expires <= 0 || r.keep) continue;
         double seen = [watchedAt[r.identifier] doubleValue];
         BOOL due = now >= r.expires || (seen > 0 && now >= seen + kAfterWatchedDays * 86400.0);
         if (!due) continue;
         SFLog(@"downloads: pre-buffered %@ expired (%@) - its bytes are buffer now", r.identifier, seen > 0 ? @"watched" : @"not watched in time");
-        r.state = SFDLDismissed; r.inStore = NO; r.expires = 0; r.bytes = 0; r.progress = 0;   // unpinned: evicted when room is needed
+        r.state = SFDLDismissed; r.expires = 0; r.bytes = 0; r.progress = 0;   // unpinned: evicted when room is needed
         [writes addObject:[self write:r]];
         [self changed:r.identifier];
     }
@@ -151,7 +145,6 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 
 // all subscriptions against their follows' lists - local, no request (start, every 3 h with the repairs)
 - (void)checkSubscriptionsNow {
-    [self retryDueRepairs];
     [self expirePrebuffers];
     for (SFSubscription *s in [_subs.allValues copy]) [self checkSub:s];
     SFLog(@"downloads: subscription check done");

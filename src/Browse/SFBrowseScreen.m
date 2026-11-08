@@ -108,7 +108,7 @@
 - (void)prefetchFocused {
     _prefetchTimer = nil;
     SFItem *it = [self focusedItem];
-    if (it.kind != SFItemVideo || [[SFDownloads shared] fileFor:it.identifier] || ![SFNet isOnline]) return;
+    if (it.kind != SFItemVideo || [[SFDownloads shared] stateFor:it.identifier progress:NULL] == SFDLDone || ![SFNet isOnline]) return;
     // only when the focus moved to another video: rebuilds after a follow check restore the same
     // focus (2026-11-06: one video preloaded 184 times a day, also with the screen asleep)
     if ([it.identifier isEqualToString:_prefetchedID]) return;

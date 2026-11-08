@@ -7,7 +7,7 @@
 #
 #   Contents/MacOS/{Sofa,SofaRemote}
 #   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
-#   Contents/Runtime/bin/{ffmpeg,rsvg-convert,Xvfb,xkbcomp}
+#   Contents/Runtime/bin/{rsvg-convert,Xvfb,xkbcomp}
 #   Contents/Runtime/lib/{firefox/,libGL.1.dylib,libepoxy.0.dylib,dri/}   the engine's browser + Mesa
 #   Contents/Runtime/share/{X11/xkb,fonts/misc}         Xvfb's keymaps and fonts
 #   Contents/Resources/youtube-engine     the YouTube engine's Firefox extension (docs/youtube-engine.md)
@@ -36,7 +36,7 @@ cp -R "$SRC/build/Sofa.app" "$APP"
 mkdir -p "$RT/bin" "$RT/etc/fonts" "$APP/Contents/Frameworks"
 
 echo "==> tools"
-for t in ffmpeg rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
+for t in rsvg-convert; do cp -L "$MP/bin/$t" "$RT/bin/$t"; done
 
 echo "==> YouTube engine: extension + its browser (Firefox, Xvfb, Mesa; SFYTBrowser finds them in Runtime)"
 [ -f "$APP/Contents/Resources/youtube-engine/manifest.json" ] || { echo "ERROR: engine extension missing in the build"; exit 1; }

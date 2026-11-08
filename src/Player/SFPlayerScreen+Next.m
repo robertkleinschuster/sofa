@@ -1,6 +1,7 @@
 // SFPlayerScreen - end of a video and what comes next: queue, next episode, recommendation, the "up next" card.
 #import "SFPlayerScreen+Private.h"
 #import "SFPlayerInfoScreen.h"
+#import "SFDownloads.h"
 
 @implementation SFPlayerScreen (Next)
 
@@ -22,11 +23,12 @@
     // Started from a playlist: next video of the playlist (before recommendations)
     if (_item.playlistID.length && q != NSNotFound && [[_queue[q] playlistID] isEqualToString:_item.playlistID]) return _queue[q];
     SFItem *up = _upNext.drm ? nil : _upNext;
-    if (!_item.localPath || !_item.channel) return up;        // streamed YouTube: recommendation
+    // a downloaded episode: the next newer download of its show; anything else: the recommendation
+    if (!_item.channel || [[SFDownloads shared] stateFor:_item.identifier progress:NULL] != SFDLDone) return up;
     SFShow *show = [[SFLibrary shared] showNamed:_item.channel source:_item.source];
     NSUInteger i = NSNotFound;
     for (NSUInteger k = 0; k < show.episodes.count; k++)
-        if ([[show.episodes[k] localPath] isEqualToString:_item.localPath]) { i = k; break; }
+        if ([[show.episodes[k] identifier] isEqualToString:_item.identifier]) { i = k; break; }
     if (i == NSNotFound || i == 0) return up;                 // last downloaded episode: recommendation
     return show.episodes[i - 1];
 }

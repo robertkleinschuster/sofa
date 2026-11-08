@@ -1,27 +1,17 @@
-// SFDownloads – core: persistence (downloads table), queries, actions and migration;
-// the queue and ffmpeg run: SFDownloads+Worker.m. Subscriptions: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
+// SFDownloads – core: persistence (downloads table), queries and actions. A download is its item's
+// tracks in the media store, pinned (docs/media-store.md); the queue and the fill: SFDownloads+Worker.m.
+// Subscriptions and pre-buffering: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
 #import "SFMediaStore.h"
 #import "SFMediaProxy.h"
 #import "SFEngine.h"
-#import <signal.h>
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
 NSString *const SFDownloadsStorageDidChangeNotification = @"SFDownloadsStorageDidChangeNotification";
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 
-
-
-static NSString *ffmpegPath(void) {
-    for (NSString *p in @[SFTool(@"ffmpeg"), @"/usr/local/bin/ffmpeg"])
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:p]) return p;
-    return nil;
-}
-
 @implementation SFDownloads
-
-+ (NSString *)ffmpegToolPath { return ffmpegPath(); }
 
 + (instancetype)shared {
     static SFDownloads *s; static dispatch_once_t o;
@@ -34,8 +24,7 @@ static NSString *ffmpegPath(void) {
     dispatch_once(&o, ^{
         m = [[SFMediaStore alloc] initWithDirectory:[[SFDownloads root] stringByAppendingPathComponent:@".store"]];
         m.reserve = (long long)self.storageReserve;
-        // a media store download, and what a pending download is going to read, stay (a file download
-        // drops its store copy when the file is installed - SFDownloads+Worker finish:)
+        // a download, and what a pending download is going to read, stay
         __weak SFDownloads *ws = self;
         m.isPinned = ^BOOL(NSString *item) { return [ws.storePinned containsObject:item]; };
     });
@@ -74,9 +63,9 @@ static NSString *ffmpegPath(void) {
 
 #pragma mark Persistence
 
-// pending (its bytes are on their way), or a media store download (its bytes are the download)
+// pending (its bytes are on their way), or done (its bytes are the download)
 static BOOL PinsStore(SFDownloadRecord *r) {
-    return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying || (r.state == SFDLDone && r.inStore);
+    return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying || r.state == SFDLDone;
 }
 
 - (void)notePinned:(BOOL)pinned item:(NSString *)item {
@@ -101,36 +90,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 }
 
 
-
-// Re-queues repairs whose backoff has elapsed and schedules itself for the next one that becomes
-// due (before: only at start and every 3 h, so a 15-min backoff could take hours). Also called at
-// start, after a failed repair and with every subscription check.
-- (void)retryDueRepairs {
-    NSTimeInterval now = [NSDate date].timeIntervalSince1970, next = 0;
-    NSMutableArray *writes = [NSMutableArray new];
-    for (SFDownloadRecord *r in _recs.allValues) {
-        if (r.state != SFDLDone || !r.retryAt) continue;   // no repair pending
-        NSTimeInterval due = r.retryAt;
-        if (due > now) { next = next ? MIN(next, due) : due; continue; }
-        if (!r.path || ![[NSFileManager defaultManager] fileExistsAtPath:r.path]) continue;
-        SFLog(@"downloads: retrying the repair of %@ (attempt %ld)", r.identifier, (long)r.tries + 1);
-        r.error = nil; r.retryAt = 0;
-        r.state = SFDLQueued; r.progress = 0;
-        [writes addObject:[self write:r]]; [self changed:r.identifier];
-    }
-    if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
-    if (next && (!_repairWake || next < _repairWake || _repairWake <= now)) {
-        _repairWake = next;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((next - now + 1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (self->_repairWake == next) self->_repairWake = 0;
-            [self retryDueRepairs];
-        });
-    }
-}
-
-- (void)expireRepairBackoffForTesting {
-    for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone && r.retryAt) r.retryAt = 1;   // due long ago
-}
 
 - (BOOL)willRetry:(NSString *)identifier {
     return [self recOf:identifier].state == SFDLRetrying;
@@ -161,30 +120,15 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
     if (!r) return SFDLNone;
     if (progress) *progress = r.progress;
-    if (r.state == SFDLDone && ![self hasContent:r]) return SFDLNone;
     return r.state;
 }
 
 - (SFDownloadRecord *)recOf:(NSString *)identifier { return identifier ? _recs[identifier] : nil; }
 
-// A finished download's content: its file, or (no file) its tracks in the media store - checked once
-// per launch (verifyStoreDownloads), not per call: tiles ask this for every item they show.
-- (BOOL)hasContent:(SFDownloadRecord *)r {
-    if (r.inStore) return r.state == SFDLDone;
-    return r.path && [[NSFileManager defaultManager] fileExistsAtPath:r.path];
-}
-
-- (NSString *)fileFor:(NSString *)identifier {
-    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
-    return r.state == SFDLDone && !r.inStore && [self hasContent:r] ? r.path : nil;
-}
-
-// What plays without the source: a downloaded file, or a file item complete in the media store (its
+// What plays without the source: an item complete in the media store that the media proxy serves (its
 // stored subtitles go along as the player's source). YouTube items answer for themselves (their stored
-// sessions, SFYTEngine+Store.m) - the proxy only serves file items.
+// sessions, SFYTEngine+Store.m).
 - (NSURL *)localCopyOf:(NSString *)ident {
-    NSString *file = [self fileFor:ident];
-    if (file) return [NSURL fileURLWithPath:file];
     NSArray *subs = nil;
     NSURL *stored = [[SFMediaProxy shared] storedURLFor:ident subs:&subs];
     if (stored) SFSetMPVSource(stored, @{@"subs": subs ?: @[], @"stored": @YES});
@@ -203,10 +147,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     NSDictionary *d = SFJSONParse(r.itemJSON ?: @"{}");
     if (![d isKindOfClass:[NSDictionary class]]) return nil;
     SFItem *i = [SFItem itemWithDictionary:d];
-    if (r.state == SFDLDone && r.path) {
-        i.localPath = r.path;
-        i.playURL = [NSURL fileURLWithPath:r.path];
-    }
     if (r.thumb && [[NSFileManager defaultManager] fileExistsAtPath:r.thumb]) { i.image = r.thumb; i.backdrop = i.backdrop ?: r.thumb; }
     // the download's own facts: its show's name, the publication time it learned (exact when the
     // source gave one - a list's "vor 2 Wochen" written to the item later must not replace it)
@@ -219,7 +159,7 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 
 - (SFItem *)itemFor:(NSString *)identifier {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
-    return r.state == SFDLDone && [self hasContent:r] ? [self itemFromRec:r] : nil;
+    return r.state == SFDLDone ? [self itemFromRec:r] : nil;
 }
 
 - (NSArray *)recsWithState:(SFDLState)st source:(NSString *)source {
@@ -236,7 +176,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 - (NSArray *)items:(NSString *)source {
     NSMutableArray *out = [NSMutableArray new];
     for (SFDownloadRecord *r in [self recsWithState:SFDLDone source:source]) {
-        if (![self hasContent:r]) continue;
         SFItem *i = [self itemFromRec:r];
         if (i) [out addObject:i];
     }
@@ -298,13 +237,13 @@ static NSString *gb(unsigned long long b) {
     if (!item.identifier || item.kind != SFItemVideo) return NO;
     SFDownloadRecord *r = _recs[item.identifier];
     SFDLState st = r ? r.state : SFDLNone;
-    if (!subID && r.sub && st == SFDLDone && r.inStore && [self hasContent:r]) {   // "Herunterladen" on a pre-buffered episode
+    if (!subID && r.sub && st == SFDLDone) {   // "Herunterladen" on a pre-buffered episode
         r.sub = nil; r.expires = 0;   // now the user's download: kept, nothing to load
         [self save:r]; [self changed:r.identifier];
         SFLog(@"downloads: %@ pre-buffered -> downloaded (kept)", r.identifier);
         return YES;
     }
-    if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self hasContent:r]))) return NO;
+    if (r && (st == SFDLQueued || st == SFDLRunning || st == SFDLDone)) return NO;
     if (subID && r && st == SFDLDismissed) return NO;
     if (subID && r && (st == SFDLFailed || st == SFDLRetrying)) {
         if (r.tries >= kSubMaxTries) return NO;                                   // given up
@@ -342,12 +281,11 @@ static NSString *gb(unsigned long long b) {
         [self abortRun];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
     }
-    if (r.path) [[NSFileManager defaultManager] removeItemAtPath:r.path error:nil];
-    if (r.inStore) [self.mediaStore removeItem:identifier];   // a media store download: its bytes are the download
+    [self.mediaStore removeItem:identifier];   // its bytes are the download
     if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
-    [self pruneEmptyDirs:[(r.path ?: r.thumb) stringByDeletingLastPathComponent]];
+    [self pruneEmptyDirs:[r.thumb stringByDeletingLastPathComponent]];
     if (r.sub) {   // subscription episode: remember it so it does not come back
-        r.state = SFDLDismissed; r.bytes = 0; r.path = nil; r.inStore = NO;
+        r.state = SFDLDismissed; r.bytes = 0; r.thumb = nil;
         [self save:r];
     } else {
         [_recs removeObjectForKey:identifier];
@@ -377,49 +315,24 @@ static NSString *gb(unsigned long long b) {
 
 #pragma mark Worker
 
+// Not a failure: the running fill is let go (it stays Running in the database; the next start queues
+// it again and fetches only the rest - what it stored stays).
 - (void)stopForExit {
-    NSTask *t = _task;
-    NSString *ident = _runningID;
-    if (!t.isRunning && !_fillCancel) return;
-    SFLog(@"downloads: stopping the download before exit (%@ resumes on the next start)", ident);
-    // not a failure: let go of it first, so its termination handler only removes the part file
-    // (it stays Running in the database; the next start queues it again). Before 2026-11-06 a
-    // handler that still ran (update restart) counted it as a failed attempt. A fill keeps what it
-    // stored: the next start fetches only the rest.
-    pid_t pid = t.processIdentifier;
+    if (!_fillCancel) return;
+    SFLog(@"downloads: stopping the download before exit (%@ resumes on the next start)", _runningID);
     [self abortRun];
-    for (int i = 0; i < 20 && t.isRunning; i++) usleep(50 * 1000);
-    if (t.isRunning) kill(pid, SIGKILL);
 }
-
 
 - (void)start {
-    if (_started || _starting) return;
-    _starting = YES;
-    // orphans first, before anything writes: no second writer may survive from an earlier run. The
-    // process list is a sysctl walk (80 ms of the main thread at launch, hitch monitor 2026-11-07):
-    // off it - the worker waits for _started.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [self reapOrphans];
-        SFMain(^{ self->_started = YES; [self startWorking]; });
-    });
-}
-
-- (void)startWorking {
-    [self sweepStaleParts];
-    [self retireFilesOfFillingSources];
+    if (_started) return;
+    _started = YES;
     [self verifyStoreDownloads];
     [self expirePrebuffers];   // (also every 3 h with the subscription check)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self retryDueRepairs];
-        [self auditExistingDownloads];
-    });
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
-    [self retryDueRepairs];   // due repairs go now, the others are scheduled for when they become due
     // subscriptions: a follow with news (its own refresh plan), plus all of them locally shortly
-    // after start and every 3 h with the repairs
+    // after start and every 3 h
     [[NSNotificationCenter defaultCenter] addObserverForName:SFFollowsNewItemsNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { SFSubscription *s = self->_subs[n.object]; if (s) [self checkSub:s]; }];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
@@ -432,30 +345,4 @@ static NSString *gb(unsigned long long b) {
     return [[[SFDownloads root] stringByAppendingPathComponent:safeName(source ?: @"", 20)] stringByAppendingPathComponent:safeName(channel ?: @"Einzelne", 80)];
 }
 
-#pragma mark Migration
-
-- (BOOL)adoptFile:(NSString *)path item:(SFItem *)item thumb:(NSString *)thumb subscription:(NSString *)subID error:(NSError **)err {
-    if (!item.identifier || ![[NSFileManager defaultManager] fileExistsAtPath:path]) return NO;
-    if ([self fileFor:item.identifier]) { if (err) *err = SFError(@"bereits vorhanden"); return NO; }
-    SFDownloadRecord *r = [SFDownloadRecord new];
-    r.identifier = item.identifier; r.source = item.source ?: @""; r.channel = item.channel ?: @"";
-    r.state = SFDLDone; r.progress = 1; r.added = [[NSDate date] timeIntervalSince1970];
-    [self setItem:item ofRec:r];
-    if (item.date) r.published = [item.date timeIntervalSince1970];
-    r.sub = subID;
-    NSString *target = [self targetPathFor:r item:item];
-    if (![path.pathExtension.lowercaseString isEqualToString:@"mp4"]) target = [[target stringByDeletingPathExtension] stringByAppendingPathExtension:path.pathExtension];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    [fm createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
-    if (![fm moveItemAtPath:path toPath:target error:err]) return NO;      // same volume: just rename
-    r.path = target;
-    r.bytes = [[fm attributesOfItemAtPath:target error:nil] fileSize];
-    if (thumb && [fm fileExistsAtPath:thumb]) {
-        NSString *tt = [[target stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
-        if ([fm moveItemAtPath:thumb toPath:tt error:nil]) r.thumb = tt;
-    }
-    _recs[item.identifier] = r;
-    [self save:r];
-    return YES;
-}
 @end

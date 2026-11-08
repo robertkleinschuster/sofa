@@ -119,13 +119,13 @@ static NSString *SFBaseLanguage(NSString *code) {
 // Downloaded: the file only has the downloaded audio track - online there are all audio and
 // subtitle tracks (user request 2026-11-04: be able to switch to the stream)
 - (BOOL)canSwitchToStream {
-    return _openURL.isFileURL && (_item.resolverRef || _item.externalID) && _item.kind == SFItemVideo;
+    return [SFMPVSourceFor(_openURL)[@"stored"] boolValue] && (_item.resolverRef || _item.externalID) && _item.kind == SFItemVideo;
 }
 
 // Switch from the download to the online stream, at the same position
 - (void)switchToStream {
     SFItem *it = [_item copy];
-    it.localPath = nil; it.playURL = nil; it.streamOnly = YES;   // otherwise the download lookup finds the file again
+    it.playURL = nil; it.streamOnly = YES;   // otherwise the store's copy is found again
     if (!it.resolverRef) it.resolverRef = it.identifier;   // e.g. "yt:<id>": the identifier is the app's ref
     NSMutableArray *q = [_queue mutableCopy];
     if (_index < q.count) q[_index] = it;

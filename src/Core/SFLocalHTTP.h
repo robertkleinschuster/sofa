@@ -1,4 +1,4 @@
-// A loopback HTTP/1.1 server for Sofa's local readers and helpers (mpv, ffmpeg, the YouTube
+// A loopback HTTP/1.1 server for Sofa's local readers and helpers (mpv, the media proxy, the YouTube
 // engine's Firefox extension): 127.0.0.1 only, a free port, one request per connection
 // (Connection: close - every reader here opens a connection per request anyway), or a WebSocket
 // on it (SFWebSocket).

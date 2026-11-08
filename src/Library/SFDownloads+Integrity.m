@@ -1,221 +1,16 @@
-// SFDownloads (Integrity) - downloads must never end up corrupt, whatever happens to the app.
-//
-// Incident 2026-11-04: the update restart ends Sofa with _exit(); the running ffmpeg survived as an
-// orphan (parent = launchd) and kept writing the same .part file as the download that the new app
-// instance restarted -> several writers interleaved into one 1.2 GB file full of broken NAL units.
-// Layers (each one alone would have prevented or repaired it):
-//   1. stopForExit: every exit path terminates the running ffmpeg first
-//   2. reapOrphans: at start, ffmpeg processes of THIS instance's download root whose parent died are
-//      killed (crash, SIGKILL, older versions) - dev and real instance have different roots
-//   3. part files are unique per app process and stale ones are swept at start
-//   4. every finished file is verified (duration + decode probes) before it replaces the target
-//   5. a one-time audit verifies existing downloads and re-queues broken ones
-// Media store downloads (no file, docs/media-store.md) have none of this: no process, no part file,
-// the store writes its blocks itself - they are only checked for completeness once per launch.
+// SFDownloads (Integrity) - a download is its item's tracks in the media store; the store keeps its
+// index true against its block files (SFMediaStore checkBlocks), and here every finished download is
+// checked for completeness once per launch: one that lost bytes (block files deleted from outside) is
+// queued again and its fill fetches only what is missing. (The file downloads' layers - orphaned
+// ffmpeg processes, part files, a verifier, an audit - went with the files, 2026-11-08.)
 #import "SFDownloads+Private.h"
 #import "SFMediaStore.h"
-#import <sys/sysctl.h>
-#import <signal.h>
-
-static NSString *const kAuditKey = @"downloadsAuditVersion";
-static NSString *const kAuditVersion = @"1";
-static NSString *const kAuditPosKey = @"downloadsAuditPos";   // last verified id (ids are processed sorted)
 
 @implementation SFDownloads (Integrity)
 
-#pragma mark Orphans and stale parts
-
-// argv of a process (KERN_PROCARGS2: argc, exec path, padding, argv...), nil if not readable
-static NSArray *SFProcessArgs(pid_t pid) {
-    int mib[3] = {CTL_KERN, KERN_PROCARGS2, pid};
-    size_t size = 0;
-    int maxArg = 0; size_t ml = sizeof(maxArg);
-    int am[2] = {CTL_KERN, KERN_ARGMAX};
-    if (sysctl(am, 2, &maxArg, &ml, NULL, 0) != 0) return nil;
-    size = (size_t)maxArg;
-    char *buf = malloc(size);
-    if (!buf) return nil;
-    if (sysctl(mib, 3, buf, &size, NULL, 0) != 0 || size < sizeof(int)) { free(buf); return nil; }
-    int argc; memcpy(&argc, buf, sizeof(argc));
-    char *p = buf + sizeof(int), *end = buf + size;
-    while (p < end && *p) p++;            // exec path
-    while (p < end && !*p) p++;           // padding
-    NSMutableArray *args = [NSMutableArray array];
-    for (int i = 0; i < argc && p < end; i++) {
-        NSString *s = [NSString stringWithUTF8String:p];
-        [args addObject:s ?: @""];
-        p += strlen(p) + 1;
-    }
-    free(buf);
-    return args;
-}
-
-- (NSUInteger)reapOrphans {
-    NSString *root = [[SFDownloads root] stringByAppendingString:@"/"];
-    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_UID, (int)getuid()};
-    size_t size = 0;
-    if (sysctl(mib, 4, NULL, &size, NULL, 0) != 0 || !size) return 0;
-    struct kinfo_proc *procs = malloc(size);
-    if (!procs || sysctl(mib, 4, procs, &size, NULL, 0) != 0) { free(procs); return 0; }
-    NSUInteger n = size / sizeof(struct kinfo_proc), reaped = 0;
-    NSMutableArray *victims = [NSMutableArray array];
-    pid_t own = _task.isRunning ? _task.processIdentifier : 0;
-    for (NSUInteger i = 0; i < n; i++) {
-        struct kinfo_proc *kp = &procs[i];
-        pid_t pid = kp->kp_proc.p_pid;
-        if (pid == own || kp->kp_eproc.e_ppid != 1) continue;               // only orphans
-        if (strcmp(kp->kp_proc.p_comm, "ffmpeg") != 0) continue;
-        NSArray *args = SFProcessArgs(pid);
-        BOOL ours = NO;
-        for (NSString *a in args) if ([a hasPrefix:root]) { ours = YES; break; }   // writes into our root
-        if (!ours) continue;
-        SFLog(@"downloads: killing orphaned ffmpeg %d (left over from an earlier run): %@", pid, [(NSString *)args.lastObject lastPathComponent]);
-        kill(pid, SIGTERM);
-        reaped++;
-        [victims addObject:@(pid)];
-    }
-    free(procs);
-    // ffmpeg only honours SIGTERM between packets; one stuck in a dead network read ignores it
-    // (seen 2026-11-04) -> escalate to SIGKILL after a short grace period
-    for (int i = 0; i < 20 && victims.count; i++) {
-        usleep(50 * 1000);
-        for (NSNumber *v in [victims copy]) if (kill(v.intValue, 0) != 0) [victims removeObject:v];
-    }
-    for (NSNumber *v in victims) { SFLog(@"downloads: ffmpeg %@ ignored SIGTERM - SIGKILL", v); kill(v.intValue, SIGKILL); }
-    if (reaped) usleep(100 * 1000);
-    return reaped;
-}
-
-// Walks the whole download tree: off the main thread (1.5 s of the startup stall on the real
-// library, hitch monitor 2026-11-07). Safe at any time - our own part files carry our pid.
-- (void)sweepStaleParts {
-    NSString *root = [SFDownloads root], *mine = [self partSuffix];
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-        NSFileManager *fm = [NSFileManager new];
-        NSUInteger n = 0;
-        for (NSString *rel in [fm enumeratorAtPath:root]) {
-            if ([rel rangeOfString:@".part"].location == NSNotFound || ![rel hasSuffix:@".mp4"]) continue;
-            if ([rel hasSuffix:mine]) continue;
-            if ([fm removeItemAtPath:[root stringByAppendingPathComponent:rel] error:nil]) n++;
-        }
-        if (n) SFLog(@"downloads: removed %lu stale partial file(s)", (unsigned long)n);
-    });
-}
-
-// Part files are unique per app process: an orphan of an earlier run can never share a file with us.
-- (NSString *)partSuffix { return [NSString stringWithFormat:@".part%d.mp4", getpid()]; }
-
-#pragma mark Verification
-
-// Runs ffmpeg (niced) synchronously - call off the main thread; returns stderr, nil if it could not
-// run or timed out (callers then treat the file as fine: verification never destroys on doubt).
-static NSString *SFRunFF(NSString *ff, NSArray *args, double timeout) {
-    NSData *d = nil;
-    int st = SFRunProcess(@"/usr/bin/nice", [@[@"-n", @"15", ff, @"-nostdin", @"-hide_banner"] arrayByAddingObjectsFromArray:args], timeout, YES, &d);
-    if (st == -1 || st == -2) return nil;
-    // ffmpeg prints metadata (e.g. a YouTube description) cut at a byte boundary, so the output is
-    // often not valid UTF-8 -> fall back to Latin-1, which decodes any byte sequence. (Returning ""
-    // here flagged healthy files as "unreadable" and re-downloaded them, 2026-11-04.)
-    return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]
-        ?: [[NSString alloc] initWithData:d encoding:NSISOLatin1StringEncoding] ?: @"";
-}
-
-static double SFParseDuration(NSString *s) {
-    NSRange r = [s rangeOfString:@"Duration: "];
-    if (r.location == NSNotFound) return 0;
-    NSArray *p = [[s substringWithRange:NSMakeRange(NSMaxRange(r), MIN(11, s.length - NSMaxRange(r)))] componentsSeparatedByString:@":"];
-    if (p.count != 3) return 0;
-    return [p[0] doubleValue] * 3600 + [p[1] doubleValue] * 60 + [p[2] doubleValue];
-}
-
-// nil = file is fine, otherwise a short English reason. Synchronous, call off the main thread.
-+ (NSString *)problemWithFile:(NSString *)path expectedDuration:(double)expected ffmpeg:(NSString *)ff {
-    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return @"file missing";
-    NSString *info = SFRunFF(ff, @[@"-i", path], 30);
-    if (!info) return nil;   // cannot check -> do not destroy anything
-    double dur = SFParseDuration(info);
-    if (dur <= 0) return @"no duration (unreadable container)";
-    // only a clearly SHORTER file is a problem (truncated download); metadata durations are often
-    // rounded (feeds report 900 s for a 945 s video), so longer is never treated as broken
-    if (expected > 60 && dur < expected * 0.9 - 10)
-        return [NSString stringWithFormat:@"duration %.0f s, expected %.0f s (truncated)", dur, expected];
-    unsigned long long bytes = [[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil] fileSize];
-    if (dur > 0 && bytes * 8 / dur > 60e6) return [NSString stringWithFormat:@"implausible bitrate %.0f Mbit/s", bytes * 8 / dur / 1e6];
-    // decode probes at start, middle and end: a healthy file decodes without errors
-    for (NSNumber *f in @[@0.02, @0.5, @0.95]) {
-        double at = MAX(0, dur * f.doubleValue - 2);
-        NSString *e = SFRunFF(ff, @[@"-v", @"error", @"-ss", [NSString stringWithFormat:@"%.1f", at], @"-t", @"3",
-                                    @"-i", path, @"-map", @"0:v:0?", @"-map", @"0:a:0?", @"-f", @"null", @"-"], 60);
-        if (!e) return nil;
-        // count decoder errors only: the null muxer's timestamp warnings ("non monotonically
-        // increasing dts", e.g. VP9 in MP4 after -ss) say nothing about the file and rejected every
-        // healthy VP9 download (2026-11-05)
-        NSUInteger lines = 0;
-        for (NSString *l in [e componentsSeparatedByString:@"\n"])
-            if (l.length && [l rangeOfString:@"[null @"].location == NSNotFound) lines++;
-        if (lines > 3) return [NSString stringWithFormat:@"%lu decode errors at %.0f s", (unsigned long)lines, at];
-    }
-    return nil;
-}
-
-#pragma mark Audit of existing downloads
-
-- (void)auditExistingDownloads {
-    if ([[[SFStore shared] setting:kAuditKey] isEqualToString:kAuditVersion]) return;
-    NSString *ff = [SFDownloads ffmpegToolPath];
-    if (!ff) return;
-    // resumable across restarts (updates restart the app often): ids sorted descending, processed
-    // from the end, position persisted after every file
-    NSString *pos = [[SFStore shared] setting:kAuditPosKey];
-    NSMutableArray *todo = [NSMutableArray array];
-    for (SFDownloadRecord *r in _recs.allValues)
-        if (r.state == SFDLDone && r.path && (!pos.length || [r.identifier compare:pos] == NSOrderedDescending))
-            [todo addObject:r.identifier];
-    [todo sortUsingSelector:@selector(compare:)];
-    todo = [[[todo reverseObjectEnumerator] allObjects] mutableCopy];
-    SFLog(@"downloads: verifying %lu existing download(s) once in the background", (unsigned long)todo.count);
-    [self auditNext:todo ff:ff broken:0];
-}
-
-- (void)auditNext:(NSMutableArray *)todo ff:(NSString *)ff broken:(NSUInteger)broken {
-    if (!todo.count) {
-        SFLog(@"downloads: verification finished (%lu broken file(s) re-queued since this app start; earlier ones are in the log)", (unsigned long)broken);
-        [[SFStore shared] setSetting:kAuditVersion forKey:kAuditKey];
-        return;
-    }
-    NSString *ident = todo.lastObject; [todo removeLastObject];
-    SFDownloadRecord *r = _recs[ident];
-    NSString *path = r.path;
-    if (r.state != SFDLDone || !path || [ident isEqualToString:_runningID]) { [self auditNext:todo ff:ff broken:broken]; return; }
-    SFBackground(^{
-        NSString *problem = [SFDownloads problemWithFile:path expectedDuration:0 ffmpeg:ff];   // metadata durations are too imprecise for old files
-        SFMain(^{
-            NSUInteger b = broken;
-            SFDownloadRecord *rr = self->_recs[ident];
-            if (problem && rr && [rr.path isEqualToString:path] && rr.state == SFDLDone) {
-                // Keep the old file until a verified replacement exists: the verifier could be wrong, and
-                // Mediathek items may have expired upstream (finish:ok:NO then keeps the old file).
-                SFLog(@"downloads: %@ is broken (%@) - downloading it again", ident, problem);
-                rr.error = nil; rr.retryAt = 0;
-                rr.state = SFDLQueued; rr.progress = 0; rr.tries = 0;
-                [self save:rr]; [self changed:ident];
-                b++;
-                [self pump];
-            }
-            [[SFStore shared] setSetting:ident forKey:kAuditPosKey];
-            // pace the audit: low priority, one file every few seconds
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self auditNext:todo ff:ff broken:b];
-            });
-        });
-    });
-}
-
-#pragma mark Media store downloads
-
 - (void)verifyStoreDownloads {
     NSMutableArray *ids = [NSMutableArray new];
-    for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone && r.inStore) [ids addObject:r.identifier];
+    for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone) [ids addObject:r.identifier];
     if (!ids.count) return;
     SFMediaStore *store = self.mediaStore;
     SFBackground(^{   // waits for the store's block check (a cold disk: seconds) - never on the main thread
@@ -225,7 +20,7 @@ static double SFParseDuration(NSString *s) {
             NSMutableArray *writes = [NSMutableArray new];
             for (NSString *ident in incomplete) {
                 SFDownloadRecord *r = self->_recs[ident];
-                if (r.state != SFDLDone || !r.inStore) continue;
+                if (r.state != SFDLDone) continue;
                 SFLog(@"downloads: %@ is incomplete in the media store - loading the rest", ident);
                 r.state = SFDLQueued; r.progress = 0; r.error = nil; r.tries = 0; r.retryAt = 0;
                 [writes addObject:[self write:r]];
@@ -234,18 +29,6 @@ static double SFParseDuration(NSString *s) {
             if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
         });
     });
-}
-
-- (void)retireFilesOfFillingSources {
-    static NSString *const key = @"downloadsFilesOfFillingSourcesRetired";   // (a later source that starts filling: a new key)
-    if ([[SFStore shared] setting:key].length) return;
-    NSUInteger n = 0;
-    for (SFDownloadRecord *r in [_recs.allValues copy]) {
-        Class<SFApp> app = [SFAppRegistry appForRef:r.identifier];
-        if (!r.inStore && r.path.length && [app respondsToSelector:@selector(fillItem:progress:done:)]) { [self remove:r.identifier]; n++; }
-    }
-    if (n) SFLog(@"downloads: %lu file download(s) of media store sources removed (they fill the store now)", (unsigned long)n);
-    [[SFStore shared] setSetting:@"1" forKey:key];
 }
 
 @end

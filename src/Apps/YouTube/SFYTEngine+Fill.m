@@ -39,7 +39,8 @@ static NSString *LastPart(NSString *url) {
 - (dispatch_block_t)fill:(NSString *)vid progress:(void (^)(double))progress done:(void (^)(NSDictionary *, NSError *))done {
     SFYTFill *f = [SFYTFill new];
     f.vid = vid; f.progress = progress; f.done = done;
-    [self openForDownload:vid done:^(NSDictionary *r, NSError *e) {
+    // the same choice as playback; the session lives while the fill reads
+    [self open:vid background:YES stored:YES done:^(NSDictionary *r, NSError *e) {
         if (f.cancelled) return;
         if (!r) { done(nil, e); return; }
         if ([r[@"stored"] boolValue]) { progress(1); done(r, nil); return; }   // complete already

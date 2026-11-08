@@ -14,10 +14,6 @@
 
 @class SFNavigator;
 
-// Download source of an item (video URL, optional separate audio URL). info: what the source knows
-// better than the list the item came from - "published" (NSDate, exact publication time; list
-// pages may only have "vor 2 Wochen"). nil = nothing to add.
-typedef void (^SFDownloadURLDone)(NSURL *url, NSURL *audio, NSDictionary *info, NSError *e);
 // Online state for "Platz schaffen": 1 online, 0 gone, -1 unknown (network/server trouble)
 typedef void (^SFAvailabilityDone)(NSInteger online);
 
@@ -78,10 +74,11 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *items, NSError *e))done;   // newest episodes of a show ref
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *url))done;   // a followed show's picture when its stored one is missing/gone; done on main, nil = none (now)
 // --- library ---
-+ (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done;   // a download as a file (ffmpeg -> MP4)
-// A download as the media store filled (docs/media-store.md; no file - preferred over
-// downloadSourceForItem): progress 0..1 (any queue is fine, called on main); done(info as in
-// SFDownloadURLDone, nil) once complete, else (nil, error; userInfo "bot" = the source paused).
+// A download is the media store filled (docs/media-store.md). Without this hook the media proxy fills
+// what the app resolves to (a file or an HLS playlist, its subtitles); an app with a service of its own
+// (YouTube's engine) fills itself: progress 0..1 (called on main); done(info, nil) once complete - info:
+// what the source knows better than the list the item came from, "published" (NSDate, exact; list
+// pages may only have "vor 2 Wochen") - else (nil, error; userInfo "bot" = the source paused).
 // Returns a block that cancels (no done after it).
 + (dispatch_block_t)fillItem:(SFItem *)item progress:(void (^)(double p))progress done:(void (^)(NSDictionary *info, NSError *e))done;
 + (NSTimeInterval)downloadSpacing;   // two download starts of this app at least this far apart (s; above a minute up to half of it more at random). Default 30 s

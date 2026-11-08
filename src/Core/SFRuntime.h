@@ -1,4 +1,4 @@
-// Locate runtime tools and data (ffmpeg, rsvg-convert, the YouTube engine's Firefox and Xvfb).
+// Locate runtime tools and data (rsvg-convert, the YouTube engine's Firefox and Xvfb).
 //
 // Release bundle (tools/make-release): everything lives in Sofa.app/Contents/Runtime
 // (bin/, etc/; libraries in Contents/Frameworks), the libraries are relinked
