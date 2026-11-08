@@ -135,7 +135,12 @@ async function launchOnce(profile: string, { width = 1920, height = 1080, displa
   };
   if (!remote) return { proc, url: '', output: () => out, stop };
   const re = /WebDriver BiDi listening on (ws:\/\/\S+)/;
+  const t0 = Date.now();
   if (!await until(() => re.test(out), 30000, 100)) { await stop(); throw new NoBidiPort(`Firefox: no BiDi port (${out.slice(-500)})`); }
+  // a slow start says so: under test-all's load the engine test ran out of its 90 s once
+  // (2026-11-08) - whether the start or the steps after it took the time is the next question
+  const took = Date.now() - t0;
+  if (took > 10000) console.error(`firefox.ts: start took ${(took / 1000).toFixed(1)} s to its BiDi port`);
   return { proc, url: `${re.exec(out)![1]!}/session`, output: () => out, stop };
 }
 
