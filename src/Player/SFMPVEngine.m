@@ -142,7 +142,10 @@ static mpv_handle *SFCreateCore(void) {
     mpv_observe_property(mpv, kPropVOConfigured, "vo-configured", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv, kPropWidth, "dwidth", MPV_FORMAT_INT64);
     mpv_observe_property(mpv, kPropHeight, "dheight", MPV_FORMAT_INT64);
-    mpv_request_log_messages(mpv, "warn");   // mpv warnings/errors into the Sofa log
+    // mpvDebugDemux (defaults, diagnosis only): what the demuxers read and why, into the log
+    BOOL demuxDebug = [[NSUserDefaults standardUserDefaults] boolForKey:@"mpvDebugDemux"];
+    if (demuxDebug) mpv_set_option_string(mpv, "msg-level", "all=warn,demux=debug,mkv=debug,cplayer=v,stream=v");
+    mpv_request_log_messages(mpv, demuxDebug ? "debug" : "warn");   // mpv warnings/errors into the Sofa log
     return mpv;
 }
 
