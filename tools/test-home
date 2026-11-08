@@ -135,10 +135,10 @@ start SOFA_FOLLOW_GAP=0.5
 for i in $(seq 1 60); do grep -q "follows: Beispielsendung updated" "$LOG" && break; sleep 0.1; done
 grep -q "follows: Beispielsendung updated" "$LOG" && ok "renamed episode written" || bad "rename not written: $(grep 'follows:' "$LOG" | tail -2)"
 grep -q "follows: Beispielsendung has news" "$LOG" && bad "a rename or a stored description announced as news" || ok "no news"
-sleep 0.3
-check "description kept, title from the list" \
-  "$(/opt/local/bin/sqlite3 "$DB" "SELECT json_extract(i.json,'$.geo') || '|' || (json_extract(i.json,'$.title') != 'Alter Titel') FROM follow_items f JOIN items i ON i.id = f.id WHERE f.follow='exampleshow:demo' AND f.pos=0")" \
-  "AT|1"
+# the store commits off the main thread after the log line: poll (bounded) instead of a fixed sleep
+renamed() { /opt/local/bin/sqlite3 "$DB" "SELECT json_extract(i.json,'$.geo') || '|' || (json_extract(i.json,'$.title') != 'Alter Titel') FROM follow_items f JOIN items i ON i.id = f.id WHERE f.follow='exampleshow:demo' AND f.pos=0"; }
+for i in $(seq 1 50); do [ "$(renamed)" = "AT|1" ] && break; sleep 0.1; done
+check "description kept, title from the list" "$(renamed)" "AT|1"
 
 echo "==> 6. Home refresh only while the screen is awake"
 quit
