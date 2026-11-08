@@ -165,7 +165,13 @@ class Track {
   /** Current demands: [{off|null, ms}] */
   demands(now: number): Demand[] {
     const out: Demand[] = [];
+    // One track is one stream of the player, read sequentially: a newer request on it supersedes the
+    // ones still open. mpv leaves its header parse's connection (just past the first Cluster ID)
+    // open after seeking to the resume position - as a demand it started a run from 0 and made the
+    // run at the resume position look "ran ahead of every reader" (stopped, 2026-11-08: +5 s).
+    const newest = Math.max(...[...this.readers].map((r) => r.since ?? 0));
     for (const r of this.readers) {
+      if ((r.since ?? 0) < newest) continue;
       // mpv's header parse just past the known first Cluster ID while the player starts elsewhere (an
       // unconsumed start hint): it seeks there next - no run from 0 for it. Bounded: a client that does
       // want the first cluster (mpv probing the start time) is served once it waited PROBE_GRACE_MS.

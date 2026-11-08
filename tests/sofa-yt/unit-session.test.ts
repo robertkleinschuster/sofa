@@ -447,6 +447,24 @@ test('resume hint survives mpv probing the first cluster, is consumed at the res
   } finally { s.close('test'); }
 });
 
+test('a request left open by the header parse is no demand once the player reads at the resume position', () => {
+  const pumps = fakePumps(MEDIA, { stall: true });
+  const formats = describeFormats(info.formats);
+  const s = new PlaybackSession({ info, formats, video: must(pickVideo(formats)), audio: must(pickAudio(formats)),
+    audioChoices: audioTracks(formats).map((t) => t.format), startPump: (o) => pumps.start(info, formats, o), cfg: CFG });
+  try {
+    s.video.file.add({ start: 0, buf: VINIT, init: true });
+    const now = Date.now();
+    s.video.readers.add({ pos: VINIT.length + 4, since: now - 500, movedAt: now - 500 });   // parked after the first Cluster ID
+    s.video.readers.add({ pos: V(10).start, since: now, movedAt: now });                     // the seek to the resume position
+    const ms = s.video.demands(now).map((d) => d.ms);
+    assert.deepEqual(ms, [V(10).startMs], `only the resume position: ${JSON.stringify(ms)}`);
+    const p = must(s.startPump(s.video, V(10).startMs, now));
+    p.frontier.set(s.video, V(10).startMs + 5000);
+    assert.equal(s.ranAhead(p, now), false, 'the run at the resume position is not ahead of the reader');
+  } finally { s.close('test'); }
+});
+
 test('stalled SABR runs are restarted by the watchdog, then the session fails', async () => {
   const { app, pumps } = await setup({ stall: true, cfg: { STALL_MS: 200, WAIT_MS: 400 } });
   try {
