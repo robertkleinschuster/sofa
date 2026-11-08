@@ -54,6 +54,12 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (BOOL)canOpen:(NSString *)videoID;
 @end
 
+@interface SFYTEngine (Timeline)   // SFYTEngine+Timeline.m
+// What of session `sid`'s video is on disk, as time ranges @[@[start s, end s]]; nil while not known
+// (the tracks' indexes arrive with their init segments). done on the main queue.
+- (void)storedRangesOfSession:(NSString *)sid done:(void (^)(NSArray *ranges))done;
+@end
+
 @interface SFYTEngine (Fill)   // SFYTEngine+Fill.m
 // A download: the video's tracks (video, main audio) and subtitles into the media store, through the
 // reads a player makes (what is on disk is skipped), paced at 3x the playback rate. progress 0..1;

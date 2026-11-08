@@ -84,6 +84,8 @@ export interface SofaEngine {
   report(sid: string, state: PlayerState | { state: 'closed' }): Promise<Reply<boolean>>;
   /** The player opens session `sid` at `ms`: media is pulled from there at once (lib/engine.ts). */
   startsAt(sid: string, ms: number): Reply<boolean>;
+  /** The tracks' segment indexes (byte offset -> media time) by local track key (lib/engine.ts). */
+  index(sid: string): Reply<Record<string, { off: number; ms: number }[]>>;
   close(sid: string): Reply<boolean>;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
@@ -190,6 +192,7 @@ export const sofaEngine: SofaEngine = {
   status: (sid) => reply(() => core!.status(sid)),
   report: (sid, state) => replyAsync(() => core!.report(sid, state)),
   startsAt: (sid, ms) => reply(() => core!.startsAt(sid, ms)),
+  index: (sid) => reply(() => core!.index(sid)),
   close: (sid) => reply(() => core!.close(sid)),
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),

@@ -1,5 +1,6 @@
 // SFPlayerScreen - what of the video is on disk, as a shade on the timeline (docs/media-store.md 5c):
-// exact ranges from the media proxy (HLS: its segments' durations), never a guess from byte counts.
+// exact ranges - the media proxy's (HLS: its segments' durations), an app's for its sessions (YouTube:
+// the tracks' Cues/sidx) - never a guess from byte counts.
 // Asked off the main thread while the bar shows, every few seconds (playback keeps filling it).
 #import "SFPlayerScreen+Private.h"
 #import "SFMediaProxy.h"
@@ -21,12 +22,20 @@ static const NSTimeInterval kStoredRefresh = 3;
     _storedAsked = now;
     NSURL *asked = _servedURL;
     __weak SFPlayerScreen *ws = self;
-    [[SFMediaProxy shared] storedRangesFor:asked done:^(NSArray *ranges) {
+    void (^got)(NSArray *) = ^(NSArray *ranges) {
         SFPlayerScreen *s = ws;
         if (!s || ![s->_servedURL isEqual:asked] || [s->_storedRanges isEqual:ranges]) return;
         s->_storedRanges = ranges;
         [s layoutStoredShade];
-    }];
+    };
+    // an app's session stream (YouTube) knows its own; a source's file or playlist: the media proxy
+    NSDictionary *src = SFMPVSourceFor(_openURL);
+    Class<SFApp> app = [SFAppRegistry appForItem:_item];
+    if ([app respondsToSelector:@selector(playbackIsSession:)] && [app playbackIsSession:src]) {
+        if ([app respondsToSelector:@selector(storedRangesOf:done:)]) [app storedRangesOf:src done:got];
+        return;
+    }
+    [[SFMediaProxy shared] storedRangesFor:asked done:got];
 }
 
 - (void)layoutStoredShade {

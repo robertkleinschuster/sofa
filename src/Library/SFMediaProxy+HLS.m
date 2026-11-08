@@ -80,18 +80,6 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     return out;
 }
 
-// sorted, disjoint ranges: where both are
-static NSArray *Intersect(NSArray *a, NSArray *b) {
-    NSMutableArray *out = [NSMutableArray new];
-    NSUInteger i = 0, j = 0;
-    while (i < a.count && j < b.count) {
-        double s = MAX([a[i][0] doubleValue], [b[j][0] doubleValue]), e = MIN([a[i][1] doubleValue], [b[j][1] doubleValue]);
-        if (e > s) [out addObject:@[@(s), @(e)]];
-        if ([a[i][1] doubleValue] < [b[j][1] doubleValue]) i++; else j++;
-    }
-    return out;
-}
-
 @implementation SFMediaProxy (HLS)
 
 + (BOOL)isPlaylist:(NSURL *)url {
@@ -289,12 +277,8 @@ static NSArray *ChooseVariant(NSString *master, NSString *base, long long *bandw
         NSArray *all = nil;
         for (NSArray *segs in tables) {
             NSMutableArray *r = [NSMutableArray new];
-            for (NSArray *g in segs) {
-                if (![SFProxyStore() hasComplete:g[2]]) continue;
-                if (r.count && [[r.lastObject lastObject] doubleValue] == [g[0] doubleValue]) r[r.count - 1] = @[r.lastObject[0], g[1]];
-                else [r addObject:@[g[0], g[1]]];
-            }
-            all = all ? Intersect(all, r) : r;
+            for (NSArray *g in segs) if ([SFProxyStore() hasComplete:g[2]]) SFRangesAppend(r, [g[0] doubleValue], [g[1] doubleValue]);
+            all = all ? SFRangesIntersect(all, r) : r;
         }
         SFMain(^{ done(all); });
     });

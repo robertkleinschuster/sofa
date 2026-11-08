@@ -165,6 +165,12 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     if ([source[@"sabr"] boolValue] && ![source[@"hls"] boolValue] && sid) [[SFYTEngine shared] session:sid startsAt:seconds];
 }
 
++ (void)storedRangesOf:(NSDictionary *)source done:(void (^)(NSArray *))done {
+    NSString *sid = [source[@"sid"] isKindOfClass:[NSString class]] ? source[@"sid"] : nil;
+    if (![source[@"sabr"] boolValue] || [source[@"hls"] boolValue] || !sid) { done(nil); return; }
+    [[SFYTEngine shared] storedRangesOfSession:sid done:done];
+}
+
 // a SABR session failed: the player reopens it via the engine (its player response is cached
 // there - no new YouTube request) as a fresh session
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why {

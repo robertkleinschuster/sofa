@@ -130,5 +130,9 @@ store can hold; existing downloads may be deleted (no migration of old files).
       with their #EXTINF times and what each needs (segment, key, init section); the playlists the
       player reads resources of are the active ones (not every variant lavf parsed), a time is stored
       when every active playlist's segment is complete (video and audio rendition). The player asks
-      every 3 s while the bar shows, off the main thread (SFPlayerScreen+Stored.m). Next: YouTube (the
-      engine's tracks: WebM cues / MP4 sidx give byte -> time), then progressive MP4 (sample tables).
+      every 3 s while the bar shows, off the main thread (SFPlayerScreen+Stored.m). Done for YouTube:
+      the engine hands over its tracks' segment indexes (engine call `index`: WebM Cues / MP4 sidx,
+      byte offset -> ms, once their init segments arrived); Sofa keeps them in the manifest ("index",
+      by track identity - stored sessions have them offline) and counts a span when its bytes are all
+      on disk, video and audio both (SFYTTimeline, SFYTEngine+Timeline.m; app hook storedRangesOf:).
+      Open: progressive MP4 files of the mediatheks (their moov sample tables).

@@ -127,6 +127,23 @@ NSString *SFFormatClock(NSDate *d) {
     return d ? [df stringFromDate:d] : @"";
 }
 
+NSArray *SFRangesIntersect(NSArray *a, NSArray *b) {
+    NSMutableArray *out = [NSMutableArray new];
+    NSUInteger i = 0, j = 0;
+    while (i < a.count && j < b.count) {
+        double s = MAX([a[i][0] doubleValue], [b[j][0] doubleValue]), e = MIN([a[i][1] doubleValue], [b[j][1] doubleValue]);
+        if (e > s) [out addObject:@[@(s), @(e)]];
+        if ([a[i][1] doubleValue] < [b[j][1] doubleValue]) i++; else j++;
+    }
+    return out;
+}
+
+void SFRangesAppend(NSMutableArray *r, double start, double end) {
+    if (end <= start) return;
+    if (r.count && [[r.lastObject lastObject] doubleValue] >= start) r[r.count - 1] = @[r.lastObject[0], @(MAX(end, [[r.lastObject lastObject] doubleValue]))];
+    else [r addObject:@[@(start), @(end)]];
+}
+
 NSString *SFFormatBytes(unsigned long long b) {
     if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];

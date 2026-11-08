@@ -354,6 +354,21 @@ test('header parse with a start hint: init + the first Cluster ID at once, no ru
   } finally { await app.close(); }
 });
 
+test('index: a track\'s Cues once its init arrived (Sofa\'s timeline maps stored bytes to time)', async () => {
+  const { app } = await setup();
+  try {
+    const r = await openJson(app, `v=${ID}&prefetch=0`);
+    assert.deepEqual(app.engine.index(r.sid), {}, 'nothing before the init segment');
+    app.engine.startsAt(r.sid, 0);
+    await get(r.video, { range: 'bytes=0-', maxBytes: VINIT.length, timeoutMs: 3000 });
+    const ix = app.engine.index(r.sid);
+    const v = ix.video ?? [];
+    assert.ok(v.length > 0, `video index: ${JSON.stringify(ix)}`);
+    assert.ok(v.every((e, i) => i === 0 || (e.off > nth(v, i - 1).off && e.ms >= nth(v, i - 1).ms)), 'sorted by offset and time');
+    assert.deepEqual(app.engine.index('nope'), {}, 'unknown session');
+  } finally { await app.close(); }
+});
+
 test('header parse that waits for the first cluster anyway is served after PROBE_GRACE_MS (no hang)', async () => {
   const { app, pumps } = await setup({ cfg: { PROBE_GRACE_MS: 200 } });
   try {

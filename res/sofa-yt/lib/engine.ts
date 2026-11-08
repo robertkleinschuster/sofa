@@ -8,6 +8,7 @@ import { LiveSession, codecShort } from './hls.ts';
 import type { HlsConfig, PlaylistFetch } from './hls.ts';
 import { describeFormats, pickVideo, pickAudio, audioTracks, subtitleTracks, DEFAULT_MAX_HEIGHT } from './formats.ts';
 import type { DescribedFormat, SubtitleKind } from './formats.ts';
+import type { MediaIndex } from './mediaindex.ts';
 import { fetchVtt } from './subs.ts';
 import { errorMessage, toError } from './errors.ts';
 import { log } from './log.ts';
@@ -234,6 +235,12 @@ export interface Engine {
    * instead of once mpv has probed the file and seeked (seconds later). false: no such VOD session.
    */
   startsAt(sid: string, ms: number): boolean;
+  /**
+   * The segment indexes of a VOD session's tracks (WebM Cues / MP4 sidx: absolute byte offset ->
+   * media time), by local track key ('video', an audio key) - only tracks whose init segment arrived.
+   * Sofa shows what of a video is on disk in time with them (its timeline). {} for no such session.
+   */
+  index(sid: string): Record<string, MediaIndex>;
   health(): EngineHealth;
   shutdown(): void;
 }
@@ -637,6 +644,13 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       if (!s || s.closed || s.kind !== 'sabr' || !(ms >= 0)) return false;
       s.hint(ms);
       return true;
+    },
+    index(sid) {
+      const s = sessions.get(sid);
+      const out: Record<string, MediaIndex> = {};
+      if (!s || s.kind !== 'sabr') return out;
+      for (const [key, t] of s.tracks) if (t.file.index?.length) out[key] = t.file.index;
+      return out;
     },
     read,
     playlist,
