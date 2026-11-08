@@ -20,7 +20,8 @@ trap 'rm -rf "$OUT"' EXIT
 # what a failed suite leaves for diagnosis (its instance's log, screenshots) survives the run here;
 # a flake under parallel load is then readable afterwards instead of gone with its temp directory
 KEPT="${TMPDIR:-/tmp}/sofa-testall-failed"
-mkdir -p "$OUT/kept/test-playback"; export PLAYTEST_SHOTS="$OUT/kept/test-playback"
+mkdir -p "$OUT/kept/test-playback" "$OUT/kept/test-downloads"
+export PLAYTEST_SHOTS="$OUT/kept/test-playback" DLTEST_SHOTS="$OUT/kept/test-downloads"
 serial=0; [ "${1:-}" = "--serial" ] && serial=1
 
 # build once: the suites' own make is then a no-op (parallel makes in one tree would race)

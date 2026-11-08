@@ -64,7 +64,11 @@ FF=/opt/local/bin/ffmpeg   # test media only (Sofa itself has no ffmpeg)
 export SOFA_ONLY_APPS=example,youtube
 REF=example:1      # downloadable (the Example app fills it piece by piece, SOFA_EXAMPLE_FILL)
 YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube paused)
-fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+# a failure keeps the instance's log as it is now (DLTEST_SHOTS, test-all): a flake under load is
+# readable afterwards - the next start empties the log
+fail=0; nfail=0; ok() { echo "  ok    $*"; }
+bad() { echo "  FAIL  $*"; fail=1; nfail=$((nfail + 1))
+        [ -n "${DLTEST_SHOTS:-}" ] && [ -s "$LOG" ] && cp "$LOG" "$DLTEST_SHOTS/part-$PART-fail$nfail.log" 2>/dev/null; return 0; }
 check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
 
 make -C "$SRC" >/dev/null || exit 1
