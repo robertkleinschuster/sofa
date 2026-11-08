@@ -2,6 +2,7 @@
 #import "SFSettings.h"
 #import "SFModel.h"
 #import "SFUserAgent.h"
+#import "SFAudioOutput.h"
 
 #pragma mark mpv sources (side channel from the resolver to the player)
 
@@ -71,6 +72,7 @@ static NSArray *SFTracksFromNode(const mpv_node *list) {
     NSDate *_openedAt;
     NSTimeInterval _loadedAfter;   // open -> file loaded (headers read), for the first-frame line
     NSTimer *_tick;
+    id _outputObs;                   // SFAudioOutputChangedNotification observer
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
     NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
     double _stallTime;                // stall watchdog: position at _stallSince
@@ -161,6 +163,11 @@ static dispatch_queue_t SetupQueue(void) {
     if ((self = [super init])) {
         _layer = [SFMPVLayer layer];
         _whenReady = [NSMutableArray new];
+        // another audio output chosen (headphones, speakers - also by the system when headphones go):
+        // the sound moves with it at once (mpv reopens its audio output on the new default device)
+        __weak SFMPVEngine *ws = self;
+        _outputObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputChangedNotification object:nil
+            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [ws reloadAudioOutput]; }];
         dispatch_async(SetupQueue(), ^{
             mpv_handle *mpv = SFCreateCore();
             dispatch_async(dispatch_get_main_queue(), ^{ [self adoptCore:mpv]; });
@@ -185,6 +192,14 @@ static dispatch_queue_t SetupQueue(void) {
 
 - (void)whenReady:(dispatch_block_t)b {
     if (_coreReady) b(); else [_whenReady addObject:[b copy]];
+}
+
+// asynchronous: reopening the audio device waits on coreaudiod - never on the main thread
+- (void)reloadAudioOutput {
+    if (!_mpv) return;
+    const char *argv[] = {"ao-reload", NULL};
+    mpv_command_async(_mpv, 0, argv);
+    SFLog(@"mpv: audio output reloaded (output changed)");
 }
 
 - (void)command:(NSArray *)args {
@@ -424,6 +439,7 @@ static dispatch_queue_t SetupQueue(void) {
 
 - (void)shutdown {
     [_tick invalidate]; _tick = nil;
+    if (_outputObs) { [[NSNotificationCenter defaultCenter] removeObserver:_outputObs]; _outputObs = nil; }
     _shutDown = YES;   // a core still being created is retired when it arrives (adoptCore:)
     if (!_mpv) return;
     [self logPlaybackStats];

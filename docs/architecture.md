@@ -216,7 +216,7 @@ fixed times.
   details, scroll + edge fade), confirm dialog, toast, keyboard, image layer (fallback,
   fades), icon art, subtitle builder (`SFDotJoin`), empty/offline states.
 - Interaction: SFNavigator + SFScreen key handling, focus model (row/grid, focus memory,
-  Up to header), remote grammar (OK, OK halten = Optionen, MENU, MENU halten = Start, ▶❚❚,
+  Up to header), remote grammar (OK, OK halten = Optionen, MENU, MENU halten = Sofa-Menü (SFQuickMenu: Start, Ton, Energie, Einstellungen), ▶❚❚,
   hold Left/Right = seek), context menu builder.
 
 ## Adding an app

@@ -47,8 +47,9 @@
 - (void)toast:(NSString *)text;
 // Change the volume (dir ±1) and show the indicator
 - (void)volumeStep:(int)dir;
-// MENU on the bottom screen (Home): power menu instead of nothing
+// MENU on the bottom screen (Home) and MENU held anywhere: the app's menu (Sofa: SFQuickMenu)
 @property (nonatomic, copy) dispatch_block_t rootMenuHandler;
+@property (nonatomic, copy) dispatch_block_t holdMenuHandler;
 @end
 
 NSCursor *SFBlankCursor(void);   // transparent mouse cursor (TV UI)

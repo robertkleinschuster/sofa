@@ -236,7 +236,7 @@ static __weak SFNavigator *gMainNav;
     if ([t handleKey:key]) return;
     if (key == SFKeyMenu && self.stack.count <= 1) { if (self.rootMenuHandler) self.rootMenuHandler(); }
     else if (key == SFKeyMenu) [self pop];
-    else if (key == SFKeyMenuHold) [self popToRoot];
+    else if (key == SFKeyMenuHold) { if (self.holdMenuHandler) self.holdMenuHandler(); }
 }
 
 #pragma mark Keyboard

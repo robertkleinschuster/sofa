@@ -14,6 +14,8 @@
 #import "SFCurl.h"
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
+#import "SFQuickMenu.h"
+#import "SFAudioOutput.h"
 #import "SFStore.h"
 #import "SFMigration.h"
 #import "SFMPVEngine.h"
@@ -88,7 +90,9 @@ NSString *gInstance = @"view";
     [SFTileLayer setStatusSource:[SFTileStatus new]];   // download chips + progress on tiles - before the first page builds
     [self.nav push:[SFHome homeScreen]];
     __weak SFNavigator *wnav = self.nav;
-    self.nav.rootMenuHandler = ^{ [SFPower showPowerMenuOn:wnav]; };
+    self.nav.rootMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU on Home
+    self.nav.holdMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU held, anywhere (user 2026-11-08)
+    [SFAudioOutput start];
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];

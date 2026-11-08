@@ -6,6 +6,7 @@
 # Checks (each one is a bug that happened in production):
 #   1. playback right after launch has a configured video output (render-context race, 2026-11-04:
 #      after an update restart the file resumed before the GL layer existed -> audio only)
+#      - MENU held over it opens the quick menu, the video plays on under it, MENU closes only the menu
 #   2. a dead video output heals itself (watchdog re-selects the video track)
 #   3. the info panel (OK hold) opens over the running video, which keeps playing under it and
 #      after MENU (the panel must never stop or restart playback); an OK right after MENU belongs to
@@ -143,6 +144,11 @@ grep -q 'No render context set' "$LOG" && bad "mpv started before the render con
 waitlog $m 'player: spinner off' 40
 ff=$(since $m | grep -n 'mpv: first frame' | head -1 | cut -d: -f1); so=$(since $m | grep -n 'player: spinner off' | head -1 | cut -d: -f1)
 [ -n "$ff" ] && [ -n "$so" ] && [ "$so" -gt "$ff" ] && ok "spinner until the first frame" || bad "spinner gone before the first frame (frame line ${ff:-none}, off line ${so:-none})"
+# MENU held over the video: the quick menu, the video keeps playing under it (user 2026-11-08)
+m=$(mark); p0=$(pos); cmd "key menuhold"; waitlog $m 'menu: quick menu - Zum Startbildschirm' 20 && ok "MENU held over the video: the quick menu" || bad "no quick menu over the video"
+sleep 1.5; p1=$(pos)
+awk "BEGIN{exit !(${p1:-0} > ${p0:-0} + 0.8)}" 2>/dev/null && ok "the video plays on under the menu ($p0 -> $p1 s)" || bad "playback under the menu: $p0 -> $p1"
+cmd "key menu"; sleep 0.5; since $m | grep -q 'player: closed\|player: leaving' && bad "MENU closed the player instead of the menu" || ok "MENU closes the menu, not the video"
 
 echo "==> 2. self-healing of a dead video output"
 m=$(mark); cmd "mpvset vid no"; waitlog $m 'video output missing' 40; vo $m
