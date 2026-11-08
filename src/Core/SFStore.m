@@ -10,6 +10,7 @@
     dispatch_queue_t _q;
     NSMutableDictionary *_progressCache;   // id -> @[pos, dur, watched]
     NSMutableDictionary *_settings;        // k -> v: the whole (small) settings table, read without the queue
+    NSMutableDictionary *_originalTitles;  // id -> the uploader's title (original_titles)
 }
 
 + (instancetype)shared {
@@ -37,6 +38,7 @@
         [self migrate];
         [self loadProgress];
         [self loadSettings];
+        [self loadOriginalTitles];
         // response cache housekeeping: shortly after launch, then daily
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), _q, ^{ [self trimCache]; });
     }
@@ -351,9 +353,11 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
 // Migration: put progress under a new identity (incl. the stored item, "updated" stays)
 #pragma mark Items
 
-// What the items table keeps of an item: its metadata as the source gives it
-static NSString *sharedJSON(SFItem *item) {
+// What the items table keeps of an item: its metadata as the source gives it (its title as the
+// uploader wrote it, where known)
+static NSString *sharedJSON(SFItem *item, NSString *originalTitle) {
     NSMutableDictionary *d = [[item dictionaryRepresentation] mutableCopy];
+    if (originalTitle) d[@"title"] = originalTitle;
     [d removeObjectForKey:@"localPath"];
     for (NSString *k in @[@"url", @"image", @"backdrop"])
         if ([d[k] hasPrefix:@"/"] || [d[k] hasPrefix:@"file:"]) [d removeObjectForKey:k];
@@ -361,7 +365,7 @@ static NSString *sharedJSON(SFItem *item) {
 }
 
 - (NSArray *)itemWrite:(SFItem *)item {
-    NSString *js = item.identifier ? sharedJSON(item) : nil;
+    NSString *js = item.identifier ? sharedJSON(item, [self originalTitleFor:item.identifier]) : nil;
     if (!js) return nil;
     return @[@"INSERT INTO items (id, json) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET json = json_patch(json, excluded.json)", @[item.identifier, js]];
 }
@@ -370,6 +374,29 @@ static NSString *sharedJSON(SFItem *item) {
     NSArray *w = [self itemWrite:item];
     if (w) [self run:w[0] args:w[1]];
     return w[1][1];
+}
+
+#pragma mark Original titles
+
+- (void)loadOriginalTitles {
+    _originalTitles = [NSMutableDictionary new];
+    for (NSDictionary *r in [self rowsNow:@"SELECT id, title FROM original_titles" args:nil])
+        if ([r[@"id"] isKindOfClass:[NSString class]] && [r[@"title"] isKindOfClass:[NSString class]]) _originalTitles[r[@"id"]] = r[@"title"];
+}
+
+- (NSString *)originalTitleFor:(NSString *)i {
+    if (!i) return nil;
+    @synchronized (_originalTitles) { return _originalTitles[i]; }
+}
+
+- (void)setOriginalTitle:(NSString *)title forID:(NSString *)i {
+    if (!title.length || !i.length) return;
+    @synchronized (_originalTitles) {
+        if ([_originalTitles[i] isEqualToString:title]) return;
+        _originalTitles[i] = title;
+    }
+    [self runAll:@[@[@"INSERT INTO original_titles (id, title) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET title = excluded.title", @[i, title]],
+                   @[@"UPDATE items SET json = json_set(json, '$.title', ?) WHERE id = ?", @[title, i]]]];
 }
 
 // items nothing references any more (left a follow's list, removed from the history, ...)

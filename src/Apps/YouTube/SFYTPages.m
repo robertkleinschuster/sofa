@@ -25,6 +25,7 @@
         else if ([p isEqualToString:@"ytchannel"]) i.pageLoader = [self channelLoader:SFRefID(i.identifier) title:i.title];
         return i;
     }
+    i.title = [[SFStore shared] originalTitleFor:i.identifier] ?: i.title;   // the uploader's, once its watch page was seen
     // already downloaded: the local file (quality, offline, shared progress)
     SFItem *local = [p isEqualToString:@"yt"] ? [[SFDownloads shared] itemFor:i.identifier] : nil;
     if (!local) return i;

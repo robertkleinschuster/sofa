@@ -127,6 +127,10 @@
             for (NSString *t in @[@"progress", @"downloads", @"watch_later", @"follow_items"])
                 [self exec:[NSString stringWithFormat:@"ALTER TABLE %@ DROP COLUMN item", t]];
         },
+        // 13: original titles - what a video's uploader wrote, where the source's lists show another
+        // title (YouTube localizes list titles to the interface language; the watch page carries the
+        // original, 2026-11-08). One row per video ever opened - small, kept.
+        ^{ [self exec:@"CREATE TABLE original_titles (id TEXT PRIMARY KEY, title TEXT NOT NULL)"]; },
     ];
 }
 

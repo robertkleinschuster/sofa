@@ -480,6 +480,20 @@ the entry (checked 2026-11-05). Exact sources, in Sofa's order of use:
 - **Watch page** (`next`): `dateText` "02.11.2026" (day; request is hl=de/gl=AT) – info panel.
 `relativeDate()` in SFYTParser is the fallback for list entries only (approximate).
 
+### 3.11 Titles: lists are localized, the watch page is the uploader's (2026-11-08)
+
+With hl=de every list renderer (browse lists, search, the watch page's related videos, cards, end
+screen, `lockupViewModel.metadata...title`) carries YouTube's **localized** title where the creator
+(or YouTube's machine translation) provides a German one - no marker, no original next to it. Seen:
+`84ne8PrfFMY` lists "Einblicke in ein Haus aus reinem Beton an einer mexikanischen Klippe", its
+watch page `videoPrimaryInfoRenderer.title` "This Is What $4,900,000 Gets You in Mexico" (the
+original). The original is only on the video's own pages (watch page, player response) - and in the
+RSS feed, which is gone (404 since 2026-11-05; no other feed endpoint: a non-browser request
+pattern). So: the watch page's title is remembered as the original (`SFYTWatch detailsIn:` ->
+`SFStore original_titles`) and wins from then on - list items (`SFYTPages shownItem:`, follow feeds),
+every stored item (`itemWrite:`), the info panel (details title). A video never opened shows the
+list title: fetching watch pages for tiles would be a request per tile, nothing a person causes.
+
 ## 4. Images
 
 ### 4.1 Video thumbnails (`https://i.ytimg.com/vi/<id>/<name>.jpg`, no auth, no headers)

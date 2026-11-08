@@ -3,6 +3,7 @@
 #import "SFYTInnerTube.h"
 #import "SFYTParser.h"
 #import "SFYTBreaker.h"
+#import "SFStore.h"
 
 // At most `max` calls per 30 min for one purpose; YES = this one may go.
 static BOOL withinBudget(NSMutableArray *recent, NSUInteger max) {
@@ -30,6 +31,7 @@ static NSMutableSet *gAvatarTried;     // channels asked for their avatar since 
     if (![cid hasPrefix:@"UC"]) { done(nil, SFError(@"Unbekannter Kanal")); return; }
     SFYTCallBackground(@"browse", @{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]}, 0, ^(id j, NSError *e) {
         NSArray *items = j ? [self videosInUploads:j] : nil;
+        for (SFItem *i in items) i.title = [[SFStore shared] originalTitleFor:i.identifier] ?: i.title;   // as SFYTPages shows them
         SFMain(^{ done(items, items ? nil : e); });
     });
 }

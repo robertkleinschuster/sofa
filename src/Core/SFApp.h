@@ -65,7 +65,8 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)
 + (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *next))done;   // autoplay recommendation (from half time)
 // info panel: description/channel and related videos (done on main; related empty + details nil =
-// failed). details keys: description, channel, showRef, avatar, date (NSDate) - only when found.
+// failed). details keys: title (the source's own name of the video), description, channel, showRef,
+// avatar, date (NSDate) - only when found.
 + (void)watchDetailsForItem:(SFItem *)item done:(void (^)(NSArray *related, NSDictionary *details))done;
 // End cards (creator tiles over the last seconds, SFPlayerScreen+Endscreen.m) come in the stream
 // description under "endCards": [{kind: video|playlist|channel|follow, ref ("yt:…", "ytplaylist:…",

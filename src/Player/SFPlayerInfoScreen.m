@@ -169,7 +169,9 @@ static NSString *SFSig(SFItem *i) {
         if (dur > 0) [meta addObject:SFFormatDuration(dur)];
     }
     SFItem *h = [SFItem new];
-    h.heroTitle = it.title.length ? it.title : @"Video";
+    // the app's own page names the video as its uploader did (YouTube lists: a localized title)
+    NSString *title = [_details[@"title"] length] ? _details[@"title"] : it.title;
+    h.heroTitle = title.length ? title : @"Video";
     h.heroMeta = meta.count ? [meta componentsJoinedByString:@"  ·  "] : @" ";
     h.plot = it.plot.length ? it.plot : _details[@"description"];
     return h;

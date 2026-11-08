@@ -155,7 +155,9 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
 - Tables: `progress` (positions, history), `settings`,
   `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
   picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
-  (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`.
+  (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`,
+  `original_titles` (a video's title as its uploader wrote it, where the source's lists show another:
+  `-[SFStore setOriginalTitle:forID:]`; a known one wins in every item write and in the stored item).
 - `items`: an item's metadata **once** - its JSON (`SFItem dictionaryRepresentation`), referenced by
   id from `progress`, `downloads`, `watch_later` and `follow_items`, which keep only their own facts
   (position, file, state, list position, when added). Written through `-[SFStore itemWrite:]` /

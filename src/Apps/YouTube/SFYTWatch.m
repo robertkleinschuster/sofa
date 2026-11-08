@@ -7,12 +7,20 @@
 
 @implementation SFYTWatch
 
+// The watch page's details - and its title is the uploader's own (the lists carry YouTube's
+// localized one, docs/youtube.md "Titles"): remembered for every place the video shows up
++ (NSDictionary *)detailsIn:(id)next video:(NSString *)vid {
+    NSDictionary *d = [SFYTParser watchDetailsIn:next];
+    [[SFStore shared] setOriginalTitle:d[@"title"] forID:[@"yt:" stringByAppendingString:vid]];
+    return d;
+}
+
 // docs/youtube.md §3.4: related videos + metadata the browse lists lack (description, channel ID, avatar)
 + (void)watchPageFor:(NSString *)vid done:(void (^)(NSArray *, NSDictionary *))done {
     if (vid.length != 11) { SFMain(^{ done(@[], nil); }); return; }
     SFYTCall(@"next", @{@"videoId": vid}, 1800, ^(id j, NSError *e) {
         NSArray *related = [SFYTPages shown:[SFYTParser relatedIn:j video:vid]];
-        NSDictionary *details = [SFYTParser watchDetailsIn:j];
+        NSDictionary *details = [self detailsIn:j video:vid];
         SFMain(^{ done(related, details); });
     });
 }
@@ -32,7 +40,7 @@
     if (item.localPath || !item.externalID) { if (done) done(); return; }
     SFLog(@"youtube: details of %@", item.externalID);   // one watch page per video (test-playback 8c counts them)
     SFYTCall(@"next", @{@"videoId": item.externalID}, 1800, ^(id j, NSError *e) {
-        NSDictionary *d = [SFYTParser watchDetailsIn:j];
+        NSDictionary *d = [self detailsIn:j video:item.externalID];
         if (d.count) {
             item.title = d[@"title"] ?: item.title;
             item.channel = d[@"channel"] ?: item.channel;
@@ -52,7 +60,7 @@
 
 + (void)channelOf:(NSString *)vid done:(void (^)(NSString *))done {
     SFYTCall(@"next", @{@"videoId": vid}, 1800, ^(id j, NSError *e) {   // the same cached answer as the info panel
-        NSString *cid = [SFYTParser watchDetailsIn:j][@"channelID"];
+        NSString *cid = [self detailsIn:j video:vid][@"channelID"];
         SFMain(^{ done([cid hasPrefix:@"UC"] ? cid : nil); });
     });
 }
