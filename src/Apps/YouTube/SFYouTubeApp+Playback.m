@@ -99,15 +99,15 @@ static void watchPageSoon(NSString *vid) {
 // tracks for mpv; a video that turned out to be live comes back as HLS.
 static void playOnline(NSString *vid, SFURLDone done) {
     SFYTEngine *engine = [SFYTEngine shared];
-    if (!engine.available) { SFCount(@"yt.play.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
+    if (![engine canOpen:vid]) { SFCount(@"yt.play.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
     [engine open:vid background:NO done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.play." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;
         }
-        SFCount(r[@"hls"] ? @"yt.play.sabr-hls" : @"yt.play.sabr");
+        SFCount(r[@"stored"] ? @"yt.play.stored" : r[@"hls"] ? @"yt.play.sabr-hls" : @"yt.play.sabr");
         sabrPlay(vid, r, done);   // a video that turned out to be live comes back as HLS
-        watchPageSoon(vid);
+        if (!r[@"stored"]) watchPageSoon(vid);   // (from the store: no YouTube page view behind it)
     }];
 }
 

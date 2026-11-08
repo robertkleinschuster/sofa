@@ -1,5 +1,5 @@
-// Shared between SFYTEngine.m (lifecycle, API), SFYTEngine+Media.m (local media routes) and
-// SFYTEngine+Lounge.m (the phone lounge's transport).
+// Shared between SFYTEngine.m (lifecycle, API), SFYTEngine+Media.m (local media routes),
+// SFYTEngine+Store.m (session table, media store) and SFYTEngine+Lounge.m (the phone lounge's transport).
 #import "SFYTEngine.h"
 #import "SFYTChannel.h"
 
@@ -12,6 +12,8 @@
 - (void)request:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id value, NSError *e))done;
 // The page's engine answers calls - readable from any queue (mirrors the main-queue state).
 @property (atomic) BOOL ready;
+// http://127.0.0.1:<port> of the loopback server (started if it was not); nil when it can't run
+@property (nonatomic, readonly) NSString *mediaBase;
 @end
 
 @interface SFYTEngine (LoungeEvents)   // implemented in SFYTEngine+Lounge.m
@@ -22,6 +24,17 @@
 @interface SFYTEngine (Media)
 // GET|HEAD /s/<sid>/... (SFYTEngine+Media.m). Engine queue.
 - (void)serveSession:(SFHTTPExchange *)x;
-// An opened session's tracks (local key -> id, total, mimeType): what the media store may serve
-- (void)noteTracks:(NSDictionary *)tracks session:(NSString *)sid;
+@end
+
+@interface SFYTEngine (Store)   // SFYTEngine+Store.m; any queue
+// A session's table entry: its video and tracks (local key -> {id, total, mimeType}); stored = served
+// from the store alone (no engine session behind it)
+- (void)noteSession:(NSString *)sid video:(NSString *)vid stored:(BOOL)stored tracks:(NSDictionary *)tracks;
+- (NSDictionary *)trackInfo:(NSString *)key session:(NSString *)sid;
+- (BOOL)isStoredSession:(NSString *)sid;
+- (NSString *)videoOfSession:(NSString *)sid;
+- (void)noteOpened:(NSDictionary *)answer;          // an engine open answer: table entry + the item's manifest
+- (NSDictionary *)storedAnswer:(NSString *)vid;     // a stored session when the item is complete; nil otherwise (main queue)
+- (BOOL)openStored:(NSString *)vid done:(void (^)(NSDictionary *r, NSError *e))done;   // answered from the store: YES
+- (void)subtitles:(NSString *)key session:(NSString *)sid done:(void (^)(NSString *vtt, NSError *e))done;
 @end

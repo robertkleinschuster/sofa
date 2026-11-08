@@ -48,6 +48,12 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (void)image:(NSURL *)url done:(void (^)(NSData *data, NSInteger status))done;
 @end
 
+@interface SFYTEngine (MediaStore)   // SFYTEngine+Store.m
+// A video complete in the media store opens without the engine (`stored` in the answer): canOpen
+// says whether open can succeed at all (engine installed, or the video stored). Main queue.
+- (BOOL)canOpen:(NSString *)videoID;
+@end
+
 @interface SFYTEngine (Lounge)
 // The lounge's transport (SFLounge): its requests to www.youtube.com/api/lounge made by the
 // engine page - same origin, the profile's cookies, as youtube.com/tv makes them. Any queue;

@@ -61,20 +61,36 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     }
 }
 
+- (long long)intOf:(NSString *)sql {
+    sqlite3_stmt *st; long long v = 0;
+    if (sqlite3_prepare_v2(_db, sql.UTF8String, -1, &st, NULL) == SQLITE_OK) {
+        if (sqlite3_step(st) == SQLITE_ROW) v = sqlite3_column_int64(st, 0);
+        sqlite3_finalize(st);
+    }
+    return v;
+}
+
 - (void)open {
     [[NSFileManager defaultManager] createDirectoryAtPath:_dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *p = [_dir stringByAppendingPathComponent:@"store.db"];
     if (sqlite3_open(p.fileSystemRepresentation, &_db) != SQLITE_OK) { SFLog(@"media-store: open failed %s", sqlite3_errmsg(_db)); return; }
-    // Schema version 1 (PRAGMA user_version; a later change migrates from it). A track's ranges go
-    // with it (ON DELETE CASCADE); a range is never empty.
-    NSString *tracks = @"CREATE TABLE IF NOT EXISTS tracks (id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, item TEXT NOT NULL, "
-                        "kind TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0), used REAL NOT NULL)";
-    NSString *extents = @"CREATE TABLE IF NOT EXISTS extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, "
-                         "start INTEGER NOT NULL CHECK (start >= 0), end INTEGER NOT NULL, CHECK (end > start), "
-                         "PRIMARY KEY (track, start)) WITHOUT ROWID";
-    for (NSString *s in @[@"PRAGMA journal_mode=WAL", @"PRAGMA synchronous=NORMAL", @"PRAGMA foreign_keys=ON", tracks,
-                          @"CREATE INDEX IF NOT EXISTS tracks_item ON tracks(item)", extents, @"PRAGMA user_version=1"])
-        [self run:s args:nil];
+    // Schema by version (PRAGMA user_version), one step per version. v1: tracks and their ranges (a
+    // track's ranges go with it; a range is never empty). v2: an item's manifest - what playing it
+    // needs without its source (docs/media-store.md); it goes with the item's last track.
+    for (NSString *s in @[@"PRAGMA journal_mode=WAL", @"PRAGMA synchronous=NORMAL", @"PRAGMA foreign_keys=ON"]) [self run:s args:nil];
+    int version = (int)[self intOf:@"PRAGMA user_version"];
+    if (version < 1) {
+        [self run:@"CREATE TABLE IF NOT EXISTS tracks (id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, item TEXT NOT NULL, "
+                   "kind TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0), used REAL NOT NULL)" args:nil];
+        [self run:@"CREATE INDEX IF NOT EXISTS tracks_item ON tracks(item)" args:nil];
+        [self run:@"CREATE TABLE IF NOT EXISTS extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, "
+                   "start INTEGER NOT NULL CHECK (start >= 0), end INTEGER NOT NULL, CHECK (end > start), "
+                   "PRIMARY KEY (track, start)) WITHOUT ROWID" args:nil];
+    }
+    if (version < 2) [self run:@"CREATE TABLE IF NOT EXISTS manifests (item TEXT PRIMARY KEY, json TEXT NOT NULL)" args:nil];
+    if (version < 2) [self run:@"PRAGMA user_version=2" args:nil];
+    // a manifest whose item has no bytes (opened, nothing played): written again by the next open
+    [self run:@"DELETE FROM manifests WHERE item NOT IN (SELECT item FROM tracks)" args:nil];
     // the index into memory: tracks, then their ranges
     NSMutableDictionary *byRow = [NSMutableDictionary new];
     sqlite3_stmt *st;
@@ -222,9 +238,47 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 - (void)removeItem:(NSString *)item {
+    dispatch_sync(_q, ^{ [self dropItem:item]; });
+}
+
+// on _q: an item's tracks, bytes and manifest
+- (void)dropItem:(NSString *)item {
+    for (SFMediaTrack *t in [_tracks.allValues copy]) if ([t.item isEqualToString:item]) [self removeTrack:t];
+    [self run:@"DELETE FROM manifests WHERE item = ?" args:@[item]];
+}
+
+- (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item {
+    NSData *json = manifest ? [NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] : nil;
+    if (!json || !item.length) return;
+    NSString *s = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+    dispatch_async(_q, ^{ [self run:@"INSERT OR REPLACE INTO manifests (item, json) VALUES (?, ?)" args:@[item, s]]; });
+}
+
+- (NSDictionary *)manifestOf:(NSString *)item {
+    __block NSDictionary *m = nil;
     dispatch_sync(_q, ^{
-        for (SFMediaTrack *t in [self->_tracks.allValues copy]) if ([t.item isEqualToString:item]) [self removeTrack:t];
+        sqlite3_stmt *st;
+        if (sqlite3_prepare_v2(self->_db, "SELECT json FROM manifests WHERE item = ?", -1, &st, NULL) != SQLITE_OK) return;
+        [self bind:st args:@[item ?: @""]];
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            NSData *d = [NSData dataWithBytes:sqlite3_column_blob(st, 0) length:(NSUInteger)sqlite3_column_bytes(st, 0)];
+            id v = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+            m = [v isKindOfClass:[NSDictionary class]] ? v : nil;
+        }
+        sqlite3_finalize(st);
     });
+    return m;
+}
+
+- (BOOL)hasComplete:(NSArray *)keys {
+    __block BOOL ok = keys.count > 0;
+    dispatch_sync(_q, ^{
+        for (NSString *k in keys) {
+            SFMediaTrack *t = self->_tracks[k];
+            if (!t || t.total <= 0 || ![t.extents coversStart:0 end:t.total]) { ok = NO; return; }
+        }
+    });
+    return ok;
 }
 
 - (long long)bytes {
@@ -235,20 +289,25 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 
 #pragma mark Eviction
 
-// on _q: while free space is below the reserve, the least recently used unpinned track goes
+// on _q: while free space is below the reserve, the least recently used unpinned item goes - whole
+// (its tracks and manifest: half an item plays nothing and frees little)
 - (void)evict {
     BOOL (^pinned)(NSString *) = self.isPinned;
     long long (^free)(void) = self.freeSpace;
     long long reserve = self.reserve;
     if (!free || free() >= reserve) return;
-    NSArray *byAge = [[_tracks.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SFMediaTrack *t, id b) {
-        return !pinned || !pinned(t.item);
-    }]] sortedArrayUsingComparator:^NSComparisonResult(SFMediaTrack *a, SFMediaTrack *b) { return [@(a.used) compare:@(b.used)]; }];
-    for (SFMediaTrack *t in byAge) {
+    NSMutableDictionary *lastUse = [NSMutableDictionary new], *size = [NSMutableDictionary new];   // item -> latest use, bytes
+    for (SFMediaTrack *t in _tracks.allValues) {
+        if (pinned && pinned(t.item)) continue;
+        lastUse[t.item] = @(MAX([lastUse[t.item] doubleValue], t.used));
+        size[t.item] = @([size[t.item] longLongValue] + t.extents.bytes);
+    }
+    NSArray *byAge = [lastUse keysSortedByValueUsingSelector:@selector(compare:)];
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    for (NSString *item in byAge) {
         if (free() >= reserve) break;
-        SFLog(@"media-store: evict %@ (%.0f MB, unused for %.0f h)", t.key, t.extents.bytes / 1048576.0,
-              ([NSDate date].timeIntervalSince1970 - t.used) / 3600);
-        [self removeTrack:t];
+        SFLog(@"media-store: evict %@ (%.0f MB, unused for %.0f h)", item, [size[item] longLongValue] / 1048576.0, (now - [lastUse[item] doubleValue]) / 3600);
+        [self dropItem:item];
     }
 }
 

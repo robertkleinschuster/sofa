@@ -82,11 +82,21 @@ Status: agreed with the user 2026-11-08; phase 1 built (store, YouTube read-thro
 
 ## Phases
 
-1. Store + YouTube read-through + eviction (resume from disk; nothing visible but speed).
-2. YouTube "Herunterladen" = pin + fill; the YouTube ffmpeg mux goes.
-3. Pre-buffering replaces subscription downloads (with expiry).
-4. Mediatheks through SFMediaProxy (read-through, then fill/pin like 2-3).
-5. UI: tile mark, timeline shade, "noch X MB".
+Decided with the user 2026-11-08: download and buffer are merged, not bridged - no MP4 for what the
+store can hold; existing downloads may be deleted (no migration of old files).
 
-Each phase: tests first where the logic is pure (extents, budget, eviction order - `tests/units`),
-the proxies end to end in `test-playback` / `test-downloads` with local servers.
+1. Done: store + YouTube read-through + eviction (resume from disk; nothing visible but speed).
+2. YouTube merged:
+   a. Manifests in the store (schema v2): per item what playing it needs without its source - the
+      tracks (video, main audio), subtitles (stored as small tracks), duration, end screen,
+      published. Written when a session opens.
+   b. Store sessions: an item whose manifest tracks are complete plays from a session Sofa serves
+      itself (same answer shape as the engine's, local URLs) - no engine, also offline.
+   c. Filler: a download is pin + fill - the missing ranges are read through the same read path
+      (engine session, paced like a player), no ffmpeg, no MP4, no verifier/repair.
+   d. `downloads` = intent only (state, subscription, keep, online check); size from the store; the
+      path/bytes/repair columns and YouTube's ffmpeg path go; existing YouTube downloads deleted.
+3. Pre-buffering replaces subscription downloads (expiry: until watched plus a few days, at most two weeks).
+4. Mediatheks through SFMediaProxy (progressive by ranges, HLS segments as tracks), then fill/pin like
+   2-3; their ffmpeg/MP4 path goes last.
+5. UI: tile mark, timeline shade, "noch X MB".

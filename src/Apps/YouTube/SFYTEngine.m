@@ -106,6 +106,11 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 
 - (BOOL)available { return _browser.available; }
 
+- (NSString *)mediaBase {
+    if (!_server.port) [self startServer];
+    return _server.port ? [NSString stringWithFormat:@"http://127.0.0.1:%u", _server.port] : nil;
+}
+
 #pragma mark Lifecycle
 
 // The channel's address goes into the extension's config.json; it stays the same on every start
@@ -412,6 +417,7 @@ static id Clean(id v) {
 
 - (void)open:(NSString *)vid request:(NSDictionary *)req done:(void (^)(NSDictionary *, NSError *))done {
     if (!vid.length) { done(nil, SFError(@"Video nicht abspielbar.")); return; }
+    if ([self openStored:vid done:done]) return;   // complete on disk: Sofa serves it alone
     NSDate *t0 = [NSDate date];
     [self call:@"open" args:@[req] timeout:kOpenTimeout done:^(id v, NSError *e) {
         NSDictionary *j = dict(v);
@@ -429,7 +435,7 @@ static id Clean(id v) {
                              j[@"height"], j[@"fps"], -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
         else SFLog(@"yt-engine: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],
                    str(j[@"alang"]) ?: @"?", -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
-        [self noteTracks:dict(j[@"tracks"]) session:str(j[@"sid"])];
+        [self noteOpened:j];
         done(Clean(j), nil);
     }];
 }

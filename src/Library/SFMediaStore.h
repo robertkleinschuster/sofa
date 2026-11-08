@@ -22,11 +22,17 @@
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start;
 - (SFExtentSet *)extentsOf:(NSString *)key;    // a copy (empty for an unknown track)
 - (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks
-- (void)removeItem:(NSString *)item;           // its tracks, bytes and index
+- (void)removeItem:(NSString *)item;           // its tracks, bytes, index and manifest
+// An item's manifest: what playing it needs without its source (source-specific JSON object; the
+// YouTube app's: tracks, subtitles, duration, end screen). Kept while the item has bytes.
+- (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item;
+- (NSDictionary *)manifestOf:(NSString *)item;
+// every one of these tracks is known with its length and present from 0 to it (playable offline)
+- (BOOL)hasComplete:(NSArray *)keys;
 @property (nonatomic, readonly) long long bytes;   // all stored bytes
 
-// Eviction: while the volume has less free space than `reserve`, whole tracks go, least recently used
-// first - never those of an item `isPinned` says yes to (downloads). Runs after writes by itself.
+// Eviction: while the volume has less free space than `reserve`, whole items go (tracks and manifest),
+// least recently used first - never an item `isPinned` says yes to (downloads). Runs after writes by itself.
 @property (atomic, copy) BOOL (^isPinned)(NSString *item);
 @property (atomic) long long reserve;                    // bytes that stay free (default 0)
 // The volume's free bytes (default); tests replace it. Called on the store's queue: must not call the store.

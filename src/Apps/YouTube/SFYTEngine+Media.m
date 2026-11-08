@@ -3,13 +3,14 @@
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>    (Range, 206)
 //   GET /s/<sid>/live.m3u8    (lives / post-live DVR: the HLS media playlist, naming...)
 //   GET /s/<sid>/seg/<n>.<ext> (...its segments, fetched by the engine from googlevideo)
-//   GET /s/<sid>/subs/<key>.vtt
+//   GET /s/<sid>/subs/<key>.vtt   (kept in the store: SFYTEngine+Store.m)
 //   GET /s/<sid>/status       (diagnostics)
 // Media bytes come from the page in pieces (engine read(): waits for SABR like a reader) and go out
 // as they arrive; a reader that goes away (a seek) stops the reading. Every piece passes the media
 // store (docs/media-store.md): what is on disk is served from there without asking the engine (a
 // resume, a phone's lounge video watched before, a download of a watched video), what the engine
-// delivers goes to disk on the way.
+// delivers goes to disk on the way. A stored session (SFYTEngine+Store.m) has no engine session
+// behind it: the disk or nothing.
 #import "SFModel.h"
 #import "SFYTEngine+Private.h"
 #import "SFJSON.h"
@@ -59,7 +60,11 @@ static NSString *ErrorJSON(NSError *e) {
     }
     if (sub && [what isEqualToString:@"seg"]) { [self serveSegment:sub.integerValue sid:sid to:x]; return; }
     if (sub && [what isEqualToString:@"subs"] && [sub hasSuffix:@".vtt"]) {
-        [self text:@"subtitles" args:@[sid, [sub substringToIndex:sub.length - 4]] type:@"text/vtt; charset=utf-8" to:x]; return;
+        [self subtitles:[sub substringToIndex:sub.length - 4] session:sid done:^(NSString *vtt, NSError *e) {
+            if (!vtt) { [x respondJSON:e.code ?: 502 object:@{@"error": ErrorJSON(e)}]; return; }
+            [x respond:200 type:@"text/vtt; charset=utf-8" body:[vtt dataUsingEncoding:NSUTF8StringEncoding]];
+        }];
+        return;
     }
     if (!sub && [what isEqualToString:@"status"]) {
         [self request:@"status" args:@[sid] timeout:5 done:^(id v, NSError *e) {
@@ -88,38 +93,11 @@ static NSString *ErrorJSON(NSError *e) {
 }
 
 // One piece of a track: done(bytes, total, mimeType) or an error. Engine queue.
-// Track infos by session: sid -> local key -> {id, total, mimeType}. The newest sessions only (a
-// session the engine has dropped answers its reads with an error anyway).
-static NSMutableDictionary *gTracks;
-static NSMutableArray *gTrackOrder;
-static const NSUInteger kTrackSessions = 32;
-
-- (void)noteTracks:(NSDictionary *)tracks session:(NSString *)sid {
-    if (!sid.length || !tracks.count) return;
-    @synchronized ([SFYTEngine class]) {
-        if (!gTracks) { gTracks = [NSMutableDictionary new]; gTrackOrder = [NSMutableArray new]; }
-        NSMutableDictionary *known = [gTracks[sid] mutableCopy] ?: [NSMutableDictionary new];
-        [known addEntriesFromDictionary:tracks];
-        if (!gTracks[sid]) [gTrackOrder addObject:sid];
-        gTracks[sid] = known;
-        while (gTrackOrder.count > kTrackSessions) { [gTracks removeObjectForKey:gTrackOrder[0]]; [gTrackOrder removeObjectAtIndex:0]; }
-    }
-}
-
-static NSDictionary *TrackInfo(NSString *sid, NSString *key) {
-    @synchronized ([SFYTEngine class]) { return dict(gTracks[sid][key]); }
-}
-
-// "yt:<video>:<format>:..." -> the item "yt:<video>"
-static NSString *ItemOf(NSString *trackID) {
-    NSArray *p = [trackID componentsSeparatedByString:@":"];
-    return p.count >= 2 ? [NSString stringWithFormat:@"%@:%@", p[0], p[1]] : nil;
-}
-
 - (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
         done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
     SFMediaStore *store = [SFDownloads shared].mediaStore;
-    NSDictionary *t = TrackInfo(sid, key);
+    NSDictionary *t = [self trackInfo:key session:sid];
+    BOOL stored = [self isStoredSession:sid];   // no engine session behind it: the disk or nothing
     NSString *tid = str(t[@"id"]);
     long long total = [num(t[@"total"]) longLongValue];
     if (tid.length && offset < total) {   // from disk, off the engine queue (a disk read may take a moment)
@@ -127,11 +105,13 @@ static NSString *ItemOf(NSString *trackID) {
             NSData *disk = [store readAvailable:tid start:offset max:(NSUInteger)MIN((long long)max, total - offset)];
             dispatch_async(self.queue, ^{
                 if (disk) done(disk, total, str(t[@"mimeType"]) ?: @"application/octet-stream", nil);
+                else if (stored) done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:404 userInfo:@{NSLocalizedDescriptionKey: @"not in the media store"}]);
                 else [self readFromEngine:sid track:key at:offset max:max done:done];
             });
         });
         return;
     }
+    if (stored) { done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:offset >= total && total ? 416 : 404 userInfo:@{NSLocalizedDescriptionKey: @"not in the media store"}]); return; }
     [self readFromEngine:sid track:key at:offset max:max done:done];
 }
 
@@ -143,9 +123,10 @@ static NSString *ItemOf(NSString *trackID) {
         if (e || !bytes || ![r[@"total"] isKindOfClass:[NSNumber class]]) { done(nil, 0, nil, e ?: SFError(@"engine: malformed read")); return; }
         long long total = [r[@"total"] longLongValue];
         NSString *mime = str(r[@"mimeType"]) ?: @"application/octet-stream", *tid = str(r[@"id"]);
-        if (tid.length && bytes.length) {   // to disk on the way (and known for the next read)
-            [self noteTracks:@{key: @{@"id": tid, @"total": @(total), @"mimeType": mime}} session:sid];
-            [[SFDownloads shared].mediaStore write:bytes key:tid item:ItemOf(tid) kind:key total:total at:offset];
+        NSString *vid = [self videoOfSession:sid];
+        if (tid.length && bytes.length && vid) {   // to disk on the way (and known for the next read)
+            [self noteSession:sid video:nil stored:NO tracks:@{key: @{@"id": tid, @"total": @(total), @"mimeType": mime}}];
+            [[SFDownloads shared].mediaStore write:bytes key:tid item:[@"yt:" stringByAppendingString:vid] kind:key total:total at:offset];
         }
         done(bytes, total, mime, nil);
     }];
