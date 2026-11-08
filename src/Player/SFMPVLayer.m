@@ -367,29 +367,33 @@ static void onUpdate(void *ctx) {
 
 // Closing a player blocked the main thread ~300 ms in mpv_render_context_free and
 // mpv_terminate_destroy, which wait for the vo and core threads (hitch monitor 2026-11-07, "menu").
-// Here the main thread only detaches: _rc goes NULL under _rcLock, so the render queue never
-// touches it again. The render context is freed on a serial queue with the render context current
-// and locked, before the core it belongs to is destroyed. The last frame stays in the front buffer.
+// The main thread only lets go: the render context is detached on the render queue itself - after
+// a render in progress, without the main thread waiting for it (taking _rcLock here waited for a
+// first frame's shader setup, test-playback 2026-11-08) - then freed on the teardown queue with the
+// render context current and locked, before the core it belongs to is destroyed. The block keeps
+// the layer alive until mpv's update callback (which points at it) is gone. The last frame stays.
 - (void)retireWithMPV:(mpv_handle *)mpv {
     static dispatch_queue_t teardown;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ teardown = dispatch_queue_create("sofa.mpv-teardown", DISPATCH_QUEUE_SERIAL); });
     _mpv = NULL;
     self.onRenderContext = nil;
-    pthread_mutex_lock(&_rcLock);   // waits for a render in progress (at most one frame)
-    mpv_render_context *rc = _rc;
-    _rc = NULL;
-    if (rc) mpv_render_context_set_update_callback(rc, NULL, NULL);
-    pthread_mutex_unlock(&_rcLock);
-    CGLContextObj ctx = rc && _rctx ? CGLRetainContext(_rctx) : NULL;
-    if (!rc && !mpv) return;
-    dispatch_async(teardown, ^{
-        if (rc) {
-            if (ctx) { CGLLockContext(ctx); CGLSetCurrentContext(ctx); }
-            mpv_render_context_free(rc);
-            if (ctx) { CGLSetCurrentContext(NULL); CGLUnlockContext(ctx); CGLReleaseContext(ctx); }
-        }
-        if (mpv) mpv_terminate_destroy(mpv);
+    dispatch_async(RenderQueue(), ^{
+        pthread_mutex_lock(&self->_rcLock);
+        mpv_render_context *rc = self->_rc;
+        self->_rc = NULL;
+        if (rc) mpv_render_context_set_update_callback(rc, NULL, NULL);
+        pthread_mutex_unlock(&self->_rcLock);
+        if (!rc && !mpv) return;
+        CGLContextObj ctx = rc && self->_rctx ? CGLRetainContext(self->_rctx) : NULL;
+        dispatch_async(teardown, ^{
+            if (rc) {
+                if (ctx) { CGLLockContext(ctx); CGLSetCurrentContext(ctx); }
+                mpv_render_context_free(rc);
+                if (ctx) { CGLSetCurrentContext(NULL); CGLUnlockContext(ctx); CGLReleaseContext(ctx); }
+            }
+            if (mpv) mpv_terminate_destroy(mpv);
+        });
     });
 }
 @end
