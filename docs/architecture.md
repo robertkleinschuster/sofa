@@ -151,6 +151,14 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   transaction with its version bump (a failing step rolls back and is retried next launch).
   Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
   migrates a 0.3.8 database and checks every step - extend it with each new step.
+- The schema states the rules (step 18): required columns `NOT NULL`, value ranges as `CHECK`s,
+  references as foreign keys to `items`, `follows`, `subscriptions` - `DEFERRABLE INITIALLY
+  DEFERRED` (checked at commit: write parent and child in one `runAll:` in any order), enforced
+  (`PRAGMA foreign_keys=ON` after the migration). A row others refer to is written as an upsert
+  (`INSERT ... ON CONFLICT DO UPDATE`), never `INSERT OR REPLACE` (that deletes it first). A size or
+  state another subsystem owns is read from it, not copied into a column (step 17: a download's
+  bytes are the media store's). A statement the database refuses fails the test suite that caused
+  it (`tools/lib/dev-instance.sh`).
 - Tables: `progress` (positions, history), `settings`,
   `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
   picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
