@@ -32,8 +32,10 @@ static NSString *ffmpegPath(void) {
     dispatch_once(&o, ^{
         m = [[SFMediaStore alloc] initWithDirectory:[[SFDownloads root] stringByAppendingPathComponent:@".store"]];
         m.reserve = (long long)self.storageReserve;
-        // a downloaded item (a download record: kept until the user deletes it) is never evicted
-        m.isPinned = ^BOOL(NSString *item) { return [[SFDownloads shared] recordFor:item] != nil; };
+        // what a pending download is going to read stays (a finished one has its own file: its store
+        // copy goes when it is installed - SFDownloads+Worker finish:)
+        __weak SFDownloads *ws = self;
+        m.isPinned = ^BOOL(NSString *item) { return [ws.storePinned containsObject:item]; };
     });
     return m;
 }
@@ -58,6 +60,9 @@ static NSString *ffmpegPath(void) {
         // re-queue runs interrupted last time
         for (SFDownloadRecord *r in _recs.allValues)
             if (r.state == SFDLRunning) { r.state = SFDLQueued; _resumeID = r.identifier; }
+        NSMutableSet *pinned = [NSMutableSet new];
+        for (SFDownloadRecord *r in _recs.allValues) if (PinsStore(r)) [pinned addObject:r.identifier];
+        self.storePinned = pinned;
         SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
         __weak SFDownloads *ws = self;
         SFSetLocalFileLookup(^NSString *(NSString *ident) { return [ws fileFor:ident]; });
@@ -67,6 +72,17 @@ static NSString *ffmpegPath(void) {
 
 #pragma mark Persistence
 
+// a download that is still going to read the item's bytes (through the loopback path that buffers them)
+static BOOL PinsStore(SFDownloadRecord *r) { return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying; }
+
+- (void)notePinned:(BOOL)pinned item:(NSString *)item {
+    NSSet *now = self.storePinned;
+    if (!item || [now containsObject:item] == pinned) return;
+    NSMutableSet *next = [now mutableCopy] ?: [NSMutableSet new];
+    if (pinned) [next addObject:item]; else [next removeObject:item];
+    self.storePinned = next;
+}
+
 - (void)save:(SFDownloadRecord *)r {
     NSArray *w = [self write:r];
     [[SFStore shared] run:w[0] args:w[1]];
@@ -75,6 +91,7 @@ static NSString *ffmpegPath(void) {
 // the statement that stores a record (save:, or several in one runAll:)
 - (NSArray *)write:(SFDownloadRecord *)r {
     [_itemCache removeObjectForKey:r.identifier];
+    [self notePinned:PinsStore(r) item:r.identifier];
     _generation++;
     return r.writeStatement;
 }
@@ -310,6 +327,7 @@ static NSString *gb(unsigned long long b) {
     } else {
         [_recs removeObjectForKey:identifier];
         [_itemCache removeObjectForKey:identifier];
+        [self notePinned:NO item:identifier];
         _generation++;
         [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
     }

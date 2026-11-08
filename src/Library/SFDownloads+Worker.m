@@ -3,6 +3,7 @@
 #import "SFDownloads+Private.h"
 #import "SFHostFetch.h"
 #import "SFDownloadBudget.h"
+#import "SFMediaStore.h"
 #import <signal.h>
 
 @implementation SFDownloads (Worker)
@@ -303,7 +304,12 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
         dispatch_async(dispatch_get_main_queue(), ^{ [self retryDueRepairs]; });   // schedules the retry
     } else if (r) {
         r.progress = ok ? 1 : 0;
-        if (ok) { r.state = SFDLDone; r.error = nil; r.retryAt = 0; r.tries = 0; }
+        if (ok) {
+            r.state = SFDLDone; r.error = nil; r.retryAt = 0; r.tries = 0;
+            // the file is the copy now: the bytes it was read from (the media store's, for loopback
+            // sources) would only take the space twice
+            [self.mediaStore removeItem:ident];
+        }
         else {
             // the next attempt's time is kept for every failure under the limit (a subscription may find
             // a manual one later); only a subscription episode is retried by Sofa itself

@@ -74,6 +74,10 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
 }
+// Items whose buffered bytes a download is still going to read (queued, running, retrying): the media
+// store never evicts them. A snapshot the main thread swaps on every record write - the store asks
+// from its own queue and must never touch _recs.
+@property (atomic, copy) NSSet *storePinned;
 - (void)save:(SFDownloadRecord *)r;
 - (BOOL)fileExists:(SFDownloadRecord *)r;   // its file is there
 - (SFDownloadRecord *)recOf:(NSString *)identifier;   // the record (not a copy); nil = none

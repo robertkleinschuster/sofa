@@ -38,9 +38,13 @@ Status: agreed with the user 2026-11-08; phase 1 built (store, YouTube read-thro
   - `extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, start INTEGER NOT NULL, end INTEGER NOT NULL, CHECK (end > start), PRIMARY KEY (track, start)) WITHOUT ROWID`
   - Later (phase 2): what playing a complete entry offline needs (formats, duration, subtitles, end
     screen) without the source.
-- Retention lives with the item, in `downloads` (the user-facing record it already is): an item with
-  a `downloads` row is pinned (`isPinned`); a pre-buffered episode gets an expiry (phase 3); an item
-  without one is plain buffer.
+- Retention lives with the item, in `downloads` (the user-facing record it already is). Until phase 2:
+  a pending download (queued, running, retrying) pins the item - its ffmpeg reads the YouTube tracks
+  through the same loopback path, so a watched part comes from disk instead of YouTube - and once its
+  MP4 is installed the store copy goes (the file is the copy; never twice on disk). The pin set is a
+  snapshot SFDownloads swaps on every record write (the store asks from its own queue). From phase 2
+  on a downloaded item is its pinned tracks; a pre-buffered episode gets an expiry (phase 3); an
+  item without a record is plain buffer.
 
 ### 2. Read-through at the proxies
 
