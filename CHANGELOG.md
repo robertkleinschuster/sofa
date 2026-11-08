@@ -6,6 +6,25 @@ Einstellungen → „Update installieren“.
 
 ## 0.3.11
 
+- **Puffer und Download sind eins.** Was du anschaust, bleibt eine Weile auf der Platte: Verlässt du
+  ein Video und kommst zurück, geht es sofort weiter, ohne etwas neu zu laden. „Herunterladen“ bei
+  einem angeschauten Video lädt nur, was noch fehlt, und sagt dir, wie viel das ist („noch 340 MB“).
+  Kacheln mit Geladenem zeigen „geladen“. Das gilt für YouTube und alle Mediatheken.
+- **Abos laden neue Folgen vor, statt sie dauerhaft herunterzuladen.** Eine vorgeladene Folge bleibt
+  bis drei Tage nach dem Anschauen, höchstens zwei Wochen. Willst du sie behalten: „Behalten“ oder
+  „Herunterladen“. Die bisherigen MP4-Downloads der Abos sind beim Update gelöscht worden; Sofa
+  braucht kein ffmpeg mehr.
+- **YouTube läuft jetzt über einen eingebauten Firefox.** Für YouTube sieht Sofa damit aus wie ein
+  gewöhnlicher Browser – das soll Bot-Prüfungen vermeiden. Nichts zu installieren, alles ist im
+  Programm. Videos mit Fortsetzungspunkt starten deutlich schneller (etwa 6 statt 14 Sekunden).
+- **Schnellmenü: MENU gedrückt halten.** Ausschalten, Einstellungen und Tonausgabe an einem Ort,
+  von überall aus. Bluetooth-Kopfhörer (z. B. AirPods) lassen sich dort koppeln und als Tonausgabe
+  wählen; die Lautstärke der eingebauten Lautsprecher funktioniert auch nach dem Zurückschalten.
+- **Flüssiger.** Das Video wird in einem eigenen Thread gezeichnet, Übergänge laufen mit 60 Bildern
+  pro Sekunde, nichts springt mehr beim Nachladen, und lange Hänger beim Start und Update sind weg.
+- **YouTube-Suche zeigt Playlists in einer eigenen Reihe**, Reihen laden am Ende weiter, und eine
+  Kanalseite erreicht jetzt alle Videos des Kanals. Titel erscheinen so, wie der Kanal sie
+  geschrieben hat.
 - **YouTube: keine Abruf-Schübe mehr beim Abspielen vom Handy.** Schickt das Handy eine lange
   Playlist an Sofa, lädt Sofa die Infos jetzt nur für das laufende und das nächste Video – vorher
   für die ganze Liste auf einmal (bei 100 Videos 100 Abrufe in einer Minute), was YouTube als

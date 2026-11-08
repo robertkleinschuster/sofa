@@ -1,7 +1,7 @@
 #!/bin/bash
 # test-release [Sofa.app] -- checks a release bundle as on a Mac WITHOUT MacPorts:
 # everything runs under sandbox-exec with read access to /opt/local denied.
-#   bundle dependencies, ffmpeg/rsvg-convert, nothing of the retired YouTube paths left (Python,
+#   bundle dependencies, rsvg-convert, no ffmpeg (downloads fill the media store), nothing of the retired YouTube paths left (Python,
 #   yt-dlp, node sidecar), the engine extension, the engine's browser (Xvfb + Firefox from the bundle:
 #   starts, renders with the system fonts, has WebGL).
 # Needs internet. Touches nothing outside a temp folder.
@@ -38,7 +38,7 @@ echo "==> $APP"
 np /bin/ls /opt/local >/dev/null 2>&1 && { echo "sandbox has no effect"; exit 1; }
 /opt/local/bin/python3.14 -I "$SRC/tools/relink.py" --check "$APP" >/dev/null && ok "dependencies only system + bundle" || bad "relink --check"
 
-np "$RT/bin/ffmpeg" -hide_banner -version >/dev/null 2>&1 && ok ffmpeg || bad ffmpeg
+[ -e "$RT/bin/ffmpeg" ] && bad "ffmpeg shipped (downloads fill the media store since 0.3.11)" || ok "no ffmpeg tool"
 echo '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><text x="0" y="15">ARD</text></svg>' > "$T/t.svg"
 np "$RT/bin/rsvg-convert" -o "$T/t.png" "$T/t.svg" 2>/dev/null && [ -s "$T/t.png" ] && ok rsvg-convert || bad rsvg-convert
 

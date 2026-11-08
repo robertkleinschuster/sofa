@@ -6,7 +6,7 @@
 # The user only needs the DMG -- no MacPorts, no Xcode tools.
 #
 #   Contents/MacOS/{Sofa,SofaRemote}
-#   Contents/Frameworks/*.dylib           all libraries (libmpv, ffmpeg, curl/OpenSSL, libc++, MLS, ...)
+#   Contents/Frameworks/*.dylib           all libraries (libmpv + its ffmpeg libraries, curl/OpenSSL, libc++, MLS, ...)
 #   Contents/Runtime/bin/{rsvg-convert,Xvfb,xkbcomp}
 #   Contents/Runtime/lib/{firefox/,libGL.1.dylib,libepoxy.0.dylib,dri/}   the engine's browser + Mesa
 #   Contents/Runtime/share/{X11/xkb,fonts/misc}         Xvfb's keymaps and fonts

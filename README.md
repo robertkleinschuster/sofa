@@ -59,8 +59,8 @@ which brings a modern compiler, libcurl/OpenSSL, mpv and Python back to OS X 10.
 2. Open it and drag **Sofa** onto **Programme** (Applications).
 3. First start: right-click Sofa → **Open** → **Open** (the app is not signed by Apple).
 
-Sofa brings everything it needs inside the app (libmpv/ffmpeg, curl/OpenSSL, libwebp, Node.js
-with its YouTube service). On first start it sets up the Apple Remote helper and starts with the
+Sofa brings everything it needs inside the app (libmpv, curl/OpenSSL, libwebp, and a Firefox
+for YouTube). On first start it sets up the Apple Remote helper and starts with the
 next login, and it explains the remote. YouTube works right away.
 
 **Update:** Sofa updates itself from GitHub releases (Settings → updates; automatic updates
