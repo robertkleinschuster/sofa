@@ -166,6 +166,12 @@ NSString *SFDevInstanceName(void) { return gInstanceName; }
 NSString *SFDevPrivateDir(void) { return gDataDirFromEnv ? ensureDir(gDataDir) : nil; }
 
 NSString *SFLogPath(void) {
+#ifdef SF_UNIT_TEST
+    // a unit test (tools/test-units builds SFCore with SF_UNIT_TEST) never writes the real app's log:
+    // its own file, shown with the test's output when it fails
+    NSString *unit = [NSProcessInfo processInfo].environment[@"SOFA_UNIT_LOG"];
+    return unit.length ? unit : [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"sofa-unit-%d.log", getpid()]];
+#endif
     if (SFDevPrivateDir()) return [gDataDir stringByAppendingPathComponent:@"sofa.log"];
     NSString *name = gInstanceName ? [NSString stringWithFormat:@"Sofa-dev-%@.log", gInstanceName] : @"Sofa.log";
     return [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"] stringByAppendingPathComponent:name];

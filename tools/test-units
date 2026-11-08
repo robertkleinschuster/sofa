@@ -8,7 +8,8 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-units.XXXXXX")"; trap 'rm -rf "$OUT"' EXIT
 # SFCore once, then every test built and run in parallel; results printed in file order
-CFLAGS=(-fobjc-arc -I"$SRC/src/Core" -I"$SRC/src/Framework")
+# SF_UNIT_TEST: SFLog writes the test's own log ($OUT/NAME.log-run), never ~/Library/Logs/Sofa.log
+CFLAGS=(-fobjc-arc -DSF_UNIT_TEST -I"$SRC/src/Core" -I"$SRC/src/Framework")
 /usr/bin/clang "${CFLAGS[@]}" -c "$SRC/src/Core/SFCore.m" -o "$OUT/SFCore.o" 2>"$OUT/SFCore.log" || { echo "FAIL SFCore (build)"; cat "$OUT/SFCore.log"; exit 1; }
 unit() {   # unit TEST: build and run; its verdict line in $OUT/NAME.verdict, details after it
   local t=$1 n; n=$(basename "$1" .m)
@@ -20,7 +21,8 @@ unit() {   # unit TEST: build and run; its verdict line in $OUT/NAME.verdict, de
     { echo "FAIL $n (build)"; cat "$OUT/$n.log"; } > "$OUT/$n.verdict"; return; fi
   # at most 60 s each: a test that hangs (a deadlock, 2026-11-08) fails as one instead of holding
   # up test-all for good (perl's alarm: 10.9 has no timeout(1))
-  perl -e 'alarm 60; exec @ARGV' "$OUT/$n" > "$OUT/$n.out" 2>&1; local rc=$?
+  SOFA_UNIT_LOG="$OUT/$n.log-run" perl -e 'alarm 60; exec @ARGV' "$OUT/$n" > "$OUT/$n.out" 2>&1; local rc=$?
+  [ -s "$OUT/$n.log-run" ] && { echo "--- log:"; cat "$OUT/$n.log-run"; } >> "$OUT/$n.out"
   if [ $rc = 0 ]; then echo "ok   $n" > "$OUT/$n.verdict"
   elif [ $rc = 142 ]; then { echo "FAIL $n (hung: killed after 60 s)"; cat "$OUT/$n.out"; } > "$OUT/$n.verdict"
   else { echo "FAIL $n"; cat "$OUT/$n.out"; } > "$OUT/$n.verdict"; fi
