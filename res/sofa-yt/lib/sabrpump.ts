@@ -106,6 +106,8 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     // answer, or after it (2026-11-08: every run waited 4.05 s)
     fetchFunction: async (input, init) => {
       const n = ++requests, at = Date.now();
+      // the wait before it: the server's backoff from answer 1 (SabrStream waits nextRequestPolicy.backoffTimeMs)
+      if (n === 2) debug(`${tag}: request 2 sent ${at - t0} ms into the run (server-ordered backoff ${sabr['nextRequestPolicy']?.backoffTimeMs ?? 0} ms)`);
       const r = await fetch(input, init);
       if (n <= 2) debug(`${tag}: request ${n} answered after ${Date.now() - at} ms (${Date.now() - t0} ms into the run, HTTP ${r.status})`);
       return r;
