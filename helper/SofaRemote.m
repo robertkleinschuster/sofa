@@ -20,6 +20,9 @@
 BOOL SFDevMode = NO;
 CGFloat SFScale = 1;
 
+// MENU held has no usage of its own (the direct consumer Menu element alone, decodedDirect): a code
+// outside every HID page for the decoder's table
+static const uint32_t kHeldMenu = 0xFFFE0040;
 typedef NS_ENUM(NSInteger, RButton) { RNone = -1, RUp, RDown, RLeft, RRight, RSelect, RMenu, RPlay };
 
 
@@ -62,6 +65,10 @@ static NSString *ExternalUpdateDir(void) {
     // array fields of the AppleIRController: cookie -> list of usages (index = value, 1-based)
     NSMutableDictionary *_arrays;      // @(cookie) -> @[@(page<<16|usage), ...]
     NSMutableDictionary *_arrayDown;   // @(cookie) -> @(page<<16|usage) currently pressed
+    // one HID report = the values of one run-loop pass: its direct "down" values and what its arrays
+    // reported - a direct value without its array counterpart is no mirror (held MENU, 2026-11-08)
+    NSMutableSet *_reportDirect, *_reportArray;
+    BOOL _reportFlushQueued;
     NSTimer *_updateTimer;
     BOOL _updating;
     BOOL _external;     // update in progress: swap done by tools/sofa-deploy (app folder not writable)
@@ -401,6 +408,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
             NSNumber *prev = _arrayDown[@(cookie)];
             if (prev && prev.unsignedIntValue != pu) [self decoded:prev.unsignedIntValue down:NO];
             _arrayDown[@(cookie)] = @(pu);
+            [self noteReport:pu direct:NO];
             [self decoded:pu down:YES];
         } else if (v == 0) {
             NSNumber *prev = _arrayDown[@(cookie)];
@@ -409,15 +417,40 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         }
         return;
     }
-    // direct usage elements mirror the array values -> don't evaluate twice
-    if (_arrays.count) return;
+    // direct usage elements mostly mirror the array values (not evaluated twice) - but not always: a
+    // held MENU comes as the direct Menu element alone, every array of its report at 0 (raw log
+    // 2026-11-08). Decided once the whole report is in (noteReport).
+    if (_arrays.count) { if (v != 0) [self noteReport:(page << 16 | usage) direct:YES]; return; }
     [self decoded:(page << 16 | usage) down:v != 0];
+}
+
+// Collects one report's values; at the end of the run-loop pass (all its values are delivered within
+// it) the direct ones no array reported count on their own.
+- (void)noteReport:(uint32_t)pu direct:(BOOL)direct {
+    if (!_reportDirect) { _reportDirect = [NSMutableSet new]; _reportArray = [NSMutableSet new]; }
+    [(direct ? _reportDirect : _reportArray) addObject:@(pu)];
+    if (_reportFlushQueued) return;
+    _reportFlushQueued = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_reportFlushQueued = NO;
+        for (NSNumber *d in self->_reportDirect) if (![self->_reportArray containsObject:d]) [self decodedDirect:d.unsignedIntValue];
+        [self->_reportDirect removeAllObjects];
+        [self->_reportArray removeAllObjects];
+    });
+}
+
+// A direct element down on its own: the remote's own hold codes that bypass the arrays.
+- (void)decodedDirect:(uint32_t)pu {
+    if (pu == 0x000C0040) [self decoded:kHeldMenu down:YES];   // Menu (consumer page) alone = MENU held
+    else [self log:[NSString stringWithFormat:@"unknown direct page=0x%x usage=0x%x", pu >> 16, pu & 0xFFFF]];
 }
 
 // Calibrated 2026-11-03 (aluminium remote, 10.9): press+release arrive within
 // ~2 ms — there is NO hold state. "Long" is only recognisable by dedicated codes
-// the remote sends itself (centre long 0x82, left/right long 0xB4/0xB3).
-// MENU long cannot be distinguished. Hence only DOWN is evaluated.
+// the remote sends itself (centre long 0x82, left/right long 0xB4/0xB3; Play long
+// 0xFF01/0x23, not used yet). MENU long (raw log 2026-11-08): the direct consumer
+// Menu element 0x0C/0x40 alone, no array value (decodedDirect -> kHeldMenu). Up/Down
+// long send nothing of their own. Hence only DOWN is evaluated.
 - (void)decoded:(uint32_t)pu down:(BOOL)down {
     if (!down) return;
     uint32_t page = pu >> 16, usage = pu & 0xFFFF;
@@ -433,6 +466,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         case 0x000C0082: k = SFKeySelectHold; b = RSelect; break;
         case 0x000C00B4: k = SFKeyPrev; b = RLeft; break;
         case 0x000C00B3: k = SFKeyNext; b = RRight; break;
+        case kHeldMenu: k = SFKeyMenuHold; b = RMenu; break;
         default:
             [self log:[NSString stringWithFormat:@"unknown page=0x%x usage=0x%x", page, usage]];
             return;
@@ -442,7 +476,7 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
     static IOPMAssertionID act = kIOPMNullAssertionID;
     IOPMAssertionDeclareUserActivity(CFSTR("Apple Remote"), kIOPMUserActiveLocal, &act);
     if (wasOff) { [self log:@"display was off: press only wakes it"]; [self bringSofaFront]; return; }
-    BOOL hold = (k == SFKeySelectHold || k == SFKeyPrev || k == SFKeyNext);
+    BOOL hold = (k == SFKeySelectHold || k == SFKeyMenuHold || k == SFKeyPrev || k == SFKeyNext);
     [self dispatch:k button:b hold:hold];
 }
 
