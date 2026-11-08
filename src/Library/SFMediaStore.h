@@ -22,12 +22,12 @@
 // length when known (0: unknown). Asynchronous; reads see the bytes once written.
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start;
 - (SFExtentSet *)extentsOf:(NSString *)key;    // a copy (empty for an unknown track)
-- (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks (any thread, never waits)
+- (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks (any thread; waits only for the open at launch)
 - (void)removeItem:(NSString *)item;           // its tracks, bytes, index and manifest
 // An item's manifest: what playing it needs without its source - a JSON object, source-specific
 // apart from `required` (the keys of the tracks playback cannot do without). Kept while the item has bytes.
 - (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item;
-- (NSDictionary *)manifestOf:(NSString *)item;   // (any thread, never waits)
+- (NSDictionary *)manifestOf:(NSString *)item;   // (any thread; waits only for the open at launch)
 // every one of these tracks is known with its length and present from 0 to it (playable offline) -
 // as of the writes done (after -sync: every earlier write). Any thread; waits only once, for the
 // startup check of the block files (a lost block makes a track incomplete). Also itemIsComplete:.
@@ -37,7 +37,7 @@
 // What its manifest's tracks still lack, in bytes; -1 = not known (no manifest, or a track whose length
 // is not known yet - an HLS segment never fetched). Waits for the store's queue: not on the main thread.
 - (long long)missingBytesOf:(NSString *)item;
-@property (nonatomic, readonly) long long bytes;   // all stored bytes (any thread, never waits)
+@property (nonatomic, readonly) long long bytes;   // all stored bytes (any thread; waits only for the open at launch)
 
 // Eviction: while the volume has less free space than `reserve`, whole items go (tracks and manifest),
 // least recently used first - never an item `isPinned` says yes to (downloads). Runs after writes by itself.

@@ -46,7 +46,7 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 - (NSArray *)items:(NSString *)source;           // finished downloads (SFItem, newest first); nil = all
 - (NSArray *)active;                             // running/waiting (SFItem)
 @property (nonatomic, readonly) NSUInteger generation;   // changes on every state change (not on progress)
-- (unsigned long long)bytesOf:(NSString *)ident;         // its bytes in the media store (any thread, never waits)
+- (unsigned long long)bytesOf:(NSString *)ident;         // its bytes in the media store (any thread; waits only for the store's open at launch)
 - (unsigned long long)bytesUsedFor:(NSString *)source;   // the finished downloads' bytes; nil = all
 - (unsigned long long)freeBytes;                           // free space on the storage volume
 - (NSString *)storageSummary:(NSString *)source;           // "398 GB belegt · 262 GB frei"

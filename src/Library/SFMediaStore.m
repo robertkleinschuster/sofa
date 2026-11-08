@@ -34,9 +34,11 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     NSMutableDictionary *_itemBytes;   // item -> NSNumber
     NSMutableSet *_complete;           // keys of the tracks whose bytes are all there
     NSMutableDictionary *_manifests;   // item -> manifest
-    // readiness: the block files checked against the index once after open (checkBlocks) - until
-    // then a track the index calls whole may have lost a block, so completeness waits for it
-    dispatch_group_t _checked;
+    // readiness: the database opened and the index read (open - on _q, not the launching thread: a
+    // cold disk took ~100 ms of the main thread's launch) - the mirror's readers wait for it once;
+    // the block files checked against the index (checkBlocks) - until then a track the index calls
+    // whole may have lost a block, so completeness waits for that
+    dispatch_group_t _opened, _checked;
 }
 
 - (instancetype)initWithDirectory:(NSString *)dir {
@@ -52,7 +54,8 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         self.freeSpace = ^long long {
             return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:d error:nil][NSFileSystemFreeSize] longLongValue];
         };
-        dispatch_sync(_q, ^{ [self open]; });
+        _opened = dispatch_group_create();
+        dispatch_group_async(_opened, _q, ^{ [self open]; });
         _checked = dispatch_group_create();
         dispatch_group_async(_checked, _q, ^{ [self checkBlocks]; });   // after open, before anything queued later
     }
@@ -153,7 +156,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         sqlite3_finalize(st);
     }
     for (SFMediaTrack *t in _tracks.allValues) [self account:t delta:t.extents.bytes];
-    if (_tracks.count) SFLog(@"media-store: %lu tracks, %.0f MB", (unsigned long)_tracks.count, self.bytes / 1048576.0);
+    if (_tracks.count) SFLog(@"media-store: %lu tracks, %.0f MB", (unsigned long)_tracks.count, [self bytesNow] / 1048576.0);
 }
 
 - (void)saveExtents:(SFMediaTrack *)t {
@@ -311,6 +314,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 
 - (long long)bytesOfItem:(NSString *)item {
     if (!item) return 0;
+    dispatch_group_wait(_opened, DISPATCH_TIME_FOREVER);   // at once after the open
     pthread_mutex_lock(&_lock);
     long long n = [_itemBytes[item] longLongValue];
     pthread_mutex_unlock(&_lock);
@@ -334,6 +338,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     NSData *json = manifest ? [NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] : nil;
     if (!json || !item.length) return;
     NSDictionary *m = [NSJSONSerialization JSONObjectWithData:json options:0 error:nil];   // a deep, immutable copy
+    dispatch_group_wait(_opened, DISPATCH_TIME_FOREVER);   // (the open's loadManifests must not overwrite it)
     pthread_mutex_lock(&_lock);
     _manifests[item] = m;
     pthread_mutex_unlock(&_lock);
@@ -343,6 +348,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 
 - (NSDictionary *)manifestOf:(NSString *)item {
     if (!item) return nil;
+    dispatch_group_wait(_opened, DISPATCH_TIME_FOREVER);
     pthread_mutex_lock(&_lock);
     NSDictionary *m = _manifests[item];
     pthread_mutex_unlock(&_lock);
@@ -379,6 +385,12 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 - (long long)bytes {
+    dispatch_group_wait(_opened, DISPATCH_TIME_FOREVER);
+    return [self bytesNow];
+}
+
+// the sum as the mirror has it - no wait (the open itself reports it: waiting there would wait for itself)
+- (long long)bytesNow {
     pthread_mutex_lock(&_lock);
     long long n = _bytes;
     pthread_mutex_unlock(&_lock);
