@@ -33,13 +33,15 @@
 #   8b. a session stream (app service, e.g. YouTube's engine) that breaks again right after being
 #      reopened ends in a message - one reopen, no loop (2026-11-06: without the yt-dlp fallback the
 #      second failure would otherwise reopen forever)
+#   8d. a resumed DASH start (separate WebM tracks, like YouTube's engine) does not wait for the
+#      media at 0 (2026-11-08: mpv's reference probes peeked 8 KiB, past the Opus header -> ~7 s)
 #   9. (opt-in, SOFA_YT_LIVE=1: YouTube media) SABR playback through the engine's Firefox and
 #      self-healing when that browser dies
 #  10. (opt-in, SOFA_YT_LIVE_STREAM=<video id of a running live>: one player request, ~15 s of live
 #      media) a YouTube live plays through the engine's HLS playlist
 #
 #   tools/test-playback            all checks: two parts side by side, each in its own dev instance
-#                                  (part a: 1-7b, 8c, 8b; part b: 8 and the opt-in ones - they wait
+#                                  (part a: 1-7b, 8c, 8b, 8d; part b: 8 and the opt-in ones - they wait
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x            own dev instance (parallel runs)
@@ -359,7 +361,48 @@ sleep 2; [ "$(since $m | grep -c 'example: session failed')" = 1 ] && ok "no fur
 stop
 unset SOFA_EXAMPLE_SESSION SOFA_EXAMPLE_MEDIA
 
-fi   # part a (8c, 8b)
+echo "==> 8d. resumed DASH start reads nothing at the start of the tracks"
+# Like YouTube's engine: separate WebM tracks with their index (Cues) up front, served by range; the
+# media at 0 of the audio track arrives only after 8 s (the engine has to fetch it first - a resumed
+# start never needs it). mpv's reference probes peeked 8 KiB, past the Opus header, and waited
+# (mpv CLI against this server: 8.5 s with access-references, 0.5 s without).
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=10 -t 60 -c:v libvpx-vp9 -deadline realtime -cpu-used 8 \
+      -an -f webm -dash 1 -cues_to_front 1 "$T/dash-v.webm" &&
+"$FF" -hide_banner -loglevel error -y -f lavfi -i sine=frequency=440 -t 60 -c:a libopus -vn -f webm -dash 1 -cues_to_front 1 "$T/dash-a.webm" ||
+  bad "could not make the DASH tracks"
+cat > "$T/dash.py" <<'PY'
+import http.server, sys, time, os, re
+D, LATE = sys.argv[1], 8
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        p = os.path.join(D, os.path.basename(self.path)); data = open(p, "rb").read()
+        first = data.find(b"\x1f\x43\xb6\x75")   # first Cluster: the media at 0
+        m = re.match(r"bytes=(\d+)-(\d*)", self.headers.get("Range", "")); a = int(m.group(1)) if m else 0
+        b = min(int(m.group(2)) + 1 if m and m.group(2) else len(data), len(data))
+        print(f"{os.path.basename(p)} {a}-{b} first-cluster {first}", flush=True)
+        audio = os.path.basename(p).startswith("dash-a.")
+        self.send_response(206 if m else 200); self.send_header("Content-Type", "audio/webm" if audio else "video/webm")
+        self.send_header("Content-Length", str(b - a)); self.send_header("Content-Range", f"bytes {a}-{b - 1}/{len(data)}"); self.end_headers()
+        try:
+            if audio and a <= first + 4 < b:   # the media at 0 is not there yet - its Cluster ID is (the engine knows it)
+                self.wfile.write(data[a:first + 4]); self.wfile.flush(); time.sleep(LATE); a = first + 4
+            self.wfile.write(data[a:b])
+        except (BrokenPipeError, ConnectionResetError): pass
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
+PY
+/opt/local/bin/python3.14 -I "$T/dash.py" "$T" 47983 > "$T/dash.log" 2>&1 & SRV=$!
+for i in $(seq 1 150); do nc -z 127.0.0.1 47983 >/dev/null 2>&1 && break; sleep 0.1; done
+export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:47983/dash-v.webm SOFA_EXAMPLE_AUDIO=http://127.0.0.1:47983/dash-a.webm
+start
+t0=$(date +%s); m=$(mark); cmd "play example:2 at 30"; waitlog $m 'mpv: first frame' 60; t1=$(date +%s)
+since $m | grep -q 'mpv: first frame' && [ $((t1 - t0)) -lt 6 ] && ok "first frame after $((t1 - t0)) s (the late start of the audio was not waited for)" ||
+  bad "first frame after $((t1 - t0)) s: $(grep 'dash-a' "$T/dash.log" | head -4 | tr '\n' '|')"
+stop
+kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
+unset SOFA_EXAMPLE_MEDIA SOFA_EXAMPLE_AUDIO
+
+fi   # part a (8c, 8b, 8d)
 if want b; then
 if [ -n "${SOFA_YT_LIVE:-}" ]; then
   echo "==> 9. SABR playback through the engine (Firefox) + the browser dies"

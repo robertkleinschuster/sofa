@@ -1,4 +1,5 @@
 #import "SFExampleApp.h"
+#import "SFEngine.h"
 
 // --- the "API client": a static catalogue (a real app maps its source's JSON to SFItems) ---
 
@@ -83,6 +84,9 @@ static NSArray *videos(NSString *filter) {
         if ([e[0] isEqualToString:SFRefID(ref)]) {
             // tests: a real file/URL (downloads need something ffmpeg can fetch), else mpv's test pattern, 60 s
             NSString *media = SFDevEnv(@"SOFA_EXAMPLE_MEDIA");
+            // ...as a DASH pair like YouTube's engine serves it: SOFA_EXAMPLE_AUDIO=<separate audio track>
+            NSString *audio = SFDevEnv(@"SOFA_EXAMPLE_AUDIO");
+            if (media && audio) SFSetMPVSource([NSURL URLWithString:media], @{@"video": media, @"audio": audio});
             if (media) { done([NSURL URLWithString:media], nil); return; }
             NSString *u = [NSString stringWithFormat:@"av://lavfi:%@,trim=duration=60", e[2]];
             done([NSURL URLWithString:[u stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]], nil);

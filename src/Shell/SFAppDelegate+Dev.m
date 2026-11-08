@@ -127,6 +127,9 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
     } else if ([cmd isEqualToString:@"home"]) {
         [self.nav popToRoot];
     } else if ([cmd isEqualToString:@"play"] && [arg rangeOfString:@":"].location != NSNotFound) {   // Dev: Mediathek video by resolver ref (orf:…, ard:…, zdf:…)
+        NSTimeInterval at = 0;   // "… at <seconds>": start there (a resumed start), else from the beginning
+        NSRange r = [arg rangeOfString:@" at " options:NSBackwardsSearch];
+        if (r.location != NSNotFound) { at = [arg substringFromIndex:NSMaxRange(r)].doubleValue; arg = [arg substringToIndex:r.location]; }
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.title = arg;
         if ([arg hasPrefix:@"http"]) it.playURL = [NSURL URLWithString:arg];   // direct URL: test the fallback chain
@@ -140,7 +143,7 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
             if (dl) it = dl;
         }
         SFPlayerScreen *ps = [[SFPlayerScreen alloc] initWithItem:it queue:nil index:0];
-        ps.startFromBeginning = YES;
+        if (at > 0) ps.startPosition = at; else ps.startFromBeginning = YES;
         [self presentPlayer:ps];
     } else if ([cmd isEqualToString:@"playlist"] && arg) {   // Dev: local files as a playlist ("/a.mp4,/b.mp4,…"), starts at the 2nd
         NSMutableArray *q = [NSMutableArray new];

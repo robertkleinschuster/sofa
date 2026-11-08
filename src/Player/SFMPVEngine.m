@@ -214,6 +214,11 @@ static dispatch_queue_t SetupQueue(void) {
     mpv_set_property_string(_mpv, "pause", paused ? "yes" : "no");
     mpv_set_property_string(_mpv, "mute", _muted ? "yes" : "no");
     if (!url.isFileURL) mpv_set_property_string(_mpv, "user-agent", SFNativeUserAgent().UTF8String);   // the app's identity, not "libmpv"
+    // A DASH track (separate audio) is one self-contained media file - nothing to follow. And mpv's
+    // reference-following probes (playlist/directory) peek 8 KiB: past an Opus track's 4.7 KB
+    // header, into media at 0 that a resumed start never needs - one whole fetch (~7 s) before the
+    // audio opened (demux log 2026-11-08). Everything else keeps them (HLS, ordered chapters).
+    mpv_set_property_string(_mpv, "access-references", audioURL ? "no" : "yes");
     [self command:@[@"change-list", @"audio-files", @"clr", @""]];
     if (audioURL) [self command:@[@"change-list", @"audio-files", @"append", audioURL.absoluteString]];
     // mpv must not open the file before the render context exists: otherwise libmpv's vo fails
