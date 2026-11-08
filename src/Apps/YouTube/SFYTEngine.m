@@ -169,12 +169,13 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 // The engine's browser grew to 2 GB (and Sofa with it) overnight 2026-11-08 until the Mac ran out of
 // swap and froze - nothing in the log showed it. Every few minutes its memory goes to the log with
 // what the engine holds itself (sessions, buffered media), so growth can be traced to its cause;
-// past kBrowserMemoryLimitMB the browser is restarted like one that died: a player reopens its
-// stream (sessions-lost notification), a download retries - far better than a frozen machine.
+// past the limit the browser is restarted like one that died: a player reopens its stream
+// (sessions-lost notification), a download retries - far better than a frozen machine. The figure
+// is the whole process group: ~1.2 GB in normal use (main + content processes, 2026-11-08).
 static const NSTimeInterval kMemoryCheckEvery = 300;
 static NSUInteger BrowserMemoryLimitMB(void) {
     double v = [SFDevEnv(@"SOFA_ENGINE_MEMORY_LIMIT_MB") doubleValue];   // tests lower it
-    return v > 0 ? (NSUInteger)v : 1800;
+    return v > 0 ? (NSUInteger)v : 3000;
 }
 
 - (void)watchMemory {
@@ -188,7 +189,7 @@ static NSUInteger BrowserMemoryLimitMB(void) {
     NSUInteger run = _run;
     SFYTBrowser *browser = _browser;
     [self request:@"health" args:@[] timeout:10 done:^(id h, NSError *e) {
-        NSDictionary *health = dict(h);
+        NSDictionary *health = dict(dict(h)[@"engine"]);   // the page's health carries the engine's under "engine"
         SFBackground(^{
             NSUInteger mb = [browser memoryMB];   // ps: off the main thread
             SFMain(^{
@@ -282,8 +283,11 @@ static NSUInteger BrowserMemoryLimitMB(void) {
         }
         NSData *bd = [NSData dataWithContentsOfFile:[SFYTBreaker filePath]];
         id block = bd ? [NSJSONSerialization JSONObjectWithData:bd options:0 error:nil] : nil;
+        // ytEngineDebug (defaults, diagnosis only): the engine's per-request lines (offsets, runs) into
+        // the log - takes effect at the engine's next start
         NSDictionary *cfg = @{@"base": [NSString stringWithFormat:@"http://127.0.0.1:%u", self->_server.port],
-                              @"block": dict(block) ?: [NSNull null]};
+                              @"block": dict(block) ?: [NSNull null],
+                              @"debug": @([[NSUserDefaults standardUserDefaults] boolForKey:@"ytEngineDebug"])};
         [self request:@"start" args:@[cfg] timeout:kCallTimeout done:^(id v, NSError *se) { SFMain(^{
             if (page != self->_page || self->_state != SFYTEngineStarting) return;
             if (se && se.code != 409) { [self runFailed:[@"engine start failed: " stringByAppendingString:se.localizedDescription]]; return; }
