@@ -144,13 +144,17 @@ static NSString *SFBaseLanguage(NSString *code) {
     NSInteger sel = 0;
     for (NSDictionary *c in choices) {
         if ([c[@"selected"] boolValue]) sel = opts.count;
-        dispatch_block_t apply = c[@"apply"];
         NSString *t = c[@"title"], *lang = c[@"lang"];
         SFMenuOption *o = [SFMenuOption option:t action:^{
-            apply();
+            // the stream may have been reopened while the menu was up: the choice as the engine
+            // playing now has it (by title), never the engine the menu was built for
+            NSArray *now = [self tracksAvailable] ? [self trackChoices:type] : nil;
+            NSDictionary *cur = [self choiceTitled:t in:now];
+            if (!cur) { [nav toast:[NSString stringWithFormat:@"%@: %@ gerade nicht verfügbar", title, t]]; return; }
+            ((dispatch_block_t)cur[@"apply"])();
             if ([type isEqualToString:@"sub"]) {
-                [self rememberSubtitle:lang choices:choices];   // remember for the next videos
-                SFPostSubtitles(self, SFSubtitleStateOf(c));                         // bring the phone (Lounge) up to date
+                [self rememberSubtitle:lang choices:now];   // remember for the next videos
+                SFPostSubtitles(self, SFSubtitleStateOf(cur));                       // bring the phone (Lounge) up to date
             }
             [nav toast:[NSString stringWithFormat:@"%@: %@", title, t]];
         }];
@@ -209,6 +213,34 @@ static NSString *SFBaseLanguage(NSString *code) {
     ((dispatch_block_t)pick[@"apply"])();
     SFPostSubtitles(self, SFSubtitleStateOf(pick));
     SFLog(@"player: subtitles %@ (remembered language, audio %@)", pick[@"title"], audio ?: @"?");
+}
+
+#pragma mark Track carry (reopen)
+
+- (NSDictionary *)chosenTracks {
+    if (![self tracksAvailable]) return nil;
+    NSMutableDictionary *out = [NSMutableDictionary new];
+    for (NSString *type in @[@"audio", @"sub"])
+        for (NSDictionary *c in [self trackChoices:type]) if ([c[@"selected"] boolValue]) { out[type] = c[@"title"]; break; }
+    return out;
+}
+
+// Choices are matched by title: a reopened session may hand out new URLs and ids for the same
+// tracks, the names stay
+- (NSDictionary *)choiceTitled:(NSString *)title in:(NSArray *)choices {
+    for (NSDictionary *c in choices) if ([c[@"title"] isEqualToString:title]) return c;
+    return nil;
+}
+
+- (void)restoreTracks:(NSDictionary *)tracks {
+    if (![self tracksAvailable]) return;
+    for (NSString *type in tracks) {
+        NSDictionary *c = [self choiceTitled:tracks[type] in:[self trackChoices:type]];
+        if (!c || [c[@"selected"] boolValue]) continue;
+        ((dispatch_block_t)c[@"apply"])();
+        if ([type isEqualToString:@"sub"]) SFPostSubtitles(self, SFSubtitleStateOf(c));
+        SFLog(@"player: %@ track %@ kept across the reopen", type, c[@"title"]);
+    }
 }
 
 @end

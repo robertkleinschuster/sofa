@@ -15,8 +15,8 @@
     if (!_engine || _item.kind == SFItemLive) return;
     _pendingSeek = 0;
     _seekBase = MAX(0, t); _seekBaseAt = [NSDate date];
+    [self leaveEnd];
     [_engine seekTo:t exact:YES];
-    _ended = NO;
     [self showOSD:YES autoHide:YES];
     [self postState];
 }

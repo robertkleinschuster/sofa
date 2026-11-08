@@ -46,13 +46,17 @@
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
     NSURL *_openURL; NSTimeInterval _openResume;
+    id _resolving;               // token of the running resolve (startItem): late answers are ignored
     BOOL _holdPaused;   // "start paused" holds across reopens until the user presses play
     NSTimer *_nextTimer;
     NSInteger _nextCountdown;
-    NSTimeInterval _sessionReopenedAt;   // position of the last session reopen (-1 = none for this item)
+    NSTimeInterval _reopenedAt;  // position of the last reopen after a broken stream (-1 = none for this item)
+    NSDictionary *_carryTracks;  // reopen: titles of the audio/subtitle tracks chosen before (type -> title)
     id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;
+    BOOL _upNextPending;         // asked, no answer yet
+    BOOL _endWaitsForUpNext;     // ended: the end flow waits (kUpNextWait) for that answer
     __weak SFItem *_lastStartedItem;
 
     // YouTube end screen (SFPlayerScreen+Endscreen.m)
@@ -76,6 +80,8 @@
 - (void)updateTitles;
 - (void)showMessage:(NSString *)msg;
 - (void)showSpinner:(BOOL)on;
+- (void)failShowing:(NSString *)text;   // failed: text + "OK – zurück"
+- (void)failWith:(NSString *)reason;    // "Wiedergabe fehlgeschlagen" + reason (nil: general sentence)
 - (BOOL)awaitingPicture;
 - (void)didAppear;
 - (void)willDisappear;
@@ -84,11 +90,12 @@
 - (id)engineForDiagnostics;
 - (NSTimeInterval)failurePosition;
 - (BOOL)sessionSource;
-- (void)sessionFailed:(NSString *)why;
+- (void)streamFailed:(NSString *)why;
 - (void)engineStatusChanged;
 - (void)engineRateChanged;
 - (void)engineBufferingChanged;
-- (BOOL)sessionCutShort;
+- (BOOL)nearEnd;
+- (BOOL)endedEarly;
 - (void)engineDidEnd;
 - (void)engineInterrupted;
 - (void)engineTick;
@@ -109,13 +116,16 @@
 - (NSUInteger)queueIndex;
 - (void)updatePauseState;
 - (void)togglePause;
+- (void)leaveEnd;
 - (void)seekBy:(NSTimeInterval)delta;
 - (void)commitSeek;
 - (NSUInteger)nextQueueIndex;
 - (SFItem *)nextItem;
+- (BOOL)wantsUpNext;
+- (void)askUpNext;
+- (void)forgetUpNext;
 - (void)didEnd:(NSNotification *)n;
 - (void)finishEnd;
-- (void)failedToEnd:(NSNotification *)n;
 - (void)showNextCard:(SFItem *)next;
 - (void)nextTick:(NSTimer *)t;
 - (void)playItem:(SFItem *)item;
@@ -143,5 +153,8 @@
 - (void)showChoices:(NSArray *)choices type:(NSString *)type title:(NSString *)title on:(SFNavigator *)nav;
 - (BOOL)canSwitchToStream;                       // downloaded file with an online counterpart
 - (void)applyPreferredSubtitles;
+- (NSDictionary *)chosenTracks;                  // type -> title of the selected choice (nil: tracks not known yet)
+- (void)restoreTracks:(NSDictionary *)tracks;
+- (NSDictionary *)choiceTitled:(NSString *)title in:(NSArray *)choices;    // select those choices again (a reopened stream)
 - (void)switchToStream;
 @end

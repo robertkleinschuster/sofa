@@ -53,6 +53,7 @@ NSCursor *SFBlankCursor(void) {
     SFLabel *_volLabel;
     NSUInteger _volSeq;
     SFKey _lastKey;
+    NSTimeInterval _settleUntil;   // a screen is closing: OK/Play until then belong to it, not to the one below
 }
 
 // No mouse cursor in the TV UI (see main.m hideCursor)
@@ -153,10 +154,16 @@ static __weak SFNavigator *gMainNav;
         under.layer.transform = CATransform3DIdentity;
     });
     [under didAppear];
+    [self settle];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         SFNoAnimate(^{ [s.layer removeFromSuperlayer]; });
     });
 }
+
+// A quick second OK on a menu option (double press) used to reach the screen below as soon as the
+// menu popped - and opened or played the focused tile there. For the length of the exit animation
+// OK/Play go nowhere; arrows and MENU still work.
+- (void)settle { _settleUntil = [NSDate timeIntervalSinceReferenceDate] + 0.3; }
 
 - (void)popToRoot {
     while (_stack.count > 2) {
@@ -210,13 +217,19 @@ static __weak SFNavigator *gMainNav;
     [CATransaction flush];   // start state first (see push:)
     SFAnimate(0.25, ^{ s.layer.opacity = 1; });
     [s didAppear];
+    [self settle];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         SFNoAnimate(^{ [old.layer removeFromSuperlayer]; });
     });
 }
 
 - (void)sendKey:(SFKey)key {
-    _lastInput = [NSDate timeIntervalSinceReferenceDate];
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if ((key == SFKeySelect || key == SFKeyPlayPause) && now < _settleUntil) {
+        SFLog(@"keys: %@ dropped while a screen closes", SFKeyName(key));
+        return;
+    }
+    _lastInput = now;
     _lastKey = key;
     SFScreen *t = self.top;
     if (!t) return;

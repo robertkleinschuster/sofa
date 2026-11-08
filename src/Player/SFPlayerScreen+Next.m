@@ -44,20 +44,55 @@
     [self finishEnd];
 }
 
+// The app's "up next" recommendation decides what follows: autoplay without a phone queue and
+// without a playlist that goes on
+- (BOOL)wantsUpNext {
+    BOOL playlistGoesOn = _item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID];
+    return !_explicitQueue && !playlistGoesOn && [[SFAppRegistry appForItem:_item] respondsToSelector:@selector(upNextForItem:done:)];
+}
+
+// Fetch it once per video (from half time, or at the end if no tick got there: a jump to the end)
+- (void)askUpNext {
+    if (_upNextAsked || ![self wantsUpNext]) return;
+    _upNextAsked = YES; _upNextPending = YES;
+    SFItem *forItem = _item;
+    [[SFAppRegistry appForItem:_item] upNextForItem:_item done:^(SFItem *next) {
+        if (forItem != self->_item) return;
+        self->_upNext = next; self->_upNextPending = NO;
+        if (self->_endWaitsForUpNext) { self->_endWaitsForUpNext = NO; [self finishEnd]; }
+    }];
+}
+
+- (void)forgetUpNext { _upNext = nil; _upNextAsked = NO; _upNextPending = NO; _endWaitsForUpNext = NO; }
+
+// How long the end waits for a recommendation still on its way, before it leaves without one
+static const NSTimeInterval kUpNextWait = 4;
+
 - (void)finishEnd {
     _esEndDeferred = NO;
     SFItem *next = [self nextItem];
+    if (!next && [self wantsUpNext] && !_endWaitsForUpNext) {
+        [self askUpNext];
+        if (_upNextPending) {
+            _endWaitsForUpNext = YES;
+            SFLog(@"player: end waits for the recommendation");
+            SFItem *it = _item;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kUpNextWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (!self->_endWaitsForUpNext || it != self->_item || !self->_ended || self->_closing) return;
+                self->_endWaitsForUpNext = NO; self->_upNextPending = NO;   // a late answer no longer starts anything
+                SFLog(@"player: no recommendation after %.0f s", kUpNextWait);
+                [self finishEnd];
+            });
+            return;
+        }
+    }
+    if (_endWaitsForUpNext) return;   // still waiting (a second end signal, e.g. leaving the end screen)
     SFLog(@"player: end -> %@", next ? [@"up next: " stringByAppendingString:next.title ?: @"?"] : @"leaving");
     if (!next) {
         if (self.navigator.top == self) [self.navigator pop];   // else: an overlay is open, see didAppear
         return;
     }
     [self showNextCard:next];
-}
-
-- (void)failedToEnd:(NSNotification *)n {
-    SFLog(@"player: failed to end %@", n.userInfo);
-    [self showMessage:@"Die Verbindung wurde unterbrochen."];
 }
 
 // "Als Nächstes" / "Nächste Folge": card like YouTube's - thumbnail on the left, countdown on the right,
@@ -123,7 +158,7 @@
     if (q != NSNotFound) _index = q;
     _item = item;
     _lastSaved = 0;
-    _upNext = nil; _upNextAsked = NO;
+    [self forgetUpNext];
     [self startItem];
 }
 
@@ -147,7 +182,7 @@
     else if (!_explicitQueue) _index++;
     _item = next;
     _lastSaved = 0;
-    _upNext = nil; _upNextAsked = NO;
+    [self forgetUpNext];
     [self startItem];
 }
 @end

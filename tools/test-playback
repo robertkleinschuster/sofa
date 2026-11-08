@@ -8,13 +8,19 @@
 #      after an update restart the file resumed before the GL layer existed -> audio only)
 #   2. a dead video output heals itself (watchdog re-selects the video track)
 #   3. the info panel (OK hold) opens over the running video, which keeps playing under it and
-#      after MENU (the panel must never stop or restart playback)
+#      after MENU (the panel must never stop or restart playback); an OK right after MENU belongs to
+#      the closing panel (a double press used to open/play what was below)
 #   4. a broken stream ends in a readable German message
+#   4b. a failed entry of a queue/playlist shows the message, then the next entry plays (one dead
+#      entry used to stop a phone playlist)
 #   5. a downloaded item switches to the online stream at the same position, chosen in the info
 #      panel ("Online abspielen" used to restart the local file because the download lookup found it again)
 #   6. a remembered subtitle preference is applied automatically
-#   7. a stream that stops delivering mid-playback is detected (stall watchdog) and handled
-#      (2026-11-05: a dead SABR sidecar left mpv hanging in a seek forever, no error event)
+#   7. a stream that stops delivering is detected (stall watchdog) and handled (2026-11-05: a dead
+#      SABR sidecar left mpv hanging in a seek forever, no error event) - also when Play/Pause during
+#      the load made it a paused open (the watchdog used to skip paused opens: a spinner forever)
+#   7b. a stream that breaks off after its playback began is reopened once at the position, then a
+#      message (until 2026-11-08 a plain stream broken midway showed a dead "Verbindung unterbrochen")
 #   8. YouTube end screen (fake /open data via the dev command, offline, no YouTube request):
 #      tiles follow the timeline (also while paused), DOWN enters, arrows move, follow toggles,
 #      MENU leaves without touching playback, OK on a video plays it (a "downloaded" test video),
@@ -30,7 +36,7 @@
 #      media) a YouTube live plays through the engine's HLS playlist
 #
 #   tools/test-playback            all checks: two parts side by side, each in its own dev instance
-#                                  (part a: 1-7, 8c, 8b; part b: 8 and the opt-in ones - they wait
+#                                  (part a: 1-7b, 8c, 8b; part b: 8 and the opt-in ones - they wait
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x            own dev instance (parallel runs)
@@ -145,8 +151,9 @@ shot "$T/info.png"; [ -s "$T/info.png" ] && { ok "panel rendered"; keep "$T/info
 t1=$(pos); sleep 2
 t2=$(pos)
 awk "BEGIN{exit !($t2 > $t1 + 1)}" 2>/dev/null && ok "video keeps playing under the panel ($t1 -> $t2 s)" || bad "video not playing under the panel ($t1 -> $t2)"
-m3=$(mark); cmd "key menu"; sleep 2; t3=$(pos)
+m3=$(mark); cmd "key menu"; cmd "key select"; sleep 2; t3=$(pos)   # a quick OK right after: the closing panel's, not the player's
 since $m3 | grep -q 'info: panel closed' && ok "MENU closed the panel" || bad "MENU did not close the panel"
+since $m3 | grep -q 'keys: select dropped while a screen closes' && ok "an OK during the close reaches nothing below" || bad "OK during the close went through"
 awk "BEGIN{exit !($t3 > $t2 + 1)}" 2>/dev/null && ok "playback continues after MENU ($t3 s)" || bad "playback stopped after MENU ($t3)"
 since $m | grep -q 'player: resolve\|player: play ' && bad "the panel restarted playback" || ok "no restart by the panel"
 
@@ -154,6 +161,14 @@ echo "==> 4. broken stream -> readable message"
 m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; waitlog $m 'player: failed' 60
 since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no final failure"
 shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
+stop
+
+echo "==> 4b. a failed playlist entry: the message, then the next entry"
+start
+m=$(mark); cmd "playlist $T/local.mp4,$T/missing.mp4,$T/local.mp4"   # starts at the 2nd: a file that is not there
+waitlog $m 'player: failed' 60 && ok "the missing entry failed" || bad "no failure: $(since $m | grep 'player:' | tail -2)"
+waitlog $m 'player: failed - moving on to the next entry' 40 && ok "moved on after the message" || bad "stayed on the error"
+waitlog $m 'player: play local.mp4' 40 && ok "the next entry plays" || bad "next entry not started"
 stop
 
 echo "==> 5. download -> online stream at the same position (via the info panel)"
@@ -198,14 +213,34 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.flush(); time.sleep(600)
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
 PY
-/opt/local/bin/python3.14 -I "$T/stall.py" "$T/local.mp4" 47981 & SRV=$!
-for i in $(seq 1 40); do nc -z 127.0.0.1 47981 >/dev/null 2>&1 && break; sleep 0.1; done   # listening before the app asks
+# start it and wait (bounded) until it listens before the app asks: under test-all's load python
+# took longer than 4 s once and the play hit "connection refused"
+serve() {
+  /opt/local/bin/python3.14 -I "$T/stall.py" "$1" "$2" & SRV=$!
+  for i in $(seq 1 150); do nc -z 127.0.0.1 "$2" >/dev/null 2>&1 && return 0; sleep 0.1; done
+  bad "stall server on port $2 not listening after 15 s"
+}
+serve "$T/local.mp4" 47981
 start
-m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"
+m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"; sleep 0.3; cmd "key play"   # Play/Pause while it loads
+waitlog $m 'player: pause while loading' 20 && ok "Play/Pause while loading: starts paused" || bad "Play/Pause while loading lost: $(since $m | grep 'player:' | tail -2)"
 for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' && break; sleep 0.5; done
-since $m | grep -q 'mpv: no progress for 6 s' && ok "stall detected" || bad "stall not detected: $(since $m | grep 'player:\|mpv:' | tail -3)"
-for i in $(seq 1 40); do since $m | grep -q 'player: failed' && break; sleep 0.5; done
+since $m | grep -q 'mpv: no progress for 6 s' && ok "stall detected (although the open is paused)" || bad "stall not detected: $(since $m | grep 'player:\|mpv:' | tail -3)"
+for i in $(seq 1 80); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # incl. the reopen's own stall
 since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable failure" || bad "no final failure after the stall"
+kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
+stop
+
+echo "==> 7b. stream breaks off after playback began -> one reopen, then a message"
+# the same server with a file whose index comes first: it plays a few seconds, then stops delivering
+"$FF" -hide_banner -loglevel error -y -i "$T/local.mp4" -c copy -movflags +faststart "$T/fast.mp4"
+serve "$T/fast.mp4" 47982
+start
+m=$(mark); cmd "play http://127.0.0.1:47982/fast.mp4"
+for i in $(seq 1 120); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # play, stall, reopen, play, stall
+since $m | grep -q 'mpv: first frame' && ok "played before breaking off" || bad "never played: $(since $m | grep 'player:\|mpv:' | tail -3 | tr '\n' '|')"
+[ "$(since $m | grep -c 'player: stream failed (.*) - reopening at')" = 1 ] && ok "reopened once" || bad "reopens: $(since $m | grep -c 'reopening at') - $(since $m | grep 'player:\|mpv: no progress\|mpv: first' | tail -4 | tr '\n' '|')"
+since $m | grep -q 'player: failed - the stream broke again right after reopening' && ok "then a message instead of a loop" || bad "no final message"
 kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
 stop
 
@@ -272,10 +307,10 @@ unset SOFA_OFFLINE
 echo "==> 8b. session stream that keeps breaking: one reopen, then a message"
 export SOFA_EXAMPLE_SESSION=1 SOFA_EXAMPLE_MEDIA=http://127.0.0.1:1/gone.webm
 start
-m=$(mark); cmd "play example:3"; waitlog $m 'session stream failed again' 60   # not downloaded (section 5 has example:1)
+m=$(mark); cmd "play example:3"; waitlog $m 'the stream broke again' 60   # not downloaded (section 5 has example:1)
 n=$(since $m | grep -c 'example: session failed')
 [ "$n" = 1 ] && ok "reopened once" || bad "reopens: $n"
-since $m | grep -q 'session stream failed again right after reopening' && ok "then a message instead of a loop" || bad "no final message: $(since $m | grep 'player:\|example:' | tail -3)"
+since $m | grep -q 'the stream broke again right after reopening' && ok "then a message instead of a loop" || bad "no final message: $(since $m | grep 'player:\|example:' | tail -3)"
 sleep 2; [ "$(since $m | grep -c 'example: session failed')" = 1 ] && ok "no further reopen" || bad "kept reopening"
 stop
 unset SOFA_EXAMPLE_SESSION SOFA_EXAMPLE_MEDIA

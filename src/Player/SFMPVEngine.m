@@ -236,7 +236,9 @@ static void onWakeup(void *ctx) {
 
 - (void)watchStall {
     if (_stallFired || _status == SFEngineFailed) return;
-    BOOL shouldRun = !_paused && !_eof;   // loading counts too: an open that never finishes is a stall
+    // loading counts too, paused or not: an open that never shows its first frame is a stall (a
+    // paused open decodes that frame as well - until then it waits for data like any other)
+    BOOL shouldRun = !_eof && (!_paused || !_started);
     if (!shouldRun || _time != _stallTime || !_stallSince) { _stallTime = _time; _stallSince = [NSDate date]; return; }
     if (-[_stallSince timeIntervalSinceNow] < SFStallLimit()) return;
     _stallFired = YES;

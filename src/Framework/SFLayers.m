@@ -170,8 +170,13 @@ static CGImageRef decodeThumb(CGImageSourceRef src, CGFloat px) {
             NSData *cached = [NSData dataWithContentsOfFile:disk];
             if (cached.length) { decodeData(cached); return; }
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            own(url, ^(NSData *data, NSInteger st) { stored(data, st); dispatch_semaphore_signal(sem); });   // always answers (its calls time out)
-            dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+            own(url, ^(NSData *data, NSInteger st) { stored(data, st); dispatch_semaphore_signal(sem); });   // promises an answer (its calls time out)
+            // bounded like _net below: a fetcher that broke its promise must not hold one of the
+            // six slots for the session; the waiters get no picture, a late answer still fills the cache
+            if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC))) {
+                SFLog(@"images: %@ gave no answer in 30 s", url.host);
+                finish(NULL);
+            }
         }];
         return;
     }

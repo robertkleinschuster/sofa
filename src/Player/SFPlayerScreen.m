@@ -201,6 +201,9 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #pragma mark Lifecycle
 
+// How long a start may wait for its playable URL (an app's resolver: watch page, player request, ...)
+static const NSTimeInterval kResolveLimit = 45;
+
 - (void)didAppear {
     if (!_engine && !_closing) [self startItem];
     else if (_engine && !_engine.playing && !_ended && !_failed) [self showOSD:YES autoHide:NO];   // back from the info panel, paused: show where we are
@@ -228,7 +231,11 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 - (void)startItem {
     _ended = NO; _failed = NO;
     [self esReset];
-    if (_item != _lastStartedItem) { _sessionReopenedAt = -1; _subsApplied = NO; _lastStartedItem = _item; _upNext = nil; _upNextAsked = NO; }
+    if (_item != _lastStartedItem) {
+        _reopenedAt = -1; _carryTracks = nil; _subsApplied = NO;
+        [_seekTimer invalidate]; _seekTimer = nil; _pendingSeek = 0; _seekBase = -1;   // a jump collected for the previous item
+        _lastStartedItem = _item; [self forgetUpNext];
+    }
     if (_queue.count && !_explicitQueue && self.remoteListID) _explicitQueue = YES;
     dispatch_async(dispatch_get_main_queue(), ^{ [self postState]; });
     [self updateTitles];
@@ -238,25 +245,53 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     SFItem *it = _item;
     if (it.drm && it.kind != SFItemLive) {       // defense in depth: any path that still lands on DRM
         SFLog(@"player: %@ is DRM-protected - not playable here", it.identifier);
-        _failed = YES;
-        [self showSpinner:NO];
-        [self showMessage:[SFDRMNotice stringByAppendingString:@"\n\nOK – zurück"]];
+        [self failShowing:SFDRMNotice];
         if ([self nextItem]) { _ended = YES; [self playNext]; }   // queue/autoplay: just move on
         return;
     }
     SFLog(@"player: resolve %@ (%@)", it.title, it.identifier);
+    // one resolve per start: a late answer (after the time limit, or of an earlier start) is ignored
+    id resolving = _resolving = [NSObject new];
     [it resolveURL:^(NSURL *url, NSError *err) {
-        if (self->_closing || it != self->_item) return;
+        if (self->_closing || it != self->_item || resolving != self->_resolving) return;
+        self->_resolving = nil;
         if (!url) {
-            [self showSpinner:NO];
-            self->_failed = YES;
-            [self showMessage:[NSString stringWithFormat:@"Wiedergabe nicht möglich\n%@", err.localizedDescription ?: @""]];
             SFLog(@"player: resolve failed %@", err);
+            [self failWith:err.localizedDescription.length ? err.localizedDescription : nil];
             return;
         }
         self->_holdPaused = self.startPaused;   // new item: paused only if explicitly requested
         [self playURL:url];
     }];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kResolveLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_closing || it != self->_item || resolving != self->_resolving) return;
+        self->_resolving = nil;
+        SFLog(@"player: resolve of %@ gave no answer in %.0f s", it.identifier, kResolveLimit);
+        [self failWith:@"Das Video ließ sich nicht abrufen – bitte später noch einmal versuchen."];
+    });
+}
+
+// The end state of a failed start or stream: the reason on screen, OK leaves (handleKey). A queue,
+// playlist or next episode goes on after a moment (one dead entry used to stop a phone playlist);
+// a recommendation does not start by itself after an error.
+static const NSTimeInterval kFailedMoveOn = 5;
+- (void)failShowing:(NSString *)text {
+    _failed = YES;
+    [self showSpinner:NO];
+    SFItem *next = [self nextItem];
+    BOOL goOn = next && next != _upNext;
+    [self showMessage:[text stringByAppendingString:goOn ? [NSString stringWithFormat:@"\n\nGleich weiter mit „%@“ · OK – zurück", next.title ?: @"…"] : @"\n\nOK – zurück"]];
+    [self postState];
+    if (!goOn) return;
+    SFItem *it = _item;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kFailedMoveOn * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self->_failed || self->_closing || it != self->_item) return;
+        SFLog(@"player: failed - moving on to the next entry");
+        [self playNext];
+    });
+}
+- (void)failWith:(NSString *)reason {
+    [self failShowing:[@"Wiedergabe fehlgeschlagen\n" stringByAppendingString:reason ?: @"Das Video ließ sich nicht laden – bitte später noch einmal versuchen."]];
 }
 
 // One engine since 2026-11-06: mpv (libmpv) plays everything - AVFoundation, the fallback until
@@ -293,7 +328,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
             SFPlayerScreen *s = wself;
             // not after the end (up-next card, end screen): the finished video must not restart
-            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [s sessionSource]) [s sessionFailed:@"service exited"];
+            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [s sessionSource]) [s streamFailed:@"service exited"];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
@@ -322,6 +357,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 // Origin for jumps: while a jump is still in progress the player briefly reports the old
 // position - then compute from the last target (otherwise fast forward/back jumps back and forth)
 - (NSTimeInterval)seekOrigin {
+    if (_engine && !_engine.started) return _openResume;   // before the first frame the position is 0, not the start point
     NSTimeInterval c = [self current];
     if (_seekBase >= 0 && _seekBaseAt && -[_seekBaseAt timeIntervalSinceNow] < 4 && fabs(c - _seekBase) > 1.5) return _seekBase;
     _seekBase = -1;
@@ -346,13 +382,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     NSTimeInterval c = [self current];
     // autoplay: from the halfway point fetch the app's "up next" recommendation (once per video)
     NSTimeInterval dur = [self duration];
-    BOOL playlistGoesOn = _item.playlistID.length && _index + 1 < _queue.count && [[_queue[_index + 1] playlistID] isEqualToString:_item.playlistID];
-    Class<SFApp> app = [SFAppRegistry appForItem:_item];
-    if (!_upNextAsked && !_explicitQueue && !playlistGoesOn && [app respondsToSelector:@selector(upNextForItem:done:)] && dur > 0 && c > dur * 0.5) {
-        _upNextAsked = YES;
-        SFItem *forItem = _item;
-        [app upNextForItem:_item done:^(SFItem *next) { if (forItem == self->_item) self->_upNext = next; }];
-    }
+    if (dur > 0 && c > dur * 0.5) [self askUpNext];
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
     if (_osdVisible) [self updateBar];
     [self esUpdate];
@@ -431,13 +461,31 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 }
 
 - (void)togglePause {
+    if (!_engine || _failed) return;
+    if (_engine.status != SFEngineReady) {   // still loading: Play/Pause decides how it starts
+        BOOL pause = !(self.startPaused || _holdPaused);
+        self.startPaused = pause; _holdPaused = pause;
+        if (pause) [_engine pause]; else [_engine play];
+        SFLog(@"player: %@ while loading", pause ? @"pause" : @"play");
+        [self showOSD:YES autoHide:!pause];
+        [self postState];
+        return;
+    }
     self.startPaused = NO; _holdPaused = NO;
-    if (!_engine) return;
     if (_engine.playing) { [_engine pause]; [self saveProgress]; }
     else {
-        if (_ended) { [_engine seekTo:0 exact:NO]; _ended = NO; }
+        if (_ended) { [self leaveEnd]; [_engine seekTo:0 exact:NO]; }
         [_engine play];
         [self showOSD:YES autoHide:YES];
     }
+}
+
+// Back from the end (seek, play again): the up-next countdown and card go, no end flow is pending
+- (void)leaveEnd {
+    [_nextTimer invalidate]; _nextTimer = nil;
+    _nextCard.hidden = YES;
+    _esEndDeferred = NO;
+    _endWaitsForUpNext = NO;
+    _ended = NO;
 }
 @end

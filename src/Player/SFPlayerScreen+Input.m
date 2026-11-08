@@ -19,9 +19,8 @@
     NSTimeInterval target = MAX(0, MIN(d > 0 ? d - 2 : HUGE_VAL, [self seekOrigin] + _pendingSeek));
     _pendingSeek = 0;
     _seekBase = target; _seekBaseAt = [NSDate date];
-    if (_nextTimer) { [_nextTimer invalidate]; _nextTimer = nil; _nextCard.hidden = YES; }
+    [self leaveEnd];
     [_engine seekTo:target exact:YES];
-    _ended = NO;
     [self showOSD:YES autoHide:YES];
 }
 
