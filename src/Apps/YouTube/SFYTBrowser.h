@@ -14,6 +14,10 @@
 // Seconds the browser outlives Sofa so that the next Sofa can take it over; 0 (default): it ends
 // with Sofa, and a launch never takes one over (dev instances, tests).
 @property (nonatomic) int handoverGrace;
+// The last launch installed a new extension build: Firefox starts its engine twice then - the first
+// document is replaced a moment later (measured 2026-11-07/08). Set by the launch, cleared by the
+// engine when it has seen that first start.
+@property (atomic) BOOL secondStartPending;
 // Takes over the browser an earlier Sofa left running (handoverGrace > 0), or prepares the profile
 // (prefs, extension + its config) and starts display and browser, which opens
 // https://www.youtube.com/. On a background queue; done on the main queue - adopted: the page was

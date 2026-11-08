@@ -233,6 +233,20 @@ static NSUInteger BrowserMemoryLimitMB(void) {
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
         BOOL wasReady = _state == SFYTEngineReady;
+        // a new extension build: this first document is replaced a moment later - no player is sent
+        // to it (the resume after an update failed on it: "the page reloaded", 2026-11-08). The
+        // second start is the signal; if Firefox ever skipped it, this one counts after 15 s.
+        if (!wasReady && _browser.secondStartPending) {
+            _browser.secondStartPending = NO;
+            SFLog(@"yt-engine: first start of a new extension build - waiting for its second");
+            NSUInteger page = _page, run = _run;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (run != self->_run || page != self->_page || self->_state != SFYTEngineStarting) return;
+                SFLog(@"yt-engine: no second start after 15 s - the first one counts");
+                [self startPage:++self->_page polls:kPagePolls];
+            });
+            return;
+        }
         // starting again BEFORE anyone hears of it: a player that reopens on the notification must
         // wait for the new document's engine - it used to be sent to it before its start ("engine
         // not started", the video stopped after an update restart, 2026-11-07)

@@ -118,6 +118,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
         if (![fm copyItemAtPath:BuiltExtension() toPath:ext error:&e]) { SFLog(@"yt-browser: extension copy failed: %@", e.localizedDescription); return NO; }
         if (![cfg writeToFile:[ext stringByAppendingPathComponent:@"config.json"] atomically:YES]) return NO;
         SFLog(@"yt-browser: extension installed (new build or channel) - Firefox will start its engine twice once");
+        self.secondStartPending = YES;
     }
     NSString *proxy = [exts stringByAppendingPathComponent:kExtensionID];   // unchanged unless it must (as above)
     BOOL proxyOK = [[NSString stringWithContentsOfFile:proxy encoding:NSUTF8StringEncoding error:nil] isEqualToString:ext]
