@@ -95,6 +95,10 @@ extern NSString *const SFDRMNotice;   // uniform notice text for DRM content
 @property (nonatomic) SFTileStyle style;
 @property (nonatomic, copy) NSArray *items;
 @property (nonatomic) NSUInteger focusIndex;       // rail: initially focused entry (e.g. the running video of a playlist)
+// The shelf's further items, loaded when the viewer nears its end (a rail's last tiles, a grid's last
+// lines) - at a person's pace, one portion per approach, appended without moving what is shown.
+// done (main): the next items and whether more follow. nil = the shelf is complete.
+@property (nonatomic, copy) void (^moreLoader)(void (^done)(NSArray *items, BOOL more));
 + (instancetype)shelf:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items;
 + (instancetype)grid:(NSString *)title style:(SFTileStyle)st items:(NSArray *)items;
 @end

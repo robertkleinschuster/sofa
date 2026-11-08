@@ -56,6 +56,12 @@ A page is an `SFPage` of `SFShelf`s of `SFItem`s, delivered asynchronously by an
 – don't add those yourself (`homeIncludesFollows = YES` if your start page shows followed
 shows itself).
 
+Long lists (all of a channel's videos, playlists): give the shelf a `moreLoader` instead of loading
+everything up front - it is called when the viewer comes within six tiles of a rail's end (two
+lines of a grid), appends the next portion without moving what is shown, and is dropped once it
+answers `more = NO`. One portion per approach, at the viewer's pace (YouTube: the list's
+continuation token, `SFYTPages moreFrom:keep:`).
+
 ## 4. Look
 
 `configureTheme:` sets tokens on top of the base theme (`src/Framework/SFTheme.h`): colors

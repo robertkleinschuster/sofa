@@ -2,6 +2,7 @@
 #import "SFLibraryPages.h"
 #import "SFCore.h"
 #import "SFScreen.h"
+#import "SFBrowseScreen.h"
 #import "SFHome.h"
 #import "SFMenuScreen.h"
 #import "SFRemote.h"
@@ -229,6 +230,10 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
             }
             SFLog(@"dev: shelves %@ end%@", arg, e ? [@" " stringByAppendingString:e.localizedDescription] : @"");
         });
+    } else if ([cmd isEqualToString:@"focus"]) {   // Dev: the focused tile of the top screen (browse pages)
+        SFScreen *top = self.nav.top;
+        SFItem *it = [top isKindOfClass:[SFBrowseScreen class]] ? [(SFBrowseScreen *)top focusedItem] : nil;
+        SFLog(@"dev: focus %@", it.identifier ?: it.title ?: @"-");
     } else if ([cmd isEqualToString:@"quit"]) {
         [NSApp terminate:nil];
     } else if ([cmd isEqualToString:@"updatequit"]) {   // as when SofaRemote installs an update

@@ -213,6 +213,37 @@ static NSString *SFRowKey(SFRow *r) {
 // scroll, its tiles' pictures arrived mid-animation as new textures - first visits to rows ran
 // at 29-41 fps (frame meter 2026-11-07).
 static const NSTimeInterval kBuildAheadDelay = 0.4;   // > the row animation (0.34 s)
+// A shelf with more to load: once the focus is within six tiles of a rail's end or two lines of a
+// grid's, its next portion - appended at the end, the page rebuilt keeping the focus (rows that did
+// not change keep their layers: nothing shown moves).
+- (void)loadMoreNear:(SFRow *)r col:(NSInteger)col {
+    SFShelf *sh = r.shelf < _page.shelves.count ? _page.shelves[r.shelf] : nil;
+    if (!sh.moreLoader || [_loadingMore containsObject:sh]) return;
+    NSUInteger ahead = r.rail ? 6 : 2 * MAX((NSUInteger)1, r.items.count);
+    if (r.firstIndex + col + ahead < sh.items.count) return;
+    if (!_loadingMore) _loadingMore = [NSMutableSet new];
+    [_loadingMore addObject:sh];
+    SFPage *page = _page;
+    __weak SFBrowseScreen *ws = self;
+    sh.moreLoader(^(NSArray *items, BOOL more) {
+        dispatch_async(dispatch_get_main_queue(), ^{   // never inside the focus change that asked
+            if (!more) sh.moreLoader = nil;
+            SFBrowseScreen *s = ws;
+            if (!s) return;
+            [s->_loadingMore removeObject:sh];
+            if (s->_page != page) return;   // reloaded meanwhile: the new page has its own shelves
+            NSMutableSet *have = [NSMutableSet new];
+            for (SFItem *i in sh.items) if (i.identifier) [have addObject:i.identifier];
+            NSMutableArray *add = [NSMutableArray new];
+            for (SFItem *i in items) if (!i.identifier || ![have containsObject:i.identifier]) [add addObject:i];
+            SFLog(@"rows: %@ +%lu%@", sh.title ?: @"-", (unsigned long)add.count, more ? @"" : @" (complete)");
+            if (!add.count) return;
+            sh.items = [sh.items arrayByAddingObjectsFromArray:add];
+            [s setPage:page keepFocus:YES];
+        });
+    });
+}
+
 - (void)updateVisibleRows { [self updateVisibleRowsAhead:NO]; }
 - (void)buildRowsAhead { [self updateVisibleRowsAhead:YES]; }
 

@@ -66,6 +66,24 @@
     });
 }
 
+// A YouTube list's further pages as an SFShelf moreLoader: each portion is the answer to the list's
+// continuation token - what youtube.com asks when the viewer scrolls to the end. A failed portion
+// ends the shelf (a reload of the page starts it again) instead of asking at every key press.
++ (void (^)(void (^)(NSArray *, BOOL)))moreFrom:(NSString *)cont keep:(BOOL (^)(SFItem *))keep {
+    if (!cont.length) return nil;
+    __block NSString *next = cont;
+    return [^(void (^done)(NSArray *, BOOL)) {
+        SFYTCall(@"browse", @{@"continuation": next}, 600, ^(id j, NSError *e) {
+            if (!j) { done(@[], NO); return; }
+            NSString *n = nil;
+            NSMutableArray *out = [NSMutableArray new];
+            for (SFItem *i in [self shown:[SFYTParser itemsIn:j continuation:&n channels:nil]]) if (keep(i)) [out addObject:i];
+            next = n;
+            done(out, n.length > 0);
+        });
+    } copy];
+}
+
 + (SFPageLoader)playlistLoader:(NSString *)pid title:(NSString *)title {
     return ^(SFPageDone done) {
         [self collect:@"browse" body:@{@"browseId": [@"VL" stringByAppendingString:pid]} cache:600 max:300
@@ -160,6 +178,9 @@
         NSString *uploads = [cid hasPrefix:@"UC"] ? [@"UULF" stringByAppendingString:[cid substringFromIndex:2]] : nil;
         __block NSDictionary *header = nil;
         __block NSArray *playlists = nil, *popular = nil, *streams = nil;
+        __block NSString *uploadsMore = nil, *playlistsMore = nil, *streamsMore = nil;   // continuation tokens: the rest on demand
+        BOOL (^isVideo)(SFItem *) = ^BOOL(SFItem *i) { return i.kind != SFItemFolder && i.kind != SFItemLive; };
+        BOOL (^isPlaylist)(SFItem *) = ^BOOL(SFItem *i) { return i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]; };   // mixes (RD...) are not channel playlists
         void (^build)(NSArray *, NSError *) = ^(NSArray *items, NSError *e) {
             NSMutableArray *shelves = [NSMutableArray new];
             NSMutableArray *live = [NSMutableArray new], *vids = [NSMutableArray new];
@@ -181,10 +202,24 @@
             }
             if (vids.count) [shelves addObject:[SFShelf shelf:@"Neueste Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(0, MIN(vids.count, (NSUInteger)12))]]];
             if (popular.count >= 4) [shelves addObject:[SFShelf shelf:@"Beliebt" style:SFTileStyleLandscape items:[popular subarrayWithRange:NSMakeRange(0, MIN(popular.count, (NSUInteger)12))]]];
-            if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
-            if (pastStreams.count) [shelves addObject:[SFShelf shelf:@"Livestreams" style:SFTileStyleLandscape items:[pastStreams subarrayWithRange:NSMakeRange(0, MIN(pastStreams.count, (NSUInteger)12))]]];
+            // everything of the channel reachable (user 2026-11-08): playlists, past streams and the
+            // older videos load their further pages as the viewer nears the end (SFShelf moreLoader)
+            if (playlists.count) {
+                SFShelf *sh = [SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists];
+                sh.moreLoader = [self moreFrom:playlistsMore keep:^BOOL(SFItem *i) { if (!isPlaylist(i)) return NO; i.style = SFTileStyleLandscape; return YES; }];
+                [shelves addObject:sh];
+            }
+            if (pastStreams.count) {
+                SFShelf *sh = [SFShelf shelf:@"Livestreams" style:SFTileStyleLandscape items:pastStreams];
+                sh.moreLoader = [self moreFrom:streamsMore keep:isVideo];
+                [shelves addObject:sh];
+            }
             // older videos further down as a grid (like the videos tab), without repeating the row above
-            if (vids.count > 12) [shelves addObject:[SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:[vids subarrayWithRange:NSMakeRange(12, vids.count - 12)]]];
+            if (vids.count > 12 || uploadsMore) {
+                SFShelf *sh = [SFShelf grid:@"Alle Videos" style:SFTileStyleLandscape items:vids.count > 12 ? [vids subarrayWithRange:NSMakeRange(12, vids.count - 12)] : @[]];
+                sh.moreLoader = [self moreFrom:uploadsMore keep:^BOOL(SFItem *i) { return i.kind != SFItemFolder; }];
+                if (sh.items.count) [shelves addObject:sh];
+            }
             if (!shelves.count && !items) { done(nil, e); return; }
             SFPage *p = [SFPage page:title theme:@"youtube" shelves:shelves];
             p.backdrop = header[@"banner"];
@@ -206,9 +241,10 @@
         dispatch_group_enter(g);
         SFYTCall(@"browse", @{@"browseId": cid, @"params": @"EglwbGF5bGlzdHPyBgQKAkIA"}, 3600, ^(id j, NSError *pe) {
             NSMutableArray *pl = [NSMutableArray new];
-            NSArray *found = [SFYTParser isTab:@"/playlists" in:j] ? [self shown:[SFYTParser itemsIn:j continuation:NULL channels:nil]] : @[];
-            for (SFItem *i in found) if (i.kind == SFItemFolder && ![i.identifier hasPrefix:@"ytplaylist:RD"]) { i.style = SFTileStyleLandscape; [pl addObject:i]; }   // mixes (RD...) are not channel playlists
-            playlists = pl;
+            NSString *cont = nil;
+            NSArray *found = [SFYTParser isTab:@"/playlists" in:j] ? [self shown:[SFYTParser itemsIn:j continuation:&cont channels:nil]] : @[];
+            for (SFItem *i in found) if (isPlaylist(i)) { i.style = SFTileStyleLandscape; [pl addObject:i]; }
+            playlists = pl; playlistsMore = cont;
             dispatch_group_leave(g);
         });
         // "Beliebt" (popular) like in YouTube's videos tab: the tab's sort chip -> its continuation
@@ -227,19 +263,28 @@
         // live tab (like YouTube): running + past streams; cached briefly, live status changes
         dispatch_group_enter(g);
         SFYTCall(@"browse", @{@"browseId": cid, @"params": @"EgdzdHJlYW1z8gYECgJ6AA=="}, 600, ^(id j, NSError *le) {
-            streams = [SFYTParser isTab:@"/streams" in:j] ? [self shown:[SFYTParser itemsIn:j continuation:NULL channels:nil]] : nil;
+            NSString *cont = nil;
+            streams = [SFYTParser isTab:@"/streams" in:j] ? [self shown:[SFYTParser itemsIn:j continuation:&cont channels:nil]] : nil;
+            streamsMore = cont;
             dispatch_group_leave(g);
         });
         void (^build0)(NSArray *, NSError *) = build;
         build = ^(NSArray *items, NSError *e) { dispatch_group_notify(g, dispatch_get_main_queue(), ^{ build0(items, e); }); };
-        [self collect:@"browse" body:@{@"browseId": [@"VL" stringByAppendingString:uploads]} cache:600 max:100
-                 into:[NSMutableArray new] json:nil done:^(NSArray *items, NSError *e) {
+        // the uploads' first page (~100); the rest is the grid's moreLoader
+        void (^firstPage)(NSString *, void (^)(NSArray *, NSError *)) = ^(NSString *browseId, void (^got)(NSArray *, NSError *)) {
+            SFYTCall(@"browse", @{@"browseId": browseId}, 600, ^(id j, NSError *e) {
+                NSString *cont = nil;
+                NSArray *items = j ? [self shown:[SFYTParser itemsIn:j continuation:&cont channels:nil]] : nil;
+                uploadsMore = cont;
+                got(items, e);
+            });
+        };
+        firstPage([@"VL" stringByAppendingString:uploads], ^(NSArray *items, NSError *e) {
             if (items.count) { [[SFLibrary shared] whenReady:^{ build(items, e); }]; return; }
-            NSString *all = [@"VLUU" stringByAppendingString:[cid substringFromIndex:2]];
-            [self collect:@"browse" body:@{@"browseId": all} cache:600 max:100 into:[NSMutableArray new] json:nil done:^(NSArray *i2, NSError *e2) {
+            firstPage([@"VLUU" stringByAppendingString:[cid substringFromIndex:2]], ^(NSArray *i2, NSError *e2) {
                 [[SFLibrary shared] whenReady:^{ build(i2, e2); }];
-            }];
-        }];
+            });
+        });
     };
 }
 

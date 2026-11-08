@@ -19,6 +19,7 @@
     r.focusCol = col;
     [self updateHint];
     [self schedulePrefetch];
+    [self loadMoreNear:r col:col];
 
     // vertical: focused row at the top edge of the content area
     CGFloat target = MAX(0, r.y - _contentTop);

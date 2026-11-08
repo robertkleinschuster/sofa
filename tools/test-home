@@ -20,6 +20,9 @@
 #      never stored - only news counts as a change - so Home highlights were empty after a restart)
 #   6. Home is asked while the screen is awake only (incident 2026-11-06: 50-95 requests/h to the
 #      Mediathek APIs around the clock): asleep nothing, waking up asks once
+#   7. a row with more to load (SFShelf moreLoader: YouTube channel videos, playlists, streams)
+#      appends its next portion once the focus is six tiles from its end - focus stays on its tile,
+#      nothing is asked before that or after the last portion
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -149,6 +152,28 @@ cmd "screens sleep"; waitlog "screen asleep"; sleep 0.3; a=$(asks); sleep 2.5
 [ "$(asks)" = "$a" ] && ok "asleep: nothing asked" || bad "asleep: $(( $(asks) - a )) asks"
 cmd "screens wake"; sleep 0.5
 [ "$(asks)" -gt "$a" ] && ok "waking up asks at once" || bad "no ask after waking up"
+
+echo "==> 7. a row loads more as the focus nears its end"
+quit
+start SOFA_OFFLINE=1 SOFA_EXAMPLE_MORE=2
+focus() { local n; n=$(grep -c "dev: focus " "$LOG"); cmd focus; for i in $(seq 1 50); do [ "$(grep -c "dev: focus " "$LOG")" -gt "$n" ] && break; sleep 0.1; done; grep "dev: focus " "$LOG" | tail -1 | sed 's/.*dev: focus //'; }
+keys() { local k=$1 n=$2; for i in $(seq 1 "$n"); do cmd "key $k"; sleep 0.15; done; }
+more() { grep -c "rows: Mehr Beispiele +" "$LOG"; }
+cmd "open app:example"; sleep 1
+for i in 1 2 3 4 5 6; do [ "$(focus)" = example:more0 ] && break; keys down 1; done   # down to the row (search tile, shows above)
+check "on the row" "$(focus)" "example:more0"
+keys right 1; sleep 0.5; check "not yet near the end: nothing loaded" "$(more)" 0
+keys right 1; waitlog "rows: Mehr Beispiele +8$" && ok "six tiles before the end: the next 8 appended" || bad "no portion: $(grep 'rows:' "$LOG" | tail -2 | tr '\n' '|')"
+check "focus stays on its tile" "$(focus)" "example:more2"
+reb=$(awk '/rows: Mehr Beispiele \+8$/ {f=1; next} f && /rows: rebuilt/ {print; exit}' "$LOG")   # the append's own page rebuild
+# rows on screen keep their layers (rows scrolled out above had none and may be built anew)
+kept=$(echo "$reb" | sed -n 's/.* - \([0-9]*\) kept.*/\1/p')
+[ "${kept:-0}" -ge 1 ] && ok "not rebuilt from scratch ($kept rows kept)" || bad "rebuild after the append: '$reb'"
+keys right 8; waitlog "rows: Mehr Beispiele +8 (complete)" && ok "the last portion, marked complete" || bad "no second portion"
+check "focus moved on through the appended tiles" "$(focus)" "example:more10"
+keys right 14; sleep 0.5
+check "complete: nothing asked any more" "$(more)" 2
+check "the row's end is its last tile" "$(focus)" "example:more23"
 
 [ $fail = 0 ] && echo "==> test-home ok" || echo "==> test-home FAILED"
 exit $fail

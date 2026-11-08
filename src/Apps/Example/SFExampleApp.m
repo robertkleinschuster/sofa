@@ -8,6 +8,18 @@ static NSArray *catalogue(void) {
              @[@"3", @"Mandelbrot", @"mandelbrot"], @[@"4", @"Leben", @"life=mold=10:ratio=0.1:death_color=#202020:life_color=#40c0ff"]];
 }
 
+static SFItem *video(NSArray *entry);
+static NSArray *morePortion(NSInteger n) {   // test rail (SOFA_EXAMPLE_MORE): portion n, 8 videos
+    NSMutableArray *out = [NSMutableArray new];
+    for (NSInteger k = 0; k < 8; k++) {
+        SFItem *i = video(catalogue()[(NSUInteger)(n * 8 + k) % catalogue().count]);
+        i.identifier = [NSString stringWithFormat:@"example:more%ld", (long)(n * 8 + k)];
+        i.title = [NSString stringWithFormat:@"Weiteres Video %ld", (long)(n * 8 + k + 1)];
+        [out addObject:i];
+    }
+    return out;
+}
+
 static SFItem *video(NSArray *entry) {
     SFItem *i = [SFItem new];
     i.kind = SFItemVideo;
@@ -62,9 +74,21 @@ static NSArray *videos(NSString *filter) {
         show.kind = SFItemFolder; show.identifier = @"exampleshow:demo"; show.title = @"Beispielsendung";
         show.source = [self appIdentifier]; show.themeName = show.source; show.style = SFTileStyleWide;
         show.pageLoader = [self showPageLoader:show.identifier title:show.title];
-        done([SFPage page:nil theme:[self appIdentifier] shelves:@[
-            [SFShelf shelf:@"Neu" style:SFTileStyleLandscape items:videos(nil)],
-            [SFShelf shelf:@"Sendungen" style:SFTileStyleWide items:@[show]]]], nil);
+        NSMutableArray *shelves = [@[[SFShelf shelf:@"Neu" style:SFTileStyleLandscape items:videos(nil)],
+                                     [SFShelf shelf:@"Sendungen" style:SFTileStyleWide items:@[show]]] mutableCopy];
+        // tests: a rail that loads more as the viewer nears its end (SFShelf moreLoader) -
+        // SOFA_EXAMPLE_MORE=<portions after the first>, 8 videos each
+        NSInteger portions = SFDevEnv(@"SOFA_EXAMPLE_MORE").integerValue;
+        if (portions > 0) {
+            __block NSInteger next = 1;
+            SFShelf *more = [SFShelf shelf:@"Mehr Beispiele" style:SFTileStyleLandscape items:morePortion(0)];
+            more.moreLoader = ^(void (^got)(NSArray *, BOOL)) {
+                NSInteger n = next++;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ got(morePortion(n), n < portions); });
+            };
+            [shelves addObject:more];
+        }
+        done([SFPage page:nil theme:[self appIdentifier] shelves:shelves], nil);
     };
 }
 
