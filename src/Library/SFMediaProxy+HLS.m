@@ -186,6 +186,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
         NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
         NSData *d = SFCurlFetchFinal(url, &st, &eff, &e);
         NSString *text = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
+        if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = OneVariant(text, eff ?: url);
         dispatch_async(self.queue, ^{
             if (!text || st >= 400) { [x respondJSON:st >= 400 ? st : 502 object:@{@"error": e.localizedDescription ?: @"playlist"}]; return; }
             NSString *body = [self rewrite:text base:eff ?: url session:s];
@@ -219,7 +220,12 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     if (disk) { send(disk); return; }
     if (s.stored) { [x respondJSON:404 object:@{@"error": @"not stored"}]; return; }
     BOOL keep = s.vod;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+    // the whole resource (no range, or "bytes=0-" as lavf asks): streamed; any other range: whole, then the range
+    if (!range.length || [[range stringByReplacingOccurrencesOfString:@" " withString:@""] isEqualToString:@"bytes=0-"]) {
+        [self stream:url key:key keep:keep session:s to:x];
+        return;
+    }
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{   // a range of a segment not on disk: whole, then the range
         NSInteger st = 0; NSError *e = nil;
         NSData *d = SFCurlFetch(url, @"GET", nil, nil, &st, &e);
         if (d.length && st < 400 && keep) [SFProxyStore() write:d key:key item:s.item kind:@"hls" total:(long long)d.length at:0];
@@ -257,6 +263,75 @@ static NSArray *ChooseVariant(NSString *master, NSString *base, long long *bandw
     *bandwidth = bestBW;
     NSString *a = best[@"AUDIO"] ? audio[best[@"AUDIO"]] : nil;
     return a ? @[bestURL, a] : @[bestURL];
+}
+
+// The master for the player with only the variant a download takes (ChooseVariant) and that variant's
+// audio renditions (an audio description stays choosable): lavf probes the first segments of every
+// variant before it plays - 8 variants made an ORF start 13-21 s (2026-11-08) - and it never switches
+// variants anyway. What playback keeps is then what a download needs.
+static NSString *OneVariant(NSString *master, NSString *base) {
+    long long bw = 0;
+    NSString *chosen = [ChooseVariant(master, base, &bw) firstObject];
+    if (!chosen) return master;
+    NSArray *lines = [master componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    NSString *group = nil;
+    for (NSUInteger i = 0; i + 1 < lines.count; i++)
+        if ([lines[i] hasPrefix:@"#EXT-X-STREAM-INF"]
+            && [Absolute([lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]], base) isEqualToString:chosen])
+            group = Attributes(lines[i])[@"AUDIO"];
+    NSMutableArray *out = [NSMutableArray new];
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        NSString *l = [lines[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if ([l hasPrefix:@"#EXT-X-I-FRAME-STREAM-INF"]) continue;
+        if ([l hasPrefix:@"#EXT-X-MEDIA"]) {
+            NSDictionary *a = Attributes(l);
+            if ([a[@"TYPE"] isEqual:@"AUDIO"] && ![a[@"GROUP-ID"] isEqual:group]) continue;
+        }
+        if ([l hasPrefix:@"#EXT-X-STREAM-INF"]) {
+            NSString *uri = i + 1 < lines.count ? [lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] : @"";
+            if ([Absolute(uri, base) isEqualToString:chosen]) [out addObjectsFromArray:@[l, uri]];
+            i++;   // its URI line: taken or dropped with it
+            continue;
+        }
+        [out addObject:l];
+    }
+    return [out componentsJoinedByString:@"\n"];
+}
+
+// on the queue: a whole resource from the source, its bytes to the reader as they arrive (lavf probes
+// the start of each variant's first segment: a whole fetch first made a start 3x slower, 2026-11-08);
+// kept once it arrived whole (a reader that leaves early: nothing kept - resources are whole tracks)
+- (void)stream:(NSString *)url key:(NSString *)key keep:(BOOL)keep session:(SFProxySession *)s to:(SFHTTPExchange *)x {
+    BOOL head = [x.request.method isEqualToString:@"HEAD"];
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        NSMutableData *all = [NSMutableData new];
+        __block long long total = -1;
+        __block BOOL begun = NO, left = NO;
+        BOOL (^onQueue)(void (^)(dispatch_semaphore_t)) = ^BOOL(void (^b)(dispatch_semaphore_t)) {
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            dispatch_async(self.queue, ^{ b(sem); });
+            dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);   // backpressure: the reader's pace
+            return !left;
+        };
+        NSError *e = nil;
+        BOOL ok = SFCurlStream(url, 0, -1, 0, ^BOOL(NSInteger status, long long t, NSString *mime) {
+            if (status >= 400) return NO;
+            total = t;
+            begun = YES;
+            NSMutableDictionary *h = [@{@"Content-Type": @"application/octet-stream", @"Accept-Ranges": @"bytes"} mutableCopy];
+            if (t > 0) h[@"Content-Length"] = [NSString stringWithFormat:@"%lld", t];
+            return onQueue(^(dispatch_semaphore_t sem) { [x begin:200 headers:h]; dispatch_semaphore_signal(sem); }) && !head;
+        }, ^BOOL(NSData *bytes) {
+            [all appendData:bytes];
+            return onQueue(^(dispatch_semaphore_t sem) { [x write:bytes done:^(BOOL w) { if (!w) left = YES; dispatch_semaphore_signal(sem); }]; });
+        }, &e);
+        BOOL whole = ok && !left && !head && all.length && (total < 0 || (long long)all.length == total);
+        if (whole && keep) [SFProxyStore() write:all key:key item:s.item kind:@"hls" total:(long long)all.length at:0];
+        dispatch_async(self.queue, ^{
+            if (!begun) [x respondJSON:502 object:@{@"error": e.localizedDescription ?: @"resource"}];
+            else [x finish];
+        });
+    });
 }
 
 #pragma mark Stored ranges

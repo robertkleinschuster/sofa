@@ -19,9 +19,9 @@
 #      it plays from the store, "Online abspielen" (info panel) switches to the source, and it plays
 #      from the store without its source
 #   8d. an HLS source (ORF) through the media proxy: a master with two variants, AES-128 segments and
-#      their key - playing it shows what is on disk as a shade on the timeline (exact segments of the
-#      variant played); the download takes the better variant into the store (no ffmpeg), it then
-#      plays from the store without its source, shaded end to end
+#      their key - the player gets one variant, the one a download takes (lavf probes every variant
+#      before playing); playing shows what is on disk as a shade on the timeline (exact segments); the
+#      download finds what playback kept, then plays from the store without its source, shaded end to end
 #   8b. pre-buffering: a subscription episode filled into the store expires (14 days, or 3 days after
 #      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
 #      episode keeps it without loading again
@@ -380,8 +380,14 @@ for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1
 tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9] range(s), [1-9][0-9]* of 1[12] s" && ok "the timeline shows what playback put on disk ($(tail -n +$((m + 1)) "$LOG" | grep -o 'stored [0-9].*' | tail -1))" \
   || bad "no stored shade while playing: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored\|player: play' | tail -2)"
 cmd "key menu"; sleep 0.5
+# the player gets one variant (the one a download takes, ChooseVariant): lavf probed every variant's
+# first segments before playing - an ORF start took 13-21 s (2026-11-08)
+v0=$(( $(grep -c EXTINF "$H/v0/index.m3u8") + 1 ))
+check "playback read one variant (its segments and key, nothing of the other)" "$(SS "select count(*) <= $v0 from tracks where item='example:4'")" "1"
 cmd "dlget example:4"
 for i in $(seq 1 160); do grep -q "downloads: done example:4\|downloads: FAILED example:4" "$LOG" && break; sleep 0.25; done
+grep -q "media-proxy: filling example:4 (HLS, $v0 resources, $v0 on disk already)" "$LOG" && ok "the download found everything playback kept (the same variant)" \
+  || bad "the download did not reuse playback's segments: $(grep 'media-proxy: filling example:4' "$LOG")"
 grep -q "media-proxy: filling example:4 (HLS" "$LOG" && grep -q "downloads: done example:4" "$LOG" && ok "HLS filled through the proxy" \
   || bad "HLS not filled: $(grep 'example:4\|media-proxy' "$LOG" | tail -3)"
 check "the better variant, its segments and key are the manifest's required tracks" \
