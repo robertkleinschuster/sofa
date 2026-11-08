@@ -113,7 +113,10 @@ store can hold; existing downloads may be deleted (no migration of old files).
       Loopback sources stay unproxied (local already; tests opt in with SOFA_PROXY_LOOPBACK).
    b. Done - HLS (ORF): SFMediaProxy+HLS.m rewrites the playlists (resources as tracks
       "hls:<item>:<hash>", keys included; VOD only stored); a download takes the best variant <= 1080p
-      plus the default audio rendition, manifest kind "hls". SFStreamProxy went.
+      plus the default audio rendition, manifest kind "hls". SFStreamProxy went. The player gets the
+      same one variant (with its audio renditions): lavf probes every variant's first segments before
+      playing - 8 ORF variants made a start 13-21 s, one makes it 2 s - and playback keeps what a
+      download needs. Resources stream to the reader as they arrive, kept once whole.
    c. Done - one kind of download (schema step 16): the file downloads' files and thumbnails deleted
       (a subscription episode stays dismissed, a manual one leaves), `downloads.path`/`store` dropped;
       ffmpeg (no longer bundled), the verifier, repairs, orphan reaping and the ytdl-sub migration went.
