@@ -155,32 +155,52 @@ NSString *SFFormatBytes(unsigned long long b) {
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
 }
 
-NSString *SFFormatDateShort(NSDate *d) {
-    if (!d) return @"";
-    NSCalendar *cal = [NSCalendar currentCalendar];
-    NSDate *today = [cal startOfDayForDate:[NSDate date]];
-    NSDate *day = [cal startOfDayForDate:d];
-    NSInteger diff = [cal components:NSCalendarUnitDay fromDate:day toDate:today options:0].day;
+// the local calendar day of t: days since 1970-01-01 local time (the zone's offset at t, so a
+// DST change is exact) - comparing two of these is what "Heute"/"Gestern" needs, no ICU calendar
+static long LocalDay(NSTimeInterval t, NSTimeZone *tz) {
+    return (long)floor((t + [tz secondsFromGMTForDate:[NSDate dateWithTimeIntervalSince1970:t]]) / 86400);
+}
+
+static NSString *DateLabel(long diff, NSDate *d, NSDate *now, NSTimeZone *tz) {
     if (diff == 0) return @"Heute";
     if (diff == 1) return @"Gestern";
-    if (diff > 1 && diff < 7) return [NSString stringWithFormat:@"vor %ld Tagen", (long)diff];
+    if (diff > 1 && diff < 7) return [NSString stringWithFormat:@"vor %ld Tagen", diff];
     // A date in the future is the TV broadcast of an episode the Mediathek already offers ahead
     // (ORF "Vorpremiere"): a bare "10. Nov." looked like a wrong date (2026-11-05)
     if (diff == -1) return @"TV morgen";
-    static NSDateFormatter *df, *dfy;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSLocale *de = [NSLocale localeWithLocaleIdentifier:@"de_AT"];
-        df = [NSDateFormatter new]; df.locale = de; df.dateFormat = @"d. MMM";
-        dfy = [NSDateFormatter new]; dfy.locale = de; dfy.dateFormat = @"d. MMM yyyy";
-    });
-    @synchronized (df) {
-    NSInteger y1 = [cal component:NSCalendarUnitYear fromDate:d];
-    NSInteger y2 = [cal component:NSCalendarUnitYear fromDate:today];
-    NSString *s = (y1 == y2) ? [df stringFromDate:d] : [dfy stringFromDate:d];
+    NSDateFormatter *f = [NSDateFormatter new];
+    f.locale = [NSLocale localeWithLocaleIdentifier:@"de_AT"];
+    f.timeZone = tz;
+    f.dateFormat = @"yyyy";
+    BOOL sameYear = [[f stringFromDate:d] isEqual:[f stringFromDate:now]];
+    f.dateFormat = sameYear ? @"d. MMM" : @"d. MMM yyyy";
+    NSString *s = [f stringFromDate:d];
     return diff < 0 ? [@"TV am " stringByAppendingString:s] : s;
+}
+
+NSString *SFFormatDateShortAt(NSDate *d, NSDate *now) {
+    if (!d) return @"";
+    // a home refresh labels hundreds of tiles on the main thread: one label per calendar day,
+    // remembered until the day (or the zone) changes (hitch 2026-11-08: ~150 ms per refresh)
+    static NSMutableDictionary *cache;
+    static long cachedToday;
+    static NSTimeZone *cachedZone;
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    NSTimeZone *tz = [NSTimeZone localTimeZone];
+    long today = LocalDay(now.timeIntervalSince1970, tz), day = LocalDay(d.timeIntervalSince1970, tz);
+    @synchronized (lock) {
+        if (!cache || today != cachedToday || ![tz.name isEqual:cachedZone.name]) {
+            cache = [NSMutableDictionary new]; cachedToday = today; cachedZone = tz;
+        }
+        NSString *s = cache[@(day)];
+        if (!s) cache[@(day)] = s = DateLabel(today - day, d, now, tz);
+        return s;
     }
 }
+
+NSString *SFFormatDateShort(NSDate *d) { return SFFormatDateShortAt(d, [NSDate date]); }
 
 static NSString *ensureDir(NSString *p) {
     [[NSFileManager defaultManager] createDirectoryAtPath:p withIntermediateDirectories:YES attributes:nil error:nil];

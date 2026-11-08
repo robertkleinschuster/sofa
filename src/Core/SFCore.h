@@ -46,6 +46,7 @@ void SFRangesAppend(NSMutableArray *r, double start, double end);   // in order;
 double SFRangesSeconds(NSArray *r, double limit);   // their length within [0, limit] (a source's duration may run past the player's)
 NSString *SFFormatBytes(unsigned long long b);      // "340 MB", "12 GB" (decimal, as Finder)
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
+NSString *SFFormatDateShortAt(NSDate *d, NSDate *now);   // the same, relative to `now` (thread-safe)
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
 // channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)
 // Variadic call: ARC keeps every argument (also temporaries) alive for the whole call; the
