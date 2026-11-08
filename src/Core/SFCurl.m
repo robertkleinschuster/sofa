@@ -112,6 +112,11 @@ NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSDa
     return fetchFull(url, method ?: @"GET", headers, body, status, NULL, error);
 }
 
+NSData *SFCurlFetchFinal(NSString *url, NSInteger *status, NSString **effective, NSError **error) {
+    if (SFSimulatedOffline()) { if (error) *error = SFError(@"Keine Internetverbindung."); return nil; }
+    return fetchFull(url, @"GET", nil, nil, status, effective, error);
+}
+
 static size_t writeFile(char *p, size_t sz, size_t n, void *ud) {
     return fwrite(p, sz, n, (FILE *)ud) * sz;
 }

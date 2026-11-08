@@ -1,4 +1,5 @@
-// SFMediaProxy - progressive media files (the mediatheks' MP4s) through the media store
+// SFMediaProxy - the mediatheks' media through the media store - progressive files (ZDF, ARD, CCC)
+// here, HLS (ORF) in SFMediaProxy+HLS.m
 // (docs/media-store.md): the player reads a local URL, every byte passes the store - what is on disk
 // comes from there, the rest from the source in one streamed range request per gap (curl: every host,
 // TLS 1.3 included), written to disk on the way. An item complete in the store plays from a local URL
@@ -9,7 +10,7 @@
 
 @interface SFMediaProxy : NSObject
 + (instancetype)shared;
-+ (BOOL)canServe:(NSURL *)url;   // an http(s) file, not a playlist
++ (BOOL)canServe:(NSURL *)url;   // an http(s) file or HLS playlist (not loopback)
 // A local URL serving the file `url` of item `item` through the store
 - (NSURL *)localURLFor:(NSURL *)url item:(NSString *)item;
 // The item complete in the store as a local URL; *subs: its stored subtitles as player source entries

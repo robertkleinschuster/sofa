@@ -1,4 +1,4 @@
-#import "SFMediaProxy.h"
+#import "SFMediaProxy+Private.h"
 #import "SFLocalHTTP.h"
 #import "SFCurl.h"
 #import "SFDownloads.h"
@@ -8,18 +8,10 @@
 static const NSUInteger kPiece = 1 << 20;        // bytes per store read
 static const NSUInteger kFlush = 256 * 1024;     // source bytes gathered before they go to the reader and the store
 
-// One served file: an item's track. `url` nil = stored (the store or nothing)
-@interface SFProxySession : NSObject
-@property (nonatomic, copy) NSString *sid, *item, *url, *key, *mime;
-@property (nonatomic) long long total;           // 0 until the source told it
-@property (nonatomic, copy) NSArray *subs;       // stored sessions: subtitle track keys by index
-@end
 @implementation SFProxySession
 @end
 
-static SFMediaStore *Store(void) { return [SFDownloads shared].mediaStore; }
-
-static NSString *Hash(NSString *s) {
+NSString *SFProxyHash(NSString *s) {
     unsigned char d[CC_SHA1_DIGEST_LENGTH];
     NSData *b = [s dataUsingEncoding:NSUTF8StringEncoding];
     CC_SHA1(b.bytes, (CC_LONG)b.length, d);
@@ -41,9 +33,8 @@ static NSString *Hash(NSString *s) {
 }
 
 + (BOOL)canServe:(NSURL *)url {
-    NSString *scheme = url.scheme.lowercaseString, *ext = url.path.pathExtension.lowercaseString;
+    NSString *scheme = url.scheme.lowercaseString;
     if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) return NO;
-    if ([ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"]) return NO;
     // a loopback source is local already (the YouTube engine's routes, test servers) - tests that
     // exercise the proxy with a local server say so (SOFA_PROXY_LOOPBACK=1)
     return ![url.host isEqualToString:@"127.0.0.1"] || SFDevEnv(@"SOFA_PROXY_LOOPBACK") != nil;
@@ -60,14 +51,18 @@ static NSString *Hash(NSString *s) {
     return self;
 }
 
+- (dispatch_queue_t)queue { return _q; }
+- (uint16_t)port { return _server.port; }
+
 - (NSString *)addSession:(SFProxySession *)s {
     s.sid = [[[NSUUID UUID] UUIDString] substringToIndex:12].lowercaseString;
     dispatch_sync(_q, ^{ self->_sessions[s.sid] = s; });
-    return [NSString stringWithFormat:@"http://127.0.0.1:%u/f/%@", _server.port, s.sid];
+    return [NSString stringWithFormat:@"http://127.0.0.1:%u/%@/%@", _server.port, s.hls ? @"h" : @"f", s.sid];
 }
 
 - (NSURL *)localURLFor:(NSURL *)url item:(NSString *)item {
     if (!_server.port || !item.length || ![SFMediaProxy canServe:url]) return url;
+    if ([SFMediaProxy isPlaylist:url]) return [self hlsURLFor:url item:item];
     SFProxySession *s = [SFProxySession new];
     s.item = item; s.url = url.absoluteString;
     NSString *ext = url.path.pathExtension;   // players look at it
@@ -75,22 +70,31 @@ static NSString *Hash(NSString *s) {
 }
 
 - (NSURL *)storedURLFor:(NSString *)item subs:(NSArray **)subsOut {
-    NSDictionary *m = [Store() manifestOf:item];
-    if (![m[@"kind"] isEqual:@"file"] || ![Store() itemIsComplete:item] || !_server.port) return nil;
+    NSDictionary *m = [SFProxyStore() manifestOf:item];
+    if (!_server.port || ![SFProxyStore() itemIsComplete:item]) return nil;
+    if ([m[@"kind"] isEqual:@"hls"]) return [self storedHLSFor:item manifest:m subs:subsOut];
+    if (![m[@"kind"] isEqual:@"file"]) return nil;
     SFProxySession *s = [SFProxySession new];
-    s.item = item; s.key = [m[@"required"] firstObject]; s.total = [m[@"total"] longLongValue]; s.mime = m[@"mime"];
+    s.item = item; s.stored = YES; s.key = [m[@"required"] firstObject]; s.total = [m[@"total"] longLongValue]; s.mime = m[@"mime"];
+    NSString *base = [self addSession:s];
+    NSArray *subs = [self storedSubs:m session:s base:base];
+    if (subsOut) *subsOut = subs;
+    NSString *ext = [m[@"url"] isKindOfClass:[NSString class]] ? [[NSURL URLWithString:m[@"url"]] path].pathExtension : @"";
+    return [NSURL URLWithString:[base stringByAppendingFormat:@"/media%@", ext.length ? [@"." stringByAppendingString:ext] : @""]];
+}
+
+// the manifest's complete subtitles: their keys into the session (served at <base>/subs/<n>.vtt), as
+// player source entries
+- (NSArray *)storedSubs:(NSDictionary *)m session:(SFProxySession *)s base:(NSString *)base {
     NSMutableArray *keys = [NSMutableArray new], *entries = [NSMutableArray new];
     for (NSDictionary *t in [m[@"subs"] isKindOfClass:[NSArray class]] ? m[@"subs"] : @[])
-        if ([Store() hasComplete:@[t[@"key"] ?: @""]]) [keys addObject:t];
+        if ([SFProxyStore() hasComplete:@[t[@"key"] ?: @""]]) [keys addObject:t];
     s.subs = [keys valueForKey:@"key"];
-    NSString *base = [self addSession:s];
     [keys enumerateObjectsUsingBlock:^(NSDictionary *t, NSUInteger i, BOOL *stop) {
         [entries addObject:@{@"lang": t[@"lang"] ?: @"", @"kind": t[@"kind"] ?: @"", @"name": t[@"name"] ?: @"",
                              @"url": [NSString stringWithFormat:@"%@/subs/%lu.vtt", base, (unsigned long)i]}];
     }];
-    if (subsOut) *subsOut = entries;
-    NSString *ext = [m[@"url"] isKindOfClass:[NSString class]] ? [[NSURL URLWithString:m[@"url"]] path].pathExtension : @"";
-    return [NSURL URLWithString:[base stringByAppendingFormat:@"/media%@", ext.length ? [@"." stringByAppendingString:ext] : @""]];
+    return entries;
 }
 
 #pragma mark Identity
@@ -102,28 +106,29 @@ static NSString *Hash(NSString *s) {
     s.total = total; s.mime = mime.length ? mime : @"video/mp4";
     // the item's own track (removal and eviction go by item): its file by host + path (a token query
     // does not change it) and length
-    s.key = [NSString stringWithFormat:@"file:%@:%@:%lld", s.item, Hash([u.host stringByAppendingString:u.path ?: @""]), total];
-    NSDictionary *old = [Store() manifestOf:s.item];
+    s.key = [NSString stringWithFormat:@"file:%@:%@:%lld", s.item, SFProxyHash([u.host stringByAppendingString:u.path ?: @""]), total];
+    NSDictionary *old = [SFProxyStore() manifestOf:s.item];
     NSMutableDictionary *m = [@{@"kind": @"file", @"required": @[s.key], @"total": @(total), @"mime": s.mime, @"url": s.url} mutableCopy];
     if ([old[@"required"] isEqual:m[@"required"]] && old[@"subs"]) m[@"subs"] = old[@"subs"];   // (kept by a download)
-    [Store() setManifest:m forItem:s.item];
+    [SFProxyStore() setManifest:m forItem:s.item];
     SFLog(@"media-proxy: %@ is %@ (%.1f MB, %@)", s.item, s.key, total / 1048576.0, s.mime);
 }
 
 #pragma mark Serving (on _q)
 
 - (void)serve:(SFHTTPExchange *)x {
-    NSArray *p = x.request.pathParts;   // f, sid, media[.ext] | subs, <n>.vtt
+    NSArray *p = x.request.pathParts;   // f|h, sid, media[.ext] | subs, <n>.vtt | (HLS) root.m3u8, p/<n>.m3u8, r/<n>.<ext>
     SFProxySession *s = p.count >= 3 ? _sessions[p[1]] : nil;
-    if (!s || ![p[0] isEqual:@"f"]) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
+    if (!s || ![p[0] isEqual:s.hls ? @"h" : @"f"]) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
     if (p.count == 4 && [p[2] isEqual:@"subs"]) {
         NSUInteger i = (NSUInteger)[p[3] integerValue];
         NSString *key = i < s.subs.count ? s.subs[i] : nil;
-        long long n = key ? [Store() extentsOf:key].bytes : 0;
-        NSData *d = n ? [Store() read:key start:0 length:(NSUInteger)n] : nil;
+        long long n = key ? [SFProxyStore() extentsOf:key].bytes : 0;
+        NSData *d = n ? [SFProxyStore() read:key start:0 length:(NSUInteger)n] : nil;
         if (d) [x respond:200 type:@"text/vtt; charset=utf-8" body:d]; else [x respondJSON:404 object:@{@"error": @"not stored"}];
         return;
     }
+    if (s.hls) { [self serveHLS:x session:s]; return; }
     if (s.total > 0) { [self answer:x session:s]; return; }
     if (!s.url) { [x respondJSON:404 object:@{@"error": @"not stored"}]; return; }
     // the length is not known yet: one byte from the source tells it (and the type)
@@ -158,13 +163,13 @@ static NSString *Hash(NSString *s) {
 // [from, to) to the reader: stored pieces from disk, each gap from the source in one streamed request
 - (void)pump:(SFProxySession *)s from:(long long)from to:(long long)to into:(SFHTTPExchange *)x {
     if (from >= to || x.closed) { [x finish]; return; }
-    NSData *disk = [Store() readAvailable:s.key start:from max:(NSUInteger)MIN((long long)kPiece, to - from)];
+    NSData *disk = [SFProxyStore() readAvailable:s.key start:from max:(NSUInteger)MIN((long long)kPiece, to - from)];
     if (disk) {
         [x write:disk done:^(BOOL ok) { if (ok) [self pump:s from:from + (long long)disk.length to:to into:x]; else [x finish]; }];
         return;
     }
     if (!s.url) { [x finish]; return; }   // stored session, a gap: a short body
-    NSArray *gap = [[Store() extentsOf:s.key] missingFrom:from to:to].firstObject;
+    NSArray *gap = [[SFProxyStore() extentsOf:s.key] missingFrom:from to:to].firstObject;
     long long gapEnd = gap ? [gap[1] longLongValue] : to;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         __block long long at = from;
@@ -192,7 +197,7 @@ static NSString *Hash(NSString *s) {
     BOOL (^flush)(void) = ^BOOL {
         if (!buf.length) return YES;
         NSData *piece = [buf copy];
-        [Store() write:piece key:s.key item:s.item kind:@"file" total:s.total at:at];
+        [SFProxyStore() write:piece key:s.key item:s.item kind:@"file" total:s.total at:at];
         at += (long long)piece.length;
         [buf setLength:0];
         return each(piece);
@@ -214,8 +219,25 @@ static NSString *Hash(NSString *s) {
 
 #pragma mark Filling
 
+// a download's subtitles: small tracks of their own (`prefix`:<n>), returned as manifest entries; one
+// that fails is not offered. Background.
+- (NSArray *)fillSubs:(NSArray *)subs item:(NSString *)item prefix:(NSString *)prefix cancelled:(BOOL (^)(void))cancelled {
+    NSMutableArray *stored = [NSMutableArray new];
+    [subs enumerateObjectsUsingBlock:^(NSDictionary *t, NSUInteger i, BOOL *stop) {
+        if (cancelled() || ![t[@"url"] isKindOfClass:[NSString class]]) return;
+        NSInteger st = 0;
+        NSData *vtt = SFCurlFetch(t[@"url"], @"GET", nil, nil, &st, NULL);
+        if (!vtt.length || st >= 400) return;
+        NSString *key = [NSString stringWithFormat:@"%@:subs:%lu", prefix, (unsigned long)i];
+        [SFProxyStore() write:vtt key:key item:item kind:@"subs" total:(long long)vtt.length at:0];
+        [stored addObject:@{@"key": key, @"lang": t[@"lang"] ?: @"", @"kind": t[@"kind"] ?: @"", @"name": t[@"name"] ?: @""}];
+    }];
+    return stored;
+}
+
 - (dispatch_block_t)fill:(NSURL *)url item:(NSString *)item subs:(NSArray *)subs duration:(double)duration
                 progress:(void (^)(double))progress done:(void (^)(NSError *))done {
+    if ([SFMediaProxy isPlaylist:url]) return [self fillHLS:url item:item subs:subs progress:progress done:done];
     __block BOOL cancelled = NO;
     SFProxySession *s = [SFProxySession new];
     s.item = item; s.url = url.absoluteString;
@@ -227,12 +249,12 @@ static NSString *Hash(NSString *s) {
                      ^BOOL(NSData *b) { return NO; }, &err);
         if (total > 0) dispatch_sync(self->_q, ^{ [self learn:s total:total mime:mime]; });
         if (!s.key) { SFMain(^{ if (!cancelled) done(err ?: SFError(@"Die Quelle nennt keine Länge.")); }); return; }
-        long long have = [Store() extentsOf:s.key].bytes;
+        long long have = [SFProxyStore() extentsOf:s.key].bytes;
         // 3x the playback rate (as ffmpeg's -readrate 3 was): background loading never crowds out streaming
         long long rate = duration > 0 ? MAX(256 * 1024, (long long)(3 * total / duration)) : 0;
         SFLog(@"media-proxy: filling %@ - %.0f of %.0f MB on disk already", item, have / 1048576.0, total / 1048576.0);
         __block long long done_ = have;
-        for (NSArray *gap in [[Store() extentsOf:s.key] missingFrom:0 to:total]) {
+        for (NSArray *gap in [[SFProxyStore() extentsOf:s.key] missingFrom:0 to:total]) {
             BOOL ok = [self stream:s from:[gap[0] longLongValue] to:[gap[1] longLongValue] rate:rate each:^BOOL(NSData *piece) {
                 done_ += (long long)piece.length;
                 double p = MIN(0.99, (double)done_ / total);
@@ -241,21 +263,11 @@ static NSString *Hash(NSString *s) {
             }];
             if (!ok || cancelled) break;
         }
-        // subtitles: small tracks of their own, named in the manifest (one that fails is not offered)
-        NSMutableArray *stored = [NSMutableArray new];
-        [subs enumerateObjectsUsingBlock:^(NSDictionary *t, NSUInteger i, BOOL *stopSubs) {
-            if (cancelled || ![t[@"url"] isKindOfClass:[NSString class]]) return;
-            NSInteger st = 0;
-            NSData *vtt = SFCurlFetch(t[@"url"], @"GET", nil, nil, &st, NULL);
-            if (!vtt.length || st >= 400) return;
-            NSString *key = [NSString stringWithFormat:@"%@:subs:%lu", s.key, (unsigned long)i];
-            [Store() write:vtt key:key item:item kind:@"subs" total:(long long)vtt.length at:0];
-            [stored addObject:@{@"key": key, @"lang": t[@"lang"] ?: @"", @"kind": t[@"kind"] ?: @"", @"name": t[@"name"] ?: @""}];
-        }];
-        NSMutableDictionary *m = [[Store() manifestOf:item] mutableCopy];
-        if (m && stored.count) { m[@"subs"] = stored; [Store() setManifest:m forItem:item]; }
-        [Store() sync];
-        BOOL complete = [Store() itemIsComplete:item];
+        NSArray *stored = [self fillSubs:subs item:item prefix:s.key cancelled:^BOOL { return cancelled; }];
+        NSMutableDictionary *m = [[SFProxyStore() manifestOf:item] mutableCopy];
+        if (m && stored.count) { m[@"subs"] = stored; [SFProxyStore() setManifest:m forItem:item]; }
+        [SFProxyStore() sync];
+        BOOL complete = [SFProxyStore() itemIsComplete:item];
         SFMain(^{
             if (cancelled) return;
             if (complete) { progress(1); done(nil); }

@@ -7,6 +7,8 @@
 
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                     NSInteger *status, NSError **error);
+// A GET that also tells where it ended up after redirects (relative URIs of a playlist resolve there)
+NSData *SFCurlFetchFinal(NSString *url, NSInteger *status, NSString **effectiveURL, NSError **error);
 
 // curl_easy_init() without TLS certificate verification (see .m). Returns a CURL * (void *,
 // so this header does without curl.h).
