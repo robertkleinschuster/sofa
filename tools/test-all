@@ -43,7 +43,8 @@ for t in $SUITES; do
   else printf "  FAIL  %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
     # the failing checks by name (shell suites: "FAIL ...", node: "not ok ..."), then the tail
     grep -E '^ *(FAIL|not ok) ' "$OUT/$t.log" | head -n 10 | sed 's/^ */        > /'
-    tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1; fi
+    tail -n 25 "$OUT/$t.log" | sed 's/^/        /'; fail=1
+    mkdir -p "$OUT/kept/$t"; cp "$OUT/$t.log" "$OUT/kept/$t/output.log"; fi   # the whole output with what it left
 done
 if [ $fail = 0 ]; then rm -rf "${KEPT:?}"; echo "==> all suites ok ($(( $(date +%s) - t0 ))s)"   # an older failure's logs would mislead
 else rm -rf "${KEPT:?}"; mv "$OUT/kept" "$KEPT"; echo "==> SOME SUITES FAILED (kept logs: $KEPT)"; fi
