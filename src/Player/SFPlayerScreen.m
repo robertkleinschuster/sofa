@@ -10,6 +10,7 @@
 NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 #import "SFPlayerScreen+Private.h"
+#import "SFPlayerBar.h"
 
 @implementation SFPlayerScreen
 
@@ -399,27 +400,20 @@ static const NSTimeInterval kFailedMoveOn = 5;
 
 - (void)updateBar {
     NSTimeInterval d = [self duration];
-    BOOL live = _item.kind == SFItemLive || !(d > 0);
+    SFBarMode mode = SFBarModeFor(_item.kind, d);
     NSTimeInterval c = [self seekOrigin];
-    NSTimeInterval shown = _pendingSeek != 0 ? MAX(0, MIN(d, c + _pendingSeek)) : c;
+    NSTimeInterval shown = mode == SFBarVideo && _pendingSeek != 0 ? MAX(0, MIN(d, c + _pendingSeek)) : c;
     CGFloat w = _barBg.bounds.size.width;
-    double frac = live ? 1 : shown / d;
-    double buf = live ? 0 : _engine.bufferedUntil / d;
+    double frac = mode == SFBarLive ? 1 : mode == SFBarVideo ? shown / d : 0;
+    double buf = mode == SFBarVideo ? _engine.bufferedUntil / d : 0;
     SFNoAnimate(^{
         self->_barFill.frame = CGRectMake(0, 0, w * frac, U(8));
         self->_barBuffer.frame = CGRectMake(0, 0, w * MIN(1, buf), U(8));
         self->_barKnob.position = CGPointMake(self->_barBg.frame.origin.x + w * frac, CGRectGetMidY(self->_barBg.frame));
-        self->_barKnob.hidden = live;
-        if (live) {
-            self->_elapsed.text = @"LIVE";
-            self->_remaining.text = @"";
-            self->_endsAt.text = @"";
-        } else {
-            self->_elapsed.text = SFFormatDuration(shown) ?: @"0:00";
-            if (shown < 1) self->_elapsed.text = @"0:00";
-            self->_remaining.text = [@"−" stringByAppendingString:SFFormatDuration(MAX(1, d - shown))];
-            self->_endsAt.text = [NSString stringWithFormat:@"Endet um %@", SFFormatClock([NSDate dateWithTimeIntervalSinceNow:d - shown])];
-        }
+        self->_barKnob.hidden = mode != SFBarVideo;
+        self->_elapsed.text = SFBarElapsedText(mode, shown);
+        self->_remaining.text = mode == SFBarVideo ? [@"−" stringByAppendingString:SFFormatDuration(MAX(1, d - shown))] : @"";
+        self->_endsAt.text = mode == SFBarVideo ? [NSString stringWithFormat:@"Endet um %@", SFFormatClock([NSDate dateWithTimeIntervalSinceNow:d - shown])] : @"";
     });
 }
 

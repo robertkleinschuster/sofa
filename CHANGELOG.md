@@ -4,6 +4,11 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## Unveröffentlicht
+
+- Der Player zeigt beim Laden eines Videos nicht mehr fälschlich „LIVE“ unten links; „LIVE“ steht
+  nur noch bei echten Livestreams.
+
 ## 0.3.11
 
 - **Puffer und Download sind eins.** Was du anschaust, bleibt eine Weile auf der Platte: Verlässt du
