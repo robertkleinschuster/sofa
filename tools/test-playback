@@ -42,7 +42,7 @@
 #      media) a YouTube live plays through the engine's HLS playlist
 #
 #   tools/test-playback            all checks: two parts side by side, each in its own dev instance
-#                                  (part a: 1-7b, 8c, 8b, 8d; part b: 8 and the opt-in ones - they wait
+#                                  (part a: 1-7, 8c, 8b, 8d; part b: 8, 7b and the opt-in ones - they wait
 #                                  for playback, not for the CPU)
 #   PLAYTEST_PART=a|b              one part only (in this process)
 #   PLAYTEST_INSTANCE=x            own dev instance (parallel runs)
@@ -127,6 +127,33 @@ cleanup() {
 }
 trap cleanup EXIT
 SQL=/opt/local/bin/sqlite3; sqlite3() { "$SQL" "$@"; }
+
+# Stall server (sections 7, 7b): serves the first bytes of the file (600 KB or the 3rd argument), then keeps the
+# connection open without data
+cat > "$T/stall.py" <<'PY'
+import http.server, sys, time, os
+F = sys.argv[1]
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        size = os.path.getsize(F)
+        self.send_response(200); self.send_header("Content-Length", str(size)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
+        with open(F, "rb") as f: self.wfile.write(f.read(int(sys.argv[3]) if len(sys.argv) > 3 else 600000))
+        self.wfile.flush(); time.sleep(600)
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)   # a free port, written once listening
+with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
+os.rename(sys.argv[2] + ".tmp", sys.argv[2])
+s.serve_forever()
+PY
+# serve FILE [BYTES]: start it on a free port (SPORT) and wait (bounded) until it listens before the
+# app asks: under test-all's load python took longer than 4 s once and the play hit "connection
+# refused". (Fixed ports collided with a leftover server once: 7b got the other's 600 KB.)
+serve() {
+  local pf="$T/stall.port.$$.$RANDOM"
+  /opt/local/bin/python3.14 -I "$T/stall.py" "$1" "$pf" ${2:+"$2"} & SRV=$!
+  for i in $(seq 1 150); do [ -s "$pf" ] && { SPORT=$(cat "$pf"); return 0; }; sleep 0.1; done
+  SPORT=0; bad "stall server not listening after 15 s"
+}
 
 if want a; then
 echo "==> 1. playback right after launch"
@@ -241,47 +268,14 @@ since $m | grep -q 'player: sub track .* kept across the reopen' && since $m | g
 stop
 
 echo "==> 7. stream stops delivering -> stall watchdog"
-# HTTP server: serves the first 600 KB of the file, then keeps the connection open without data
-cat > "$T/stall.py" <<'PY'
-import http.server, sys, time, os
-F = sys.argv[1]
-class H(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-    def do_GET(self):
-        size = os.path.getsize(F)
-        self.send_response(200); self.send_header("Content-Length", str(size)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
-        with open(F, "rb") as f: self.wfile.write(f.read(600000))
-        self.wfile.flush(); time.sleep(600)
-http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
-PY
-# start it and wait (bounded) until it listens before the app asks: under test-all's load python
-# took longer than 4 s once and the play hit "connection refused"
-serve() {
-  /opt/local/bin/python3.14 -I "$T/stall.py" "$1" "$2" & SRV=$!
-  for i in $(seq 1 150); do nc -z 127.0.0.1 "$2" >/dev/null 2>&1 && return 0; sleep 0.1; done
-  bad "stall server on port $2 not listening after 15 s"
-}
-serve "$T/local.mp4" 47981
+serve "$T/local.mp4"
 start
-m=$(mark); cmd "play http://127.0.0.1:47981/stall.mp4"; sleep 0.3; cmd "key play"   # Play/Pause while it loads
+m=$(mark); cmd "play http://127.0.0.1:$SPORT/stall.mp4"; sleep 0.3; cmd "key play"   # Play/Pause while it loads
 waitlog $m 'player: pause while loading' 20 && ok "Play/Pause while loading: starts paused" || bad "Play/Pause while loading lost: $(since $m | grep 'player:' | tail -2)"
 for i in $(seq 1 60); do since $m | grep -q 'no progress for\|player: failed' && break; sleep 0.5; done
 since $m | grep -q 'mpv: no progress for 6 s' && ok "stall detected (although the open is paused)" || bad "stall not detected: $(since $m | grep 'player:\|mpv:' | tail -3)"
 for i in $(seq 1 80); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # incl. the reopen's own stall
 since $m | grep -q 'player: failed' && ok "fallback chain ended in a readable failure" || bad "no final failure after the stall"
-kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
-stop
-
-echo "==> 7b. stream breaks off after playback began -> one reopen, then a message"
-# the same server with a file whose index comes first: it plays a few seconds, then stops delivering
-"$FF" -hide_banner -loglevel error -y -i "$T/local.mp4" -c copy -movflags +faststart "$T/fast.mp4"
-serve "$T/fast.mp4" 47982
-start
-m=$(mark); cmd "play http://127.0.0.1:47982/fast.mp4"
-for i in $(seq 1 120); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # play, stall, reopen, play, stall
-since $m | grep -q 'mpv: first frame' && ok "played before breaking off" || bad "never played: $(since $m | grep 'player:\|mpv:' | tail -3 | tr '\n' '|')"
-[ "$(since $m | grep -c 'player: stream failed (.*) - reopening at')" = 1 ] && ok "reopened once" || bad "reopens: $(since $m | grep -c 'reopening at') - $(since $m | grep 'player:\|mpv: no progress\|mpv: first' | tail -4 | tr '\n' '|')"
-since $m | grep -q 'player: failed - the stream broke again right after reopening' && ok "then a message instead of a loop" || bad "no final message"
 kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
 stop
 
@@ -343,6 +337,21 @@ m2=$(mark); cmd "key menu"; waitlog $m2 'player: end -> leaving' 12 && ok "leavi
 stop
 unset SOFA_OFFLINE
 
+echo "==> 7b. stream breaks off after playback began -> one reopen, then a message"
+# the same server with a file whose index comes first: it plays a few seconds, then stops delivering
+# (160 KB = the index + ~6 s at the test video's 180 kbit/s; 600 KB played 27 s of it - 50 s for this check)
+"$FF" -hide_banner -loglevel error -y -i "$T/local.mp4" -c copy -movflags +faststart "$T/fast.mp4"
+serve "$T/fast.mp4" 160000
+start
+m=$(mark); cmd "play http://127.0.0.1:$SPORT/fast.mp4"
+for i in $(seq 1 120); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # play, stall, reopen, play, stall
+since $m | grep -q 'mpv: first frame' && ok "played before breaking off" || bad "never played: $(since $m | grep 'player:\|mpv:' | tail -3 | tr '\n' '|')"
+[ "$(since $m | grep -c 'player: stream failed (.*) - reopening at')" = 1 ] && ok "reopened once" || bad "reopens: $(since $m | grep -c 'reopening at') - $(since $m | grep 'player:\|mpv: no progress\|mpv: first' | tail -4 | tr '\n' '|')"
+since $m | grep -q 'player: failed - the stream broke again right after reopening' && ok "then a message instead of a loop" || bad "no final message"
+kill $SRV 2>/dev/null; wait $SRV 2>/dev/null
+stop
+
+
 fi   # part b
 if want a; then   # (balances the parts: 8c and 8b run after 7)
 echo "==> 8c. a phone queue: watch pages only for the playing and the next video"
@@ -397,11 +406,15 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(data[a:first + 4]); self.wfile.flush(); time.sleep(LATE); a = first + 4
             self.wfile.write(data[a:b])
         except (BrokenPipeError, ConnectionResetError): pass
-http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)   # a free port, written once listening
+with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
+os.rename(sys.argv[2] + ".tmp", sys.argv[2])
+s.serve_forever()
 PY
-/opt/local/bin/python3.14 -I "$T/dash.py" "$T" 47983 > "$T/dash.log" 2>&1 & SRV=$!
-for i in $(seq 1 150); do nc -z 127.0.0.1 47983 >/dev/null 2>&1 && break; sleep 0.1; done
-export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:47983/dash-v.webm SOFA_EXAMPLE_AUDIO=http://127.0.0.1:47983/dash-a.webm
+/opt/local/bin/python3.14 -I "$T/dash.py" "$T" "$T/dash.port" > "$T/dash.log" 2>&1 & SRV=$!
+for i in $(seq 1 150); do [ -s "$T/dash.port" ] && break; sleep 0.1; done
+DPORT=$(cat "$T/dash.port" 2>/dev/null)
+export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$DPORT/dash-v.webm SOFA_EXAMPLE_AUDIO=http://127.0.0.1:$DPORT/dash-a.webm
 start
 t0=$(date +%s); m=$(mark); cmd "play example:2 at 30"; waitlog $m 'mpv: first frame' 60; t1=$(date +%s)
 since $m | grep -q 'mpv: first frame' && [ $((t1 - t0)) -lt 6 ] && ok "first frame after $((t1 - t0)) s (the late start of the audio was not waited for)" ||
