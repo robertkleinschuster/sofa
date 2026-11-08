@@ -141,13 +141,13 @@ NSString *const SFDRMNotice = @"Kopiergeschützt (DRM) – auf diesem Mac nicht 
     return i;
 }
 
-static NSString *(^gLocalLookup)(NSString *);
-void SFSetLocalFileLookup(NSString *(^lookup)(NSString *)) { gLocalLookup = [lookup copy]; }
+static NSURL *(^gLocalLookup)(NSString *);
+void SFSetLocalCopyLookup(NSURL *(^lookup)(NSString *)) { gLocalLookup = [lookup copy]; }
 
 - (void)resolveURL:(SFURLDone)done {
     void (^main)(NSURL *, NSError *) = ^(NSURL *u, NSError *e) { SFMain(^{ done(u, e); }); };
-    NSString *offline = (!self.localPath && !self.streamOnly && gLocalLookup && self.identifier) ? gLocalLookup(self.identifier) : nil;
-    if (offline) { main([NSURL fileURLWithPath:offline], nil); return; }
+    NSURL *local = (!self.localPath && !self.streamOnly && gLocalLookup && self.identifier) ? gLocalLookup(self.identifier) : nil;
+    if (local) { main(local, nil); return; }
     if (self.localPath) {
         if ([[NSFileManager defaultManager] fileExistsAtPath:self.localPath]) {
             main([NSURL fileURLWithPath:self.localPath], nil);

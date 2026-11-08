@@ -2,6 +2,8 @@
 // the queue and ffmpeg run: SFDownloads+Worker.m. Subscriptions: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
 #import "SFMediaStore.h"
+#import "SFMediaProxy.h"
+#import "SFEngine.h"
 #import <signal.h>
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
@@ -65,7 +67,7 @@ static NSString *ffmpegPath(void) {
         self.storePinned = pinned;
         SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
         __weak SFDownloads *ws = self;
-        SFSetLocalFileLookup(^NSString *(NSString *ident) { return [ws fileFor:ident]; });
+        SFSetLocalCopyLookup(^NSURL *(NSString *ident) { return [ws localCopyOf:ident]; });
     }
     return self;
 }
@@ -175,6 +177,18 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 - (NSString *)fileFor:(NSString *)identifier {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
     return r.state == SFDLDone && !r.inStore && [self hasContent:r] ? r.path : nil;
+}
+
+// What plays without the source: a downloaded file, or a file item complete in the media store (its
+// stored subtitles go along as the player's source). YouTube items answer for themselves (their stored
+// sessions, SFYTEngine+Store.m) - the proxy only serves file items.
+- (NSURL *)localCopyOf:(NSString *)ident {
+    NSString *file = [self fileFor:ident];
+    if (file) return [NSURL fileURLWithPath:file];
+    NSArray *subs = nil;
+    NSURL *stored = [[SFMediaProxy shared] storedURLFor:ident subs:&subs];
+    if (stored) SFSetMPVSource(stored, @{@"subs": subs ?: @[], @"stored": @YES});
+    return stored;
 }
 
 - (SFItem *)itemFromRec:(SFDownloadRecord *)r {

@@ -6,6 +6,8 @@
 #import "SFHostFetch.h"
 #import "SFDownloadBudget.h"
 #import "SFMediaStore.h"
+#import "SFMediaProxy.h"
+#import "SFEngine.h"
 #import <signal.h>
 
 @implementation SFDownloads (Worker)
@@ -45,15 +47,19 @@
     }
     Class<SFApp> app = [SFAppRegistry appForItem:item];
     BOOL fills = [app respondsToSelector:@selector(fillItem:progress:done:)];
-    NSString *ff = fills ? nil : [SFDownloads ffmpegToolPath];
-    if (!fills && !ff) { SFLog(@"downloads: ffmpeg missing"); return; }
+    NSString *ff = fills ? nil : [SFDownloads ffmpegToolPath];   // (a progressive file fills without it)
     _runningID = r.identifier;
     [self noteStartOf:[self sourceOf:r] at:now subscription:r.sub != nil];
     _resumeID = nil;
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
     [self changed:_runningID];
-    if (fills) { [self runFill:app rec:r item:item]; return; }
+    if (fills) {
+        [self runFill:^dispatch_block_t(void (^progress)(double), void (^done)(NSDictionary *, NSError *)) {
+            return [app fillItem:item progress:progress done:done];
+        } rec:r item:item];
+        return;
+    }
     NSString *ident = _runningID;
     BOOL custom = [app respondsToSelector:@selector(downloadSourceForItem:done:)];
     SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSDictionary *info, NSError *e) {
@@ -61,6 +67,15 @@
             if (![ident isEqualToString:self->_runningID]) return;
             if (!url) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Kein Stream"]; return; }
             [self notePublished:info rec:r item:item];
+            if (!audio && [SFMediaProxy canServe:url]) {   // a progressive file: into the media store
+                NSArray *subs = SFMPVSourceFor(url)[@"subs"];
+                [self runFill:^dispatch_block_t(void (^progress)(double), void (^done)(NSDictionary *, NSError *)) {
+                    return [[SFMediaProxy shared] fill:url item:ident subs:subs duration:item.duration progress:progress
+                                                  done:^(NSError *e) { done(e ? nil : @{}, e); }];
+                } rec:r item:item];
+                return;
+            }
+            if (!ff) { [self finish:ident ok:NO error:@"ffmpeg fehlt"]; return; }
             [self runFFmpeg:ff url:url audio:audio rec:r item:item];
         });
     };
@@ -77,19 +92,21 @@
     [self save:r];
 }
 
-// A media store download: the app fills the item's tracks; the record keeps no file, its size is the
-// store's. Pinned while pending and once done (storePinned), so eviction never takes it.
-- (void)runFill:(Class<SFApp>)app rec:(SFDownloadRecord *)r item:(SFItem *)item {
+// A media store download: the app (fillItem:) or the media proxy (a source's progressive file) fills
+// the item's tracks; the record keeps no file, its size is the store's. Pinned while pending and once
+// done (storePinned), so eviction never takes it.
+- (void)runFill:(dispatch_block_t (^)(void (^progress)(double), void (^done)(NSDictionary *info, NSError *e)))start
+            rec:(SFDownloadRecord *)r item:(SFItem *)item {
     NSString *ident = r.identifier;
     if (!r.inStore) { r.inStore = YES; [self save:r]; }   // its kind from the start (pinned, not retired)
     __block NSDate *lastUI = [NSDate distantPast];
-    _fillCancel = [app fillItem:item progress:^(double p) {
+    _fillCancel = start(^(double p) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             r.progress = p;
             if (-[lastUI timeIntervalSinceNow] > 2) { lastUI = [NSDate date]; [self changed:ident]; }
         });
-    } done:^(NSDictionary *info, NSError *e) {
+    }, ^(NSDictionary *info, NSError *e) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             self->_fillCancel = nil;
@@ -104,7 +121,7 @@
             [self fetchThumb:item rec:r];
             [self finish:ident ok:YES error:nil];
         });
-    }];
+    });
     [self watchDiskDuringRun:YES];
     SFLog(@"downloads: loading %@ (media store)", item.title);
 }

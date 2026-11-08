@@ -343,3 +343,23 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     return r;
 }
 @end
+
+BOOL SFHTTPParseRange(NSString *h, long long total, long long *start, long long *end, BOOL *partial) {
+    *start = 0; *end = total; *partial = NO;
+    h = [h stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (![h hasPrefix:@"bytes="] || [h rangeOfString:@","].location != NSNotFound) return YES;
+    NSArray *p = [[h substringFromIndex:6] componentsSeparatedByString:@"-"];
+    if (p.count != 2) return YES;
+    NSString *a = p[0], *b = p[1];
+    if (!a.length && !b.length) return YES;
+    if (!a.length) {   // suffix: the last N bytes
+        long long n = b.longLongValue;
+        if (n <= 0) return NO;
+        *start = MAX(0, total - n);
+    } else {
+        *start = a.longLongValue;
+        if (b.length) *end = MIN(total, b.longLongValue + 1);
+    }
+    *partial = YES;
+    return *start < total && *end > *start;
+}

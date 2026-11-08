@@ -20,27 +20,6 @@
 static const NSUInteger kPiece = 1 << 20;              // bytes per engine read
 static const NSTimeInterval kReadTimeout = 120;        // a read waits for SABR; longer = the page is gone
 
-// A single "bytes=" range against `total`: NO when unsatisfiable. No header / unsupported syntax: all.
-static BOOL ParseRange(NSString *h, long long total, long long *start, long long *end, BOOL *partial) {
-    *start = 0; *end = total; *partial = NO;
-    h = [h stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    if (![h hasPrefix:@"bytes="] || [h rangeOfString:@","].location != NSNotFound) return YES;
-    NSArray *p = [[h substringFromIndex:6] componentsSeparatedByString:@"-"];
-    if (p.count != 2) return YES;
-    NSString *a = p[0], *b = p[1];
-    if (!a.length && !b.length) return YES;
-    if (!a.length) {   // suffix: the last N bytes
-        long long n = b.longLongValue;
-        if (n <= 0) return NO;
-        *start = MAX(0, total - n);
-    } else {
-        *start = a.longLongValue;
-        if (b.length) *end = MIN(total, b.longLongValue + 1);
-    }
-    *partial = YES;
-    return *start < total && *end > *start;
-}
-
 static NSString *ErrorJSON(NSError *e) {
     return [NSString stringWithFormat:@"engine: %@", e.localizedDescription];
 }
@@ -157,7 +136,7 @@ static NSString *ErrorJSON(NSError *e) {
             return;
         }
         long long start, end; BOOL partial;
-        if (!ParseRange(range, total, &start, &end, &partial)) {
+        if (!SFHTTPParseRange(range, total, &start, &end, &partial)) {
             [x begin:416 headers:@{@"Content-Range": [NSString stringWithFormat:@"bytes */%lld", total], @"Content-Length": @"0"}];
             [x finish];
             return;

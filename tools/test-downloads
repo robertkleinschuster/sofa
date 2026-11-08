@@ -19,6 +19,8 @@
 #      a file download of a filling source is retired once at start; a fill completes as a store
 #      download (no file, pinned bytes); a quit mid-fill uses no attempt and the resume fetches only
 #      the rest; tracks gone from outside are noticed at start and filled again; removal frees them
+#   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
+#      by ranges (no ffmpeg), the item then plays from the store without its source
 #   8b. pre-buffering: a subscription episode filled into the store expires (14 days, or 3 days after
 #      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
 #      episode keeps it without loading again
@@ -98,11 +100,18 @@ F = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        self.send_response(200); self.send_header("Content-Length", str(os.path.getsize(F)))
+        size = os.path.getsize(F); start, end = 0, size   # a single "bytes=a-[b]" range: 206 (the media proxy reads by ranges)
+        r = self.headers.get("Range", "")
+        if r.startswith("bytes=") and "," not in r:
+            a, _, z = r[6:].partition("-"); start = int(a or 0); end = min(size, int(z) + 1) if z else size
+            self.send_response(206); self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, size))
+        else: self.send_response(200)
+        self.send_header("Content-Length", str(end - start))
         self.send_header("Content-Type", "video/mp4"); self.end_headers()
         with open(F, "rb") as f:
-            while True:
-                b = f.read(65536)
+            f.seek(start); left = end - start
+            while left > 0:
+                b = f.read(min(65536, left)); left -= len(b)
                 if not b: break
                 try: self.wfile.write(b); self.wfile.flush()
                 except Exception: return
@@ -376,6 +385,34 @@ cmd "dlget example:1"
 for i in $(seq 1 20); do grep -q "example:1 pre-buffered -> downloaded" "$LOG" && break; sleep 0.25; done
 check "Herunterladen on a pre-buffered episode: kept, no expiry" "$(SQ "select state || '/' || store || '/' || coalesce(sub, '-') || '/' || coalesce(expires, '-') from downloads where id='example:1'")" "2/1/-/-"
 sleep 1; tail -n +$((m + 1)) "$LOG" | grep -q "example: filled example:1" && bad "it was loaded again" || ok "nothing loaded again"
+quit
+
+echo "==> 8c. a progressive file through the media proxy"
+unset SOFA_EXAMPLE_FILL; export SOFA_PROXY_LOOPBACK=1   # the Example app's file (local server) counts as a source's
+start
+cmd "dlget example:2"
+for i in $(seq 1 120); do grep -q "downloads: done example:2\|downloads: FAILED example:2" "$LOG" && break; sleep 0.25; done
+grep -q "media-proxy: filling example:2" "$LOG" && grep -q "downloads: done example:2" "$LOG" && ok "filled through the proxy" \
+  || bad "not filled: $(grep 'example:2\|media-proxy' "$LOG" | tail -3)"
+pgrep -f "ffmpeg.*example" >/dev/null && bad "an ffmpeg ran" || ok "no ffmpeg"
+SIZE=$(stat -f %z "$T/good.mp4")
+check "a store download of the whole file" "$(SQ "select state || '/' || store || '/' || bytes from downloads where id='example:2'")" "2/1/$SIZE"
+check "its manifest: a file item" "$(SS "select json_extract(json, '$.kind') || '/' || json_extract(json, '$.total') from manifests where item='example:2'")" "file/$SIZE"
+# playing (online) buffers through the proxy: what the player read is on disk afterwards
+m=$(wc -l < "$LOG")
+cmd "play example:3"
+for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
+sleep 1
+n=$(SS "select coalesce(sum(e.end - e.start), 0) from tracks t join extents e on e.track = t.id where t.item='example:3' and t.kind='file'")
+[ "${n:-0}" -gt 0 ] && ok "playback buffered through the proxy ($n bytes on disk)" || bad "nothing buffered while playing: $(SS "select group_concat(key || ' ' || kind) from tracks") / $(tail -n +$((m + 1)) "$LOG" | grep 'player\|media-proxy\|media-store\|mpv' | head -12)"
+cmd "key menu"; sleep 0.5
+# it plays from the store without its source
+kill $SRV; wait $SRV 2>/dev/null; SRV=
+m=$(wc -l < "$LOG")
+cmd "play example:2"
+for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && ok "plays from the store with its source gone" \
+  || bad "no playback from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player\|mpv' | tail -3)"
 quit
 fi   # part c
 

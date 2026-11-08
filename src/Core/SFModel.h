@@ -120,5 +120,6 @@ void SFResolveRef(NSString *ref, SFURLDone done);
 void SFResolveRefOnline(NSString *ref, SFURLDone done);
 
 NSError *SFError(NSString *msg);
-// Offline copy for a source ID (set by SFDownloads): resolveURL then plays locally.
-void SFSetLocalFileLookup(NSString *(^lookup)(NSString *identifier));
+// Local copy for a source ID (set by SFDownloads): a downloaded file, or the item complete in the media
+// store (a local URL) - resolveURL then plays it without the source.
+void SFSetLocalCopyLookup(NSURL *(^lookup)(NSString *identifier));

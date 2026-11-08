@@ -1,4 +1,5 @@
 #import "SFPlayerScreen.h"
+#import "SFMediaProxy.h"
 #import "SFSettings.h"
 #import "SFLayers.h"
 #import "SFStore.h"
@@ -304,6 +305,8 @@ static const NSTimeInterval kFailedMoveOn = 5;
     NSDictionary *src = SFMPVSourceFor(url);
     NSURL *open = url, *audio = nil;
     _openedDash = src[@"video"] != nil;   // separate video/audio tracks (YouTube SABR)
+    // a source's progressive file: through the media store (buffered on disk, docs/media-store.md)
+    if (!_openedDash && _item.identifier && [SFMediaProxy canServe:url]) open = [[SFMediaProxy shared] localURLFor:url item:_item.identifier];
     if (_openedDash) {
         open = [NSURL URLWithString:src[@"video"]];
         if (src[@"audio"]) audio = [NSURL URLWithString:src[@"audio"]];

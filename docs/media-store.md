@@ -1,6 +1,6 @@
 # Media store: buffer and download are one thing
 
-Status: agreed with the user 2026-11-08; phases 1-3 built for YouTube (buffer, download and pre-buffering are one).
+Status: agreed with the user 2026-11-08; phases 1-3 built for YouTube and the mediatheks' progressive files (ZDF, ARD, CCC); ORF's HLS follows (4b).
 
 ## What the user sees
 
@@ -102,6 +102,14 @@ store can hold; existing downloads may be deleted (no migration of old files).
    goes 3 days after it was watched at the latest (SFDownloads expirePrebuffers: at start and every
    3 h). Expired = dismissed (not fetched again), its bytes plain buffer (evicted when room is needed).
    "Behalten" keeps it; "Herunterladen" on it makes it a download (no expiry, nothing loaded again).
-4. Mediatheks through SFMediaProxy (progressive by ranges, HLS segments as tracks), then fill/pin like
-   2-3; their ffmpeg/MP4 path goes last.
+4. Mediatheks through SFMediaProxy:
+   a. Done - progressive files (ZDF, ARD, CCC): src/Library/SFMediaProxy - the player reads a local
+      URL, stored ranges come from disk, each gap from the source in one streamed range request
+      (SFCurlStream: curl for every host, backpressure from the reader); track key
+      "file:<item>:<host+path hash>:<length>", manifest kind "file" (+ subtitles as tracks). A complete
+      item plays from the store without its source (SFDownloads localCopyOf:); the download worker fills
+      generically (no ffmpeg) when an app has no fillItem: but resolves to a progressive file.
+      Loopback sources stay unproxied (local already; tests opt in with SOFA_PROXY_LOOPBACK).
+   b. HLS (ORF): SFStreamProxy's playlist rewriting moves into SFMediaProxy (segments as tracks, one
+      variant for downloads); SFStreamProxy and the ffmpeg/MP4 path go.
 5. UI: tile mark, timeline shade, "noch X MB".

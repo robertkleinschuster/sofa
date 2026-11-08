@@ -15,6 +15,14 @@ NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSDa
 void SFCurlGlobalInit(void);
 void *SFCurlNew(void);
 
+// A streamed GET of the bytes [start, end) (end < 0: to the end), redirects followed: head(status,
+// total length, type) once the answer's head is in (NO: stop), then chunk(bytes) as they arrive (NO:
+// stop; it may block - backpressure). maxRate: bytes/s (0: unlimited). Background only. NO on a
+// transport error (a stop asked for by a block is no error).
+BOOL SFCurlStream(NSString *url, long long start, long long end, long long maxRate,
+                  BOOL (^head)(NSInteger status, long long total, NSString *mime),
+                  BOOL (^chunk)(NSData *bytes), NSError **error);
+
 // Download a large file straight to disk (follows redirects, HTTP error = failure). Background only.
 BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error);
 

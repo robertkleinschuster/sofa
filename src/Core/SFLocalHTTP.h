@@ -39,6 +39,10 @@
 
 typedef void (^SFHTTPHandler)(SFHTTPExchange *x);
 
+// A single "bytes=" Range header against `total`: [start, end) and whether it was partial (206). No
+// header or an unsupported form: all of it. NO when unsatisfiable (416).
+BOOL SFHTTPParseRange(NSString *header, long long total, long long *start, long long *end, BOOL *partial);
+
 @interface SFLocalHTTP : NSObject
 // `queue` (serial) runs the handler and every callback; a request body above `maxBody` gets 413.
 - (instancetype)initWithName:(NSString *)name queue:(dispatch_queue_t)queue maxBody:(NSUInteger)maxBody
