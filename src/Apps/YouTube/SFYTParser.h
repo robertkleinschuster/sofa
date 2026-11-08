@@ -20,6 +20,7 @@ long long SFYTViewCount(NSString *s);
 // A channel tab's answer is that tab - YouTube answers a missing tab (e.g. no "Live") with "Home"
 + (BOOL)isTab:(NSString *)urlSuffix in:(id)json;
 + (NSString *)popularTokenIn:(id)videosTab;  // the videos tab's sort chip "Beliebt": continuation token
++ (NSString *)searchTypeFilter:(NSString *)label in:(id)search;   // first search answer: "Typ" filter (e.g. "Playlists") -> params
 // Watch page ("next"): related videos (no Shorts, not the video itself) and details (description,
 // channel, channelID, avatar, date) - keys only when found
 + (NSArray *)relatedIn:(id)next video:(NSString *)videoID;

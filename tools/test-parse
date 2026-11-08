@@ -5,6 +5,7 @@
 # <kind>-<name>.txt is what the parser made of them when they were recorded: one line per item
 # (SFCanonicalItem). A parser change that changes the output fails here - intended changes are
 # recorded again with --record (and the diff reviewed).
+# Plus: the YouTube search page built from its recorded answer (rows, playlists apart from videos).
 #   tools/test-parse [--record] [app]
 # Exit code 0 = all ok.
 set -u
@@ -42,6 +43,20 @@ for gz in "$SRC"/tests/fixtures/*/*.json.gz; do
   elif diff -u "$want" "$out" > "$T/$app-$n.diff"; then ok "$app/$n ($(grep -c '^item' "$out") items)"
   else bad "$app/$n differs:"; head -20 "$T/$app-$n.diff" | sed 's/^/        /'; fi
 done
+# the YouTube search page built from the recorded answer (served from the response cache, offline):
+# playlists apart from the videos, plus the tile that asks YouTube's playlist filter (user 2026-11-08)
+if [ -n "$APP" ] && { [ -z "$only" ] || [ "$only" = youtube ]; }; then
+  q="igte tu graz theorie"
+  gunzip -c "$SRC/tests/fixtures/youtube/search-query.json.gz" > "$T/search.json"
+  /opt/local/bin/sqlite3 "$SOFA_DATA_DIR/Caches/cache.db" "INSERT OR REPLACE INTO jcache (k, t, v) VALUES ('yt search {\"query\":\"$q\"}', strftime('%s','now'), CAST(readfile('$T/search.json') AS BLOB))"
+  echo "ytsearch $q" 1<>"$FIFO"
+  for i in $(seq 1 100); do grep -q "dev: ytsearch end" "$LOG" && break; sleep 0.1; done
+  row() { grep "dev: ytsearch row $1 |" "$LOG" | tail -1 | sed 's/.*| //'; }
+  pl=$(row Playlists) vids=$(row Videos)
+  [ "$(grep -c 'dev: ytsearch row' "$LOG")" = 3 ] && [ -n "$(row Kanäle)" ] && ok "search: rows Kanäle, Playlists, Videos" || bad "search rows: $(grep 'dev: ytsearch' "$LOG" | cut -c1-120 | tr '\n' '|')"
+  [ "$pl" = "ytplaylist:PLix-pC3FYrYVe8mYl_X-wqm7uvkRs3MiJ ytsearch:playlists:$q" ] && ok "search: the answer's playlist, then 'Mehr Playlists'" || bad "search playlists row: '$pl'"
+  case " $vids " in *ytplaylist:*) bad "search: a playlist among the videos" ;; *) [ "$(echo $vids | wc -w | tr -d ' ')" = 14 ] && ok "search: 14 videos, no playlist among them" || bad "search videos row: $vids" ;; esac
+fi
 echo quit 1<>"$FIFO"; dev_wait_exit $APP; APP=
 
 [ $fail = 0 ] && echo "==> test-parse ok" || echo "==> test-parse FAILED"

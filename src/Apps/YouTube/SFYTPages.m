@@ -81,23 +81,58 @@
 
 + (SFPageLoader)searchLoader:(NSString *)q {
     return ^(SFPageDone done) {
-        // the first page also returns the channels; continuation pages up to ~60 hits
+        // the first page also returns the channels and the filter dialog; continuation pages up to ~60 hits
         NSMutableArray *channels = [NSMutableArray new];
+        __block NSString *playlistFilter = nil;
         [self collect:@"search" body:@{@"query": q ?: @""} cache:600 max:60 into:[NSMutableArray new]
-                 json:^(id first) { [SFYTParser itemsIn:first continuation:NULL channels:channels]; }
+                 json:^(id first) {
+                     [SFYTParser itemsIn:first continuation:NULL channels:channels];
+                     playlistFilter = [SFYTParser searchTypeFilter:@"Playlists" in:first];
+                 }
                  done:^(NSArray *all, NSError *e) {
             if (!all) { done(nil, e); return; }
-            // keep YouTube's order (relevance); mixes (RD...) are not real playlists
-            NSMutableArray *results = [NSMutableArray new];
-            for (SFItem *i in all) if (![i.identifier hasPrefix:@"ytplaylist:RD"]) [results addObject:i];
+            // keep YouTube's order (relevance); playlists apart from the videos (user 2026-11-08), mixes
+            // (RD...) are not real playlists
+            NSMutableArray *videos = [NSMutableArray new], *playlists = [NSMutableArray new];
+            for (SFItem *i in all) {
+                if ([i.identifier hasPrefix:@"ytplaylist:RD"]) continue;
+                [([i.identifier hasPrefix:@"ytplaylist:"] ? playlists : videos) addObject:i];
+            }
+            // an answer brings few playlists (0-2 of 20): all of them are one filter away - what
+            // youtube.com's "Playlists" filter asks, only when chosen
+            if (playlistFilter) [playlists addObject:[self playlistSearchTile:q params:playlistFilter]];
             NSMutableArray *shelves = [NSMutableArray new];
             if (channels.count) [shelves addObject:[SFShelf shelf:@"Kanäle" style:SFTileStyleCircle items:[self shown:channels]]];
-            if (results.count) [shelves addObject:[SFShelf grid:@"Videos und Playlists" style:SFTileStyleLandscape items:results]];
+            if (playlists.count) [shelves addObject:[SFShelf shelf:@"Playlists" style:SFTileStyleLandscape items:playlists]];
+            if (videos.count) [shelves addObject:[SFShelf grid:@"Videos" style:SFTileStyleLandscape items:videos]];
             SFPage *p = [SFPage page:[NSString stringWithFormat:@"„%@“", q] theme:@"youtube" shelves:shelves];
-            if (!shelves.count) p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", q];
+            if (!videos.count && !channels.count && playlists.count <= 1) { p.shelves = @[]; p.emptyText = [NSString stringWithFormat:@"Keine Treffer für „%@“.", q]; }
             done(p, nil);
         }];
     };
+}
+
+// "Mehr Playlists": the search with YouTube's playlist filter (params from the answer's filter dialog)
++ (SFItem *)playlistSearchTile:(NSString *)q params:(NSString *)params {
+    SFItem *t = [SFItem new];
+    t.kind = SFItemFolder; t.source = @"youtube"; t.themeName = @"youtube";
+    t.identifier = [@"ytsearch:playlists:" stringByAppendingString:q];
+    t.title = @"Mehr Playlists";
+    t.subtitle = [NSString stringWithFormat:@"zu „%@“", q];
+    t.image = SFIconArt(@"search", @"youtube");
+    t.pageLoader = ^(SFPageDone done) {
+        [self collect:@"search" body:@{@"query": q, @"params": params} cache:600 max:60 into:[NSMutableArray new] json:nil
+                 done:^(NSArray *all, NSError *e) {
+            if (!all) { done(nil, e); return; }
+            NSMutableArray *playlists = [NSMutableArray new];
+            for (SFItem *i in all) if ([i.identifier hasPrefix:@"ytplaylist:"] && ![i.identifier hasPrefix:@"ytplaylist:RD"]) [playlists addObject:i];
+            SFPage *p = [SFPage page:[NSString stringWithFormat:@"Playlists zu „%@“", q] theme:@"youtube"
+                             shelves:playlists.count ? @[[SFShelf grid:@"Playlists" style:SFTileStyleLandscape items:playlists]] : @[]];
+            if (!playlists.count) p.emptyText = [NSString stringWithFormat:@"Keine Playlists zu „%@“.", q];
+            done(p, nil);
+        }];
+    };
+    return t;
 }
 
 // what youtube.com's search box shows while typing - asked by the engine, in its browser identity

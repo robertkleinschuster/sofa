@@ -290,6 +290,13 @@ live: `badges[].metadataBadgeRenderer.label == "LIVE"`, viewCountText = "3.757 Z
 { "continuation": "<token>" }                            // next page
 ```
 (`params` values are sent URL-encoded exactly like this – verified working.)
+The first answer carries them itself, as youtube.com's "Filter" button offers them:
+`header.searchHeaderRenderer.searchFilterButton.buttonRenderer.command.openPopupAction.popup
+.searchFilterOptionsDialogRenderer.groups[]` ("Typ", "Dauer", "Hochladedatum", "Eigenschaften",
+"Priorisieren") `.filters[].searchFilterRenderer{label, navigationEndpoint.searchEndpoint.params}` -
+Sofa takes the "Playlists" one from there (`SFYTParser searchTypeFilter:in:`, 2026-11-08: the same
+`EgIQAw%3D%3D`). An unfiltered answer brings 0-2 playlists per 20 results (plus "courses",
+`LOCKUP_CONTENT_TYPE_COURSE`, not shown yet).
 
 Response (first page, 0.7 s, ~540 KB):
 ```

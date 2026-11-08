@@ -297,6 +297,22 @@ static NSSet *skipKeys(void) {
     return nil;
 }
 
+// The search answer's own filter dialog (as youtube.com's "Filter" button opens it): a filter of the
+// "Typ" group by its label - the labels are the only identification, German for our hl=de
+// (SFYTCall) - -> its searchEndpoint params (what a click sends, docs/youtube.md §3.1).
++ (NSString *)searchTypeFilter:(NSString *)label in:(id)j {
+    NSDictionary *dialog = dict(SFYTPath(j, @"header.searchHeaderRenderer.searchFilterButton.buttonRenderer.command.openPopupAction.popup.searchFilterOptionsDialogRenderer"));
+    for (id g in arr(dialog[@"groups"])) {
+        NSDictionary *group = dict(dict(g)[@"searchFilterGroupRenderer"]);
+        if (![SFYTText(group[@"title"]) isEqualToString:@"Typ"]) continue;
+        for (id f in arr(group[@"filters"])) {
+            NSDictionary *filter = dict(dict(f)[@"searchFilterRenderer"]);
+            if ([SFYTText(filter[@"label"]) isEqualToString:label]) return str(SFYTPath(filter, @"navigationEndpoint.searchEndpoint.params"));
+        }
+    }
+    return nil;
+}
+
 #pragma mark Watch page (docs/youtube.md §3.4)
 
 + (NSArray *)relatedIn:(id)j video:(NSString *)vid {

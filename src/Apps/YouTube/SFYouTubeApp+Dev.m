@@ -23,6 +23,10 @@
             [o addObject:[NSString stringWithFormat:@"%@ %@", k, [h[k] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]]];
     }
     else if ([kind isEqualToString:@"list"]) items = [SFYTParser itemsIn:j continuation:&cont channels:channels];
+    else if ([kind isEqualToString:@"search"]) {   // a first search answer: results + the playlist filter it offers
+        items = [SFYTParser itemsIn:j continuation:&cont channels:channels];
+        [o addObject:[NSString stringWithFormat:@"filter playlists %@", [SFYTParser searchTypeFilter:@"Playlists" in:j] ?: @"none"]];
+    }
     else return nil;
     for (SFItem *i in items) [o addObject:[@"item " stringByAppendingString:SFCanonicalItem(i, YES)]];
     for (SFItem *c in channels) [o addObject:[@"channel " stringByAppendingString:SFCanonicalItem(c, YES)]];
@@ -39,6 +43,15 @@
         NSArray *pt = [[arg substringFromIndex:10] componentsSeparatedByString:@"|"];
         f.pageLoader = [SFYTPages channelLoader:pt[0] title:pt.count > 1 ? pt[1] : @"Kanal"];
         SFOpenItem(nav, f, nil, 0);
+    } else if ([cmd isEqualToString:@"ytsearch"] && arg) {   // the search results page's rows: ytsearch <query>
+        [SFYTPages searchLoader:arg](^(SFPage *p, NSError *e) {
+            for (SFShelf *sh in p.shelves) {
+                NSMutableArray *ids = [NSMutableArray new];
+                for (SFItem *i in sh.items) [ids addObject:i.identifier ?: @"?"];
+                SFLog(@"dev: ytsearch row %@ | %lu | %@", sh.title, (unsigned long)sh.items.count, [ids componentsJoinedByString:@" "]);
+            }
+            SFLog(@"dev: ytsearch end%@", e ? [@" " stringByAppendingString:e.localizedDescription] : p.emptyText ? [@" " stringByAppendingString:p.emptyText] : @"");
+        });
     } else if ([cmd isEqualToString:@"open"] && [arg hasPrefix:@"yt:"]) {   // play a video from the start (startup tests)
         SFItem *it = [SFYTPages itemForVideoID:[arg substringFromIndex:3] title:nil thumb:nil];
         [SFYTWatch fillDetails:it done:^{
