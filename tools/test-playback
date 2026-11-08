@@ -318,6 +318,9 @@ cmd "key play"
 m=$(mark); waitlog $m 'endscreen: shown at' 60; cmd "key down"; sleep 0.4; cmd "key select"
 waitlog $m 'player: play endvid.mp4' && ok "OK on a video tile plays it" || bad "video tile did not play: $(since $m | grep 'endscreen\|player:' | tail -2)"
 m=$(mark); cmd "playlist $T/local.mp4"; waitlog $m 'player: play local.mp4'; cmd "endscreen $ES"; waitlog $m 'endscreen: 3 tiles' 
+# the jump only once the file is loaded: a time-pos set right after the play (25 ms) is ignored by
+# mpv - the video ran on from 2 s and the end never came (test-all flake 2026-11-08)
+waitlog $m 'mpv: first frame' 40
 cmd "mpvset time-pos 85"   # ~5 s before the end
 # DOWN only once the jump has landed: the tiles stay up from 2 s to the end, so under load (the
 # video past 2 s before the jump) no new "shown at" line comes - DOWN went in at 2 s and the end
