@@ -1,4 +1,5 @@
 #import "SFMediaStore.h"
+#import <pthread.h>
 #import "SFCore.h"
 #import <sqlite3.h>
 #include <fcntl.h>
@@ -24,7 +25,12 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     sqlite3 *_db;
     NSString *_dir;
     NSMutableDictionary *_tracks;   // key -> SFMediaTrack
-    long long _bytes, _sinceEvict;
+    long long _sinceEvict;
+    // byte sums, written on _q (account:delta:), read from any thread without waiting for _q (tiles,
+    // the storage guard: the queue may be busy with disk I/O)
+    pthread_mutex_t _sumLock;
+    long long _bytes;
+    NSMutableDictionary *_itemBytes;   // item -> NSNumber
 }
 
 - (instancetype)initWithDirectory:(NSString *)dir {
@@ -32,6 +38,8 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         _dir = [dir copy];
         _q = dispatch_queue_create("sofa.media-store", DISPATCH_QUEUE_SERIAL);
         _tracks = [NSMutableDictionary new];
+        _itemBytes = [NSMutableDictionary new];
+        pthread_mutex_init(&_sumLock, NULL);
         NSString *d = _dir;
         self.freeSpace = ^long long {
             return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:d error:nil][NSFileSystemFreeSize] longLongValue];
@@ -40,6 +48,18 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         dispatch_async(_q, ^{ [self checkBlocks]; });   // after open, before anything queued later
     }
     return self;
+}
+
+- (void)dealloc { pthread_mutex_destroy(&_sumLock); }
+
+// on _q: a track's stored bytes changed by d
+- (void)account:(SFMediaTrack *)t delta:(long long)d {
+    if (!d) return;
+    pthread_mutex_lock(&_sumLock);
+    _bytes += d;
+    long long n = [_itemBytes[t.item] longLongValue] + d;
+    if (n > 0) _itemBytes[t.item] = @(n); else [_itemBytes removeObjectForKey:t.item];
+    pthread_mutex_unlock(&_sumLock);
 }
 
 #pragma mark Database (on _q)
@@ -118,8 +138,8 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         }
         sqlite3_finalize(st);
     }
-    for (SFMediaTrack *t in _tracks.allValues) _bytes += t.extents.bytes;
-    if (_tracks.count) SFLog(@"media-store: %lu tracks, %.0f MB", (unsigned long)_tracks.count, _bytes / 1048576.0);
+    for (SFMediaTrack *t in _tracks.allValues) [self account:t delta:t.extents.bytes];
+    if (_tracks.count) SFLog(@"media-store: %lu tracks, %.0f MB", (unsigned long)_tracks.count, self.bytes / 1048576.0);
 }
 
 - (void)saveExtents:(SFMediaTrack *)t {
@@ -151,7 +171,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         }
         if (!gone.bytes) continue;
         for (NSArray *r in gone.ranges) [t.extents removeStart:[r[0] longLongValue] end:[r[1] longLongValue]];
-        _bytes -= gone.bytes;
+        [self account:t delta:-gone.bytes];
         [self saveExtents:t];
         fixed++;
         SFLog(@"media-store: %@ - %.1f MB of its blocks missing on disk, dropped from the index", t.key, gone.bytes / 1048576.0);
@@ -194,7 +214,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 - (void)removeTrack:(SFMediaTrack *)t {
     [[NSFileManager defaultManager] removeItemAtPath:[[self blockPath:t block:0] stringByDeletingLastPathComponent] error:nil];
     [self run:@"DELETE FROM tracks WHERE id = ?" args:@[@(t.rowid)]];   // (its extents cascade)
-    _bytes -= t.extents.bytes;
+    [self account:t delta:-t.extents.bytes];
     [_tracks removeObjectForKey:t.key];
 }
 
@@ -211,7 +231,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
             SFLog(@"media-store: %@ [%lld, %lld) missing on disk - dropped from the index", key, start, end);
             long long before = t.extents.bytes;
             [t.extents removeStart:start end:end];
-            self->_bytes -= before - t.extents.bytes;
+            [self account:t delta:t.extents.bytes - before];
             [self saveExtents:t];
             return;
         }
@@ -245,7 +265,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         if (![self writeTrack:t data:data at:start]) return;
         long long before = t.extents.bytes;
         [t.extents addStart:start end:start + (long long)data.length];
-        self->_bytes += t.extents.bytes - before;
+        [self account:t delta:t.extents.bytes - before];
         t.used = now;
         [self saveExtents:t];
         self->_sinceEvict += (long long)data.length;
@@ -260,8 +280,10 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 - (long long)bytesOfItem:(NSString *)item {
-    __block long long n = 0;
-    dispatch_sync(_q, ^{ for (SFMediaTrack *t in self->_tracks.allValues) if ([t.item isEqualToString:item]) n += t.extents.bytes; });
+    if (!item) return 0;
+    pthread_mutex_lock(&_sumLock);
+    long long n = [_itemBytes[item] longLongValue];
+    pthread_mutex_unlock(&_sumLock);
     return n;
 }
 
@@ -303,6 +325,20 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     return [req isKindOfClass:[NSArray class]] && [self hasComplete:req];
 }
 
+- (long long)missingBytesOf:(NSString *)item {
+    NSArray *req = [self manifestOf:item][@"required"];
+    if (![req isKindOfClass:[NSArray class]] || !req.count) return -1;
+    __block long long missing = 0;
+    dispatch_sync(_q, ^{
+        for (NSString *k in req) {
+            SFMediaTrack *t = self->_tracks[k];
+            if (!t || t.total <= 0) { missing = -1; return; }
+            for (NSArray *g in [t.extents missingFrom:0 to:t.total]) missing += [g[1] longLongValue] - [g[0] longLongValue];
+        }
+    });
+    return missing;
+}
+
 - (BOOL)hasComplete:(NSArray *)keys {
     __block BOOL ok = keys.count > 0;
     dispatch_sync(_q, ^{
@@ -315,8 +351,9 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 - (long long)bytes {
-    __block long long n = 0;
-    dispatch_sync(_q, ^{ n = self->_bytes; });
+    pthread_mutex_lock(&_sumLock);
+    long long n = _bytes;
+    pthread_mutex_unlock(&_sumLock);
     return n;
 }
 

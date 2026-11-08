@@ -36,8 +36,12 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 // Single items
 - (SFDLState)stateFor:(NSString *)identifier progress:(double *)progress;
 - (BOOL)willRetry:(NSString *)identifier;   // failed subscription episode, another attempt follows
+- (BOOL)isPrebuffered:(NSString *)identifier;   // a subscription episode filled for a while (expires), not a download the user keeps
 - (SFItem *)itemFor:(NSString *)identifier;      // downloaded content as an item (local)
 - (void)download:(SFItem *)item;
+// The same, and what to tell the user (main queue): what is still missing when part of it is on disk
+// already ("noch 340 MB"), or that nothing is (docs/media-store.md)
+- (void)download:(SFItem *)item told:(void (^)(NSString *message))told;
 - (void)remove:(NSString *)identifier;           // cancel, or delete it (its tracks leave the store)
 - (NSArray *)items:(NSString *)source;           // finished downloads (SFItem, newest first); nil = all
 - (NSArray *)active;                             // running/waiting (SFItem)

@@ -11,8 +11,9 @@
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
 #   8. media store downloads (the Example app fills like YouTube, SOFA_EXAMPLE_FILL): a fill completes
-#      as a download (pinned bytes); a quit mid-fill uses no attempt and the resume fetches only the
-#      rest; tracks gone from outside are noticed at start and filled again; removal frees them
+#      as a download (pinned bytes); a quit mid-fill uses no attempt; a partly loaded video's tile says
+#      "geladen" and "Herunterladen" says what is missing ("noch X MB"), the fill fetches only the rest;
+#      tracks gone from outside are noticed at start and filled again; removal frees them
 #   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
 #      by ranges (no ffmpeg); it plays from the store, "Online abspielen" (info panel) switches to the
 #      source, and it plays from the store without its source
@@ -234,10 +235,21 @@ cmd "dlget $REF"
 for i in $(seq 1 40); do grep -q "example: filled $REF piece 2" "$LOG" && break; sleep 0.25; done
 cmd updatequit; dev_wait_exit $APP; APP=
 check "quit mid-fill: still running, no attempt used" "$(SQ "select state || '/' || tries from downloads where id='$REF'")" "1/0"
+# the download given up meanwhile: its pieces stay as buffer (a tile says "geladen"), and
+# "Herunterladen" again says what is still missing
+SQ "delete from downloads where id='$REF'"
 start
+chip() { m=$(wc -l < "$LOG"); cmd "chip $1"; for i in $(seq 1 20); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: chip $1 = " && break; sleep 0.1; done
+         tail -n +$((m + 1)) "$LOG" | sed -n "s/.*dev: chip $1 = //p" | tail -1; }
+check "a partly loaded video: its tile says geladen" "$(chip $REF)" "geladen"
+cmd "dlget $REF"
+for i in $(seq 1 40); do grep -q "dev: download $REF - " "$LOG" && break; sleep 0.25; done
+grep -q "dev: download $REF - Wird heruntergeladen – noch [1-7] MB, der Rest ist schon geladen" "$LOG" && ok "Herunterladen on a partly loaded video says what is missing" \
+  || bad "no missing size: $(grep "dev: download $REF" "$LOG")"
 for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0.25; done
 grep -q "downloads: done $REF" "$LOG" && ok "fill resumed and finished" || bad "fill not finished: $(grep "$REF\|downloads" "$LOG" | tail -3)"
 grep -q "example: filled $REF piece 0" "$LOG" && bad "the resume fetched stored pieces again" || ok "the resume fetched only the rest"
+check "a download: its tile has the download mark" "$(chip $REF)" "↓ Offline"
 check "done, its bytes" "$(SQ "select state || '/' || bytes from downloads where id='$REF'")" "2/8388608"
 check "its track in the store, complete" "$(SS "select count(*) || '/' || sum(e.end - e.start) from tracks t join extents e on e.track = t.id where t.item='$REF'")" "1/8388608"
 quit
@@ -265,6 +277,7 @@ for i in $(seq 1 80); do [ "$(grep -c 'downloads: done example:[34]' "$LOG")" -g
 check "subscription episodes pre-buffered: expiry in 14 days" \
   "$(SQ "select group_concat(id || '=' || (abs(expires - strftime('%s','now') - 14*86400) < 120), ' ') from (select * from downloads where id in ('example:3','example:4') order by id)")" \
   "example:3=1 example:4=1"
+check "a pre-buffered episode: its tile says geladen, not downloaded" "$(chip example:3)" "geladen"
 quit
 # example:3 past its expiry; example:4 watched four days ago (3 days after watching)
 SQ "update downloads set expires = strftime('%s','now') - 1 where id='example:3';
@@ -275,6 +288,7 @@ grep -q "pre-buffered example:3 expired (not watched in time)" "$LOG" && grep -q
   && ok "expired: past the 14 days, and 3 days after watching" || bad "not expired: $(grep 'pre-buffered\|example:[34]' "$LOG" | tail -3)"
 check "expired: dismissed (not fetched again), bytes left as buffer" \
   "$(SQ "select group_concat(state, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4 4/2"
+check "expired: its tile still says geladen (the bytes are there)" "$(chip example:3)" "geladen"
 # "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
 SQ "insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
     insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"

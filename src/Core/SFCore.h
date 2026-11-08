@@ -40,6 +40,7 @@ NSString *SFFormatDuration(NSTimeInterval secs);   // 1:02:03 / 4:05
 // a date without a time is local midnight (a calendar day). nil when unparseable. Thread-safe.
 NSDate *SFDateFromISO8601(NSString *s);
 NSString *SFFormatClock(NSDate *d);                // "18:05" (main thread)
+NSString *SFFormatBytes(unsigned long long b);      // "340 MB", "12 GB" (decimal, as Finder)
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
 // channel or date never leaves a dangling separator). Usage: SFDotJoin(channel, date, state)

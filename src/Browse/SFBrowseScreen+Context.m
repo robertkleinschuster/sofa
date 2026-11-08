@@ -67,7 +67,7 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
                     }]];
                 }
             } else if (it.resolverRef || it.resolver) {
-                [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it]; [nav toast:@"Wird heruntergeladen – auch offline verfügbar"]; }]];
+                [opts addObject:[SFMenuOption option:@"Herunterladen" action:^{ [dl download:it told:^(NSString *m) { [nav toast:m]; }]; }]];
             }
         }
         if (it.kind == SFItemVideo && !it.drm) {

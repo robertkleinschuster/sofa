@@ -18,6 +18,7 @@
 #import "SFPlayerScreen.h"
 #import "SFLayers.h"
 #import "SFRuntime.h"
+#import "SFTileStatus.h"
 #import "SFSettings.h"
 #import "SFUpdater.h"
 #import <ImageIO/ImageIO.h>
@@ -183,7 +184,11 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
     } else if ([cmd isEqualToString:@"dlget"] && arg) {     // Dev: download a resolver ref (orf:…) like the context menu
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
-        [[SFDownloads shared] download:it];
+        [[SFDownloads shared] download:it told:^(NSString *m) { SFLog(@"dev: download %@ - %@", arg, m); }];
+    } else if ([cmd isEqualToString:@"chip"] && arg) {      // Dev: the status chip a tile of this item shows
+        SFItem *it = [SFItem new];
+        it.kind = SFItemVideo; it.identifier = arg;
+        SFLog(@"dev: chip %@ = %@", arg, [[SFTileStatus new] chipTextForItem:it] ?: @"-");
     } else if ([cmd isEqualToString:@"dlremove"] && arg) {  // Dev: delete a download like the context menu
         [[SFDownloads shared] remove:arg];
         SFLog(@"dev: removed download %@", arg);

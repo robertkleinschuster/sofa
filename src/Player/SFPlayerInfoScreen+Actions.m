@@ -120,8 +120,7 @@
             SFItem *dlItem = [it copy];
             dlItem.streamOnly = NO;
             [a addObject:[self button:@"download" title:@"Herunterladen" hero:hero action:^{
-                [dl download:dlItem];
-                [(ws.navigator ?: nav) toast:@"Wird heruntergeladen – auch offline verfügbar"];
+                [dl download:dlItem told:^(NSString *m) { [(ws.navigator ?: nav) toast:m]; }];
             }]];
         }
     }

@@ -127,6 +127,11 @@ NSString *SFFormatClock(NSDate *d) {
     return d ? [df stringFromDate:d] : @"";
 }
 
+NSString *SFFormatBytes(unsigned long long b) {
+    if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
+    return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
+}
+
 NSString *SFFormatDateShort(NSDate *d) {
     if (!d) return @"";
     NSCalendar *cal = [NSCalendar currentCalendar];

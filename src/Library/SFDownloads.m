@@ -123,6 +123,11 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     return r.state;
 }
 
+- (BOOL)isPrebuffered:(NSString *)identifier {
+    SFDownloadRecord *r = [self recOf:identifier];
+    return r.state == SFDLDone && r.expires > 0 && !r.keep;
+}
+
 - (SFDownloadRecord *)recOf:(NSString *)identifier { return identifier ? _recs[identifier] : nil; }
 
 // What plays without the source: an item complete in the media store that the media proxy serves (its
@@ -202,18 +207,13 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:p error:nil][NSFileSystemFreeSize] unsignedLongLongValue];
 }
 
-static NSString *gb(unsigned long long b) {
-    if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
-    return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
-}
-
 - (SFDownloadRecord *)recordFor:(NSString *)identifier {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
     return r.state == SFDLDone ? [r copy] : nil;
 }
 
 - (NSString *)storageSummary:(NSString *)source {
-    return [NSString stringWithFormat:@"%@ belegt · %@ frei", gb([self bytesUsedFor:source]), gb([self freeBytes])];
+    return [NSString stringWithFormat:@"%@ belegt · %@ frei", SFFormatBytes([self bytesUsedFor:source]), SFFormatBytes([self freeBytes])];
 }
 
 - (NSUInteger)removeAllOfChannel:(NSString *)channel source:(NSString *)source {
@@ -232,6 +232,23 @@ static NSString *gb(unsigned long long b) {
 #pragma mark Actions
 
 - (void)download:(SFItem *)item { [self enqueue:item sub:nil]; }
+
+- (void)download:(SFItem *)item told:(void (^)(NSString *))told {
+    NSString *ident = item.identifier;
+    BOOL wasPrebuffered = [self isPrebuffered:ident];
+    [self download:item];
+    if (wasPrebuffered) { told(@"Heruntergeladen – bleibt, bis du es löschst"); return; }
+    SFMediaStore *store = self.mediaStore;
+    if ([store bytesOfItem:ident] <= 0) { told(@"Wird heruntergeladen – auch offline verfügbar"); return; }
+    SFBackground(^{   // the manifest: the store's queue
+        long long missing = ident ? [store missingBytesOf:ident] : -1;
+        SFMain(^{
+            if (missing == 0) told(@"Heruntergeladen – war schon vollständig geladen");
+            else if (missing > 0) told([NSString stringWithFormat:@"Wird heruntergeladen – noch %@, der Rest ist schon geladen", SFFormatBytes((unsigned long long)missing)]);
+            else told(@"Wird heruntergeladen – Geladenes wird übernommen");
+        });
+    });
+}
 
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID {
     if (!item.identifier || item.kind != SFItemVideo) return NO;

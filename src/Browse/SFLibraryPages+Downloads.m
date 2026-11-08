@@ -6,10 +6,6 @@
 #import "SFMenuScreen.h"
 #import "SFPlayerScreen.h"
 
-static NSString *SFGB(unsigned long long b) {
-    if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
-    return [NSString stringWithFormat:@"%.0f GB", b / 1e9];
-}
 static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Video" : @"Videos"]; }
 
 @implementation SFLibraryPages (Downloads)
@@ -148,9 +144,9 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
         unsigned long long b = [self bytesOf:del];
         for (NSString *i in del) [dl remove:i];
         SFLog(@"downloads: Platz schaffen: %lu deleted (%@, %llu MB)", (unsigned long)del.count, what, b / 1000000ULL);
-        [nav toast:[NSString stringWithFormat:@"%@ frei", SFGB(b)]];
+        [nav toast:[NSString stringWithFormat:@"%@ frei", SFFormatBytes(b)]];
     }];
-    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"%@ freigeben?", SFGB([sp[@"bytes"] unsignedLongLongValue])]
+    SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"%@ freigeben?", SFFormatBytes([sp[@"bytes"] unsignedLongLongValue])]
                                                  subtitle:sub options:@[no, yes] theme:nav.top.theme];
     m.subtitleLines = 5;
     [nav push:m];
@@ -164,8 +160,8 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
     i.title = title;
     NSDictionary *sp = [self roomSplit:ids];
     NSUInteger pending = [sp[@"unchecked"] unsignedIntegerValue];
-    i.subtitle = [NSString stringWithFormat:@"%@ · %@%@", SFVideos(ids.count), SFGB([self bytesOf:ids]),
-                  pending ? @"" : [NSString stringWithFormat:@" · %@ löschbar", SFGB([sp[@"bytes"] unsignedLongLongValue])]];
+    i.subtitle = [NSString stringWithFormat:@"%@ · %@%@", SFVideos(ids.count), SFFormatBytes([self bytesOf:ids]),
+                  pending ? @"" : [NSString stringWithFormat:@" · %@ löschbar", SFFormatBytes([sp[@"bytes"] unsignedLongLongValue])]];
     i.plot = plot;
     i.image = SFIconArt(symbol, nil);
     i.style = SFTileStyleLandscape;   // title with count and size below the image
@@ -187,7 +183,7 @@ static const NSTimeInterval kVerifyBeforeDelete = 86400;
             SFDownloadRecord *r = [dl recordFor:i];
             if (!r) continue;
             SFItem *c = [it copy];
-            c.subtitle = SFDotJoin(c.channel, SFGB(r.bytes));
+            c.subtitle = SFDotJoin(c.channel, SFFormatBytes(r.bytes));
             if ([dl isKept:i]) { [keptItems addObject:c]; continue; }
             if ([dl onlineStateFor:i] == 0) [goneItems addObject:c];
             if ([st progressFor:i] >= 1) [watched addObject:i];
@@ -275,7 +271,7 @@ static BOOL gRoomAsked;
         dispatch_async(dispatch_get_main_queue(), ^{ SFOpenItem(nav, [SFLibraryPages roomTile], nil, 0); });
     }];
     SFMenuScreen *m = [[SFMenuScreen alloc] initWithTitle:@"Speicher fast voll"
-                                                 subtitle:[NSString stringWithFormat:@"Neue Downloads warten, bis wieder mehr als %@ frei sind. Sofa löscht nie selbst etwas – du entscheidest, was weg kann.", SFGB(dl.storageReserve)]
+                                                 subtitle:[NSString stringWithFormat:@"Neue Downloads warten, bis wieder mehr als %@ frei sind. Sofa löscht nie selbst etwas – du entscheidest, was weg kann.", SFFormatBytes(dl.storageReserve)]
                                                   options:@[room, later] theme:nav.top.theme];
     m.subtitleLines = 5;
     shown = m;

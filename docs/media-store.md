@@ -15,12 +15,12 @@ mediatheks' progressive files, ORF's HLS); the UI (5) follows.
 - The space is computed from the disk: the buffer may use the free space minus a reserve that always
   stays free; downloads count against the disk, never get evicted.
 
-## Where the bytes flow today
+## Where the bytes flow (before the store; now see the phases)
 
-- YouTube: mpv (and ffmpeg for downloads) read `http://127.0.0.1:<port>/s/<sid>/video|audio` from
+- YouTube: mpv reads `http://127.0.0.1:<port>/s/<sid>/video|audio` from
   Sofa's loopback server (`SFYTEngine+Media.m`), which asks the engine page for 1 MiB pieces; the page
   holds the SABR segments in memory (`res/sofa-yt/lib/session.ts`, capped and evicted).
-- Mediatheks: mpv plays the CDN's HLS / MP4 URLs directly; downloads run ffmpeg into an MP4.
+- Mediatheks: mpv reads the CDN's HLS / MP4 through SFMediaProxy (4a/4b); downloads fill the store.
 
 ## The design
 
@@ -119,4 +119,11 @@ store can hold; existing downloads may be deleted (no migration of old files).
       ffmpeg (no longer bundled), the verifier, repairs, orphan reaping and the ytdl-sub migration went.
       A source that neither fills (fillItem:) nor resolves to a file/HLS the proxy serves cannot be
       downloaded.
-5. UI: tile mark, timeline shade, "noch X MB".
+5. UI:
+   a. Done - tile mark: "geladen" for bytes on disk without a download the user keeps (buffer, a
+      pre-buffered episode); the download marks as before (SFTileStatus; the store's per-item byte sums
+      are readable from any thread without its queue).
+   b. Done - "Herunterladen" on a partly loaded video says what is missing ("noch 340 MB", exact from
+      the manifest's track lengths; SFMediaStore missingBytesOf:, SFDownloads download:told:).
+   c. Timeline shade of the stored ranges - open: bytes -> time needs each source's index (HLS segment
+      durations exact; WebM cues / MP4 sample tables otherwise) - no proportional guess.

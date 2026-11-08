@@ -22,7 +22,7 @@
 // length when known (0: unknown). Asynchronous; reads see the bytes once written.
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start;
 - (SFExtentSet *)extentsOf:(NSString *)key;    // a copy (empty for an unknown track)
-- (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks
+- (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks (any thread, never waits)
 - (void)removeItem:(NSString *)item;           // its tracks, bytes, index and manifest
 // An item's manifest: what playing it needs without its source - a JSON object, source-specific
 // apart from `required` (the keys of the tracks playback cannot do without). Kept while the item has bytes.
@@ -32,7 +32,10 @@
 - (BOOL)hasComplete:(NSArray *)keys;
 // the item's manifest names the tracks playing it needs (`required`: track keys) and all are complete
 - (BOOL)itemIsComplete:(NSString *)item;
-@property (nonatomic, readonly) long long bytes;   // all stored bytes
+// What its manifest's tracks still lack, in bytes; -1 = not known (no manifest, or a track whose length
+// is not known yet - an HLS segment never fetched). Waits for the store's queue: not on the main thread.
+- (long long)missingBytesOf:(NSString *)item;
+@property (nonatomic, readonly) long long bytes;   // all stored bytes (any thread, never waits)
 
 // Eviction: while the volume has less free space than `reserve`, whole items go (tracks and manifest),
 // least recently used first - never an item `isPinned` says yes to (downloads). Runs after writes by itself.

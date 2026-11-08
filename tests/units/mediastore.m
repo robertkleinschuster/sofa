@@ -101,9 +101,13 @@ int main(void) { @autoreleasepool {
     CHECK([[m manifestOf:@"yt:v2"] isEqual:man], "a manifest back as written");
     NSArray *both = @[@"yt:v2:v", @"yt:v2:a"], *withUnknown = @[@"yt:v2:v", @"yt:nope"];
     CHECK(![m hasComplete:both] && [m hasComplete:@[@"yt:v2:v"]] && ![m itemIsComplete:@"yt:v2"], "complete only when every track is whole");
+    CHECK([m missingBytesOf:@"yt:v2"] == 100 && [m missingBytesOf:@"yt:nobytes"] == -1 && [m missingBytesOf:@"yt:none"] == -1,
+          "what is still missing: exact by the tracks' lengths, unknown without them");
+    CHECK([m bytesOfItem:@"yt:v2"] == 1500 && m.bytes == 1500 && [m bytesOfItem:@"yt:none"] == 0, "byte sums per item and in all");
     [m write:Bytes(100, 9) key:@"yt:v2:a" item:@"yt:v2" kind:@"audio" total:600 at:500];
     [m sync];
     CHECK([m hasComplete:both] && ![m hasComplete:withUnknown] && ![m hasComplete:@[]], "...and then complete");
+    CHECK([m missingBytesOf:@"yt:v2"] == 0, "...nothing missing");
     CHECK([m itemIsComplete:@"yt:v2"] && ![m itemIsComplete:@"yt:nobytes"] && ![m itemIsComplete:@"yt:none"], "an item complete by its manifest's required tracks");
     SFMediaStore *m2 = [[SFMediaStore alloc] initWithDirectory:dir3];
     CHECK([[m2 manifestOf:@"yt:v2"] isEqual:man] && [m2 manifestOf:@"yt:nobytes"] == nil, "after a reopen: kept with bytes, dropped without");
