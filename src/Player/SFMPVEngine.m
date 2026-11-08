@@ -80,6 +80,9 @@ static NSArray *SFTracksFromNode(const mpv_node *list) {
     // (hitch monitor 2026-11-07, -[SFMPVEngine prop:] in __psynch_cvwait)
     BOOL _hasVideo, _voConfigured;   // the file has a real video track (not album art); vo is up
     int64_t _width, _height;         // displayed video size
+    BOOL _coreReady;                 // the core was created (or failed): _mpv is final
+    NSMutableArray *_whenReady;      // calls waiting for it (an open)
+    BOOL _shutDown;
 }
 
 // Playback that should run but makes no progress for this long counts as failed, so the player's
@@ -101,48 +104,83 @@ static void onWakeup(void *ctx) {
     dispatch_async(dispatch_get_main_queue(), ^{ [e drainEvents]; });
 }
 
+// The core: created, configured and initialized off the main thread - mpv_create/mpv_initialize
+// took ~220 ms of main-thread time per player open (hitch monitor 2026-11-08, once the first
+// frame's render had left the main thread). NULL if mpv cannot start.
+static mpv_handle *SFCreateCore(void) {
+    mpv_handle *mpv = mpv_create();
+    if (!mpv) return NULL;
+    const char *opts[][2] = {
+        {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox hwaccel fails on 10.9 (measured 2026-11-04)
+        {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},
+        {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
+        {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
+        {"cache", "yes"}, {"demuxer-max-bytes", "200MiB"}, {"demuxer-readahead-secs", "30"},
+        {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
+        // the start time from the first cluster: a WebM start at the resume position made mpv read
+        // media at 0 first - on a streamed track a whole fetch (5-6 s each for video and audio,
+        // 2026-11-07); YouTube's and the media libraries' files start at 0
+        {"demuxer-mkv-probe-start-time", "no"},
+        // nor the first video packets (still-image check): with the engine serving the first
+        // Cluster ID, opening reads nothing past the headers - option of our mpv overlay port
+        // (patch-mkv-probe-image.diff); the start point's media is all a resumed start fetches
+        {"demuxer-mkv-probe-image", "no"},
+    };
+    for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(mpv, opts[i][0], opts[i][1]);
+    // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
+    // 2026-11-04): pure media data, an outdated CA bundle on the frozen 10.9 must never break
+    // playback. Code (updater) is still loaded with verification.
+    int r = mpv_initialize(mpv);
+    if (r < 0) { SFLog(@"mpv: init: %s", mpv_error_string(r)); mpv_terminate_destroy(mpv); return NULL; }
+    mpv_observe_property(mpv, kPropTime, "time-pos", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv, kPropDuration, "duration", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv, kPropPause, "pause", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, kPropCacheWait, "paused-for-cache", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, kPropEOF, "eof-reached", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, kPropCacheTime, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
+    mpv_observe_property(mpv, kPropTracks, "track-list", MPV_FORMAT_NODE);
+    mpv_observe_property(mpv, kPropVOConfigured, "vo-configured", MPV_FORMAT_FLAG);
+    mpv_observe_property(mpv, kPropWidth, "dwidth", MPV_FORMAT_INT64);
+    mpv_observe_property(mpv, kPropHeight, "dheight", MPV_FORMAT_INT64);
+    mpv_request_log_messages(mpv, "warn");   // mpv warnings/errors into the Sofa log
+    return mpv;
+}
+
+static dispatch_queue_t SetupQueue(void) {
+    static dispatch_queue_t q;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ q = dispatch_queue_create("sofa.mpv-setup", DISPATCH_QUEUE_SERIAL); });
+    return q;
+}
+
 - (instancetype)init {
     if ((self = [super init])) {
         _layer = [SFMPVLayer layer];
-        _mpv = mpv_create();
-        if (!_mpv) return self;
-        const char *opts[][2] = {
-            {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox hwaccel fails on 10.9 (measured 2026-11-04)
-            {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},
-            {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
-            {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
-            {"cache", "yes"}, {"demuxer-max-bytes", "200MiB"}, {"demuxer-readahead-secs", "30"},
-            {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
-            // the start time from the first cluster: a WebM start at the resume position made mpv read
-            // media at 0 first - on a streamed track a whole fetch (5-6 s each for video and audio,
-            // 2026-11-07); YouTube's and the media libraries' files start at 0
-            {"demuxer-mkv-probe-start-time", "no"},
-            // nor the first video packets (still-image check): with the engine serving the first
-            // Cluster ID, opening reads nothing past the headers - option of our mpv overlay port
-            // (patch-mkv-probe-image.diff); the start point's media is all a resumed start fetches
-            {"demuxer-mkv-probe-image", "no"},
-        };
-        for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
-        // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
-        // 2026-11-04): pure media data, an outdated CA bundle on the frozen 10.9 must never break
-        // playback. Code (updater) is still loaded with verification.
-        int r = mpv_initialize(_mpv);
-        if (r < 0) { SFLog(@"mpv: init: %s", mpv_error_string(r)); mpv_terminate_destroy(_mpv); _mpv = NULL; return self; }
-        mpv_observe_property(_mpv, kPropTime, "time-pos", MPV_FORMAT_DOUBLE);
-        mpv_observe_property(_mpv, kPropDuration, "duration", MPV_FORMAT_DOUBLE);
-        mpv_observe_property(_mpv, kPropPause, "pause", MPV_FORMAT_FLAG);
-        mpv_observe_property(_mpv, kPropCacheWait, "paused-for-cache", MPV_FORMAT_FLAG);
-        mpv_observe_property(_mpv, kPropEOF, "eof-reached", MPV_FORMAT_FLAG);
-        mpv_observe_property(_mpv, kPropCacheTime, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
-        mpv_observe_property(_mpv, kPropTracks, "track-list", MPV_FORMAT_NODE);
-        mpv_observe_property(_mpv, kPropVOConfigured, "vo-configured", MPV_FORMAT_FLAG);
-        mpv_observe_property(_mpv, kPropWidth, "dwidth", MPV_FORMAT_INT64);
-        mpv_observe_property(_mpv, kPropHeight, "dheight", MPV_FORMAT_INT64);
-        mpv_request_log_messages(_mpv, "warn");   // mpv warnings/errors into the Sofa log
-        mpv_set_wakeup_callback(_mpv, onWakeup, (__bridge void *)self);
-        _layer.mpv = _mpv;
+        _whenReady = [NSMutableArray new];
+        dispatch_async(SetupQueue(), ^{
+            mpv_handle *mpv = SFCreateCore();
+            dispatch_async(dispatch_get_main_queue(), ^{ [self adoptCore:mpv]; });
+        });
     }
     return self;
+}
+
+// Main thread: the core is there (or not). Shut down meanwhile: it goes the way of every core.
+- (void)adoptCore:(mpv_handle *)mpv {
+    _coreReady = YES;
+    if (_shutDown) { if (mpv) [_layer retireWithMPV:mpv]; _whenReady = nil; return; }
+    _mpv = mpv;
+    if (mpv) {
+        mpv_set_wakeup_callback(mpv, onWakeup, (__bridge void *)self);
+        _layer.mpv = mpv;
+        [self drainEvents];   // anything that came before the callback was set
+    }
+    NSArray *waiting = _whenReady; _whenReady = nil;
+    for (dispatch_block_t b in waiting) b();
+}
+
+- (void)whenReady:(dispatch_block_t)b {
+    if (_coreReady) b(); else [_whenReady addObject:[b copy]];
 }
 
 - (void)command:(NSArray *)args {
@@ -156,7 +194,15 @@ static void onWakeup(void *ctx) {
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     _status = SFEngineLoading; _error = nil; _loaded = NO; _started = NO; _statsLogged = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
-    _openedAt = [NSDate date]; _stallSince = nil; _stallFired = NO;
+    _openedAt = [NSDate date]; _stallSince = nil; _stallFired = NO;   // the core's creation counts to the open
+    _voHeals = 0; _voDownTicks = 0;
+    [_tick invalidate];
+    _tick = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(onTick) userInfo:nil repeats:YES];
+    __weak SFMPVEngine *ws = self;
+    [self whenReady:^{ [ws loadURL:url audioURL:audioURL start:start exact:exact paused:paused]; }];
+}
+
+- (void)loadURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     if (!_mpv) { _status = SFEngineFailed; _error = SFError(@"mpv nicht verfügbar"); [self.delegate engineStatusChanged]; return; }
     // Options for the next file (start, pause, separate audio track). URLs contain ':' and ',' ->
     // no path-list syntax, but change-list ... append (one element).
@@ -167,7 +213,6 @@ static void onWakeup(void *ctx) {
     if (!url.isFileURL) mpv_set_property_string(_mpv, "user-agent", SFNativeUserAgent().UTF8String);   // the app's identity, not "libmpv"
     [self command:@[@"change-list", @"audio-files", @"clr", @""]];
     if (audioURL) [self command:@[@"change-list", @"audio-files", @"append", audioURL.absoluteString]];
-    _voHeals = 0; _voDownTicks = 0;
     // mpv must not open the file before the render context exists: otherwise libmpv's vo fails
     // ("No render context set"), mpv drops the video track and plays audio only (seen 2026-11-04
     // after an update restart, when the local file resumed within 30 ms of launch).
@@ -184,8 +229,6 @@ static void onWakeup(void *ctx) {
             if (s && s->_pendingLoad) { SFLog(@"mpv: no render context after 3 s - loading anyway"); [s flushPendingLoad]; }
         });
     }
-    [_tick invalidate];
-    _tick = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(onTick) userInfo:nil repeats:YES];
 }
 
 - (NSString *)prop:(NSString *)name {
@@ -372,6 +415,7 @@ static void onWakeup(void *ctx) {
 
 - (void)shutdown {
     [_tick invalidate]; _tick = nil;
+    _shutDown = YES;   // a core still being created is retired when it arrives (adoptCore:)
     if (!_mpv) return;
     [self logPlaybackStats];
     mpv_set_wakeup_callback(_mpv, NULL, NULL);
