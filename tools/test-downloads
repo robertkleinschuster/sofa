@@ -36,7 +36,6 @@ if [ -z "$PART" ]; then   # both parts at once; output part by part
 fi
 want() { [ "$PART" = "$1" ]; }
 INST=dltest-$PART
-if want a; then MEDIA_PORT=47982; else MEDIA_PORT=47983; fi
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
@@ -100,9 +99,15 @@ class H(http.server.BaseHTTPRequestHandler):
                 try: self.wfile.write(b); self.wfile.flush()
                 except Exception: return
                 time.sleep(0.25)
-http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2])), H).serve_forever()
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)   # a free port, written once listening
+with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
+os.rename(sys.argv[2] + ".tmp", sys.argv[2])
+s.serve_forever()
 PY
-/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" $MEDIA_PORT & SRV=$!
+# a free port (fixed ones collided with test-playback's servers under test-all), awaited before use
+/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" "$T/media.port" & SRV=$!
+for i in $(seq 1 150); do [ -s "$T/media.port" ] && break; sleep 0.1; done
+MEDIA_PORT=$(cat "$T/media.port" 2>/dev/null)
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$MEDIA_PORT/good.mp4
 
 if want a; then
