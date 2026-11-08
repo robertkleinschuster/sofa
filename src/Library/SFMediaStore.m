@@ -26,11 +26,17 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     NSString *_dir;
     NSMutableDictionary *_tracks;   // key -> SFMediaTrack
     long long _sinceEvict;
-    // byte sums, written on _q (account:delta:), read from any thread without waiting for _q (tiles,
-    // the storage guard: the queue may be busy with disk I/O)
-    pthread_mutex_t _sumLock;
+    // what other threads ask, mirrored under _lock and read without waiting for _q (the queue may be
+    // busy with disk I/O - the main thread waited 687 ms behind it, hitch 2026-11-08): byte sums and
+    // complete tracks (written on _q, account:delta:), manifests (written by setManifest:/dropItem:)
+    pthread_mutex_t _lock;
     long long _bytes;
     NSMutableDictionary *_itemBytes;   // item -> NSNumber
+    NSMutableSet *_complete;           // keys of the tracks whose bytes are all there
+    NSMutableDictionary *_manifests;   // item -> manifest
+    // readiness: the block files checked against the index once after open (checkBlocks) - until
+    // then a track the index calls whole may have lost a block, so completeness waits for it
+    dispatch_group_t _checked;
 }
 
 - (instancetype)initWithDirectory:(NSString *)dir {
@@ -39,27 +45,34 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         _q = dispatch_queue_create("sofa.media-store", DISPATCH_QUEUE_SERIAL);
         _tracks = [NSMutableDictionary new];
         _itemBytes = [NSMutableDictionary new];
-        pthread_mutex_init(&_sumLock, NULL);
+        _complete = [NSMutableSet new];
+        _manifests = [NSMutableDictionary new];
+        pthread_mutex_init(&_lock, NULL);
         NSString *d = _dir;
         self.freeSpace = ^long long {
             return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:d error:nil][NSFileSystemFreeSize] longLongValue];
         };
         dispatch_sync(_q, ^{ [self open]; });
-        dispatch_async(_q, ^{ [self checkBlocks]; });   // after open, before anything queued later
+        _checked = dispatch_group_create();
+        dispatch_group_async(_checked, _q, ^{ [self checkBlocks]; });   // after open, before anything queued later
     }
     return self;
 }
 
-- (void)dealloc { pthread_mutex_destroy(&_sumLock); }
+- (void)dealloc { pthread_mutex_destroy(&_lock); }
 
-// on _q: a track's stored bytes changed by d
+// on _q, after every change of a track (its bytes by d, its length, its removal from _tracks):
+// the mirror other threads read
 - (void)account:(SFMediaTrack *)t delta:(long long)d {
-    if (!d) return;
-    pthread_mutex_lock(&_sumLock);
-    _bytes += d;
-    long long n = [_itemBytes[t.item] longLongValue] + d;
-    if (n > 0) _itemBytes[t.item] = @(n); else [_itemBytes removeObjectForKey:t.item];
-    pthread_mutex_unlock(&_sumLock);
+    BOOL complete = self->_tracks[t.key] == t && t.total > 0 && [t.extents coversStart:0 end:t.total];
+    pthread_mutex_lock(&_lock);
+    if (d) {
+        _bytes += d;
+        long long n = [_itemBytes[t.item] longLongValue] + d;
+        if (n > 0) _itemBytes[t.item] = @(n); else [_itemBytes removeObjectForKey:t.item];
+    }
+    if (complete) [_complete addObject:t.key]; else [_complete removeObject:t.key];
+    pthread_mutex_unlock(&_lock);
 }
 
 #pragma mark Database (on _q)
@@ -113,6 +126,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     if (version < 2) [self run:@"PRAGMA user_version=2" args:nil];
     // a manifest whose item has no bytes (opened, nothing played): written again by the next open
     [self run:@"DELETE FROM manifests WHERE item NOT IN (SELECT item FROM tracks)" args:nil];
+    [self loadManifests];
     // the index into memory: tracks, then their ranges
     NSMutableDictionary *byRow = [NSMutableDictionary new];
     sqlite3_stmt *st;
@@ -149,6 +163,22 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     [self run:@"UPDATE tracks SET total = ?, used = ? WHERE id = ?" args:@[@(t.total), @(t.used), @(t.rowid)]];
     [self run:@"COMMIT" args:nil];
     t.usedSaved = t.used;
+}
+
+// on _q (open): every manifest into the mirror
+- (void)loadManifests {
+    sqlite3_stmt *st;
+    if (sqlite3_prepare_v2(_db, "SELECT item, json FROM manifests", -1, &st, NULL) != SQLITE_OK) return;
+    NSMutableDictionary *all = [NSMutableDictionary new];
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        NSData *d = [NSData dataWithBytes:sqlite3_column_blob(st, 1) length:(NSUInteger)sqlite3_column_bytes(st, 1)];
+        id v = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+        if ([v isKindOfClass:[NSDictionary class]]) all[@((const char *)sqlite3_column_text(st, 0))] = v;
+    }
+    sqlite3_finalize(st);
+    pthread_mutex_lock(&_lock);
+    [_manifests setDictionary:all];
+    pthread_mutex_unlock(&_lock);
 }
 
 #pragma mark Files (on _q)
@@ -214,8 +244,8 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 - (void)removeTrack:(SFMediaTrack *)t {
     [[NSFileManager defaultManager] removeItemAtPath:[[self blockPath:t block:0] stringByDeletingLastPathComponent] error:nil];
     [self run:@"DELETE FROM tracks WHERE id = ?" args:@[@(t.rowid)]];   // (its extents cascade)
-    [self account:t delta:-t.extents.bytes];
     [_tracks removeObjectForKey:t.key];
+    [self account:t delta:-t.extents.bytes];
 }
 
 #pragma mark API
@@ -281,9 +311,9 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 
 - (long long)bytesOfItem:(NSString *)item {
     if (!item) return 0;
-    pthread_mutex_lock(&_sumLock);
+    pthread_mutex_lock(&_lock);
     long long n = [_itemBytes[item] longLongValue];
-    pthread_mutex_unlock(&_sumLock);
+    pthread_mutex_unlock(&_lock);
     return n;
 }
 
@@ -295,28 +325,27 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 - (void)dropItem:(NSString *)item {
     for (SFMediaTrack *t in [_tracks.allValues copy]) if ([t.item isEqualToString:item]) [self removeTrack:t];
     [self run:@"DELETE FROM manifests WHERE item = ?" args:@[item]];
+    pthread_mutex_lock(&_lock);
+    [_manifests removeObjectForKey:item];
+    pthread_mutex_unlock(&_lock);
 }
 
 - (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item {
     NSData *json = manifest ? [NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil] : nil;
     if (!json || !item.length) return;
+    NSDictionary *m = [NSJSONSerialization JSONObjectWithData:json options:0 error:nil];   // a deep, immutable copy
+    pthread_mutex_lock(&_lock);
+    _manifests[item] = m;
+    pthread_mutex_unlock(&_lock);
     NSString *s = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
     dispatch_async(_q, ^{ [self run:@"INSERT OR REPLACE INTO manifests (item, json) VALUES (?, ?)" args:@[item, s]]; });
 }
 
 - (NSDictionary *)manifestOf:(NSString *)item {
-    __block NSDictionary *m = nil;
-    dispatch_sync(_q, ^{
-        sqlite3_stmt *st;
-        if (sqlite3_prepare_v2(self->_db, "SELECT json FROM manifests WHERE item = ?", -1, &st, NULL) != SQLITE_OK) return;
-        [self bind:st args:@[item ?: @""]];
-        if (sqlite3_step(st) == SQLITE_ROW) {
-            NSData *d = [NSData dataWithBytes:sqlite3_column_blob(st, 0) length:(NSUInteger)sqlite3_column_bytes(st, 0)];
-            id v = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-            m = [v isKindOfClass:[NSDictionary class]] ? v : nil;
-        }
-        sqlite3_finalize(st);
-    });
+    if (!item) return nil;
+    pthread_mutex_lock(&_lock);
+    NSDictionary *m = _manifests[item];
+    pthread_mutex_unlock(&_lock);
     return m;
 }
 
@@ -340,20 +369,19 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 - (BOOL)hasComplete:(NSArray *)keys {
-    __block BOOL ok = keys.count > 0;
-    dispatch_sync(_q, ^{
-        for (NSString *k in keys) {
-            SFMediaTrack *t = self->_tracks[k];
-            if (!t || t.total <= 0 || ![t.extents coversStart:0 end:t.total]) { ok = NO; return; }
-        }
-    });
+    if (!keys.count) return NO;
+    dispatch_group_wait(_checked, DISPATCH_TIME_FOREVER);   // at once after the startup check
+    pthread_mutex_lock(&_lock);
+    BOOL ok = YES;
+    for (NSString *k in keys) if (![_complete containsObject:k]) { ok = NO; break; }
+    pthread_mutex_unlock(&_lock);
     return ok;
 }
 
 - (long long)bytes {
-    pthread_mutex_lock(&_sumLock);
+    pthread_mutex_lock(&_lock);
     long long n = _bytes;
-    pthread_mutex_unlock(&_sumLock);
+    pthread_mutex_unlock(&_lock);
     return n;
 }
 

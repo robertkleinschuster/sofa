@@ -240,7 +240,7 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     if (wasPrebuffered) { told(@"Heruntergeladen – bleibt, bis du es löschst"); return; }
     SFMediaStore *store = self.mediaStore;
     if ([store bytesOfItem:ident] <= 0) { told(@"Wird heruntergeladen – auch offline verfügbar"); return; }
-    SFBackground(^{   // the manifest: the store's queue
+    SFBackground(^{   // the missing bytes wait for the store's queue (its tracks' ranges)
         long long missing = ident ? [store missingBytesOf:ident] : -1;
         SFMain(^{
             if (missing == 0) told(@"Heruntergeladen – war schon vollständig geladen");

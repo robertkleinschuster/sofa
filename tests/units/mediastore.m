@@ -111,6 +111,18 @@ int main(void) { @autoreleasepool {
     CHECK([m itemIsComplete:@"yt:v2"] && ![m itemIsComplete:@"yt:nobytes"] && ![m itemIsComplete:@"yt:none"], "an item complete by its manifest's required tracks");
     SFMediaStore *m2 = [[SFMediaStore alloc] initWithDirectory:dir3];
     CHECK([[m2 manifestOf:@"yt:v2"] isEqual:man] && [m2 manifestOf:@"yt:nobytes"] == nil, "after a reopen: kept with bytes, dropped without");
+    CHECK([m2 itemIsComplete:@"yt:v2"], "after a reopen: still complete (rebuilt from the index)");
+    // the length arrives after the bytes (no new bytes): complete then
+    [m2 write:Bytes(400, 11) key:@"yt:v4:v" item:@"yt:v4" kind:@"video" total:0 at:0];
+    [m2 sync];
+    CHECK(![m2 hasComplete:@[@"yt:v4:v"]], "length unknown: not complete");
+    [m2 write:Bytes(400, 11) key:@"yt:v4:v" item:@"yt:v4" kind:@"video" total:400 at:0];
+    [m2 sync];
+    CHECK([m2 hasComplete:@[@"yt:v4:v"]], "the same bytes again with the length: complete");
+    [m2 removeItem:@"yt:v4"];
+    CHECK(![m2 hasComplete:@[@"yt:v4:v"]] && [m2 bytesOfItem:@"yt:v4"] == 0, "a removed item: not complete, no bytes");
+    [m2 setManifest:@{@"required": @[@"k"]} forItem:@"yt:v3"];
+    CHECK([[m2 manifestOf:@"yt:v3"][@"required"] isEqual:@[@"k"]], "a manifest readable at once (no sync)");
     // whole items go: v2 (two tracks, used long ago) before v3 (used now)
     [m2 write:Bytes(1000, 10) key:@"yt:v3:v" item:@"yt:v3" kind:@"video" total:0 at:0];
     [m2 sync]; usleep(20000);
@@ -122,6 +134,22 @@ int main(void) { @autoreleasepool {
     CHECK([m2 extentsOf:@"yt:v2:v"].bytes == 0 && [m2 extentsOf:@"yt:v2:a"].bytes == 0 && [m2 manifestOf:@"yt:v2"] == nil,
           "the least recently used item goes whole, with its manifest");
     CHECK([m2 extentsOf:@"yt:v3:v"].bytes == 1000, "the recent one stays");
+    CHECK(![m2 itemIsComplete:@"yt:v2"] && ![m2 hasComplete:@[@"yt:v2:v"]], "an evicted item is no longer complete");
+
+    // a block file lost while closed: asked at once after the reopen, the track is not complete
+    // (completeness waits for the startup check of the files - test-downloads 2026-11-08)
+    NSString *dir4 = [dir stringByAppendingString:@"-lost"];
+    [[NSFileManager defaultManager] removeItemAtPath:dir4 error:nil];
+    @autoreleasepool {
+        SFMediaStore *l = [[SFMediaStore alloc] initWithDirectory:dir4];
+        [l write:Bytes(1000, 12) key:@"lost:v" item:@"item:lost" kind:@"video" total:1000 at:0];
+        [l sync];
+        CHECK([l hasComplete:@[@"lost:v"]], "a whole track: complete");
+    }
+    [[NSFileManager defaultManager] removeItemAtPath:[dir4 stringByAppendingPathComponent:@"1/0"] error:nil];
+    SFMediaStore *l2 = [[SFMediaStore alloc] initWithDirectory:dir4];
+    CHECK(![l2 hasComplete:@[@"lost:v"]], "its block file gone: not complete, even asked right after the reopen");
+    [[NSFileManager defaultManager] removeItemAtPath:dir4 error:nil];
 
     [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:dir2 error:nil];

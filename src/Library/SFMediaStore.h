@@ -27,8 +27,10 @@
 // An item's manifest: what playing it needs without its source - a JSON object, source-specific
 // apart from `required` (the keys of the tracks playback cannot do without). Kept while the item has bytes.
 - (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item;
-- (NSDictionary *)manifestOf:(NSString *)item;
-// every one of these tracks is known with its length and present from 0 to it (playable offline)
+- (NSDictionary *)manifestOf:(NSString *)item;   // (any thread, never waits)
+// every one of these tracks is known with its length and present from 0 to it (playable offline) -
+// as of the writes done (after -sync: every earlier write). Any thread; waits only once, for the
+// startup check of the block files (a lost block makes a track incomplete). Also itemIsComplete:.
 - (BOOL)hasComplete:(NSArray *)keys;
 // the item's manifest names the tracks playing it needs (`required`: track keys) and all are complete
 - (BOOL)itemIsComplete:(NSString *)item;
