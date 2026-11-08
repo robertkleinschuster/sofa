@@ -111,10 +111,9 @@ static int connectTo(uint16_t port) {
 static void sendAll(int fd, NSData *d) { write(fd, d.bytes, d.length); }
 
 // The answer head of an upgrade request (up to the blank line); fd stays open.
-static NSString *upgrade(int fd, NSString *path) {
-    NSString *req = [NSString stringWithFormat:@"GET %@ HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                                                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n", path];
-    sendAll(fd, [req dataUsingEncoding:NSUTF8StringEncoding]);
+// The response head, read to its blank line (or the connection's end): a single read() may get
+// only part of it under load (test-units flake 2026-11-08: "the channel's path without an upgrade").
+static NSString *readHead(int fd) {
     NSMutableData *in = [NSMutableData new];
     char c;
     while (read(fd, &c, 1) == 1) {
@@ -122,6 +121,13 @@ static NSString *upgrade(int fd, NSString *path) {
         if (in.length >= 4 && memcmp((const char *)in.bytes + in.length - 4, "\r\n\r\n", 4) == 0) break;
     }
     return [[NSString alloc] initWithData:in encoding:NSISOLatin1StringEncoding];
+}
+
+static NSString *upgrade(int fd, NSString *path) {
+    NSString *req = [NSString stringWithFormat:@"GET %@ HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                                                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n", path];
+    sendAll(fd, [req dataUsingEncoding:NSUTF8StringEncoding]);
+    return readHead(fd);
 }
 
 // One server frame: its opcode and payload (op -1: the connection ended).
@@ -165,9 +171,7 @@ static void testChannel(void) {
     int plain = connectTo(port);
     NSString *req = [NSString stringWithFormat:@"GET %@ HTTP/1.1\r\n\r\n", path];
     sendAll(plain, [req dataUsingEncoding:NSUTF8StringEncoding]);
-    char buf[64] = {0};
-    read(plain, buf, sizeof buf - 1);
-    CHECK(strncmp(buf, "HTTP/1.1 400 ", 13) == 0, "the channel's path without an upgrade: 400");
+    CHECK([readHead(plain) hasPrefix:@"HTTP/1.1 400 "], "the channel's path without an upgrade: 400");
     close(plain);
 
     // a command made before there is a connection waits for it
