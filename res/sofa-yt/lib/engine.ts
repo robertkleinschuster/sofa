@@ -221,6 +221,12 @@ export interface Engine {
    * `closed` ends the view. false: not reported (no such VOD session, no tracking, no reporting).
    */
   report(sid: string, state: PlayerState | { state: 'closed' }): Promise<boolean>;
+  /**
+   * Playback of session `sid` starts at `ms` (the player's start point, resume included): media is
+   * fetched from there right away - as youtube.com's player starts its stream at the resume time -
+   * instead of once mpv has probed the file and seeked (seconds later). false: no such VOD session.
+   */
+  startsAt(sid: string, ms: number): boolean;
   health(): EngineHealth;
   shutdown(): void;
 }
@@ -606,6 +612,12 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       const s = sessions.get(sid);
       if (s) { s.close('closed by client'); forget(s); }
       return !!s;
+    },
+    startsAt(sid, ms) {
+      const s = sessions.get(sid);
+      if (!s || s.closed || s.kind !== 'sabr' || !(ms >= 0)) return false;
+      s.hint(ms);
+      return true;
     },
     read,
     playlist,

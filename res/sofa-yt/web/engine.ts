@@ -80,6 +80,8 @@ export interface SofaEngine {
   status(sid: string): Reply<object>;
   /** Sofa's player state for a session: the view's stats pings (lib/report.ts); `closed` ends the view. */
   report(sid: string, state: PlayerState | { state: 'closed' }): Promise<Reply<boolean>>;
+  /** The player opens session `sid` at `ms`: media is pulled from there at once (lib/engine.ts). */
+  startsAt(sid: string, ms: number): Reply<boolean>;
   close(sid: string): Reply<boolean>;
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
@@ -185,6 +187,7 @@ export const sofaEngine: SofaEngine = {
   subtitles: (sid, key) => replyAsync(() => core!.subtitles(sid, key)),
   status: (sid) => reply(() => core!.status(sid)),
   report: (sid, state) => replyAsync(() => core!.report(sid, state)),
+  startsAt: (sid, ms) => reply(() => core!.startsAt(sid, ms)),
   close: (sid) => reply(() => core!.close(sid)),
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),

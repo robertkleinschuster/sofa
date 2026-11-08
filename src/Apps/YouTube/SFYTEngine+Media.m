@@ -107,7 +107,11 @@ static NSString *ErrorJSON(NSError *e) {
         if (a.length && b.length) want = MAX(1, MIN((long long)kPiece, b.longLongValue + 1 - first));
     }
     BOOL head = [x.request.method isEqualToString:@"HEAD"];
+    NSDate *asked = [NSDate date];
     [self read:sid track:key at:first max:head ? 1 : (NSUInteger)want done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
+        // where a start's seconds go: a reader that waited for its first bytes (SABR fetching them)
+        NSTimeInterval waited = -[asked timeIntervalSinceNow];
+        if (waited > 0.3) SFLog(@"yt-engine: %@/%@ at %lld (%@) waited %.1f s for its first bytes", sid, key, first, range ?: @"no range", waited);
         if (e) {
             NSInteger st = e.code == 416 ? 416 : (e.code >= 400 && e.code < 600 ? e.code : 502);
             [x respondJSON:st object:@{@"error": ErrorJSON(e)}];

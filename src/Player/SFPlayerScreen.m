@@ -306,6 +306,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
     BOOL live = _item.kind == SFItemLive;
     _openResume = live ? 0 : (exact ? resume : (resume > 15 ? resume - 3 : 0));
     BOOL paused = self.startPaused || _holdPaused;
+    if ([app respondsToSelector:@selector(playback:startsAt:)]) [app playback:SFMPVSourceFor(open) startsAt:_openResume];
     [_engine openURL:open audioURL:audio start:_openResume exact:exact paused:paused];
     if (!exact && resume > 15 && !live) [self.navigator toast:[NSString stringWithFormat:@"Fortgesetzt bei %@", SFFormatDuration(_openResume)]];   // = actual start point (3 s lead-in)
     if (paused) { self.startPaused = NO; [self showOSD:YES autoHide:NO]; }

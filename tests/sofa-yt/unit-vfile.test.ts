@@ -46,6 +46,25 @@ test('lookups: entryAt, timeAt via index, sliceAt, contiguousFrom', () => {
   assert.equal(f.entryAtTime(S(20).startMs + 1)?.start, S(20).start);
 });
 
+test('known bytes: a WebM track\'s first Cluster ID right after the init region (mpv\'s header parse ends there)', () => {
+  const f = mk();
+  assert.equal(f.sliceAt(INIT.length, INIT.length + 4), null, 'nothing known before the init segment');
+  f.add({ start: 0, buf: INIT, init: true });
+  assert.equal(S(0).start, INIT.length, 'the fixture\'s Cues put the first cluster at the init end');
+  assert.deepEqual([...must(f.sliceAt(INIT.length, INIT.length + 100))], [0x1f, 0x43, 0xb6, 0x75], 'the Cluster ID, nothing past it');
+  assert.deepEqual([...must(f.sliceAt(INIT.length + 2, INIT.length + 100))], [0xb6, 0x75], 'from inside the ID');
+  assert.equal(f.sliceAt(INIT.length + 4, INIT.length + 100), null, 'cluster content is not known');
+  assert.equal(f.probeEnd, INIT.length + 4);
+  assert.equal(f.bytes, INIT.length, 'known bytes are not buffered media (no eviction, no satisfied reads)');
+  assert.ok(f.contiguousFrom(INIT.length) === null);
+  const real = { ...seg(0), buf: Buffer.concat([Buffer.from([0x1f, 0x43, 0xb6, 0x75]), patternBuf(S(0).start + 4, S(0).length - 4)]) };
+  assert.equal(f.add(real), 'added', 'the real first cluster takes over');
+  assert.deepEqual(must(f.sliceAt(INIT.length, INIT.length + 8)), real.buf.subarray(0, 8));
+  const mp4 = new VirtualFile({ total: 1e9, durationMs: DUR, mimeType: 'video/mp4' });
+  mp4.add({ start: 0, buf: fixtureInit('OzCYsIrrRyw', 137), init: true });
+  assert.equal(mp4.known, null, 'MP4: nothing known');
+});
+
 test('last segment reaches EOF', () => {
   const f = mk();
   f.add({ start: 0, buf: INIT, init: true });

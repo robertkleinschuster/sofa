@@ -38,6 +38,7 @@ export interface SessionConfig {
   STALL_MS: number;
   LINGER_MS: number;
   HINT_TTL_MS: number;
+  PROBE_GRACE_MS: number;
   WAIT_MS: number;
   MAX_PUMPS: number;
   START_BURST: number;
@@ -71,6 +72,7 @@ export type StartPump = (o: PumpRequest) => PumpHandle;
 export interface Reader {
   pos: number;
   since?: number;
+  movedAt?: number;   // when pos last advanced
 }
 
 /** A reason to have media: a byte position (reader) or only a time (hint, off null). */
@@ -127,6 +129,7 @@ export const DEFAULTS: SessionConfig = {
   STALL_MS: 20000,           // a needed run that delivered nothing for this long is restarted
   LINGER_MS: 20000,          // a closed response stays a demand this long (reconnects)
   HINT_TTL_MS: 60000,        // an unconsumed /open start hint expires
+  PROBE_GRACE_MS: 1000,      // a header parse parked after the known first Cluster ID starts no run before this
   WAIT_MS: 25000,            // a response waits this long for missing bytes, then ends (mpv reconnects)
   MAX_PUMPS: 3,              // concurrent SABR runs per session
   START_BURST: 12,           // pump starts allowed per START_WINDOW_MS (guards seek storms / bugs)
@@ -162,7 +165,14 @@ class Track {
   /** Current demands: [{off|null, ms}] */
   demands(now: number): Demand[] {
     const out: Demand[] = [];
-    for (const r of this.readers) out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
+    for (const r of this.readers) {
+      // mpv's header parse just past the known first Cluster ID while the player starts elsewhere (an
+      // unconsumed start hint): it seeks there next - no run from 0 for it. Bounded: a client that does
+      // want the first cluster (mpv probing the start time) is served once it waited PROBE_GRACE_MS.
+      if (this.hint && this.file.known && r.pos >= this.file.initEnd && r.pos <= this.file.probeEnd && this.hint.ms > 0
+          && now - (r.movedAt ?? 0) < this.session.cfg.PROBE_GRACE_MS) continue;
+      out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
+    }
     if (!this.readers.size && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
       // between two requests (seek, reconnect): only protects the buffer from eviction
       out.push({ off: this.lastPos, ms: this.file.timeAt(this.lastPos), linger: true });
@@ -583,7 +593,7 @@ export class PlaybackSession {
    * missing bytes up to WAIT_MS each time. Returns the number of bytes written.
    */
   async serve(t: Track, start: number, end: number, res: ServeTarget): Promise<number> {
-    const reader: Reader = { pos: start, since: Date.now() };
+    const reader: Reader = { pos: start, since: Date.now(), movedAt: Date.now() };
     t.readers.add(reader);
     t.lastPos = start;
     t.lastReadAt = Date.now();
@@ -614,6 +624,7 @@ export class PlaybackSession {
         }
         piece = new Uint8Array(piece); // copy: the entry may be evicted while the socket holds it
         reader.pos += piece.length;
+        reader.movedAt = Date.now();
         written += piece.length;
         t.lastPos = reader.pos;
         t.lastReadAt = Date.now();

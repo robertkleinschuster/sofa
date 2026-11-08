@@ -166,6 +166,9 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
   }
   debug(`${tag}: started`);
 
+  // a run's first media: how long a start (or seek) waits on YouTube - one line per run
+  const t0 = Date.now();
+  let firstLogged = false;
   const pumpReader = async (kind: TrackKind, stream: ReadableStream<ArrayBufferView>): Promise<void> => {
     const reader = stream.getReader();
     try {
@@ -177,6 +180,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
         if (!h || (h.length && h.length !== buf.length) || !Number.isFinite(h.start)) {
           throw new Error(`segment bookkeeping mismatch on ${kind}: header=${JSON.stringify(h)} bytes=${buf.length}`);
         }
+        if (!firstLogged) { firstLogged = true; log(`${tag}: first segment after ${Date.now() - t0} ms`); }
         o.onSegment(kind, { start: h.start, buf, startMs: h.startMs, durationMs: h.durationMs, init: h.init });
       }
     } finally {

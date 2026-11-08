@@ -68,6 +68,7 @@ static NSArray *SFTracksFromNode(const mpv_node *list) {
     double _time, _dur, _cacheTime;
     BOOL _paused, _waiting, _eof, _loaded, _started, _statsLogged;
     NSDate *_openedAt;
+    NSTimeInterval _loadedAfter;   // open -> file loaded (headers read), for the first-frame line
     NSTimer *_tick;
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
     NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
@@ -112,6 +113,10 @@ static void onWakeup(void *ctx) {
             {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
             {"cache", "yes"}, {"demuxer-max-bytes", "200MiB"}, {"demuxer-readahead-secs", "30"},
             {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
+            // the start time from the first cluster: a WebM start at the resume position made mpv read
+            // media at 0 first - on a streamed track a whole fetch (5-6 s each for video and audio,
+            // 2026-11-07); YouTube's and the media libraries' files start at 0
+            {"demuxer-mkv-probe-start-time", "no"},
         };
         for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(_mpv, opts[i][0], opts[i][1]);
         // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
@@ -259,6 +264,7 @@ static void onWakeup(void *ctx) {
         if (!ev || ev->event_id == MPV_EVENT_NONE) break;
         switch (ev->event_id) {
             case MPV_EVENT_FILE_LOADED:
+                if (!_loaded) _loadedAfter = -[_openedAt timeIntervalSinceNow];   // the start's two halves: open, then seek + decode
                 _loaded = YES; _status = SFEngineReady;
                 [self.delegate engineStatusChanged];
                 break;
@@ -268,7 +274,7 @@ static void onWakeup(void *ctx) {
                 // black screen (user 2026-11-07)
                 if (!_started && _loaded) {
                     _started = YES;
-                    SFLog(@"mpv: first frame %.1f s after open", -[_openedAt timeIntervalSinceNow]);
+                    SFLog(@"mpv: first frame %.1f s after open (loaded after %.1f s)", -[_openedAt timeIntervalSinceNow], _loadedAfter);
                     [self.delegate engineBufferingChanged];
                 }
                 break;

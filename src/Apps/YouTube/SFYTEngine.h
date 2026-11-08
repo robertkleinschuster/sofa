@@ -24,6 +24,9 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // Download: the same choice as playback, no prefetch; the session lives while ffmpeg reads.
 - (void)openForDownload:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
 - (void)closeSession:(NSString *)sid;   // a retry then opens a fresh session
+// Playback of session `sid` starts at `seconds` (the player's start point): the engine fetches from
+// there at once, as youtube.com's player does, instead of after mpv's probe and seek. Fire and forget.
+- (void)session:(NSString *)sid startsAt:(NSTimeInterval)seconds;
 // The player's state on session `sid` ({state: playing|paused|buffering|ended|closed, position,
 // lactMs}): the view's stats pings follow from it in the page (docs/youtube-engine.md "Playback
 // reporting"). Fire and forget; nothing when the engine is not ready.

@@ -158,6 +158,13 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 + (BOOL)playbackIsSession:(NSDictionary *)source { return [source[@"sabr"] boolValue]; }
 
+// The session's media from the start point on, before mpv asks: the resume position's first bytes
+// were mpv's to request after probing and seeking - 5-6 s of a 12-s start (2026-11-07).
++ (void)playback:(NSDictionary *)source startsAt:(NSTimeInterval)seconds {
+    NSString *sid = [source[@"sid"] isKindOfClass:[NSString class]] ? source[@"sid"] : nil;
+    if ([source[@"sabr"] boolValue] && ![source[@"hls"] boolValue] && sid) [[SFYTEngine shared] session:sid startsAt:seconds];
+}
+
 // a SABR session failed: the player reopens it via the engine (its player response is cached
 // there - no new YouTube request) as a fresh session
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why {

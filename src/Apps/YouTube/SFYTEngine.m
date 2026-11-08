@@ -391,6 +391,11 @@ static id Clean(id v) {
     [self request:@"close" args:@[sid] timeout:kCallTimeout done:^(id v, NSError *e) {}];
 }
 
+- (void)session:(NSString *)sid startsAt:(NSTimeInterval)seconds {
+    if (!sid.length || _state != SFYTEngineReady) return;
+    [self request:@"startsAt" args:@[sid, @(MAX(0, seconds) * 1000)] timeout:kCallTimeout done:^(id v, NSError *e) {}];
+}
+
 - (void)report:(NSString *)sid state:(NSDictionary *)state {
     if (!sid.length || _state != SFYTEngineReady) return;
     [self request:@"report" args:@[sid, state] timeout:kCallTimeout done:^(id v, NSError *e) {}];

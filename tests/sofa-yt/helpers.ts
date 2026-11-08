@@ -89,9 +89,36 @@ export function patternBuf(start: number, len: number): Buffer {
   return b;
 }
 
-/** Expected file content: real init bytes, synthetic pattern after them. */
+/**
+ * Synthetic media bytes [start, start + len) of a track: the pattern - except that a WebM track's
+ * clusters start with the Cluster ID where its init's index (Cues) puts them, as in every real file
+ * (the engine serves that ID before it has the cluster: VirtualFile.known).
+ */
+export function mediaBytes(init: Buffer, start: number, len: number): Buffer {
+  const b = patternBuf(start, len);
+  for (const c of clusterStarts(init)) {
+    if (c + CLUSTER_ID.length <= start) continue;
+    if (c >= start + len) break;
+    for (let k = 0; k < CLUSTER_ID.length; k++) if (c + k >= start && c + k < start + len) b[c + k - start] = CLUSTER_ID[k]!;
+  }
+  return b;
+}
+const CLUSTER_ID = [0x1f, 0x43, 0xb6, 0x75];
+const { parseIndex } = await mod('lib/mediaindex.ts');
+const clusterCache = new WeakMap<Buffer, number[]>();
+function clusterStarts(init: Buffer): number[] {
+  let c = clusterCache.get(init);
+  if (!c) {
+    const webm = init.length >= 4 && init[0] === 0x1a && init[1] === 0x45 && init[2] === 0xdf && init[3] === 0xa3;   // EBML header
+    c = webm ? (parseIndex(init, 'video/webm') ?? []).map((e) => e.off) : [];
+    clusterCache.set(init, c);
+  }
+  return c;
+}
+
+/** Expected file content: real init bytes, synthetic media after them. */
 export function expectedBytes(init: Buffer, start: number, end: number): Buffer {
-  const b = patternBuf(start, end - start);
+  const b = mediaBytes(init, start, end - start);
   for (let x = start; x < Math.min(end, init.length); x++) b[x - start] = init[x]!;
   return b;
 }
@@ -168,7 +195,7 @@ export function fakePumps(media: FakeMedia, { intervalMs = 2, fail = null, stall
         } else if (c.i < c.m.segs.length) {
           const s = c.m.segs[c.i++]!; any = true;
           rec.emitted++; log.emitted++;
-          o.onSegment(c.kind, { start: s.start, buf: patternBuf(s.start, s.length), startMs: s.startMs, durationMs: s.durationMs, init: false });
+          o.onSegment(c.kind, { start: s.start, buf: mediaBytes(c.m.init, s.start, s.length), startMs: s.startMs, durationMs: s.durationMs, init: false });
         }
         if (stopped) return;
       }

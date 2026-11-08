@@ -108,7 +108,8 @@ test('mpv plays and seeks through the media routes (real media, fake SABR)', { s
   try {
     const o = json<VodAnswer>((await get(`${app.base}/open?v=testtesttes&start=4`)).body);
     assert.equal(o.vitag, 242);
-    const proc = spawn(MPV, ['--no-config', '--vo=null', '--ao=null', '--cache=no', '--demuxer-readahead-secs=2', `--input-ipc-server=${sock}`,
+    // as Sofa's player (SFMPVEngine): no start-time probe of the first cluster
+    const proc = spawn(MPV, ['--no-config', '--vo=null', '--ao=null', '--cache=no', '--demuxer-readahead-secs=2', '--demuxer-mkv-probe-start-time=no', `--input-ipc-server=${sock}`,
       '--start=4', '--msg-level=all=v', o.video, `--audio-file=${o.audio}`], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     mpv = proc;
     proc.stdout.on('data', (d) => { mlog += d; });

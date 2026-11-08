@@ -15,7 +15,13 @@ const TOKEN_CACHE_MAX = 32;
 
 export function sabrPumps({ youtube, po }: { youtube: Pick<YouTube, 'reload' | 'cached'>; po: Pick<PoTokenProvider, 'mintString' | 'mintBytes' | 'renew'> }): EngineStartPump {
   async function preMint(videoId: string): Promise<string | undefined> {
-    try { return await po.mintString(videoId); } catch (e) { log('PO token for SABR unavailable:', errorMessage(e)); return undefined; }
+    const t0 = Date.now();
+    try {
+      return await po.mintString(videoId);
+    } catch (e) { log('PO token for SABR unavailable:', errorMessage(e)); return undefined; } finally {
+      // a start waits for it: where a slow start's seconds go
+      if (Date.now() - t0 > 500) log(`PO token for ${videoId}: ${Date.now() - t0} ms`);
+    }
   }
   const tokenCache = new Map<string, { token: string; at: number }>(); // videoId -> one pre-minted token per video, reused for restarts
   return (info, formats, opts) => {

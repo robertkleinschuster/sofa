@@ -59,6 +59,7 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 // --- player hooks: app knowledge about a running playback. `source` = the stream description the
 //     app's resolver attached to the opened URL (SFMPVSourceFor). ---
 + (BOOL)playbackIsSession:(NSDictionary *)source;   // stream served by an app session (local service) whose loss needs recovery
++ (void)playback:(NSDictionary *)source startsAt:(NSTimeInterval)seconds;   // the player opens the stream at this point (resume included)
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why;   // before the player reopens the item (recover the app's side, e.g. a fresh session)
 + (NSString *)playbackSessionLostNotification;      // posted when the service behind session streams died
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)

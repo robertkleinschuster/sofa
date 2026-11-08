@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mod, fixtureInit, fixtureInfo, segmentTable, expectedBytes, fakePumps, fakeYouTube, startApp, get, sleep, until,
-  xtags, FakeRes, json, must, nth, patternBuf,
+  xtags, FakeRes, json, must, nth,
 } from './helpers.ts';
 import type { TestApp, TestAppOptions } from './helpers.ts';
 import type { OpenAnswer, OpenFailure, VodAnswer } from '../../res/sofa-yt/lib/engine.ts';
@@ -221,7 +221,7 @@ test('media a running pump already passed but that is missing gets a run of its 
     assert.ok(await until(() => r2.bytes >= 1000, 2500), `the reader got the missing bytes (${r2.bytes})`);
     const fresh = pumps.log.starts.slice(starts);
     assert.ok(fresh.some((x) => x.video !== null && x.startMs === V(103).startMs), `a run at the missing segment: ${JSON.stringify(fresh)}`);
-    assert.ok(Buffer.concat(r2.chunks).equals(patternBuf(V(103).start, 1000)), 'the right bytes');
+    assert.ok(Buffer.concat(r2.chunks).equals(expectedBytes(VINIT, V(103).start, V(103).start + 1000)), 'the right bytes');
   } finally {
     s.close('test');
     r1.destroy(); r2.destroy();
@@ -325,6 +325,44 @@ test('prefetch hint: /open starts pulling at the resume position before mpv conn
     // playback the audio hint is consumed as well.
     const videoRuns = pumps.log.starts.filter((s) => s.video);
     assert.equal(videoRuns.length, 1, `resume position served by the prefetch run: ${runs()}`);
+  } finally { await app.close(); }
+});
+
+test('startsAt: the player\'s start point starts pulling there before mpv seeks (no prefetch at open)', async () => {
+  const { app, pumps } = await setup();
+  try {
+    const r = await openJson(app, `v=${ID}&prefetch=0`);   // as Sofa opens: no prefetch
+    assert.equal(pumps.log.starts.length, 0, 'open alone pulls nothing');
+    assert.equal(app.engine.startsAt(r.sid, 600000), true);
+    assert.ok(await until(() => pumps.log.starts.length > 0), 'a run starts at once');
+    assert.equal(nth(pumps.log.starts, 0).startMs, 600000, 'at the start point');
+    assert.equal(app.engine.startsAt('nope', 1000), false, 'unknown session');
+  } finally { await app.close(); }
+});
+
+test('header parse with a start hint: init + the first Cluster ID at once, no run from 0 (mpv seeks next)', async () => {
+  const { app, pumps } = await setup();
+  try {
+    const r = await openJson(app, `v=${ID}&prefetch=0`);
+    app.engine.startsAt(r.sid, 600000);
+    // mpv's header parse: reads until the first cluster's ID, then seeks (here: the read is dropped)
+    const h = await get(r.video, { range: 'bytes=0-', maxBytes: VINIT.length + 4, timeoutMs: 3000 });
+    assert.ok(h.body.equals(Buffer.concat([VINIT, Buffer.from([0x1f, 0x43, 0xb6, 0x75])])), 'init + Cluster ID');
+    await sleep(300);
+    const runs = JSON.stringify(pumps.log.starts);
+    assert.ok(pumps.log.starts.every((x) => x.startMs === 600000), `only the start point's run: ${runs}`);
+  } finally { await app.close(); }
+});
+
+test('header parse that waits for the first cluster anyway is served after PROBE_GRACE_MS (no hang)', async () => {
+  const { app, pumps } = await setup({ cfg: { PROBE_GRACE_MS: 200 } });
+  try {
+    const r = await openJson(app, `v=${ID}&prefetch=0`);
+    app.engine.startsAt(r.sid, 600000);
+    const first = must(VSEGS[0]);
+    const h = await get(r.video, { range: `bytes=0-${first.start + first.length - 1}`, timeoutMs: 5000 });
+    assert.ok(h.body.equals(expectedBytes(VINIT, 0, first.start + first.length)), 'the whole first cluster');
+    assert.ok(pumps.log.starts.some((x) => x.startMs === 0), 'a run from 0 once the reader kept waiting');
   } finally { await app.close(); }
 });
 

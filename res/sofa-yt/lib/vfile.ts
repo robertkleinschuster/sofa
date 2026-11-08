@@ -39,6 +39,9 @@ interface Waiter {
   check: () => void;
 }
 
+/** Matroska's Cluster element ID (EBML 0x1F43B675). */
+const CLUSTER_ID = Uint8Array.of(0x1f, 0x43, 0xb6, 0x75);
+
 export class VirtualFile {
   total: number;
   durationMs: number;
@@ -48,6 +51,14 @@ export class VirtualFile {
   index: MediaIndex | null;
   waiters: Set<Waiter>;
   failed: Error | null;
+  /**
+   * Bytes known without fetching: a WebM track's first Cluster ID, right after the init region when
+   * the index puts the first cluster there (Matroska: CueClusterPosition is where a Cluster element
+   * starts, and every Cluster starts with its ID). mpv's header parse ends by reading exactly that ID
+   * (demux_mkv: the loop breaks at the first cluster) - served from here, a start at a resume position
+   * needs no media from 0 (a whole SABR run, 5 s of server backoff, 2026-11-08).
+   */
+  known: { start: number; buf: Uint8Array } | null;
 
   /**
    * @param {object} o
@@ -64,7 +75,11 @@ export class VirtualFile {
     this.index = null;
     this.waiters = new Set();
     this.failed = null; // Error once the track can no longer be fed (waiters reject)
+    this.known = null;
   }
+
+  /** Where mpv's header parse stops: after the known first Cluster ID, else the init region's end. */
+  get probeEnd(): number { return this.known ? this.known.start + this.known.buf.length : this.initEnd; }
 
   get init(): Entry | null { return this.entries.length && this.entries[0]!.init ? this.entries[0]! : null; }
   get initEnd(): number { return this.init ? this.init.end : 0; }
@@ -115,7 +130,12 @@ export class VirtualFile {
     const e: Entry = { start, end, startMs, endMs: startMs + durationMs, buf, init };
     this.entries.splice(i, 0, e);
     this.bytes += buf.length;
-    if (init && !this.index) this.index = parseIndex(buf, this.mimeType);
+    if (init && !this.index) {
+      this.index = parseIndex(buf, this.mimeType);
+      if ((this.mimeType || '').includes('webm') && this.index?.[0]?.off === end && end + CLUSTER_ID.length <= this.total) {
+        this.known = { start: end, buf: CLUSTER_ID };
+      }
+    }
     this.wake();
     return 'added';
   }
@@ -168,7 +188,11 @@ export class VirtualFile {
   /** Copy-free view of [s, e) restricted to the entry that contains s. */
   sliceAt(s: number, e: number): Uint8Array | null {
     const en = this.entryAt(s);
-    if (!en) return null;
+    if (!en) {
+      const k = this.known;
+      if (k && s >= k.start && s < k.start + k.buf.length) return k.buf.subarray(s - k.start, Math.min(e, k.start + k.buf.length) - k.start);
+      return null;
+    }
     return en.buf.subarray(s - en.start, Math.min(e, en.end) - en.start);
   }
 
