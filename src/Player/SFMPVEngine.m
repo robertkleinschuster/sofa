@@ -1,4 +1,5 @@
 #import "SFMPVEngine.h"
+#import "SFCPUMeter.h"
 #import "SFSettings.h"
 #import "SFModel.h"
 #import "SFUserAgent.h"
@@ -88,6 +89,7 @@ static NSArray *SFTracksFromNode(const mpv_node *list) {
     BOOL _coreReady;                 // the core was created (or failed): _mpv is final
     NSMutableArray *_whenReady;      // calls waiting for it (an open)
     BOOL _shutDown;
+    SFCPUMeter *_cost;   // what playing costs (logPlaybackStats): only the seconds that played
 }
 
 // Playback that should run but makes no progress for this long counts as failed, so the player's
@@ -232,6 +234,7 @@ static dispatch_queue_t SetupQueue(void) {
 
 - (void)openURL:(NSURL *)url audioURL:(NSURL *)audioURL start:(NSTimeInterval)start exact:(BOOL)exact paused:(BOOL)paused {
     _status = SFEngineLoading; _error = nil; _loaded = NO; _started = NO; _statsLogged = NO; _eof = NO; _time = 0; _dur = 0; _cacheTime = 0;
+    _cost = [SFCPUMeter new];
     _openedAt = [NSDate date]; _stallSince = nil; _stallFired = NO;   // the core's creation counts to the open
     _voHeals = 0; _voDownTicks = 0;
     [_tick invalidate];
@@ -314,6 +317,7 @@ static dispatch_queue_t SetupQueue(void) {
 }
 
 - (void)onTick {
+    [_cost tick:_started && !_paused && !_waiting && !_eof];
     [self watchStall];
     if (!_loaded || _stallFired) return;
     [self healVideoOutput];
@@ -451,9 +455,10 @@ static dispatch_queue_t SetupQueue(void) {
 - (void)logPlaybackStats {
     if (!_mpv || !_started || _statsLogged) return;
     _statsLogged = YES;
-    SFLog(@"mpv: played to %.0f s at %@ fps - dropped %@ (decoder %@), delayed %@", _time,
+    NSString *cpu = _cost.seconds >= 5 ? [NSString stringWithFormat:@", Sofa CPU %.0f%% of a core while playing", _cost.percentOfCore] : @"";
+    SFLog(@"mpv: played to %.0f s at %@ fps - dropped %@ (decoder %@), delayed %@%@", _time,
           [self prop:@"estimated-vf-fps"] ?: @"?", [self prop:@"frame-drop-count"] ?: @"?",
-          [self prop:@"decoder-frame-drop-count"] ?: @"?", [self prop:@"vo-delayed-frame-count"] ?: @"?");
+          [self prop:@"decoder-frame-drop-count"] ?: @"?", [self prop:@"vo-delayed-frame-count"] ?: @"?", cpu);
 }
 
 - (void)close {

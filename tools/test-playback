@@ -197,6 +197,9 @@ since $m | grep -q 'player: resolve\|player: play ' && bad "the panel restarted 
 echo "==> 4. broken stream -> readable message"
 m=$(mark); cmd "play http://127.0.0.1:1/broken.mp4"; waitlog $m 'player: failed' 60
 since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no final failure"
+# the replaced playback (sections 1-3, 10+ s played) logged what it cost: Sofa's CPU while playing
+since $m | grep 'mpv: played to' | head -1 | grep -q 'Sofa CPU [0-9][0-9]*% of a core while playing' \
+  && ok "playback stats with the CPU it took ($(since $m | grep -o 'Sofa CPU [0-9]*%' | head -1))" || bad "no CPU in the stats: $(since $m | grep 'mpv: played to' | head -1)"
 shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
 stop
 
