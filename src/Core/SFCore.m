@@ -90,20 +90,21 @@ NSArray *SFInterleave(NSArray *lists, NSUInteger max, id (^key)(id)) {
     return r;
 }
 
+// Plain C time arithmetic (timegm/mktime): an NSCalendar per call cost ~15 ms - a home refresh
+// parsing 63 dates blocked the main thread for a second (hitch 2026-11-08).
 NSDate *SFDateFromISO8601(NSString *s) {
     if (![s isKindOfClass:[NSString class]] || s.length < 10) return nil;
     const char *c = s.UTF8String;
     int y, mo, d, h = 0, mi = 0, n = 0;
     double sec = 0;
     if (sscanf(c, "%4d-%2d-%2d%n", &y, &mo, &d, &n) != 3 || n != 10) return nil;
-    NSDateComponents *dc = [NSDateComponents new];
-    dc.year = y; dc.month = mo; dc.day = d;
-    NSCalendar *cal = [[NSCalendar alloc] initWithCalendarIdentifier:NSGregorianCalendar];
+    struct tm t = {0};
+    t.tm_year = y - 1900; t.tm_mon = mo - 1; t.tm_mday = d;
     const char *p = c + 10;
     if (*p != 'T' && *p != ' ') {   // date only: a calendar day in local time
         if (*p) return nil;
-        cal.timeZone = [NSTimeZone localTimeZone];
-        return [cal dateFromComponents:dc];
+        t.tm_isdst = -1;
+        return [NSDate dateWithTimeIntervalSince1970:(NSTimeInterval)mktime(&t)];
     }
     p++;
     int m = 0;
@@ -116,10 +117,8 @@ NSDate *SFDateFromISO8601(NSString *s) {
         if (sscanf(p + 1, "%2d:%2d", &oh, &om) < 2 && sscanf(p + 1, "%2d%2d", &oh, &om) < 1) return nil;
         offset = (oh * 3600 + om * 60) * (*p == '-' ? -1 : 1);
     } else if (*p && *p != 'Z') return nil;
-    dc.hour = h; dc.minute = mi; dc.second = (NSInteger)sec;
-    cal.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    NSDate *utc = [cal dateFromComponents:dc];
-    return [utc dateByAddingTimeInterval:(sec - floor(sec)) - offset];
+    t.tm_hour = h; t.tm_min = mi; t.tm_sec = 0;
+    return [NSDate dateWithTimeIntervalSince1970:(NSTimeInterval)timegm(&t) + sec - offset];
 }
 
 NSString *SFFormatClock(NSDate *d) {

@@ -17,5 +17,11 @@ int main(void){ @autoreleasepool {
   NSDateComponents *c = [[NSCalendar currentCalendar] components:NSHourCalendarUnit|NSDayCalendarUnit fromDate:day];
   printf("%s date-only -> local day %ld hour %ld\n", c.day == 31 && c.hour == 0 ? "ok  " : "FAIL", (long)c.day, (long)c.hour);
   for (NSString *b in @[@"", @"gestern", @"2026-13", @"2026-11-05X", @"2026-11-05T5:1"]) { if (SFDateFromISO8601(b)) { bad++; printf("FAIL accepted %s\n", b.UTF8String);} }
+  // cheap enough for the main thread: a home refresh parses dozens (an NSCalendar per call took ~15 ms)
+  NSDate *t0 = [NSDate date];
+  for (int i = 0; i < 2000; i++) SFDateFromISO8601(@"2026-11-05T05:13:00+01:00");
+  double ms = -[t0 timeIntervalSinceNow] * 1000;
+  if (ms > 100) bad++;
+  printf("%s 2000 parses in %.0f ms\n", ms <= 100 ? "ok  " : "FAIL", ms);
   printf(bad ? "FAILED\n" : "all ok\n"); return bad;
 }}
