@@ -59,6 +59,8 @@ static __weak SFNavigator *gNav;
 
 + (void)sleepTimerWarn { [gNav toast:@"Sleep-Timer: Bildschirm geht in 1 Minute aus"]; }
 
++ (void)switchOff { [self displayOff]; }
+
 + (void)sleepTimerFired {
     gSleepTimer = nil; gFireDate = nil;
     [self displayOff];
@@ -85,16 +87,16 @@ static __weak SFNavigator *gNav;
     [nav push:[[SFMenuScreen alloc] initWithTitle:@"Sleep-Timer" subtitle:[self timerDetail] options:opts theme:nav.top.theme]];
 }
 
+// ("Ausschalten" is the quick menu's first entry - SFQuickMenu, switchOff)
 + (void)showPowerMenuOn:(SFNavigator *)nav {
     gNav = nav;
-    SFMenuOption *off = [SFMenuOption option:@"Bildschirm ausschalten" action:^{ [self displayOff]; }];
     SFMenuOption *timer = [SFMenuOption option:@"Sleep-Timer" action:^{
         dispatch_async(dispatch_get_main_queue(), ^{ [self showSleepTimerMenuOn:nav]; });
     }];
     timer.detail = [self timerDetail];
     SFMenuOption *sleep = [SFMenuOption option:@"Ruhezustand" action:^{ [self systemSleep]; }];
     sleep.detail = @"Mac schlafen legen";
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[off, timer, sleep] theme:nav.top.theme]];
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[timer, sleep] theme:nav.top.theme]];
 }
 
 + (void)setNavigator:(SFNavigator *)nav { gNav = nav; }

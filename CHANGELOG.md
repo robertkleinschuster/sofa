@@ -6,6 +6,10 @@ Einstellungen → „Update installieren“.
 
 ## Unveröffentlicht
 
+- **„Ausschalten“ steht ganz oben im Schnellmenü** (MENU auf der Startseite oder MENU gedrückt
+  halten): ein Klick, und der Fernseher geht aus. Sleep-Timer und Ruhezustand bleiben unter „Energie“.
+- Die Startseite und der Videostart ruckeln seltener (Datumsangaben und Abfragen des Speichers
+  blockieren die Oberfläche nicht mehr).
 - Der Player zeigt beim Laden eines Videos nicht mehr fälschlich „LIVE“ unten links; „LIVE“ steht
   nur noch bei echten Livestreams.
 

@@ -171,7 +171,7 @@ waitlog $m 'player: spinner off' 40
 ff=$(since $m | grep -n 'mpv: first frame' | head -1 | cut -d: -f1); so=$(since $m | grep -n 'player: spinner off' | head -1 | cut -d: -f1)
 [ -n "$ff" ] && [ -n "$so" ] && [ "$so" -gt "$ff" ] && ok "spinner until the first frame" || bad "spinner gone before the first frame (frame line ${ff:-none}, off line ${so:-none})"
 # MENU held over the video: the quick menu, the video keeps playing under it (user 2026-11-08)
-m=$(mark); p0=$(pos); cmd "key menuhold"; waitlog $m 'menu: quick menu - Zum Startbildschirm' 20 && ok "MENU held over the video: the quick menu" || bad "no quick menu over the video"
+m=$(mark); p0=$(pos); cmd "key menuhold"; waitlog $m 'menu: quick menu - Ausschalten, Zum Startbildschirm' 20 && ok "MENU held over the video: the quick menu" || bad "no quick menu over the video"
 sleep 1.5; p1=$(pos)
 awk "BEGIN{exit !(${p1:-0} > ${p0:-0} + 0.8)}" 2>/dev/null && ok "the video plays on under the menu ($p0 -> $p1 s)" || bad "playback under the menu: $p0 -> $p1"
 cmd "key menu"; sleep 0.5; since $m | grep -q 'player: closed\|player: leaving' && bad "MENU closed the player instead of the menu" || ok "MENU closes the menu, not the video"

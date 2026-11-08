@@ -15,6 +15,8 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
     BOOL atHome = nav.stack.count <= 1;
     [SFAudioOutput outputs:^(NSArray *outputs) {   // the sound entry names the current output
         NSMutableArray *opts = [NSMutableArray new];
+        // first: the entry used most (user 2026-11-08)
+        [opts addObject:[SFMenuOption option:@"Ausschalten" action:^{ [SFPower switchOff]; }]];
         if (!atHome) [opts addObject:[SFMenuOption option:@"Zum Startbildschirm" action:^{ [nav popToRoot]; }]];
         SFMenuOption *sound = [SFMenuOption option:@"Ton" action:^{ [self showSoundOn:nav]; }];
         sound.detail = [outputs.firstObject current] ? [outputs.firstObject name] : nil;
