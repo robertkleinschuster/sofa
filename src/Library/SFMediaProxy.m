@@ -54,6 +54,18 @@ NSString *SFProxyHash(NSString *s) {
 - (dispatch_queue_t)queue { return _q; }
 - (uint16_t)port { return _server.port; }
 
+- (SFProxySession *)sessionWithID:(NSString *)sid { return sid ? _sessions[sid] : nil; }
+
+- (void)storedRangesFor:(NSURL *)url done:(void (^)(NSArray *))done {
+    NSArray *p = url.pathComponents;   // "/", h|f, sid, ...
+    NSString *sid = p.count > 2 && [url.host isEqualToString:@"127.0.0.1"] && url.port.unsignedShortValue == self.port ? p[2] : nil;
+    dispatch_async(_q, ^{
+        SFProxySession *s = [self sessionWithID:sid];
+        if (s.hls && s.vod) [self storedHLSRangesOf:s done:done];
+        else SFMain(^{ done(nil); });   // a progressive file: bytes -> time needs its index (not yet)
+    });
+}
+
 - (NSString *)addSession:(SFProxySession *)s {
     s.sid = [[[NSUUID UUID] UUIDString] substringToIndex:12].lowercaseString;
     dispatch_sync(_q, ^{ self->_sessions[s.sid] = s; });

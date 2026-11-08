@@ -96,6 +96,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
         self->_barBuffer.anchorPoint = CGPointZero;
         self->_barBuffer.backgroundColor = [NSColor colorWithDeviceWhite:1 alpha:0.25].CGColor;
         [self->_barBg addSublayer:self->_barBuffer];
+        [self setupStoredShade];
         self->_barFill = [CALayer layer];
         self->_barFill.anchorPoint = CGPointZero;
         NSColor *acc = t.seekBarColor;
@@ -313,6 +314,7 @@ static const NSTimeInterval kFailedMoveOn = 5;
         open = [NSURL URLWithString:src[@"video"]];
         if (src[@"audio"]) audio = [NSURL URLWithString:src[@"audio"]];
     }
+    _servedURL = open; _storedRanges = nil; _storedAsked = 0;
     _engine = [SFMPVEngine new];
     _engine.delegate = self;
     _engine.muted = SFDevMode;   // dev mode: don't disturb anyone
@@ -390,7 +392,7 @@ static const NSTimeInterval kFailedMoveOn = 5;
     NSTimeInterval dur = [self duration];
     if (dur > 0 && c > dur * 0.5) [self askUpNext];
     if (fabs(c - _lastSaved) > 15) { _lastSaved = c; [self saveProgress]; }
-    if (_osdVisible) [self updateBar];
+    if (_osdVisible) { [self updateBar]; [self refreshStoredRanges]; }
     [self esUpdate];
     if (_spinner && ![self awaitingPicture]) [self showSpinner:NO];
 }

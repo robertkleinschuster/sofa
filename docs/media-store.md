@@ -125,5 +125,10 @@ store can hold; existing downloads may be deleted (no migration of old files).
       are readable from any thread without its queue).
    b. Done - "Herunterladen" on a partly loaded video says what is missing ("noch 340 MB", exact from
       the manifest's track lengths; SFMediaStore missingBytesOf:, SFDownloads download:told:).
-   c. Timeline shade of the stored ranges - open: bytes -> time needs each source's index (HLS segment
-      durations exact; WebM cues / MP4 sample tables otherwise) - no proportional guess.
+   c. Timeline shade of the stored ranges - exact only, never a proportional guess (user 2026-11-08:
+      "exakt, ORF zuerst"). Done for HLS (ORF): SFMediaProxy records each VOD media playlist's segments
+      with their #EXTINF times and what each needs (segment, key, init section); the playlists the
+      player reads resources of are the active ones (not every variant lavf parsed), a time is stored
+      when every active playlist's segment is complete (video and audio rendition). The player asks
+      every 3 s while the bar shows, off the main thread (SFPlayerScreen+Stored.m). Next: YouTube (the
+      engine's tracks: WebM cues / MP4 sidx give byte -> time), then progressive MP4 (sample tables).

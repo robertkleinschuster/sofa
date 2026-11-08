@@ -53,6 +53,45 @@ static NSArray *ResourcesOf(NSString *text, NSString *base) {
     return out;
 }
 
+// A media playlist's segments on its timeline: @[@[start s, end s, @[the keys a segment needs - itself,
+// the key it is encrypted with, its init section]]]
+static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
+    NSMutableArray *out = [NSMutableArray new];
+    double t = 0, dur = -1;
+    NSString *key = nil, *map = nil;
+    for (NSString *raw in [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (!l.length) continue;
+        if ([l hasPrefix:@"#EXTINF:"]) { dur = [[l substringFromIndex:8] doubleValue]; continue; }
+        if ([l hasPrefix:@"#EXT-X-KEY"] || [l hasPrefix:@"#EXT-X-MAP"]) {
+            NSDictionary *a = Attributes(l);
+            NSString *u = a[@"URI"];
+            NSString *k = u.length && ![u hasPrefix:@"data:"] && ![a[@"METHOD"] isEqual:@"NONE"] ? KeyOf(item, Absolute(u, base)) : nil;
+            if ([l hasPrefix:@"#EXT-X-KEY"]) key = k; else map = k;
+            continue;
+        }
+        if ([l hasPrefix:@"#"] || dur < 0) continue;
+        NSMutableArray *needs = [NSMutableArray arrayWithObject:KeyOf(item, Absolute(l, base))];
+        if (key) [needs addObject:key];
+        if (map) [needs addObject:map];
+        [out addObject:@[@(t), @(t + dur), needs]];
+        t += dur; dur = -1;
+    }
+    return out;
+}
+
+// sorted, disjoint ranges: where both are
+static NSArray *Intersect(NSArray *a, NSArray *b) {
+    NSMutableArray *out = [NSMutableArray new];
+    NSUInteger i = 0, j = 0;
+    while (i < a.count && j < b.count) {
+        double s = MAX([a[i][0] doubleValue], [b[j][0] doubleValue]), e = MIN([a[i][1] doubleValue], [b[j][1] doubleValue]);
+        if (e > s) [out addObject:@[@(s), @(e)]];
+        if ([a[i][1] doubleValue] < [b[j][1] doubleValue]) i++; else j++;
+    }
+    return out;
+}
+
 @implementation SFMediaProxy (HLS)
 
 + (BOOL)isPlaylist:(NSURL *)url {
@@ -65,6 +104,7 @@ static NSArray *ResourcesOf(NSString *text, NSString *base) {
     s.item = item; s.hls = YES;
     s.playlists = [NSMutableArray new]; s.resources = [NSMutableArray new];
     s.playlistIndex = [NSMutableDictionary new]; s.resourceIndex = [NSMutableDictionary new];
+    s.segments = [NSMutableDictionary new]; s.segmentPlaylist = [NSMutableDictionary new]; s.activePlaylists = [NSMutableSet new];
     return s;
 }
 
@@ -148,6 +188,7 @@ static NSArray *ResourcesOf(NSString *text, NSString *base) {
         if (n >= (NSInteger)s.playlists.count || i >= (NSInteger)s.storedPlaylists.count) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
         NSDictionary *pl = s.storedPlaylists[(NSUInteger)i];
         NSString *body = [self rewrite:pl[@"text"] base:pl[@"base"] session:s];
+        [self noteSegments:pl[@"text"] base:pl[@"base"] playlist:n session:s];
         [x respond:200 type:@"application/vnd.apple.mpegurl" body:[body dataUsingEncoding:NSUTF8StringEncoding]];
         return;
     }
@@ -160,6 +201,7 @@ static NSArray *ResourcesOf(NSString *text, NSString *base) {
         dispatch_async(self.queue, ^{
             if (!text || st >= 400) { [x respondJSON:st >= 400 ? st : 502 object:@{@"error": e.localizedDescription ?: @"playlist"}]; return; }
             NSString *body = [self rewrite:text base:eff ?: url session:s];
+            [self noteSegments:text base:eff ?: url playlist:n session:s];
             [x respond:200 type:@"application/vnd.apple.mpegurl" body:[body dataUsingEncoding:NSUTF8StringEncoding]];
         });
     });
@@ -168,6 +210,8 @@ static NSArray *ResourcesOf(NSString *text, NSString *base) {
 - (void)resource:(NSInteger)n to:(SFHTTPExchange *)x session:(SFProxySession *)s {
     if (n < 0 || n >= (NSInteger)s.resources.count) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
     NSString *url = s.resources[(NSUInteger)n], *key = KeyOf(s.item, url);
+    NSNumber *pl = s.segmentPlaylist[key];
+    if (pl) [s.activePlaylists addObject:pl];   // the player reads this playlist
     NSString *range = [x.request header:@"range"];
     void (^send)(NSData *) = ^(NSData *d) {
         long long a, b; BOOL partial;
@@ -225,6 +269,35 @@ static NSArray *ChooseVariant(NSString *master, NSString *base, long long *bandw
     *bandwidth = bestBW;
     NSString *a = best[@"AUDIO"] ? audio[best[@"AUDIO"]] : nil;
     return a ? @[bestURL, a] : @[bestURL];
+}
+
+#pragma mark Stored ranges
+
+// on the queue: a VOD media playlist's segments, for the timeline
+- (void)noteSegments:(NSString *)text base:(NSString *)base playlist:(NSInteger)n session:(SFProxySession *)s {
+    if (!s.vod || [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) return;
+    NSArray *segs = SegmentsOf(text, base, s.item);
+    s.segments[@(n)] = segs;
+    for (NSArray *g in segs) s.segmentPlaylist[[g[2] firstObject]] = @(n);
+}
+
+- (void)storedHLSRangesOf:(SFProxySession *)s done:(void (^)(NSArray *))done {
+    NSMutableArray *tables = [NSMutableArray new];
+    for (NSNumber *pl in s.activePlaylists) if (s.segments[pl]) [tables addObject:s.segments[pl]];
+    if (!tables.count) { SFMain(^{ done(nil); }); return; }
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{   // the store's queue: not the server's
+        NSArray *all = nil;
+        for (NSArray *segs in tables) {
+            NSMutableArray *r = [NSMutableArray new];
+            for (NSArray *g in segs) {
+                if (![SFProxyStore() hasComplete:g[2]]) continue;
+                if (r.count && [[r.lastObject lastObject] doubleValue] == [g[0] doubleValue]) r[r.count - 1] = @[r.lastObject[0], g[1]];
+                else [r addObject:@[g[0], g[1]]];
+            }
+            all = all ? Intersect(all, r) : r;
+        }
+        SFMain(^{ done(all); });
+    });
 }
 
 - (dispatch_block_t)fillHLS:(NSURL *)url item:(NSString *)item subs:(NSArray *)subs

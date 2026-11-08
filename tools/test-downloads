@@ -18,8 +18,9 @@
 #      by ranges (no ffmpeg); it plays from the store, "Online abspielen" (info panel) switches to the
 #      source, and it plays from the store without its source
 #   8d. an HLS source (ORF) through the media proxy: a master with two variants, AES-128 segments and
-#      their key - the download takes the better variant into the store (no ffmpeg), it then plays
-#      from the store without its source
+#      their key - playing it shows what is on disk as a shade on the timeline (exact segments of the
+#      variant played); the download takes the better variant into the store (no ffmpeg), it then
+#      plays from the store without its source, shaded end to end
 #   8b. pre-buffering: a subscription episode filled into the store expires (14 days, or 3 days after
 #      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
 #      episode keeps it without loading again
@@ -361,6 +362,15 @@ s.serve_forever()" "$H" "$T/hls.port" & HSRV=$!
 for i in $(seq 1 100); do [ -s "$T/hls.port" ] && break; sleep 0.1; done
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$(cat "$T/hls.port")/master.m3u8
 start
+# playing online: what mpv fetched of its variant is on disk, the timeline shows it (exact segments)
+m=$(wc -l < "$LOG")
+cmd "play example:4"
+for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
+sleep 1; cmd "key select"   # the bar
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9]" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9] range(s), [1-9][0-9]* of 1[12] s" && ok "the timeline shows what playback put on disk ($(tail -n +$((m + 1)) "$LOG" | grep -o 'stored [0-9].*' | tail -1))" \
+  || bad "no stored shade while playing: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored\|player: play' | tail -2)"
+cmd "key menu"; sleep 0.5
 cmd "dlget example:4"
 for i in $(seq 1 160); do grep -q "downloads: done example:4\|downloads: FAILED example:4" "$LOG" && break; sleep 0.25; done
 grep -q "media-proxy: filling example:4 (HLS" "$LOG" && grep -q "downloads: done example:4" "$LOG" && ok "HLS filled through the proxy" \
@@ -375,6 +385,10 @@ cmd "play example:4"
 for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
 tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && ok "the HLS item plays from the store with its source gone (decrypted with the stored key)" \
   || bad "no HLS playback from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player\|mpv' | tail -4)"
+cmd "key select"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range(s), 1[12] of 1[12] s" && ok "a download: the timeline shaded end to end" \
+  || bad "stored shade of a download: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 quit
 fi   # part c
 

@@ -30,6 +30,8 @@
     CAGradientLayer *_topShade, *_bottomShade;
     SFLabel *_title, *_channel;
     CALayer *_barBg, *_barFill, *_barBuffer, *_barKnob;
+    CALayer *_barStored;         // what of the video is on disk (SFPlayerScreen+Stored.m)
+    NSArray *_storedRanges; NSTimeInterval _storedAsked;
     SFLabel *_elapsed, *_remaining, *_endsAt;
     CALayer *_pauseIcon;
     CALayer *_spinner;
@@ -46,6 +48,7 @@
     NSTimeInterval _lastSaved;
     BOOL _ended, _failed, _closing;
     NSURL *_openURL; NSTimeInterval _openResume;
+    NSURL *_servedURL;           // what mpv reads (the media proxy's URL for a source's file or playlist)
     id _resolving;               // token of the running resolve (startItem): late answers are ignored
     BOOL _holdPaused;   // "start paused" holds across reopens until the user presses play
     NSTimer *_nextTimer;
@@ -103,6 +106,9 @@
 - (void)teardown;
 - (void)setAssertion:(BOOL)on;
 - (NSTimeInterval)current;
+// SFPlayerScreen+Stored.m
+- (void)setupStoredShade;
+- (void)refreshStoredRanges;   // while the bar shows: every few seconds, asked off the main thread
 - (NSTimeInterval)seekOrigin;
 - (SFItem *)item;
 - (void)saveProgress;

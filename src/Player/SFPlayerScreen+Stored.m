@@ -1,0 +1,56 @@
+// SFPlayerScreen - what of the video is on disk, as a shade on the timeline (docs/media-store.md 5c):
+// exact ranges from the media proxy (HLS: its segments' durations), never a guess from byte counts.
+// Asked off the main thread while the bar shows, every few seconds (playback keeps filling it).
+#import "SFPlayerScreen+Private.h"
+#import "SFMediaProxy.h"
+
+static const NSTimeInterval kStoredRefresh = 3;
+
+@implementation SFPlayerScreen (Stored)
+
+- (void)setupStoredShade {
+    _barStored = [CALayer layer];
+    _barStored.anchorPoint = CGPointZero;
+    _barStored.frame = _barBg.bounds;
+    [_barBg addSublayer:_barStored];
+}
+
+- (void)refreshStoredRanges {
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (!_servedURL || _item.kind == SFItemLive || now - _storedAsked < kStoredRefresh) return;
+    _storedAsked = now;
+    NSURL *asked = _servedURL;
+    __weak SFPlayerScreen *ws = self;
+    [[SFMediaProxy shared] storedRangesFor:asked done:^(NSArray *ranges) {
+        SFPlayerScreen *s = ws;
+        if (!s || ![s->_servedURL isEqual:asked] || [s->_storedRanges isEqual:ranges]) return;
+        s->_storedRanges = ranges;
+        [s layoutStoredShade];
+    }];
+}
+
+- (void)layoutStoredShade {
+    NSTimeInterval d = [self duration];
+    CGFloat w = _barBg.bounds.size.width, h = _barBg.bounds.size.height;
+    CGColorRef c = [NSColor colorWithDeviceWhite:1 alpha:0.3].CGColor;
+    NSMutableArray *layers = [NSMutableArray new];
+    for (NSArray *r in d > 0 ? _storedRanges : nil) {
+        CGFloat x0 = w * MIN(1, [r[0] doubleValue] / d), x1 = w * MIN(1, [r[1] doubleValue] / d);
+        if (x1 - x0 < 1) continue;
+        CALayer *l = [CALayer layer];
+        l.anchorPoint = CGPointZero;
+        l.frame = CGRectMake(x0, 0, x1 - x0, h);
+        l.backgroundColor = c;
+        [layers addObject:l];
+    }
+    SFNoAnimate(^{ self->_barStored.sublayers = layers; });
+    SFLog(@"player: stored %lu range(s), %.0f of %.0f s", (unsigned long)_storedRanges.count, [self storedSeconds], d);
+}
+
+- (NSTimeInterval)storedSeconds {
+    NSTimeInterval n = 0;
+    for (NSArray *r in _storedRanges) n += [r[1] doubleValue] - [r[0] doubleValue];
+    return n;
+}
+
+@end
