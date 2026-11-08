@@ -24,7 +24,7 @@ static const NSTimeInterval kStoredRefresh = 3;
     __weak SFPlayerScreen *ws = self;
     void (^got)(NSArray *) = ^(NSArray *ranges) {
         SFPlayerScreen *s = ws;
-        if (!s || ![s->_servedURL isEqual:asked] || [s->_storedRanges isEqual:ranges]) return;
+        if (!s || ![s->_servedURL isEqual:asked] || s->_storedRanges == ranges || [s->_storedRanges isEqual:ranges]) return;
         s->_storedRanges = ranges;
         [s layoutStoredShade];
     };
@@ -53,7 +53,7 @@ static const NSTimeInterval kStoredRefresh = 3;
         [layers addObject:l];
     }
     SFNoAnimate(^{ self->_barStored.sublayers = layers; });
-    SFLog(@"player: stored %lu range(s), %.0f of %.0f s", (unsigned long)_storedRanges.count, [self storedSeconds], d);
+    if (_storedRanges) SFLog(@"player: stored %lu range(s), %.0f of %.0f s", (unsigned long)_storedRanges.count, [self storedSeconds], d);
 }
 
 - (NSTimeInterval)storedSeconds {

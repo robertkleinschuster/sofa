@@ -34,7 +34,10 @@ static NSArray *RangesOf(NSDictionary *m, NSDictionary *index) {
     SFBackground(^{   // the manifest and extents: the store's queue
         NSDictionary *m = [Store() manifestOf:item];
         NSDictionary *have = dict(m[@"index"]) ?: @{};
-        NSArray *r = RangesOf(m, have);
+        double duration = [m[@"duration"] doubleValue];
+        // complete on disk (a stored session always is): the whole video - no index needed (one stored
+        // before the indexes were kept has none, and no engine session to ask)
+        NSArray *r = duration > 0 && [Store() itemIsComplete:item] ? @[@[@0, @(duration)]] : RangesOf(m, have);
         if (r || stored || !m) { SFMain(^{ done(r); }); return; }
         // not both indexes yet: ask the engine (known once each track's init segment arrived)
         [self request:@"index" args:@[sid] timeout:5 done:^(id v, NSError *e) {
