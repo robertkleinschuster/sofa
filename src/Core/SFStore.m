@@ -36,6 +36,9 @@
         [self exec:@"PRAGMA journal_size_limit=8388608"];   // WAL file trimmed back to 8 MB after checkpoints
         [self attachCache];
         [self migrate];
+        // references (schema step 18) are checked at commit from here on - after the migration:
+        // the pragma does nothing inside a transaction, and the steps rebuild tables
+        [self exec:@"PRAGMA foreign_keys=ON"];
         [self loadProgress];
         [self loadSettings];
         [self loadOriginalTitles];
@@ -46,6 +49,7 @@
 }
 
 - (NSUInteger)errorCount { return _errors; }
+- (void)failStep:(NSString *)why { _errors++; SFLog(@"store: %@", why); }
 
 #pragma mark Response cache
 

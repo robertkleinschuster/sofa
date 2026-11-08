@@ -39,6 +39,8 @@ wait
 
 fail=0
 for t in $SUITES; do
+  # a FAIL line counts even when the suite's exit code missed it (dev-instance.sh's refused statements)
+  grep -qE '^ *(FAIL|not ok) ' "$OUT/$t.log" && [ "$(cat "$OUT/$t.rc")" = 0 ] && echo 1 > "$OUT/$t.rc"
   if [ "$(cat "$OUT/$t.rc")" = 0 ]; then printf "  ok    %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
   else printf "  FAIL  %-15s %4ss\n" $t "$(cat "$OUT/$t.sec")"
     # the failing checks by name (shell suites: "FAIL ...", node: "not ok ..."), then the tail

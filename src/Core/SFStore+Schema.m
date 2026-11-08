@@ -171,6 +171,64 @@
         ^{
             [self exec:@"ALTER TABLE downloads DROP COLUMN bytes"];
         },
+        // 18: the rules the code keeps, stated by the schema: required columns NOT NULL, value ranges as
+        // CHECKs, references as foreign keys (checked at commit - DEFERRABLE INITIALLY DEFERRED - so a
+        // transaction may write in any order; enforced from launch on, PRAGMA foreign_keys). Tables
+        // are rebuilt (SQLite adds constraints no other way). What an old database may hold that
+        // breaks them is settled first: a missing item gets a stub row (its id; the next write of
+        // the item fills it) - a watched mark is not lost for want of metadata; follow items and
+        // auto-downloads of a follow that is gone go; a download's vanished subscription is dropped.
+        ^{
+            for (NSString *t in @[@"progress", @"downloads", @"watch_later", @"follow_items"])
+                [self exec:[NSString stringWithFormat:@"INSERT OR IGNORE INTO items (id, json) SELECT DISTINCT id, json_object('id', id) "
+                            "FROM %@ WHERE id NOT IN (SELECT id FROM items)", t]];
+            [self exec:@"DELETE FROM follow_items WHERE follow NOT IN (SELECT id FROM follows)"];
+            [self exec:@"DELETE FROM subscriptions WHERE id NOT IN (SELECT id FROM follows)"];
+            [self exec:@"UPDATE downloads SET sub = NULL WHERE sub IS NOT NULL AND sub NOT IN (SELECT id FROM subscriptions)"];
+            NSString *const fk = @"DEFERRABLE INITIALLY DEFERRED";
+            NSArray *tables = @[
+                @[@"progress", [NSString stringWithFormat:@"id TEXT PRIMARY KEY REFERENCES items(id) %@, "
+                   "pos REAL NOT NULL DEFAULT 0 CHECK (pos >= 0), dur REAL NOT NULL DEFAULT 0 CHECK (dur >= 0), "
+                   "watched INTEGER NOT NULL DEFAULT 0 CHECK (watched IN (0, 1)), updated REAL NOT NULL, source TEXT", fk],
+                  @"id, MAX(IFNULL(pos, 0), 0), MAX(IFNULL(dur, 0), 0), IFNULL(watched, 0) <> 0, IFNULL(updated, 0), source"],
+                @[@"downloads", [NSString stringWithFormat:@"id TEXT PRIMARY KEY REFERENCES items(id) %@, source TEXT NOT NULL, "
+                   "channel TEXT NOT NULL DEFAULT '', thumb TEXT, state INTEGER NOT NULL CHECK (state BETWEEN 0 AND 5), "
+                   "progress REAL NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 1), added REAL NOT NULL, published REAL, "
+                   "sub TEXT REFERENCES subscriptions(id) %@, error TEXT, tries INTEGER NOT NULL DEFAULT 0 CHECK (tries >= 0), "
+                   "keep INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)), online INTEGER CHECK (online IN (0, 1)), "
+                   "onlineAt REAL, retryAt REAL, expires REAL", fk, fk],
+                  @"id, IFNULL(source, ''), IFNULL(channel, ''), thumb, IFNULL(state, 0), MIN(MAX(IFNULL(progress, 0), 0), 1), "
+                   "IFNULL(added, 0), published, sub, error, MAX(IFNULL(tries, 0), 0), IFNULL(keep, 0) <> 0, "
+                   "CASE WHEN online IS NULL THEN NULL ELSE online <> 0 END, onlineAt, retryAt, expires"],
+                @[@"follows", @"id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL, image TEXT, added REAL NOT NULL, checked REAL",
+                  @"id, IFNULL(source, ''), IFNULL(title, ''), image, IFNULL(added, 0), checked"],
+                @[@"follow_items", [NSString stringWithFormat:@"follow TEXT NOT NULL REFERENCES follows(id) %@, "
+                   "id TEXT NOT NULL REFERENCES items(id) %@, pos INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (follow, id)", fk, fk],
+                  @"follow, id, IFNULL(pos, 0)"],
+                @[@"subscriptions", [NSString stringWithFormat:@"id TEXT PRIMARY KEY REFERENCES follows(id) %@, "
+                   "keepDays INTEGER NOT NULL DEFAULT 90 CHECK (keepDays > 0), since REAL NOT NULL DEFAULT 0, added REAL NOT NULL", fk],
+                  @"id, CASE WHEN keepDays > 0 THEN keepDays ELSE 90 END, IFNULL(since, 0), IFNULL(added, 0)"],
+                @[@"watch_later", [NSString stringWithFormat:@"id TEXT PRIMARY KEY REFERENCES items(id) %@, "
+                   "source TEXT NOT NULL DEFAULT '', added REAL NOT NULL", fk],
+                  @"id, IFNULL(source, ''), IFNULL(added, 0)"],
+                @[@"stats", @"day TEXT NOT NULL, event TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0), PRIMARY KEY (day, event)",
+                  @"day, event, MAX(IFNULL(n, 0), 0)"],
+                @[@"recent_searches", @"source TEXT NOT NULL, query TEXT NOT NULL COLLATE NOCASE, at REAL NOT NULL, PRIMARY KEY (source, query)",
+                  @"source, query, IFNULL(at, 0)"],
+                @[@"settings", @"k TEXT PRIMARY KEY, v TEXT NOT NULL", @"k, v", @" WHERE v IS NOT NULL"],   // (nil = unset: no row)
+            ];
+            for (NSArray *t in tables) {
+                NSString *name = t[0];
+                [self exec:[NSString stringWithFormat:@"CREATE TABLE %@_new (%@)", name, t[1]]];
+                NSString *where = t.count > 3 ? t[3] : @"";
+                [self exec:[NSString stringWithFormat:@"INSERT INTO %@_new SELECT %@ FROM %@%@", name, t[2], name, where]];
+                [self exec:[NSString stringWithFormat:@"DROP TABLE %@", name]];
+                [self exec:[NSString stringWithFormat:@"ALTER TABLE %@_new RENAME TO %@", name, name]];
+            }
+            [self exec:@"CREATE INDEX IF NOT EXISTS progress_updated ON progress(updated)"];
+            NSArray *left = [self rowsNow:@"PRAGMA foreign_key_check" args:nil];
+            if (left.count) [self failStep:[NSString stringWithFormat:@"schema step 18: %lu rows break a reference (%@)", (unsigned long)left.count, left.firstObject]];
+        },
     ];
 }
 

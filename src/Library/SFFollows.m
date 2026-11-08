@@ -380,7 +380,9 @@ static BOOL hasCounts(NSArray *dicts) {
 }
 
 - (NSArray *)writeStatement {
-    return @[@"INSERT OR REPLACE INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?)",
+    // an upsert: REPLACE would delete the row its follow items and auto-download refer to
+    return @[@"INSERT INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+              "source = excluded.source, title = excluded.title, image = excluded.image, added = excluded.added, checked = excluded.checked",
              @[_identifier, _source ?: @"", _title ?: @"", _image ?: [NSNull null],
                @(_added > 0 ? _added : [NSDate date].timeIntervalSince1970), _checked > 0 ? @(_checked) : [NSNull null]]];
 }

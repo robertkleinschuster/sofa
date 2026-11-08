@@ -18,10 +18,11 @@
 #  16  one kind of download (the media store's): file downloads' files and thumbnails deleted, empty
 #      folders too; a subscription episode stays dismissed, a manual one leaves; path and store go
 #  17  downloads.bytes goes: a download's size is the media store's (read live)
+#  18  constraints: NOT NULL, CHECKs, foreign keys (deferred); stub items for references without one
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
-LATEST=17   # the newest schema step (SFStore+Schema.m migrations)
+LATEST=18   # the newest schema step (SFStore+Schema.m migrations)
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
@@ -126,7 +127,11 @@ check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "selec
 check "11: gave up: failed, nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "3 -"
 check "11: failedAt gone" "$(Q "select count(*) from pragma_table_info('downloads') where name='failedAt'")" 0
 check "12: items columns" "$(Q "select group_concat(name) from pragma_table_info('items')")" "id,json"
-check "12: one row per item (a download without one has none)" "$(Q "select group_concat(id, ' ') from (select id from items order by id)")" "example:1 example:2 example:3 example:4"
+check "12: one row per item" "$(Q "select group_concat(id, ' ') from (select id from items where json <> json_object('id', id) order by id)")" "example:1 example:2 example:3 example:4"
+check "18: a download without metadata: a stub item (its id), nothing else invented" "$(Q "select group_concat(id, ' ') from (select id from items where json = json_object('id', id) order by id)")" "example:10 example:5 example:6 example:7 example:9"
+check "18: every reference has its row" "$(Q "pragma foreign_key_check" | wc -l | tr -d ' ')" "0"
+check "18: references declared" "$(Q "select (select count(*) from pragma_foreign_key_list('downloads')) || (select count(*) from pragma_foreign_key_list('follow_items')) || (select count(*) from pragma_foreign_key_list('progress')) || (select count(*) from pragma_foreign_key_list('subscriptions')) || (select count(*) from pragma_foreign_key_list('watch_later'))")" "22111"
+check "18: a value out of range is refused" "$(Q "insert into downloads (id, source, state, added) values ('example:1', 'example', 9, 0)" 2>&1 | grep -c 'CHECK constraint failed')" "1"
 check "12: newest title wins, older fields kept, no local paths" \
   "$(Q "select json_extract(json,'$.title') || '|' || json_extract(json,'$.plot') || '|' || json_extract(json,'$.image') || '|' || ifnull(json_extract(json,'$.localPath'),'') || ifnull(json_extract(json,'$.url'),'') from items where id='example:4'")" \
   "Neuer Titel|Nur hier|https://img.example/4.jpg|"

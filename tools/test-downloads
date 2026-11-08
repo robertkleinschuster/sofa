@@ -81,6 +81,10 @@ shot() { cmd "shot $1"; for i in $(seq 1 40); do grep -qF "dev: shot written $1"
          [ -s "$1" ] || { bad "no screenshot $(basename "$1")"; return 1; }
          [ -n "${DLTEST_SHOTS:-}" ] && cp "$1" "$DLTEST_SHOTS/" 2>/dev/null; return 0; }
 SQ() { /opt/local/bin/sqlite3 "$DEVDB" "$@"; }
+# the subscription the episodes below belong to, as the app keeps it: a follow and its auto-download
+# (schema 18 checks the reference; since = now: it adds no older episodes of its own)
+DEMOSUB="insert or ignore into follows (id,source,title,added) values ('exampleshow:demo','example','Demo',strftime('%s','now'));
+  insert or ignore into subscriptions (id,keepDays,since,added) values ('exampleshow:demo',90,strftime('%s','now'),strftime('%s','now'));"
 SS() { /opt/local/bin/sqlite3 "$ROOT/.store/store.db" "$@"; }
 SRV=
 cleanup() {
@@ -184,7 +188,7 @@ fi   # part a
 if want b; then
 echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
 start; quit   # the database (the part's first section: nothing before it made one)
-/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1);
+/opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1); $DEMOSUB
   insert or replace into items (id,json) values
     ('example:8','{\"id\":\"example:8\",\"kind\":0,\"title\":\"Abo-Folge\",\"source\":\"example\"}'),
     ('example:9','{\"id\":\"example:9\",\"kind\":0,\"title\":\"Manuell\",\"source\":\"example\"}');
@@ -241,7 +245,7 @@ check "removal frees its tracks" "$(SS "select count(*) from tracks where item='
 quit
 
 echo "==> 8b. pre-buffering"
-SQ "insert or replace into items (id,json) values ('example:3','{\"id\":\"example:3\",\"kind\":0,\"title\":\"Folge\",\"source\":\"example\"}'),
+SQ "$DEMOSUB insert or replace into items (id,json) values ('example:3','{\"id\":\"example:3\",\"kind\":0,\"title\":\"Folge\",\"source\":\"example\"}'),
     ('example:4','{\"id\":\"example:4\",\"kind\":0,\"title\":\"Gesehen\",\"source\":\"example\"}');
     insert into downloads (id,source,channel,state,progress,added,sub) values
     ('example:3','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
@@ -264,7 +268,7 @@ check "expired: dismissed (not fetched again), bytes left as buffer" \
   "$(SQ "select group_concat(state, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4 4/2"
 check "expired: its tile still says geladen (the bytes are there)" "$(chip example:3)" "geladen"
 # "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
-SQ "insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
+SQ "$DEMOSUB insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
     insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"
 quit; start
 for i in $(seq 1 60); do grep -q "downloads: done example:1" "$LOG" && break; sleep 0.25; done

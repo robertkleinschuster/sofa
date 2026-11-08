@@ -13,6 +13,7 @@ export SOFA_AUDIO_OUT=null
 # ready after 30 s (a loaded machine - a port build next to the suites - needs more than a few s).
 dev_wait_ready() {
   local pid=$1 log=$2 i
+  DEV_LOG=$log   # (dev_wait_exit checks it once the instance ended)
   for i in $(seq 1 300); do
     grep -q 'fifo ready' "$log" 2>/dev/null && return 0
     kill -0 "$pid" 2>/dev/null || { echo "dev instance exited before it was ready:"; tail -5 "$log" 2>/dev/null | sed 's/^/    /'; exit 1; }
@@ -22,9 +23,16 @@ dev_wait_ready() {
 }
 
 # dev_wait_exit PID [SECONDS]: until the process has ended (default 30 s); 1 if it still runs.
+# Once it ended: a statement the database refused ("store: SQL -> error" - a constraint, a missing
+# table) is a failure of the suite, whatever it checked - such a write is lost silently otherwise.
+# Printed as a FAIL line; test-all counts those (a suite need not see it in its own checks).
 dev_wait_exit() {
   local pid=$1 i
-  for i in $(seq 1 $(( ${2:-30} * 10 ))); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.1; done
+  for i in $(seq 1 $(( ${2:-30} * 10 ))); do
+    kill -0 "$pid" 2>/dev/null && { sleep 0.1; continue; }
+    [ -n "${DEV_LOG:-}" ] && grep -E '^[0-9: .-]+ store: .* -> ' "$DEV_LOG" 2>/dev/null | head -3 | sed 's/^/  FAIL  the database refused a statement: /'
+    return 0
+  done
   return 1
 }
 
