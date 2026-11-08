@@ -1,6 +1,7 @@
 // SFDownloads – core: persistence (downloads table), queries, actions and migration;
 // the queue and ffmpeg run: SFDownloads+Worker.m. Subscriptions: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
+#import "SFMediaStore.h"
 #import <signal.h>
 
 NSString *const SFDownloadsDidChangeNotification = @"SFDownloadsDidChangeNotification";
@@ -24,6 +25,17 @@ static NSString *ffmpegPath(void) {
     static SFDownloads *s; static dispatch_once_t o;
     dispatch_once(&o, ^{ s = [SFDownloads new]; });
     return s;
+}
+
+- (SFMediaStore *)mediaStore {
+    static SFMediaStore *m; static dispatch_once_t o;
+    dispatch_once(&o, ^{
+        m = [[SFMediaStore alloc] initWithDirectory:[[SFDownloads root] stringByAppendingPathComponent:@".store"]];
+        m.reserve = (long long)self.storageReserve;
+        // a downloaded item (a download record: kept until the user deletes it) is never evicted
+        m.isPinned = ^BOOL(NSString *item) { return [[SFDownloads shared] recordFor:item] != nil; };
+    });
+    return m;
 }
 
 // the real app: ~/Movies/Sofa; a dev instance keeps its downloads in its own data directory

@@ -24,8 +24,13 @@ void SFFeedFromPage(SFPageLoader loader, SFFeedDone done);
 // backgroundPausedUntil, availabilityOfItem: (without a check the app's online resolver answers:
 // a resolvable stream = online).
 
+@class SFMediaStore;
+
 @interface SFDownloads : NSObject
 + (instancetype)shared;
+// The media store (docs/media-store.md): buffered and downloaded bytes by track, under the downloads
+// root (.store); it keeps the storage reserve free and never evicts a downloaded item
+@property (nonatomic, readonly) SFMediaStore *mediaStore;
 - (void)start;                                   // queue + subscription check
 - (void)stopForExit;                             // terminate the running ffmpeg before the app exits (no orphans)
 
