@@ -177,9 +177,9 @@ keys right 14; sleep 0.5
 check "complete: nothing asked any more" "$(more)" 2
 check "the row's end is its last tile" "$(focus)" "example:more23"
 
-echo "==> 8. the quick menu: MENU on Home, MENU held anywhere"
+echo "==> 8. the quick menu: MENU on Home, MENU held anywhere; sound and Bluetooth (fake radio)"
 quit
-start SOFA_OFFLINE=1
+start SOFA_OFFLINE=1 SOFA_FAKE_BLUETOOTH=1
 menus() { grep -c "menu: quick menu - " "$LOG"; }
 cmd "key menu"; waitlog "menu: quick menu - " && check "MENU on Home: the menu, no 'Zum Startbildschirm' there" "$(grep 'menu: quick menu - ' "$LOG" | tail -1 | sed 's/.*quick menu - //')" "Ton, Energie, Einstellungen" || bad "MENU on Home opened no menu"
 cmd "key menu"; sleep 0.5   # closes it
@@ -190,6 +190,21 @@ cmd "key menuhold"; sleep 0.5; check "MENU held again: no second menu" "$(menus)
 cmd "key select"; sleep 0.8; m=$(menus)   # "Zum Startbildschirm"
 cmd "key menu"; for i in $(seq 1 30); do [ "$(menus)" -gt "$m" ] && break; sleep 0.1; done
 check "'Zum Startbildschirm' went home (MENU there opens the Home menu)" "$(grep 'menu: quick menu - ' "$LOG" | tail -1 | sed 's/.*quick menu - //')" "Ton, Energie, Einstellungen"
+# Ton: the Mac's outputs, then the paired Bluetooth speaker (off: "Verbinden"), then pairing
+sounds() { grep -c "menu: sound - " "$LOG"; }
+s0=$(sounds); cmd "key select"; for i in $(seq 1 30); do [ "$(sounds)" -gt "$s0" ] && break; sleep 0.1; done   # (the Home menu is open: Ton)
+snd=$(grep 'menu: sound - ' "$LOG" | tail -1 | sed 's/.*sound - //')
+case "$snd" in *", Testlautsprecher, Kopfhörer koppeln") ok "Ton: outputs, the paired speaker, pairing ($snd)";; *) bad "Ton menu: '$snd'";; esac
+rows=$(echo "$snd" | awk -F', ' '{print NF}')
+# (OK right after a screen closed is dropped on purpose - SFNavigator settle, 0.3 s: wait it out)
+sleep 0.4; for i in $(seq 2 "$rows"); do cmd "key down"; done; cmd "key select"   # "Kopfhörer koppeln" (the last row)
+waitlog "bluetooth: search over" && ok "the search ran" || bad "no search: $(grep 'bluetooth:' "$LOG" | tail -2 | tr '\n' '|')"
+grep -q "bluetooth: found Testkopfhörer (new)" "$LOG" && ok "it found the headphones (name resolved later)" || bad "headphones not found"
+sleep 0.4; cmd "key down"; cmd "key select"   # below the search's row: the headphones
+waitlog "bluetooth: pair Testkopfhörer -> ok" && ok "choosing them pairs and connects" || bad "no pairing: $(grep 'bluetooth:' "$LOG" | tail -2 | tr '\n' '|')"
+s0=$(sounds); cmd "key menu"; sleep 0.5; cmd "key select"; for i in $(seq 1 30); do [ "$(sounds)" -gt "$s0" ] && break; sleep 0.1; done
+snd=$(grep 'menu: sound - ' "$LOG" | tail -1 | sed 's/.*sound - //')
+case "$snd" in *", Testkopfhörer trennen, Testlautsprecher, Kopfhörer koppeln") ok "now paired and connected: 'trennen'";; *) bad "Ton menu after pairing: '$snd'";; esac
 
 [ $fail = 0 ] && echo "==> test-home ok" || echo "==> test-home FAILED"
 exit $fail

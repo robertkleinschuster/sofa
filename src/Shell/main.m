@@ -213,7 +213,7 @@ NSString *gInstance = @"view";
         subtitle:@"Alles geht mit der Apple Remote:\n"
                  @"Pfeile – auswählen · Mitte – öffnen\n"
                  @"Mitte halten – Optionen (Folgen, Später ansehen, Herunterladen)\n"
-                 @"MENU – zurück · MENU halten – Startseite\n"
+                 @"MENU – zurück · MENU halten – Sofa-Menü (Ton, Energie, Einstellungen)\n"
                  @"▶❚❚ – Wiedergabe und Pause\n"
                  @"Im Video: Links/Rechts halten spult, Hoch/Runter regelt die Lautstärke."
         options:@[go] theme:[SFTheme themeNamed:@"home"]];

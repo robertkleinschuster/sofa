@@ -5,7 +5,8 @@
 // a queue of its own, results come on main.
 #import "SFCore.h"
 
-extern NSString *const SFAudioOutputChangedNotification;   // the default output changed (posted on main)
+extern NSString *const SFAudioOutputChangedNotification;       // the default output changed (posted on main)
+extern NSString *const SFAudioOutputListChangedNotification;   // an output came or went (posted on main)
 
 @interface SFAudioOutput : NSObject
 @property (nonatomic, readonly) uint32_t deviceID;
@@ -16,4 +17,7 @@ extern NSString *const SFAudioOutputChangedNotification;   // the default output
 + (void)start;                                             // follow default-output changes; idempotent
 + (void)outputs:(void (^)(NSArray *outputs))done;          // SFAudioOutput, the current one first
 + (void)choose:(SFAudioOutput *)output done:(void (^)(BOOL ok))done;
+// The output whose UID contains `part` (a Bluetooth device's address: its CoreAudio UID is
+// "<address>:output"), as soon as it exists - nil after `timeout` seconds
++ (void)waitForOutput:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *output))done;
 @end

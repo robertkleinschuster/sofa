@@ -12,7 +12,9 @@
 @interface SFMenuScreen : SFScreen
 @property (nonatomic) NSInteger initialSelection;   // row selected on open (rebuild at the same position)
 @property (nonatomic, readonly) NSInteger selectedIndex;
+@property (nonatomic, copy) dispatch_block_t onDisappear;   // leaving (closed or covered): e.g. stop a search that fills it
 @property (nonatomic) NSInteger subtitleLines;   // default 2 (e.g. welcome with key overview: more)
 - (instancetype)initWithTitle:(NSString *)title subtitle:(NSString *)subtitle
                       options:(NSArray *)options theme:(SFTheme *)theme;
+- (void)setOptions:(NSArray *)options;   // replace the rows while open (no new entrance); selection follows the title
 @end

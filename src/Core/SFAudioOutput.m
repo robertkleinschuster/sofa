@@ -2,6 +2,7 @@
 #import <CoreAudio/CoreAudio.h>
 
 NSString *const SFAudioOutputChangedNotification = @"SFAudioOutputChanged";
+NSString *const SFAudioOutputListChangedNotification = @"SFAudioOutputListChanged";
 
 @interface SFAudioOutput ()
 @property (nonatomic, readwrite) uint32_t deviceID;
@@ -18,6 +19,7 @@ static dispatch_queue_t Queue(void) {
 }
 
 static const AudioObjectPropertyAddress kDefault = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+static const AudioObjectPropertyAddress kDevices = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
 
 static AudioDeviceID defaultOutput(void) {
     AudioDeviceID d = kAudioObjectUnknown; UInt32 size = sizeof d;
@@ -48,12 +50,17 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
                 [[NSNotificationCenter defaultCenter] postNotificationName:SFAudioOutputChangedNotification object:nil];
             });
         });
+        AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &kDevices, Queue(), ^(UInt32 n, const AudioObjectPropertyAddress *addr) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:SFAudioOutputListChangedNotification object:nil];
+            });
+        });
     });
 }
 
 + (void)outputs:(void (^)(NSArray *))done {
     dispatch_async(Queue(), ^{
-        AudioObjectPropertyAddress a = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+        AudioObjectPropertyAddress a = kDevices;
         UInt32 size = 0;
         NSMutableArray *out = [NSMutableArray new];
         if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, NULL, &size) == noErr && size) {
@@ -87,5 +94,27 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
         SFLog(@"audio: choose %@ -> %@", o.name, ok ? @"ok" : @"failed");
         if (done) dispatch_async(dispatch_get_main_queue(), ^{ done(ok); });
     });
+}
+
++ (void)waitForOutput:(NSString *)part timeout:(NSTimeInterval)timeout done:(void (^)(SFAudioOutput *))done {
+    __block id obs = nil;
+    __block BOOL over = NO;
+    void (^finish)(SFAudioOutput *) = ^(SFAudioOutput *o) {
+        if (over) return;
+        over = YES;
+        if (obs) [[NSNotificationCenter defaultCenter] removeObserver:obs];
+        obs = nil;
+        done(o);
+    };
+    void (^look)(void) = ^{
+        [self outputs:^(NSArray *outputs) {
+            for (SFAudioOutput *o in outputs)
+                if ([o.uid rangeOfString:part options:NSCaseInsensitiveSearch].location != NSNotFound) { finish(o); return; }
+        }];
+    };
+    obs = [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputListChangedNotification object:nil
+                                                             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { look(); }];
+    look();   // there already
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ finish(nil); });
 }
 @end

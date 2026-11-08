@@ -26,7 +26,7 @@ CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wn
 # copies (relink.py, longer paths); without room in the header that failed once the binary grew
 # ("larger updated load commands do not fit", 2026-11-07)
 LDFLAGS := -mmacosx-version-min=10.9 -headerpad_max_install_names -framework Cocoa -framework QuartzCore -framework OpenGL \
-           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lwebp -lX11 -lXtst
+           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework IOBluetooth -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lwebp -lX11 -lXtst
 # libmpv (overlay port multimedia/mpv) is the player engine: required
 SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))

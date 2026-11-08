@@ -16,6 +16,7 @@
     CALayer *_list;   // clips the rows; scrolls when they don't fit (long language lists, notes)
     CALayer *_listMask;   // edge fade, moves with the scroll offset
     NSInteger _sel;
+    CGFloat _rowX, _rowW;   // the rows' geometry (setOptions: rebuilds them in place)
 }
 
 - (instancetype)initWithTitle:(NSString *)title subtitle:(NSString *)subtitle options:(NSArray *)options theme:(SFTheme *)theme {
@@ -26,6 +27,12 @@
     return self;
 }
 - (BOOL)isOpaque { return NO; }
+- (void)willDisappear {
+    [super willDisappear];
+    dispatch_block_t f = self.onDisappear;
+    self.onDisappear = nil;
+    if (f) f();
+}
 
 - (void)layoutForSize:(CGSize)size {
     SFTheme *t = self.theme;
@@ -69,11 +76,25 @@
         self->_list.frame = CGRectMake(0, y - U(8), pw, MAX(U(100), size.height - y - U(40)));
         self->_list.masksToBounds = YES;
         [self->_panel addSublayer:self->_list];
-        y = U(8);
         self->_highlight = [CALayer layer];
         self->_highlight.cornerRadius = U(12);
         self->_highlight.backgroundColor = t.focus.CGColor;
         [self->_list addSublayer:self->_highlight];
+        self->_rowX = x; self->_rowW = w;
+        [self buildRows];
+    });
+    [self select:self.initialSelection animated:NO];
+}
+
+// The option rows in the list (layout, setOptions:), with the edge fade when they don't fit
+- (void)buildRows {
+    SFTheme *t = self.theme;
+    for (CALayer *r in _rows) [r removeFromSuperlayer];
+    [_rows removeAllObjects];
+    _list.mask = nil; _listMask = nil;
+    CGFloat x = _rowX, w = _rowW;
+    __block CGFloat y = U(8);
+    SFNoAnimate(^{
         CGFloat rh = U(76);
         for (SFMenuOption *o in self->_options) {
             CALayer *row = [CALayer layer];
@@ -109,7 +130,19 @@
             self->_listMask = mask;
         }
     });
-    [self select:self.initialSelection animated:NO];
+}
+
+// New rows in place, without the entrance again (a list that fills while it is open: Bluetooth
+// devices found by a search). The selection stays on the option with the same title.
+- (void)setOptions:(NSArray *)options {
+    NSString *cur = _sel < (NSInteger)_options.count ? [_options[_sel] title] : nil;
+    _options = [options copy];
+    if (!_list) return;   // not laid out yet: the layout builds them
+    NSInteger sel = MIN(_sel, (NSInteger)_options.count - 1);
+    for (NSInteger i = 0; cur && i < (NSInteger)_options.count; i++)
+        if ([[_options[i] title] isEqual:cur]) { sel = i; break; }
+    [self buildRows];
+    [self select:sel animated:NO];
 }
 
 // A side panel: slides in from the right edge and out again, opaque all the way; only the
