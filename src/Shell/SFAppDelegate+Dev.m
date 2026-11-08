@@ -44,11 +44,20 @@ static NSString *fifoPath(void) {
 // downloads or changes data.
 static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] || [cmd isEqualToString:@"framemeter"]; }
 
+// The pipe's file calls (unlink, mkfifo, open) wait on the disk - on a cold one ~100 ms of the
+// launching main thread (hitch 2026-11-08): they run on a queue, the reader is set up on the main
+// queue after; "fifo ready" (the dev instances' readiness signal) comes once it reads.
 - (void)startFifo {
     NSString *p = fifoPath();
-    unlink(p.fileSystemRepresentation);
-    mkfifo(p.fileSystemRepresentation, 0600);
-    int fd = open(p.fileSystemRepresentation, O_RDWR | O_NONBLOCK);
+    SFBackground(^{
+        unlink(p.fileSystemRepresentation);
+        mkfifo(p.fileSystemRepresentation, 0600);
+        int fd = open(p.fileSystemRepresentation, O_RDWR | O_NONBLOCK);
+        SFMain(^{ [self listenFifo:fd at:p]; });
+    });
+}
+
+- (void)listenFifo:(int)fd at:(NSString *)p {
     if (fd < 0) { SFLog(@"dev: fifo open failed"); return; }
     self.fifoBuf = [NSMutableString new];
     self.fifoSrc = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
