@@ -295,6 +295,23 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     return [lines componentsJoinedByString:@" | "];
 }
 
+- (NSUInteger)memoryMB {
+    pid_t group = _firefox;
+    if (group <= 0) return 0;
+    NSTask *ps = [NSTask new];
+    ps.launchPath = @"/bin/ps";
+    ps.arguments = @[@"-o", @"rss=", @"-g", @(group).stringValue];
+    NSPipe *out = [NSPipe pipe];
+    ps.standardOutput = out;
+    ps.standardError = [NSFileHandle fileHandleWithNullDevice];
+    @try { [ps launch]; } @catch (NSException *e) { return 0; }
+    NSData *d = [out.fileHandleForReading readDataToEndOfFile];
+    [ps waitUntilExit];
+    unsigned long long kb = 0;
+    for (NSString *l in [[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] componentsSeparatedByString:@"\n"]) kb += (unsigned long long)l.longLongValue;
+    return (NSUInteger)(kb / 1024);
+}
+
 - (void)clickInRect:(CGRect)rect done:(void (^)(BOOL))done {
     SFYTPointer *pointer;
     @synchronized (self) { pointer = _pointer; }

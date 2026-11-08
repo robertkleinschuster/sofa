@@ -27,6 +27,8 @@
 // One line per browser process (pid, %cpu, rss, command) - what the browser is doing right now,
 // for the log when the page stops answering. Blocking (ps, ~50 ms); nil when it is not running.
 - (NSString *)processSnapshot;
+// Resident memory of all the browser's processes together (MB), 0 when it is not running. Blocking (ps).
+- (NSUInteger)memoryMB;
 // The browser or its display ended on its own. Main queue.
 @property (nonatomic, copy) void (^onExit)(NSString *why);
 @end

@@ -58,6 +58,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     BOOL _consentPending;         // a consent click is scheduled or in progress
     BOOL _aliveCheck;             // a liveness check after a timed-out call is running
     NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
+    NSTimer *_memoryTimer;        // the browser's memory, watched while it runs (checkMemory)
 }
 
 // Every change of _state goes through here: `ready` mirrors it for calls from other queues.
@@ -158,10 +159,47 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 // Quit: the browser ends now. An update's or a crash's end does not come here - the browser waits
 // out the hand-over grace for the next Sofa (SFYTBrowser).
 - (void)stop {
+    [_memoryTimer invalidate]; _memoryTimer = nil;
     [self setState:SFYTEngineIdle];
     _run++;
     _nextStartAt = DBL_MAX;   // no restart
     [_browser stop];
+}
+
+// The engine's browser grew to 2 GB (and Sofa with it) overnight 2026-11-08 until the Mac ran out of
+// swap and froze - nothing in the log showed it. Every few minutes its memory goes to the log with
+// what the engine holds itself (sessions, buffered media), so growth can be traced to its cause;
+// past kBrowserMemoryLimitMB the browser is restarted like one that died: a player reopens its
+// stream (sessions-lost notification), a download retries - far better than a frozen machine.
+static const NSTimeInterval kMemoryCheckEvery = 300;
+static NSUInteger BrowserMemoryLimitMB(void) {
+    double v = [SFDevEnv(@"SOFA_ENGINE_MEMORY_LIMIT_MB") doubleValue];   // tests lower it
+    return v > 0 ? (NSUInteger)v : 1800;
+}
+
+- (void)watchMemory {
+    if (_memoryTimer) return;
+    _memoryTimer = [NSTimer scheduledTimerWithTimeInterval:SFDevSeconds(@"SOFA_ENGINE_MEMORY_EVERY", kMemoryCheckEvery)
+                                                    target:self selector:@selector(checkMemory) userInfo:nil repeats:YES];
+}
+
+- (void)checkMemory {
+    if (_state != SFYTEngineReady) return;
+    NSUInteger run = _run;
+    SFYTBrowser *browser = _browser;
+    [self request:@"health" args:@[] timeout:10 done:^(id h, NSError *e) {
+        NSDictionary *health = dict(h);
+        SFBackground(^{
+            NSUInteger mb = [browser memoryMB];   // ps: off the main thread
+            SFMain(^{
+                if (run != self->_run || self->_state != SFYTEngineReady || !mb) return;
+                SFLog(@"yt-engine: memory: browser %lu MB, %@ sessions holding %@ MB", (unsigned long)mb,
+                      health[@"sessions"] ?: @"?", health[@"bufferedMB"] ?: @"?");
+                if (mb > BrowserMemoryLimitMB()) [self runFailed:[NSString stringWithFormat:@"browser uses %lu MB (limit %lu) - restarting it",
+                                                                 (unsigned long)mb, (unsigned long)BrowserMemoryLimitMB()]];
+            });
+        });
+    }];
 }
 
 // The run ended or is of no use: browser down, waiting callers told, restart after a backoff.
@@ -252,6 +290,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
             [self setState:SFYTEngineReady];
             NSString *ua = str(dict(v)[@"userAgent"]) ?: str(dict(h)[@"userAgent"]);
             SFLog(@"yt-engine: ready (%@)", ua);
+            [self watchMemory];
             [self tellWaiting:YES];
         }); }];
     }); }];
