@@ -1,6 +1,6 @@
 # Media store: buffer and download are one thing
 
-Status: design, agreed with the user 2026-11-08 (concept); built in phases below.
+Status: agreed with the user 2026-11-08; phase 1 built (store, YouTube read-through, eviction).
 
 ## What the user sees
 
@@ -25,18 +25,22 @@ Status: design, agreed with the user 2026-11-08 (concept); built in phases below
 
 ### 1. SFMediaStore (src/Library) - bytes on disk, by track
 
-- A **track** is one byte stream with a stable identity: `key` = source-specific, e.g.
-  `yt:<video>:<itag>:<contentLength>` (the format file SABR addresses), `http:<url-hash>:<length>`
-  (a progressive file), `hls:<playlist-hash>:<segment>` (one segment).
-- Each track is a **sparse file** under `~/Movies/Sofa/.store/` plus its **extents** (the byte ranges
-  present) in SQLite. Writes append extents and coalesce neighbours; reads ask "is [a, b) present?".
-- Schema (new tables, `SFStore+Schema.m`):
-  - `media_tracks (id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, item TEXT NOT NULL, kind TEXT NOT NULL, total INTEGER, stored INTEGER NOT NULL DEFAULT 0, path TEXT NOT NULL, used REAL NOT NULL)`
-  - `media_extents (track INTEGER NOT NULL REFERENCES media_tracks(id) ON DELETE CASCADE, start INTEGER NOT NULL, end INTEGER NOT NULL, PRIMARY KEY (track, start))`
-  - `media_manifests (item TEXT PRIMARY KEY, json TEXT NOT NULL)` - what playing a complete entry
-    offline needs (formats, duration, subtitles, end screen) without the source.
-- Retention lives with the item, in `downloads` (the user-facing record it already is): `keep = 1`
-  pinned; a pre-buffered episode has `expires`; an item without a `downloads` row is plain buffer.
+- A **track** is one byte stream with a stable identity: `key` = source-specific. YouTube:
+  `yt:<video>:<format key>:<lastModified>:<length>` - named by the engine (open and read answers), so
+  the sofa, a lounge video and a download of the same format share one copy; a re-encode (new lmt) is
+  a new track. Later: `http:<url-hash>:<length>` (a progressive file), `hls:<playlist-hash>:<segment>`.
+- Bytes live in **4 MiB block files** `~/Movies/Sofa/.store/<track>/<block>` (HFS+ has no sparse
+  files: one file per track would write zeros up to every seek target); the present ranges are an
+  `SFExtentSet` per track, in memory (reads never wait on the database).
+- Persisted in the store's **own database** `.store/store.db` (own connection and queue: the user
+  database never waits on media writes), schema version 1 (`PRAGMA user_version`):
+  - `tracks (id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, item TEXT NOT NULL, kind TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0, used REAL NOT NULL)` + index on `item`
+  - `extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, start INTEGER NOT NULL, end INTEGER NOT NULL, CHECK (end > start), PRIMARY KEY (track, start)) WITHOUT ROWID`
+  - Later (phase 2): what playing a complete entry offline needs (formats, duration, subtitles, end
+    screen) without the source.
+- Retention lives with the item, in `downloads` (the user-facing record it already is): an item with
+  a `downloads` row is pinned (`isPinned`); a pre-buffered episode gets an expiry (phase 3); an item
+  without one is plain buffer.
 
 ### 2. Read-through at the proxies
 

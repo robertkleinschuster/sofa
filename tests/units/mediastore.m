@@ -3,7 +3,7 @@
 // SFMediaStore in a directory of its own: bytes back as written (also across a block boundary),
 // nothing for a range with a gap, the gapless part from a position, the index after a reopen, a block file deleted from outside
 // (dropped from the index, not served), eviction least recently used first while space is short -
-// a pinned item never - and removing an item.
+// a pinned item never - and removing an item (its ranges cascade; schema version 1).
 #import <Foundation/Foundation.h>
 #import "SFMediaStore.h"
 BOOL SFDevMode = NO;
@@ -77,6 +77,11 @@ int main(void) { @autoreleasepool {
     [e sync];
     [e removeItem:@"item:x"];
     CHECK([e extentsOf:@"x"].bytes == 0 && [e read:@"x" start:0 length:10] == nil, "removing an item");
+    [e sync];
+    NSString *q = [NSString stringWithFormat:@"/opt/local/bin/sqlite3 '%@/store.db' 'PRAGMA user_version; PRAGMA foreign_key_check; "
+                   "SELECT count(*) FROM extents WHERE track NOT IN (SELECT id FROM tracks);'", dir2];
+    FILE *f = popen(q.UTF8String, "r"); char buf[256] = {0}; size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0; if (f) pclose(f);
+    CHECK(n && strcmp(buf, "1\n0\n") == 0, "schema version 1, no orphan ranges after removals");
 
     [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:dir2 error:nil];

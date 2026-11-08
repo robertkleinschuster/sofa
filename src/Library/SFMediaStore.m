@@ -65,12 +65,15 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     [[NSFileManager defaultManager] createDirectoryAtPath:_dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *p = [_dir stringByAppendingPathComponent:@"store.db"];
     if (sqlite3_open(p.fileSystemRepresentation, &_db) != SQLITE_OK) { SFLog(@"media-store: open failed %s", sqlite3_errmsg(_db)); return; }
+    // Schema version 1 (PRAGMA user_version; a later change migrates from it). A track's ranges go
+    // with it (ON DELETE CASCADE); a range is never empty.
     NSString *tracks = @"CREATE TABLE IF NOT EXISTS tracks (id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, item TEXT NOT NULL, "
-                        "kind TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0, used REAL NOT NULL)";
-    NSString *extents = @"CREATE TABLE IF NOT EXISTS extents (track INTEGER NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, "
+                        "kind TEXT NOT NULL, total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0), used REAL NOT NULL)";
+    NSString *extents = @"CREATE TABLE IF NOT EXISTS extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, "
+                         "start INTEGER NOT NULL CHECK (start >= 0), end INTEGER NOT NULL, CHECK (end > start), "
                          "PRIMARY KEY (track, start)) WITHOUT ROWID";
-    for (NSString *s in @[@"PRAGMA journal_mode=WAL", @"PRAGMA synchronous=NORMAL", tracks,
-                          @"CREATE INDEX IF NOT EXISTS tracks_item ON tracks(item)", extents])
+    for (NSString *s in @[@"PRAGMA journal_mode=WAL", @"PRAGMA synchronous=NORMAL", @"PRAGMA foreign_keys=ON", tracks,
+                          @"CREATE INDEX IF NOT EXISTS tracks_item ON tracks(item)", extents, @"PRAGMA user_version=1"])
         [self run:s args:nil];
     // the index into memory: tracks, then their ranges
     NSMutableDictionary *byRow = [NSMutableDictionary new];
@@ -146,8 +149,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 
 - (void)removeTrack:(SFMediaTrack *)t {
     [[NSFileManager defaultManager] removeItemAtPath:[[self blockPath:t block:0] stringByDeletingLastPathComponent] error:nil];
-    [self run:@"DELETE FROM extents WHERE track = ?" args:@[@(t.rowid)]];
-    [self run:@"DELETE FROM tracks WHERE id = ?" args:@[@(t.rowid)]];
+    [self run:@"DELETE FROM tracks WHERE id = ?" args:@[@(t.rowid)]];   // (its extents cascade)
     _bytes -= t.extents.bytes;
     [_tracks removeObjectForKey:t.key];
 }
