@@ -16,7 +16,7 @@ int main(void){ @autoreleasepool {
   NSDictionary *full = @{@"id": @"example:1", @"source": @"example", @"channel": @"Show", @"item": @"{\"id\":\"example:1\"}",
                          @"state": @2, @"progress": @1.0, @"path": @"/x/1.mp4", @"thumb": @"/x/1.jpg", @"bytes": @123456789012LL,
                          @"added": @100.5, @"published": @90.0, @"sub": @"exampleshow:a", @"error": @"timeout", @"tries": @2,
-                         @"retryAt": @2000.0, @"keep": @1, @"online": @0, @"onlineAt": @1500.0, @"store": @0};
+                         @"retryAt": @2000.0, @"keep": @1, @"online": @0, @"onlineAt": @1500.0, @"store": @0, @"expires": @3000.0};
   SFDownloadRecord *r = [SFDownloadRecord recordWithRow:full];
   expect(r.state == SFDLDone && r.retryAt == 2000 && r.tries == 2, "state, repair pending, attempts");
   expect(r.bytes == 123456789012ULL && r.keep && r.online == 0, "bytes (> 4 GB), kept, gone at its source");
@@ -34,7 +34,7 @@ int main(void){ @autoreleasepool {
   NSDictionary *mw = written(m.writeStatement);
   NSNull *null = [NSNull null];
   expect(mw[@"online"] == null && mw[@"onlineAt"] == null && mw[@"retryAt"] == null && mw[@"published"] == null
-         && mw[@"sub"] == null && mw[@"path"] == null && mw[@"error"] == null, "...written as NULL, not 0");
+         && mw[@"sub"] == null && mw[@"path"] == null && mw[@"error"] == null && mw[@"expires"] == null, "...written as NULL, not 0");
   expect([mw[@"source"] isEqual:@""] && [mw[@"channel"] isEqual:@""], "source/channel: empty text, never NULL");
   expect([SFDownloadRecord new].online == -1, "a new record: online unknown");
   // a media store download: its kind read and written back

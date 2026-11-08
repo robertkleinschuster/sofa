@@ -30,19 +30,20 @@ static id timeOrNull(NSTimeInterval t) { return t > 0 ? @(t) : [NSNull null]; }
     r.retryAt = [row[@"retryAt"] doubleValue];
     r.keep = [row[@"keep"] boolValue];
     r.inStore = [row[@"store"] boolValue];
+    r.expires = [row[@"expires"] doubleValue];
     r.online = row[@"online"] ? [row[@"online"] integerValue] : -1;
     r.onlineAt = [row[@"onlineAt"] doubleValue];
     return r;
 }
 
 static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,channel,path,thumb,state,progress,bytes,added,"
-                                 "published,sub,error,tries,retryAt,keep,online,onlineAt,store) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                                 "published,sub,error,tries,retryAt,keep,online,onlineAt,store,expires) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
 - (NSArray *)writeStatement {
     return @[kWrite,
              @[_identifier, _source ?: @"", _channel ?: @"", orNull(_path), orNull(_thumb), @(_state), @(_progress),
                @(_bytes), @(_added), timeOrNull(_published), orNull(_sub), orNull(_error), @(_tries), timeOrNull(_retryAt),
-               @(_keep), _online >= 0 ? @(_online) : [NSNull null], timeOrNull(_onlineAt), @(_inStore)]];
+               @(_keep), _online >= 0 ? @(_online) : [NSNull null], timeOrNull(_onlineAt), @(_inStore), timeOrNull(_expires)]];
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -50,7 +51,7 @@ static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,ch
     c.identifier = _identifier; c.source = _source; c.channel = _channel; c.itemJSON = _itemJSON;
     c.state = _state; c.progress = _progress; c.path = _path; c.thumb = _thumb; c.bytes = _bytes;
     c.added = _added; c.published = _published; c.sub = _sub; c.error = _error; c.tries = _tries;
-    c.retryAt = _retryAt; c.keep = _keep; c.online = _online; c.onlineAt = _onlineAt; c.inStore = _inStore;
+    c.retryAt = _retryAt; c.keep = _keep; c.online = _online; c.onlineAt = _onlineAt; c.inStore = _inStore; c.expires = _expires;
     return c;
 }
 

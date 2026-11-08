@@ -134,6 +134,9 @@
         // 14: a download's kind, explicit: 1 = its content is the media store's tracks (no file,
         // docs/media-store.md), 0 = a file (path)
         ^{ [self exec:@"ALTER TABLE downloads ADD COLUMN store INTEGER NOT NULL DEFAULT 0 CHECK (store IN (0, 1))"]; },
+        // 15: pre-buffering (docs/media-store.md phase 3): a subscription episode in the media store
+        // goes at `expires` (epoch; sooner once watched); NULL = kept until the user deletes it
+        ^{ [self exec:@"ALTER TABLE downloads ADD COLUMN expires REAL"]; },
     ];
 }
 

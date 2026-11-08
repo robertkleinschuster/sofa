@@ -84,6 +84,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 - (SFDownloadRecord *)recOf:(NSString *)identifier;   // the record (not a copy); nil = none
 - (NSArray *)write:(SFDownloadRecord *)r;   // the statement save: runs - for several records in one runAll:
 - (void)changed:(NSString *)identifier;
+- (void)storageChangedSoon;   // SFDownloadsStorageDidChangeNotification, coalesced
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID;   // NO = already present/rejected
 - (void)retryDueRepairs;
 - (void)expireRepairBackoffForTesting;   // dev command dlretry
@@ -93,8 +94,15 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 + (NSString *)root;
 @end
 
+// Pre-buffering (docs/media-store.md phase 3, agreed with the user 2026-11-08): a subscription episode
+// in the media store stays until watched plus kAfterWatchedDays, at most kPrebufferDays after it was
+// complete; "Behalten" or "Herunterladen" keeps it.
+static const double kPrebufferDays = 14, kAfterWatchedDays = 3;
+
 @interface SFDownloads (SubscriptionsPrivate)
 - (void)checkSub:(SFSubscription *)s;   // against its follow's list (no request)
+// expired pre-buffered episodes leave (dismissed: not fetched again; their bytes become plain buffer)
+- (void)expirePrebuffers;
 @end
 
 // Worker (SFDownloads+Worker.m): next download, ffmpeg run, install, outcome

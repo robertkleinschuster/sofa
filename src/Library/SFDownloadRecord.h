@@ -22,6 +22,7 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 @property (nonatomic) SFDLState state;
 @property (nonatomic) double progress;              // 0..1 while loading
 @property (nonatomic) BOOL inStore;                 // a media store download: its tracks are the content, no file
+@property (nonatomic) NSTimeInterval expires;       // a pre-buffered episode goes then (sooner once watched); 0 = kept
 @property (nonatomic, copy) NSString *path;         // the file of a file download (Done; kept during a repair)
 @property (nonatomic, copy) NSString *thumb;        // local thumbnail
 @property (nonatomic) unsigned long long bytes;

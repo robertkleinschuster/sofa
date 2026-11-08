@@ -1,6 +1,6 @@
 # Media store: buffer and download are one thing
 
-Status: agreed with the user 2026-11-08; phases 1 and 2 built (YouTube: buffer and download are one).
+Status: agreed with the user 2026-11-08; phases 1-3 built for YouTube (buffer, download and pre-buffering are one).
 
 ## What the user sees
 
@@ -97,7 +97,11 @@ store can hold; existing downloads may be deleted (no migration of old files).
       (engine session, paced like a player), no ffmpeg, no MP4, no verifier/repair.
    d. `downloads` = intent only (state, subscription, keep, online check); size from the store; the
       path/bytes/repair columns and YouTube's ffmpeg path go; existing YouTube downloads deleted.
-3. Pre-buffering replaces subscription downloads (expiry: until watched plus a few days, at most two weeks).
+3. Done for sources that fill the store - pre-buffering replaces subscription downloads: a subscription
+   episode filled into the store gets `downloads.expires` (schema step 15) = complete + 14 days, and
+   goes 3 days after it was watched at the latest (SFDownloads expirePrebuffers: at start and every
+   3 h). Expired = dismissed (not fetched again), its bytes plain buffer (evicted when room is needed).
+   "Behalten" keeps it; "Herunterladen" on it makes it a download (no expiry, nothing loaded again).
 4. Mediatheks through SFMediaProxy (progressive by ranges, HLS segments as tracks), then fill/pin like
    2-3; their ffmpeg/MP4 path goes last.
 5. UI: tile mark, timeline shade, "noch X MB".

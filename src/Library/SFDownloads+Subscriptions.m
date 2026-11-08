@@ -1,5 +1,6 @@
 // SFDownloads – subscriptions ("download new episodes automatically"): feed registry,
-// subscription management, periodic checks (keepDays = download window: older episodes are not fetched).
+// subscription management, periodic checks (keepDays = download window: older episodes are not
+// fetched), and the expiry of pre-buffered episodes (sources that fill the media store).
 #import "SFDownloads+Private.h"
 
 BOOL SFHasFeed(NSString *ref) {
@@ -84,7 +85,8 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     SFLog(@"downloads: auto-download off: %@", fid);
     [_subs removeObjectForKey:fid];
     NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM subscriptions WHERE id=?", @[fid]]];
-    // already downloaded episodes stay, but are no longer deleted automatically
+    // already downloaded episodes stay, but are no longer deleted automatically (a pre-buffered one
+    // keeps its expiry: it is no download)
     for (SFDownloadRecord *r in _recs.allValues)
         if ([r.sub isEqualToString:fid] && r.state != SFDLDismissed) {
             r.sub = nil;
@@ -127,9 +129,30 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     if (added) SFLog(@"downloads: subscription %@: %ld new", [self titleOfSub:s.identifier] ?: s.identifier, (long)added);
 }
 
+- (void)expirePrebuffers {
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    NSMutableDictionary *watchedAt = [NSMutableDictionary new];   // id -> when it was watched (one query for all)
+    for (NSDictionary *row in [[SFStore shared] rows:@"SELECT p.id, p.updated FROM progress p JOIN downloads d ON d.id = p.id "
+                                                      "WHERE p.watched = 1 AND d.expires IS NOT NULL" args:nil])
+        if (row[@"id"]) watchedAt[row[@"id"]] = row[@"updated"];
+    NSMutableArray *writes = [NSMutableArray new];
+    for (SFDownloadRecord *r in _recs.allValues) {
+        if (r.state != SFDLDone || !r.inStore || r.expires <= 0 || r.keep) continue;
+        double seen = [watchedAt[r.identifier] doubleValue];
+        BOOL due = now >= r.expires || (seen > 0 && now >= seen + kAfterWatchedDays * 86400.0);
+        if (!due) continue;
+        SFLog(@"downloads: pre-buffered %@ expired (%@) - its bytes are buffer now", r.identifier, seen > 0 ? @"watched" : @"not watched in time");
+        r.state = SFDLDismissed; r.inStore = NO; r.expires = 0; r.bytes = 0; r.progress = 0;   // unpinned: evicted when room is needed
+        [writes addObject:[self write:r]];
+        [self changed:r.identifier];
+    }
+    if (writes.count) { [[SFStore shared] runAll:writes]; [self storageChangedSoon]; }
+}
+
 // all subscriptions against their follows' lists - local, no request (start, every 3 h with the repairs)
 - (void)checkSubscriptionsNow {
     [self retryDueRepairs];
+    [self expirePrebuffers];
     for (SFSubscription *s in [_subs.allValues copy]) [self checkSub:s];
     SFLog(@"downloads: subscription check done");
 }

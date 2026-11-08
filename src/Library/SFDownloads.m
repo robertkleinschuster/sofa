@@ -284,7 +284,13 @@ static NSString *gb(unsigned long long b) {
     if (!item.identifier || item.kind != SFItemVideo) return NO;
     SFDownloadRecord *r = _recs[item.identifier];
     SFDLState st = r ? r.state : SFDLNone;
-    if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self fileFor:item.identifier]))) return NO;
+    if (!subID && r.sub && st == SFDLDone && r.inStore && [self hasContent:r]) {   // "Herunterladen" on a pre-buffered episode
+        r.sub = nil; r.expires = 0;   // now the user's download: kept, nothing to load
+        [self save:r]; [self changed:r.identifier];
+        SFLog(@"downloads: %@ pre-buffered -> downloaded (kept)", r.identifier);
+        return YES;
+    }
+    if (r && (st == SFDLQueued || st == SFDLRunning || (st == SFDLDone && [self hasContent:r]))) return NO;
     if (subID && r && st == SFDLDismissed) return NO;
     if (subID && r && (st == SFDLFailed || st == SFDLRetrying)) {
         if (r.tries >= kSubMaxTries) return NO;                                   // given up
@@ -304,6 +310,7 @@ static NSString *gb(unsigned long long b) {
     r.added = [[NSDate date] timeIntervalSince1970];
     if (item.date) r.published = [item.date timeIntervalSince1970];
     r.sub = subID;   // nil = manual: never deleted automatically
+    r.expires = 0;   // (a subscription episode in the store gets its expiry when it is complete)
     if (!subID) r.tries = 0;
     r.error = nil; r.retryAt = 0;
     _recs[item.identifier] = r;
@@ -388,6 +395,7 @@ static NSString *gb(unsigned long long b) {
     [self sweepStaleParts];
     [self retireFilesOfFillingSources];
     [self verifyStoreDownloads];
+    [self expirePrebuffers];   // (also every 3 h with the subscription check)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self retryDueRepairs];
         [self auditExistingDownloads];

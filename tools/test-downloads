@@ -19,6 +19,9 @@
 #      a file download of a filling source is retired once at start; a fill completes as a store
 #      download (no file, pinned bytes); a quit mid-fill uses no attempt and the resume fetches only
 #      the rest; tracks gone from outside are noticed at start and filled again; removal frees them
+#   8b. pre-buffering: a subscription episode filled into the store expires (14 days, or 3 days after
+#      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
+#      episode keeps it without loading again
 #   tools/test-downloads   the parts side by side, each with its own instance and media server
 #                          (part a: 1-4, part b: 5-7, 4b, part c: 8); DLTEST_PART=a|b|c runs one part here
 # Exit code 0 = all ok.
@@ -340,6 +343,39 @@ check "only the lost block filled again (pieces 4-7)" "$pieces" "4 5 6 7 "
 cmd "dlremove $REF"
 for i in $(seq 1 20); do grep -q "dev: removed download $REF" "$LOG" && break; sleep 0.25; done
 check "removal frees its tracks" "$(SS "select count(*) from tracks where item='$REF'")/$(SQ "select count(*) from downloads where id='$REF'")" "0/0"
+quit
+
+echo "==> 8b. pre-buffering"
+SQ "insert or replace into items (id,json) values ('example:3','{\"id\":\"example:3\",\"kind\":0,\"title\":\"Folge\",\"source\":\"example\"}'),
+    ('example:4','{\"id\":\"example:4\",\"kind\":0,\"title\":\"Gesehen\",\"source\":\"example\"}');
+    insert into downloads (id,source,channel,state,progress,added,sub) values
+    ('example:3','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
+    ('example:4','example','Dev',0,0,strftime('%s','now') + 1,'exampleshow:demo');"
+start
+for i in $(seq 1 80); do [ "$(grep -c 'downloads: done example:[34]' "$LOG")" -ge 2 ] && break; sleep 0.25; done
+check "subscription episodes pre-buffered: expiry in 14 days" \
+  "$(SQ "select group_concat(id || '=' || store || '/' || (abs(expires - strftime('%s','now') - 14*86400) < 120), ' ') from (select * from downloads where id in ('example:3','example:4') order by id)")" \
+  "example:3=1/1 example:4=1/1"
+quit
+# example:3 past its expiry; example:4 watched four days ago (3 days after watching)
+SQ "update downloads set expires = strftime('%s','now') - 1 where id='example:3';
+    insert or replace into progress (id,pos,dur,watched,updated,source) values ('example:4',60,60,1,strftime('%s','now') - 4*86400,'example');"
+start
+for i in $(seq 1 40); do [ "$(grep -c 'pre-buffered example:[34] expired' "$LOG")" -ge 2 ] && break; sleep 0.25; done
+grep -q "pre-buffered example:3 expired (not watched in time)" "$LOG" && grep -q "pre-buffered example:4 expired (watched)" "$LOG" \
+  && ok "expired: past the 14 days, and 3 days after watching" || bad "not expired: $(grep 'pre-buffered\|example:[34]' "$LOG" | tail -3)"
+check "expired: dismissed (not fetched again), bytes left as buffer" \
+  "$(SQ "select group_concat(state || '/' || store, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4/0 4/0/2"
+# "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
+SQ "insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
+    insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"
+quit; start
+for i in $(seq 1 60); do grep -q "downloads: done example:1" "$LOG" && break; sleep 0.25; done
+m=$(wc -l < "$LOG")
+cmd "dlget example:1"
+for i in $(seq 1 20); do grep -q "example:1 pre-buffered -> downloaded" "$LOG" && break; sleep 0.25; done
+check "Herunterladen on a pre-buffered episode: kept, no expiry" "$(SQ "select state || '/' || store || '/' || coalesce(sub, '-') || '/' || coalesce(expires, '-') from downloads where id='example:1'")" "2/1/-/-"
+sleep 1; tail -n +$((m + 1)) "$LOG" | grep -q "example: filled example:1" && bad "it was loaded again" || ok "nothing loaded again"
 quit
 fi   # part c
 
