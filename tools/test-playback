@@ -302,7 +302,9 @@ at=$(since $m | grep 'endscreen: shown at' | head -1 | sed 's/.*shown at \([0-9.
 awk "BEGIN{exit !($at >= 2.0 && $at < 4)}" 2>/dev/null && ok "tiles appear at the first startMs ($at s)" || bad "tiles appeared at '$at' (want 2 s)"
 since $m | grep -q 'endscreen: video rect {{0, 0}, {1920, 1080}}' && ok "tiles placed over the video rect" || bad "video rect: $(since $m | grep 'video rect' | tail -1)"
 sleep 1.5; shot "$T/endscreen.png"; [ -s "$T/endscreen.png" ] && { ok "end screen rendered"; keep "$T/endscreen.png"; } || bad "no end screen screenshot"
-m=$(mark); cmd "key down"; sleep 0.4; cmd "key right"; sleep 0.4; cmd "key left"; sleep 0.4; cmd "key down"; sleep 0.6
+# each key waits for its focus line (under test-all's load a fixed pause was too short once)
+m=$(mark); n=0
+for k in down right left down; do n=$((n + 1)); cmd "key $k"; for i in $(seq 1 40); do [ "$(since $m | grep -c 'endscreen: focus')" -ge $n ] && break; sleep 0.1; done; done
 since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q '0 (video) 1 (video) 0 (video) 2 (follow)' \
   && ok "DOWN enters, arrows move spatially" || bad "focus path: $(since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ')"
 shot "$T/endscreen-focus.png"; keep "$T/endscreen-focus.png"
