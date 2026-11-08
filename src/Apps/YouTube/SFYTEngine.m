@@ -1,4 +1,5 @@
 #import "SFModel.h"
+#import "SFSettings.h"
 #import "SFYTEngine+Private.h"
 #import "SFYTBrowser.h"
 #import "SFYTBreaker.h"
@@ -283,11 +284,11 @@ static NSUInteger BrowserMemoryLimitMB(void) {
         }
         NSData *bd = [NSData dataWithContentsOfFile:[SFYTBreaker filePath]];
         id block = bd ? [NSJSONSerialization JSONObjectWithData:bd options:0 error:nil] : nil;
-        // ytEngineDebug (defaults, diagnosis only): the engine's per-request lines (offsets, runs) into
+        // ytEngineDebug (diagnosis switch, SFSettings.h): the engine's per-request lines (offsets, runs) into
         // the log - takes effect at the engine's next start
         NSDictionary *cfg = @{@"base": [NSString stringWithFormat:@"http://127.0.0.1:%u", self->_server.port],
                               @"block": dict(block) ?: [NSNull null],
-                              @"debug": @([[NSUserDefaults standardUserDefaults] boolForKey:@"ytEngineDebug"])};
+                              @"debug": @(SFDiagnosisEnabled(@"ytEngineDebug"))};
         [self request:@"start" args:@[cfg] timeout:kCallTimeout done:^(id v, NSError *se) { SFMain(^{
             if (page != self->_page || self->_state != SFYTEngineStarting) return;
             if (se && se.code != 409) { [self runFailed:[@"engine start failed: " stringByAppendingString:se.localizedDescription]]; return; }

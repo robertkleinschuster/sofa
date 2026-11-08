@@ -20,3 +20,8 @@ void SFSetSubtitleLanguage(NSString *lang);
 // by contrast, only applies to foreign-language audio (translation).
 BOOL SFSubtitlesSameLanguage(void);
 void SFSetSubtitlesSameLanguage(BOOL on);
+// Diagnosis switches (developer, off by default; never in the settings menu): set from a shell with
+// `defaults write de.sofa.app <name> -bool YES` (dev instance: de.sofa.dev.<instance>), take effect at
+// the next read (re-read from disk each time - no relaunch). Names: ytEngineDebug (the engine's
+// per-request lines, at its next start), mpvDebugDemux (what mpv's demuxers read, next player open).
+BOOL SFDiagnosisEnabled(NSString *name);

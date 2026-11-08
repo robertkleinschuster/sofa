@@ -44,3 +44,8 @@ void SFSetSubtitlesSameLanguage(BOOL on) {
     CFPreferencesSetAppValue(CFSTR("subtitlesSameLanguage"), on ? kCFBooleanTrue : NULL, SFDomain());
     CFPreferencesAppSynchronize(SFDomain());
 }
+
+BOOL SFDiagnosisEnabled(NSString *name) {
+    CFPreferencesAppSynchronize(SFDomain());   // a `defaults write` since the last read
+    return SFGetBool((__bridge CFStringRef)name, NO);
+}
