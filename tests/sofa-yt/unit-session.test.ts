@@ -354,6 +354,19 @@ test('header parse with a start hint: init + the first Cluster ID at once, no ru
   } finally { await app.close(); }
 });
 
+test('open: the answer names the track of its own audio URL (Sofa\'s store and downloads key on it)', async () => {
+  // one audio language (most videos: no audio list - the track was missing, 2026-11-08) and two
+  for (const [what, vi] of [['one audio language', base], ['two audio languages', info]] as const) {
+    const { app } = await setup({ infos: { [ID]: vi } });
+    try {
+      const r = await openJson(app, `v=${ID}&prefetch=0`);
+      const akey = decodeURIComponent(String(r.audio).split('/').pop()!);
+      assert.ok(r.tracks.video, `${what}: video track`);
+      assert.ok(r.tracks[akey], `${what}: the audio URL's track ${akey}: ${JSON.stringify(Object.keys(r.tracks))}`);
+    } finally { await app.close(); }
+  }
+});
+
 test('index: a track\'s Cues once its init arrived (Sofa\'s timeline maps stored bytes to time)', async () => {
   const { app } = await setup();
   try {

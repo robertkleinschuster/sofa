@@ -433,7 +433,8 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       subs: subsOf(s, u),
       endscreen: s.info.endscreen || [],
       published: s.info.published ?? null,
-      tracks: trackInfos(s, ['video', 'audio', ...audios.map((t) => decodeURIComponent(t.url.split('/').pop()!))]),
+      // by the keys of the answer's URLs: the main audio's own key too (one audio language: no list)
+      tracks: trackInfos(s, ['video', 'audio', a.key, ...audios.map((t) => decodeURIComponent(t.url.split('/').pop()!))]),
       ...extra,
     };
   }
