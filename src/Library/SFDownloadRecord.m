@@ -65,10 +65,12 @@ static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,ch
     return s;
 }
 
+// an upsert: REPLACE would delete the row its episodes refer to
+static NSString *const kWriteSubscription = @"INSERT INTO subscriptions (id,keepDays,since,added) VALUES (?,?,?,?) "
+    "ON CONFLICT(id) DO UPDATE SET keepDays = excluded.keepDays, since = excluded.since, added = excluded.added";
+
 - (NSArray *)writeStatement {
-    // an upsert: REPLACE would delete the row its episodes refer to
-    return @[@"INSERT INTO subscriptions (id,keepDays,since,added) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
-              "keepDays = excluded.keepDays, since = excluded.since, added = excluded.added",
+    return @[kWriteSubscription,
              @[_identifier, @(_keepDays ?: 90), @(_since), @(_added)]];
 }
 

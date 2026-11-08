@@ -30,6 +30,10 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     NSTimer *_timer;                 // the next planned check (SFRefreshPlan)
     NSMutableDictionary *_jitter;    // id -> r of its current plan (drawn at each check)
     NSDate *_lastCheck;              // of any follow: the gap before the next one
+    // readiness: the follows and their items read (1581 items parsed on a cold disk took ~100 ms of
+    // the launching main thread, 2026-11-08) - on a queue at init; every public method waits for it
+    // once (at once afterwards), start plans after it; all other access stays on the main thread
+    dispatch_group_t _loaded;
 }
 
 + (instancetype)shared {
@@ -40,21 +44,24 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 
 - (instancetype)init {
     if ((self = [super init])) {
-        SFStore *st = [SFStore shared];
-        _follows = [NSMutableDictionary new];
-        _items = [NSMutableDictionary new];
-        for (NSDictionary *row in [st rows:@"SELECT * FROM follows" args:nil]) {
-            SFFollow *f = [SFFollow followWithRow:row];
-            if (f.identifier) _follows[f.identifier] = f;
-        }
-        for (NSDictionary *r in [st rows:@"SELECT f.follow, i.json AS item FROM follow_items f JOIN items i ON i.id = f.id ORDER BY f.follow, f.pos" args:nil]) {
-            NSDictionary *d = SFJSONParse(r[@"item"]);
-            if (![d isKindOfClass:[NSDictionary class]]) continue;
-            NSMutableArray *a = _items[r[@"follow"]] ?: [NSMutableArray new];
-            [a addObject:[SFItem itemWithDictionary:d]];
-            _items[r[@"follow"]] = a;
-        }
-        SFLog(@"follows: %lu shows/channels", (unsigned long)_follows.count);
+        _loaded = dispatch_group_create();
+        dispatch_group_async(_loaded, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+            SFStore *st = [SFStore shared];
+            NSMutableDictionary *follows = [NSMutableDictionary new], *items = [NSMutableDictionary new];
+            for (NSDictionary *row in [st rows:@"SELECT * FROM follows" args:nil]) {
+                SFFollow *f = [SFFollow followWithRow:row];
+                if (f.identifier) follows[f.identifier] = f;
+            }
+            for (NSDictionary *r in [st rows:@"SELECT f.follow, i.json AS item FROM follow_items f JOIN items i ON i.id = f.id ORDER BY f.follow, f.pos" args:nil]) {
+                NSDictionary *d = SFJSONParse(r[@"item"]);
+                if (![d isKindOfClass:[NSDictionary class]]) continue;
+                NSMutableArray *a = items[r[@"follow"]] ?: [NSMutableArray new];
+                [a addObject:[SFItem itemWithDictionary:d]];
+                items[r[@"follow"]] = a;
+            }
+            self->_follows = follows; self->_items = items;   // (the group's end publishes them)
+            SFLog(@"follows: %lu shows/channels", (unsigned long)follows.count);
+        });
     }
     return self;
 }
@@ -73,7 +80,13 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 
 #pragma mark Start / Migration
 
+- (void)ready { dispatch_group_wait(_loaded, DISPATCH_TIME_FOREVER); }
+
 - (void)start {
+    dispatch_group_notify(_loaded, dispatch_get_main_queue(), ^{ [self startPlan]; });
+}
+
+- (void)startPlan {
     if (_started) return;
     _started = YES;
     _jitter = [NSMutableDictionary new];
@@ -86,8 +99,8 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 - (BOOL)canFollow:(SFItem *)folder {
     return folder.kind == SFItemFolder && SFShowPageLoader(folder.identifier, nil) && SFHasFeed(folder.identifier);
 }
-- (NSArray *)itemsOf:(NSString *)identifier { return identifier ? [_items[identifier] copy] ?: @[] : @[]; }
-- (BOOL)isFollowing:(NSString *)identifier { return identifier && _follows[identifier] != nil; }
+- (NSArray *)itemsOf:(NSString *)identifier { [self ready]; return identifier ? [_items[identifier] copy] ?: @[] : @[]; }
+- (BOOL)isFollowing:(NSString *)identifier { [self ready]; return identifier && _follows[identifier] != nil; }
 
 - (void)addFollow:(SFItem *)folder {
     SFFollow *f = [SFFollow followOf:folder];
@@ -95,9 +108,10 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     [self save:f];
 }
 
-- (SFFollow *)recordOf:(NSString *)identifier { return identifier ? [_follows[identifier] copy] : nil; }
+- (SFFollow *)recordOf:(NSString *)identifier { [self ready]; return identifier ? [_follows[identifier] copy] : nil; }
 
 - (void)adopt:(SFFollow *)record {
+    [self ready];
     if (!record.identifier.length || _follows[record.identifier]) return;
     SFFollow *f = [record copy];
     f.checked = 0;   // its turn in the refresh plan comes first
@@ -109,6 +123,7 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 }
 
 - (void)follow:(SFItem *)folder {
+    [self ready];
     if (![self canFollow:folder] || _follows[folder.identifier]) return;
     [self addFollow:folder];
     SFLog(@"follows: + %@", folder.title);
@@ -117,6 +132,7 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 }
 
 - (void)unfollow:(NSString *)identifier {
+    [self ready];
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
@@ -136,6 +152,7 @@ static BOOL usable(NSString *img) {
 }
 
 - (BOOL)needsImage:(NSString *)identifier {
+    [self ready];
     SFFollow *f = identifier ? _follows[identifier] : nil;
     return f && !usable(f.image);
 }
@@ -156,6 +173,7 @@ static BOOL usable(NSString *img) {
 }
 
 - (NSArray *)follows:(NSString *)source {
+    [self ready];
     NSMutableArray *out = [NSMutableArray new];
     for (SFFollow *f in _follows.allValues) {
         if (source && ![f.source isEqualToString:source]) continue;
@@ -181,6 +199,7 @@ static BOOL usable(NSString *img) {
 }
 
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source {
+    [self ready];
     NSMutableArray *all = [NSMutableArray new];
     for (NSString *fid in _items) {
         SFFollow *f = _follows[fid];
@@ -379,10 +398,13 @@ static BOOL hasCounts(NSArray *dicts) {
     return f;
 }
 
+// an upsert: REPLACE would delete the row its follow items and auto-download refer to
+static NSString *const kWriteFollow = @"INSERT INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?) "
+    "ON CONFLICT(id) DO UPDATE SET source = excluded.source, title = excluded.title, image = excluded.image, "
+    "added = excluded.added, checked = excluded.checked";
+
 - (NSArray *)writeStatement {
-    // an upsert: REPLACE would delete the row its follow items and auto-download refer to
-    return @[@"INSERT INTO follows (id,source,title,image,added,checked) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
-              "source = excluded.source, title = excluded.title, image = excluded.image, added = excluded.added, checked = excluded.checked",
+    return @[kWriteFollow,
              @[_identifier, _source ?: @"", _title ?: @"", _image ?: [NSNull null],
                @(_added > 0 ? _added : [NSDate date].timeIntervalSince1970), _checked > 0 ? @(_checked) : [NSNull null]]];
 }
