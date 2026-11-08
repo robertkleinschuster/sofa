@@ -108,7 +108,13 @@ static int connectTo(uint16_t port) {
     return fd;
 }
 
-static void sendAll(int fd, NSData *d) { write(fd, d.bytes, d.length); }
+static void sendAll(int fd, NSData *d) {   // a write may take fewer bytes than given
+    for (size_t sent = 0; sent < d.length;) {
+        ssize_t w = write(fd, (const uint8_t *)d.bytes + sent, d.length - sent);
+        if (w <= 0) return;
+        sent += (size_t)w;
+    }
+}
 
 // The answer head of an upgrade request (up to the blank line); fd stays open.
 // The response head, read to its blank line (or the connection's end): a single read() may get
@@ -131,18 +137,25 @@ static NSString *upgrade(int fd, NSString *path) {
 }
 
 // One server frame: its opcode and payload (op -1: the connection ended).
+// exactly n bytes: a read may return fewer (under test-all's load the 2-byte frame header came in
+// two reads and the frame counted as broken - every frame after it misaligned)
+static BOOL readExact(int fd, void *buf, size_t n) {
+    for (size_t got = 0; got < n;) {
+        ssize_t r = read(fd, (uint8_t *)buf + got, n - got);
+        if (r <= 0) return NO;
+        got += (size_t)r;
+    }
+    return YES;
+}
+
 static int readFrame(int fd, NSData **payload) {
     uint8_t h[10];
-    if (read(fd, h, 2) != 2) return -1;
+    if (!readExact(fd, h, 2)) return -1;
     uint64_t n = h[1] & 0x7f;
-    if (n == 126) { if (read(fd, h + 2, 2) != 2) return -1; n = ((uint64_t)h[2] << 8) | h[3]; }
-    else if (n == 127) { if (read(fd, h + 2, 8) != 8) return -1; n = 0; for (int i = 0; i < 8; i++) n = (n << 8) | h[2 + i]; }
+    if (n == 126) { if (!readExact(fd, h + 2, 2)) return -1; n = ((uint64_t)h[2] << 8) | h[3]; }
+    else if (n == 127) { if (!readExact(fd, h + 2, 8)) return -1; n = 0; for (int i = 0; i < 8; i++) n = (n << 8) | h[2 + i]; }
     NSMutableData *p = [NSMutableData dataWithLength:(NSUInteger)n];
-    for (uint64_t got = 0; got < n;) {
-        ssize_t r = read(fd, (uint8_t *)p.mutableBytes + got, (size_t)(n - got));
-        if (r <= 0) return -1;
-        got += (uint64_t)r;
-    }
+    if (n && !readExact(fd, p.mutableBytes, (size_t)n)) return -1;
     if (payload) *payload = p;
     return h[0] & 0x0f;
 }
