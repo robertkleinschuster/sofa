@@ -124,6 +124,9 @@ export interface VodAnswer extends OpenMeta {
   subs: SubsEntry[];
   endscreen: EndscreenElement[];
   published: number | null;   // epoch seconds of the publication (exact, from the microformat)
+  /** Per local track (the URL's last part: video, audio, an audio key): its identity across sessions,
+   * length and type - Sofa serves what its media store holds without asking the engine first. */
+  tracks: Record<string, { id: string; total: number; mimeType: string }>;
 }
 
 /** open of a live / post-live DVR recording: one muxed HLS stream. */
@@ -162,6 +165,9 @@ export type OpenAnswer = VodAnswer | LiveAnswer | OpenFailure;
 
 /** One media track of a VOD session. */
 interface MediaTrack {
+  /** The track's identity across sessions: the same format of the same video is the same bytes
+   * (Sofa's media store keys its disk copy by it - docs/media-store.md). */
+  id: string;
   total: number;
   mimeType: string;
   /** Write bytes [start, end) to `to` as they arrive; resolves with the count written (short = premature end). */
@@ -170,6 +176,7 @@ interface MediaTrack {
 
 /** Bytes of a track read in one piece (the browser engine's read()). */
 export interface MediaBytes {
+  id: string;
   total: number;
   mimeType: string;
   bytes: Uint8Array;
@@ -392,6 +399,15 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     return describeLive(s, extra());
   }
 
+  /** The tracks' identities that exist now (an audio language's track may come into being later). */
+  function trackInfos(s: PlaybackSession, keys: string[]): VodAnswer['tracks'] {
+    const out: VodAnswer['tracks'] = {};
+    for (const k of new Set(keys)) {
+      try { const m = track(s.sid, k); out[k] = { id: m.id, total: m.total, mimeType: m.mimeType }; } catch { /* not (yet) there */ }
+    }
+    return out;
+  }
+
   function describeSession(s: PlaybackSession, extra: OpenMeta): VodAnswer {
     const u = `${base()}/s/${s.sid}`;
     const v = s.video.fmt;
@@ -410,6 +426,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
       subs: subsOf(s, u),
       endscreen: s.info.endscreen || [],
       published: s.info.published ?? null,
+      tracks: trackInfos(s, ['video', 'audio', ...audios.map((t) => decodeURIComponent(t.url.split('/').pop()!))]),
       ...extra,
     };
   }
@@ -480,6 +497,8 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     if (!t) throw new EngineError(404, { error: 'no such track' });
     if (s.failed) throw new EngineError(503, { error: s.failed.message });
     return {
+      // video, format (itag, audio track, variants) and its version stamp: a re-encode changes lmt
+      id: `yt:${s.info.id}:${t.fmt.key}:${t.fmt.sabr.lastModified}:${t.file.total}`,
       total: t.file.total,
       mimeType: (t.fmt.mimeType || 'application/octet-stream').split(';')[0]!,
       serve: (start, end, to) => s.serve(t, start, end, to),
@@ -509,7 +528,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     const bytes = new Uint8Array(n);
     let at = 0;
     for (const p of parts) { bytes.set(p, at); at += p.length; }
-    return { total: t.total, mimeType: t.mimeType, bytes };
+    return { id: t.id, total: t.total, mimeType: t.mimeType, bytes };
   }
 
   async function playlist(sid: string): Promise<string> {

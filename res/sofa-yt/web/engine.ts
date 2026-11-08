@@ -59,6 +59,8 @@ export type EngineEvent =
 export type Reply<T> = { ok: true; value: T } | { ok: false; status: number; body: { error: string } & Record<string, unknown> };
 
 export interface MediaChunk {
+  /** the track's identity across sessions (Sofa's media store key) */
+  id: string;
   total: number;
   mimeType: string;
   /** bytes [offset, offset + n) */
@@ -177,7 +179,7 @@ export const sofaEngine: SofaEngine = {
   open: (req) => replyAsync(() => core!.open(req)),
   read: (sid, key, offset, maxBytes) => replyAsync(async () => {
     const r = await core!.read(sid, key, offset, maxBytes);
-    return { total: r.total, mimeType: r.mimeType, data: r.bytes };
+    return { id: r.id, total: r.total, mimeType: r.mimeType, data: r.bytes };
   }),
   playlist: (sid) => replyAsync(() => core!.playlist(sid)),
   segment: (sid, n) => replyAsync(async () => {

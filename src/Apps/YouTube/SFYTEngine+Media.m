@@ -6,10 +6,15 @@
 //   GET /s/<sid>/subs/<key>.vtt
 //   GET /s/<sid>/status       (diagnostics)
 // Media bytes come from the page in pieces (engine read(): waits for SABR like a reader) and go out
-// as they arrive; a reader that goes away (a seek) stops the reading.
+// as they arrive; a reader that goes away (a seek) stops the reading. Every piece passes the media
+// store (docs/media-store.md): what is on disk is served from there without asking the engine (a
+// resume, a phone's lounge video watched before, a download of a watched video), what the engine
+// delivers goes to disk on the way.
 #import "SFModel.h"
 #import "SFYTEngine+Private.h"
 #import "SFJSON.h"
+#import "SFDownloads.h"
+#import "SFMediaStore.h"
 
 static const NSUInteger kPiece = 1 << 20;              // bytes per engine read
 static const NSTimeInterval kReadTimeout = 120;        // a read waits for SABR; longer = the page is gone
@@ -83,13 +88,66 @@ static NSString *ErrorJSON(NSError *e) {
 }
 
 // One piece of a track: done(bytes, total, mimeType) or an error. Engine queue.
+// Track infos by session: sid -> local key -> {id, total, mimeType}. The newest sessions only (a
+// session the engine has dropped answers its reads with an error anyway).
+static NSMutableDictionary *gTracks;
+static NSMutableArray *gTrackOrder;
+static const NSUInteger kTrackSessions = 32;
+
+- (void)noteTracks:(NSDictionary *)tracks session:(NSString *)sid {
+    if (!sid.length || !tracks.count) return;
+    @synchronized ([SFYTEngine class]) {
+        if (!gTracks) { gTracks = [NSMutableDictionary new]; gTrackOrder = [NSMutableArray new]; }
+        NSMutableDictionary *known = [gTracks[sid] mutableCopy] ?: [NSMutableDictionary new];
+        [known addEntriesFromDictionary:tracks];
+        if (!gTracks[sid]) [gTrackOrder addObject:sid];
+        gTracks[sid] = known;
+        while (gTrackOrder.count > kTrackSessions) { [gTracks removeObjectForKey:gTrackOrder[0]]; [gTrackOrder removeObjectAtIndex:0]; }
+    }
+}
+
+static NSDictionary *TrackInfo(NSString *sid, NSString *key) {
+    @synchronized ([SFYTEngine class]) { return dict(gTracks[sid][key]); }
+}
+
+// "yt:<video>:<format>:..." -> the item "yt:<video>"
+static NSString *ItemOf(NSString *trackID) {
+    NSArray *p = [trackID componentsSeparatedByString:@":"];
+    return p.count >= 2 ? [NSString stringWithFormat:@"%@:%@", p[0], p[1]] : nil;
+}
+
 - (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
         done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
+    SFMediaStore *store = [SFDownloads shared].mediaStore;
+    NSDictionary *t = TrackInfo(sid, key);
+    NSString *tid = str(t[@"id"]);
+    long long total = [num(t[@"total"]) longLongValue];
+    if (tid.length && offset < total) {   // from disk, off the engine queue (a disk read may take a moment)
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            NSData *disk = [store readAvailable:tid start:offset max:(NSUInteger)MIN((long long)max, total - offset)];
+            dispatch_async(self.queue, ^{
+                if (disk) done(disk, total, str(t[@"mimeType"]) ?: @"application/octet-stream", nil);
+                else [self readFromEngine:sid track:key at:offset max:max done:done];
+            });
+        });
+        return;
+    }
+    [self readFromEngine:sid track:key at:offset max:max done:done];
+}
+
+- (void)readFromEngine:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
+                  done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
     [self request:@"read" args:@[sid, key, @(offset), @(max)] timeout:kReadTimeout done:^(id v, NSError *e) {
         NSDictionary *r = dict(v);
         NSData *bytes = bin(r[@"data"]);
         if (e || !bytes || ![r[@"total"] isKindOfClass:[NSNumber class]]) { done(nil, 0, nil, e ?: SFError(@"engine: malformed read")); return; }
-        done(bytes, [r[@"total"] longLongValue], str(r[@"mimeType"]) ?: @"application/octet-stream", nil);
+        long long total = [r[@"total"] longLongValue];
+        NSString *mime = str(r[@"mimeType"]) ?: @"application/octet-stream", *tid = str(r[@"id"]);
+        if (tid.length && bytes.length) {   // to disk on the way (and known for the next read)
+            [self noteTracks:@{key: @{@"id": tid, @"total": @(total), @"mimeType": mime}} session:sid];
+            [[SFDownloads shared].mediaStore write:bytes key:tid item:ItemOf(tid) kind:key total:total at:offset];
+        }
+        done(bytes, total, mime, nil);
     }];
 }
 

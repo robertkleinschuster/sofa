@@ -1,7 +1,7 @@
 // sources: src/Library/SFMediaStore.m src/Library/SFExtentSet.m
 // flags: -Isrc/Library -I/opt/local/include -L/opt/local/lib -lsqlite3
 // SFMediaStore in a directory of its own: bytes back as written (also across a block boundary),
-// nothing for a range with a gap, the index after a reopen, a block file deleted from outside
+// nothing for a range with a gap, the gapless part from a position, the index after a reopen, a block file deleted from outside
 // (dropped from the index, not served), eviction least recently used first while space is short -
 // a pinned item never - and removing an item.
 #import <Foundation/Foundation.h>
@@ -32,6 +32,9 @@ int main(void) { @autoreleasepool {
     CHECK([[s read:@"yt:v1:137:9000000" start:50000 length:10000] isEqual:[a subdataWithRange:NSMakeRange(50000, 10000)]], "a part of a piece");
     CHECK([s read:@"yt:v1:137:9000000" start:0 length:100001] == nil, "a range with a gap: nothing");
     CHECK([s read:@"yt:nope" start:0 length:1] == nil, "an unknown track: nothing");
+    CHECK([[s readAvailable:@"yt:v1:137:9000000" start:40000 max:1 << 20] isEqual:[a subdataWithRange:NSMakeRange(40000, 60000)]], "available: up to the gap");
+    CHECK([[s readAvailable:@"yt:v1:137:9000000" start:0 max:500] isEqual:[a subdataWithRange:NSMakeRange(0, 500)]], "available: at most max");
+    CHECK([s readAvailable:@"yt:v1:137:9000000" start:100000 max:10] == nil, "available: nothing at a gap");
     CHECK([s bytesOfItem:@"yt:v1"] == 400000 && s.bytes == 400000, "stored bytes counted once");
 
     SFMediaStore *again = [[SFMediaStore alloc] initWithDirectory:dir];

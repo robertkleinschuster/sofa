@@ -15,6 +15,8 @@
 
 // The bytes [start, start + length) of a track if all are present (the track counts as used), else nil
 - (NSData *)read:(NSString *)key start:(long long)start length:(NSUInteger)length;
+// The bytes present from `start` on without a gap, at most `max` (the track counts as used); nil: none
+- (NSData *)readAvailable:(NSString *)key start:(long long)start max:(NSUInteger)max;
 // Keep bytes of a track at `start` (the track is created on its first write). `total`: the track's
 // length when known (0: unknown). Asynchronous; reads see the bytes once written.
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start;

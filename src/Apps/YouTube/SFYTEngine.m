@@ -429,6 +429,7 @@ static id Clean(id v) {
                              j[@"height"], j[@"fps"], -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
         else SFLog(@"yt-engine: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],
                    str(j[@"alang"]) ?: @"?", -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
+        [self noteTracks:dict(j[@"tracks"]) session:str(j[@"sid"])];
         done(Clean(j), nil);
     }];
 }

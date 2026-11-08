@@ -22,4 +22,6 @@
 @interface SFYTEngine (Media)
 // GET|HEAD /s/<sid>/... (SFYTEngine+Media.m). Engine queue.
 - (void)serveSession:(SFHTTPExchange *)x;
+// An opened session's tracks (local key -> id, total, mimeType): what the media store may serve
+- (void)noteTracks:(NSDictionary *)tracks session:(NSString *)sid;
 @end

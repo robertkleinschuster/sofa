@@ -175,6 +175,12 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     return d;
 }
 
+- (NSData *)readAvailable:(NSString *)key start:(long long)start max:(NSUInteger)max {
+    __block long long n = 0;
+    dispatch_sync(_q, ^{ n = MIN((long long)max, [((SFMediaTrack *)self->_tracks[key]).extents contiguousFrom:start]); });
+    return n > 0 ? [self read:key start:start length:(NSUInteger)n] : nil;
+}
+
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start {
     if (!data.length || !key.length || !item.length) return;
     data = [data copy];
