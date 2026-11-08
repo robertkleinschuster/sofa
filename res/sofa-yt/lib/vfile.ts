@@ -5,6 +5,7 @@
 // segment covers [0, indexRange.end] (header + Cues/sidx). So a track is exposed as a file of
 // format.contentLength bytes in which only the fetched segments are present. Entries never overlap;
 // the init entry and the parsed index are kept for the lifetime of the track.
+import { debug } from './log.ts';
 import { parseIndex, indexLookup } from './mediaindex.ts';
 import type { MediaIndex } from './mediaindex.ts';
 
@@ -135,6 +136,7 @@ export class VirtualFile {
       if ((this.mimeType || '').includes('webm') && this.index?.[0]?.off === end && end + CLUSTER_ID.length <= this.total) {
         this.known = { start: end, buf: CLUSTER_ID };
       }
+      if ((this.mimeType || '').includes('webm')) debug(`vfile: webm init ends at ${end}, first cluster at ${this.index?.[0]?.off ?? 'no index'} -> ${this.known ? 'first Cluster ID known' : 'not known'}`);
     }
     this.wake();
     return 'added';
