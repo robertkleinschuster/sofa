@@ -98,21 +98,28 @@ static IOReturn OpenAuthenticated(IOBluetoothDevice *d, id target) {
     void (^_found)(SFBluetoothDevice *);
     void (^_done)(void);
     void (^_changed)(SFBluetoothDevice *);
+    NSMutableSet *_connectedAtStart;   // IOBluetooth reports these as connects at registration: no news
 }
 
 - (void)watchConnections:(void (^)(SFBluetoothDevice *))changed {
     _changed = [changed copy];
+    _connectedAtStart = [NSMutableSet new];
+    for (IOBluetoothDevice *d in [IOBluetoothDevice pairedDevices])
+        if (d.isConnected && d.deviceClassMajor == kBluetoothDeviceClassMajorAudio) {   // their disconnect, whether or not a connect is reported
+            [_connectedAtStart addObject:d.addressString];
+            [d registerForDisconnectNotification:self selector:@selector(disconnected:device:)];
+        }
     [IOBluetoothDevice registerForConnectNotifications:self selector:@selector(connected:device:)];
-    for (IOBluetoothDevice *d in [IOBluetoothDevice pairedDevices])   // those connected already: their disconnect
-        if (d.isConnected && d.deviceClassMajor == kBluetoothDeviceClassMajorAudio) [d registerForDisconnectNotification:self selector:@selector(disconnected:device:)];
 }
 - (void)connected:(IOBluetoothUserNotification *)n device:(IOBluetoothDevice *)d {
     if (d.deviceClassMajor != kBluetoothDeviceClassMajorAudio) return;
+    if ([_connectedAtStart containsObject:d.addressString]) { [_connectedAtStart removeObject:d.addressString]; return; }   // connected before Sofa (watched already)
     [d registerForDisconnectNotification:self selector:@selector(disconnected:device:)];
     if (_changed) _changed([SFBluetoothDevice deviceWithAddress:d.addressString name:SFBluetoothName(d.name) paired:d.isPaired connected:YES]);
 }
 - (void)disconnected:(IOBluetoothUserNotification *)n device:(IOBluetoothDevice *)d {
     [n unregister];
+    [_connectedAtStart removeObject:d.addressString];
     if (_changed) _changed([SFBluetoothDevice deviceWithAddress:d.addressString name:SFBluetoothName(d.name) paired:d.isPaired connected:NO]);
 }
 
