@@ -462,6 +462,12 @@ test('a request left open by the header parse is no demand once the player reads
     const p = must(s.startPump(s.video, V(10).startMs, now));
     p.frontier.set(s.video, V(10).startMs + 5000);
     assert.equal(s.ranAhead(p, now), false, 'the run at the resume position is not ahead of the reader');
+    // between two of mpv's 1 MiB requests: the newest ended, the next one follows in a few ms
+    for (const r of [...s.video.readers]) if (r.pos === V(10).start) s.video.readers.delete(r);
+    s.video.latestRequestAt = now; s.video.lastPos = V(10).start; s.video.lastReadAt = now;
+    const gap = s.video.demands(now);
+    assert.deepEqual(gap.map((d) => [d.ms, !!d.linger]), [[V(10).startMs, true]], `the gap lingers at the resume position: ${JSON.stringify(gap)}`);
+    assert.equal(s.ranAhead(p, now), false, 'not ahead in the gap between two requests either');
   } finally { s.close('test'); }
 });
 

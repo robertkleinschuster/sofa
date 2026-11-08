@@ -149,6 +149,7 @@ class Track {
   lastPos: number | null;
   lastReadAt: number;
   hint: { ms: number; until: number } | null;
+  latestRequestAt: number;   // start of the newest request on this track (also once it ended)
 
   constructor(session: PlaybackSession, kind: TrackKind, fmt: DescribedFormat) {
     this.session = session;
@@ -160,18 +161,22 @@ class Track {
     this.lastPos = null;
     this.lastReadAt = 0;
     this.hint = null;         // {ms, until}
+    this.latestRequestAt = 0;
   }
 
   /** Current demands: [{off|null, ms}] */
   demands(now: number): Demand[] {
     const out: Demand[] = [];
     // One track is one stream of the player, read sequentially: a newer request on it supersedes the
-    // ones still open. mpv leaves its header parse's connection (just past the first Cluster ID)
-    // open after seeking to the resume position - as a demand it started a run from 0 and made the
-    // run at the resume position look "ran ahead of every reader" (stopped, 2026-11-08: +5 s).
-    const newest = Math.max(...[...this.readers].map((r) => r.since ?? 0));
+    // ones still open - also once it ended (mpv reads in 1 MiB requests, the next one follows a few
+    // ms later). mpv leaves its header parse's connection (just past the first Cluster ID) open
+    // after seeking to the resume position - as a demand it started a run from 0 and made the run at
+    // the resume position look "ran ahead of every reader" (stopped, 2026-11-08: +5 s each time).
+    const newest = Math.max(this.latestRequestAt, ...[...this.readers].map((r) => r.since ?? 0));
+    let live = 0;
     for (const r of this.readers) {
       if ((r.since ?? 0) < newest) continue;
+      live++;
       // mpv's header parse just past the known first Cluster ID while the player starts elsewhere (an
       // unconsumed start hint): it seeks there next - no run from 0 for it. Bounded: a client that does
       // want the first cluster (mpv probing the start time) is served once it waited PROBE_GRACE_MS.
@@ -179,7 +184,7 @@ class Track {
           && now - (r.movedAt ?? 0) < this.session.cfg.PROBE_GRACE_MS) continue;
       out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
     }
-    if (!this.readers.size && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
+    if (!live && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
       // between two requests (seek, reconnect): only protects the buffer from eviction
       out.push({ off: this.lastPos, ms: this.file.timeAt(this.lastPos), linger: true });
     }
@@ -600,6 +605,7 @@ export class PlaybackSession {
    */
   async serve(t: Track, start: number, end: number, res: ServeTarget): Promise<number> {
     const reader: Reader = { pos: start, since: Date.now(), movedAt: Date.now() };
+    t.latestRequestAt = reader.since!;
     t.readers.add(reader);
     t.lastPos = start;
     t.lastReadAt = Date.now();
@@ -632,9 +638,8 @@ export class PlaybackSession {
         reader.pos += piece.length;
         reader.movedAt = Date.now();
         written += piece.length;
-        t.lastPos = reader.pos;
-        t.lastReadAt = Date.now();
-        this.lastActivity = t.lastReadAt;
+        if (reader.since === t.latestRequestAt) { t.lastPos = reader.pos; t.lastReadAt = Date.now(); }   // a superseded request is no position
+        this.lastActivity = Date.now();
         if (!res.write(piece)) {
           this.poke();
           await new Promise<void>((resolve) => {
