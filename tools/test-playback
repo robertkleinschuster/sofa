@@ -13,9 +13,12 @@
 #   4. a broken stream ends in a readable German message
 #   4b. a failed entry of a queue/playlist shows the message, then the next entry plays (one dead
 #      entry used to stop a phone playlist)
+#   4c. the end waits (up to 4 s) for an up-next recommendation still on its way, then leaves without
+#      it (the end used to leave at once when the answer came a moment late)
 #   5. a downloaded item switches to the online stream at the same position, chosen in the info
 #      panel ("Online abspielen" used to restart the local file because the download lookup found it again)
 #   6. a remembered subtitle preference is applied automatically
+#   6b. audio/subtitle tracks chosen by hand stay chosen when the stream is reopened (dev breakstream)
 #   7. a stream that stops delivering is detected (stall watchdog) and handled (2026-11-05: a dead
 #      SABR sidecar left mpv hanging in a seek forever, no error event) - also when Play/Pause during
 #      the load made it a paused open (the watchdog used to skip paused opens: a spinner forever)
@@ -171,6 +174,22 @@ waitlog $m 'player: failed - moving on to the next entry' 40 && ok "moved on aft
 waitlog $m 'player: play local.mp4' 40 && ok "the next entry plays" || bad "next entry not started"
 stop
 
+echo "==> 4c. the end waits for a recommendation still on its way - within a limit"
+export SOFA_EXAMPLE_MEDIA="file://$T/local.mp4" SOFA_EXAMPLE_UPNEXT=2.5   # the answer takes 2.5 s
+start
+m=$(mark); cmd "play example:2"; waitlog $m 'mpv: first frame' 40; cmd "mpvset time-pos 88"   # ~2 s before the end
+waitlog $m 'player: end ' 60
+since $m | grep -q 'player: end waits for the recommendation' && ok "the end waits for it" || bad "did not wait: $(since $m | grep 'player:\|example:' | tail -3 | tr '\n' '|')"
+waitlog $m 'player: end -> up next: Mandelbrot' 40 && ok "then shows it" || bad "no up-next card: $(since $m | grep 'player: end' | tail -2 | tr '\n' '|')"
+stop
+export SOFA_EXAMPLE_UPNEXT=30   # an answer that does not come in time
+start
+m=$(mark); cmd "play example:2"; waitlog $m 'mpv: first frame' 40; cmd "mpvset time-pos 88"
+waitlog $m 'player: end -> leaving' 80 && ok "leaves after the limit" || bad "did not leave: $(since $m | grep 'player:' | tail -2 | tr '\n' '|')"
+since $m | grep -q 'player: no recommendation after 4 s' && ok "the limit ended the wait" || bad "no limit line"
+stop
+unset SOFA_EXAMPLE_MEDIA SOFA_EXAMPLE_UPNEXT
+
 echo "==> 5. download -> online stream at the same position (via the info panel)"
 sqlite3 "$DEVDB" "insert or replace into items (id,json) values ('$ORF','{\"id\":\"$ORF\",\"kind\":0,\"title\":\"Playtest\",\"ref\":\"$ORF\",\"source\":\"orf\"}');
   insert or replace into downloads (id,source,channel,path,state,progress,added) values ('$ORF','orf','ORF','$T/local.mp4',2,1,strftime('%s','now'));"
@@ -197,6 +216,16 @@ m=$(mark); cmd "playlist $T/subs.mp4"
 waitlog $m 'subtitles .*remembered language' && ok "subtitles applied automatically" \
   || bad "remembered subtitle preference not applied: $(since $m | grep -i 'subtitle\|player:' | tail -2)"
 { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
+stop
+
+echo "==> 6b. a subtitle choice stays across a reopen"
+# Sofa opens with subtitles off (sid=no) and no preference is set: switched on by hand, they must
+# stay on when the stream breaks and reopens
+start
+m=$(mark); cmd "playlist $T/subs.mp4"; waitlog $m 'mpv: first frame' 40; cmd "mpvset sid 1"; sleep 1
+m=$(mark); cmd "breakstream"; waitlog $m 'mpv: first frame' 40; sleep 1; cmd "mpvprop sid"; sleep 0.5
+since $m | grep -q 'player: stream failed (dev: broken on request) - reopening at' && ok "reopened" || bad "no reopen: $(since $m | grep 'player:' | tail -2 | tr '\n' '|')"
+since $m | grep -q 'player: sub track .* kept across the reopen' && since $m | grep -q 'dev: mpv sid = 1' && ok "subtitles still on after the reopen" || bad "subtitles lost: $(since $m | grep 'mpv sid\|track' | tail -2 | tr '\n' '|')"
 stop
 
 echo "==> 7. stream stops delivering -> stall watchdog"

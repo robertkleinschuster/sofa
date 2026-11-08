@@ -112,6 +112,8 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         id eng = [self topPlayer].engineForDiagnostics;
         NSArray *kv = [arg componentsSeparatedByString:@" "];
         if ([eng isKindOfClass:[SFMPVEngine class]] && kv.count == 2) [(SFMPVEngine *)eng setProp:kv[0] value:kv[1]];
+    } else if ([cmd isEqualToString:@"breakstream"]) {   // Dev: the playing stream breaks (tests the reopen)
+        [[self topPlayer] devBreakStream];
     } else if ([cmd isEqualToString:@"mpvprop"] && arg) {   // Dev: log mpv properties, e.g. mpvprop time-pos,sub-start,sub-text
         id eng = [self topPlayer].engineForDiagnostics;
         if ([eng isKindOfClass:[SFMPVEngine class]])

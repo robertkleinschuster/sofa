@@ -41,6 +41,8 @@ typedef NS_ENUM(NSInteger, SFPlaybackState) { SFPlaybackIdle = -1, SFPlaybackEnd
 @interface SFPlayerScreen (EndscreenDev)   // SFPlayerScreen+Endscreen.m
 // dev: replace the YouTube end screen elements of the running source (nil = none), as /open delivers them
 - (void)devSetEndscreen:(NSArray *)elements;
+// dev: the playing stream breaks as if its source had gone (the reopen path)
+- (void)devBreakStream;
 @end
 
 @interface SFPlayerScreen (Subtitles)   // SFPlayerScreen+Tracks.m

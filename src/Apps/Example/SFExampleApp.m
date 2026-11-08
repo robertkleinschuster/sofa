@@ -96,6 +96,19 @@ static NSArray *videos(NSString *filter) {
 + (BOOL)playbackIsSession:(NSDictionary *)source { return SFDevEnv(@"SOFA_EXAMPLE_SESSION") != nil; }
 + (void)playbackSessionFailed:(NSDictionary *)source item:(SFItem *)item reason:(NSString *)why { SFLog(@"example: session failed (%@)", why); }
 
+// Autoplay recommendation (YouTube: its /next answer): the catalogue's next video. Only when a test
+// asks for it - SOFA_EXAMPLE_UPNEXT=<seconds the answer takes> exercises the player's wait at the end;
+// without it there is none (the other tests' videos end and leave).
++ (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *))done {
+    NSString *delay = SFDevEnv(@"SOFA_EXAMPLE_UPNEXT");
+    if (!delay) { done(nil); return; }
+    NSArray *all = videos(nil);
+    NSUInteger i = [[all valueForKey:@"identifier"] indexOfObject:item.identifier];
+    SFItem *next = i != NSNotFound && i + 1 < all.count ? all[i + 1] : nil;
+    SFLog(@"example: up next for %@ asked", item.identifier);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ done(next); });
+}
+
 + (SFPageLoader)showPageLoader:(NSString *)ref title:(NSString *)title {
     return ^(SFPageDone done) {
         done([SFPage page:title ?: @"Beispielsendung" theme:[self appIdentifier]

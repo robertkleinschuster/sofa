@@ -54,6 +54,8 @@ static const NSTimeInterval kReopenMinPlay = 60;
     [self startItem];
 }
 
+- (void)devBreakStream { if (_engine && !_failed && !_closing) [self streamFailed:@"dev: broken on request"]; }
+
 - (void)engineStatusChanged {
     if (_engine.status == SFEngineFailed) {
         if (SFDevMode) {   // make the cause traceable (domain/code/underlying error)
