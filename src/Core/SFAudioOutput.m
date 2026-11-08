@@ -1,16 +1,26 @@
 #import "SFAudioOutput.h"
 #import <CoreAudio/CoreAudio.h>
+#import <libkern/OSAtomic.h>
 
 NSString *const SFAudioOutputChangedNotification = @"SFAudioOutputChanged";
 NSString *const SFAudioOutputListChangedNotification = @"SFAudioOutputListChanged";
+NSString *const SFAudioOutputFellBackNotification = @"SFAudioOutputFellBack";
 
 @interface SFAudioOutput ()
 @property (nonatomic, readwrite) uint32_t deviceID;
 @property (nonatomic, readwrite, copy) NSString *name, *uid;
-@property (nonatomic, readwrite) BOOL bluetooth, current;
+@property (nonatomic, readwrite) BOOL bluetooth, current, builtIn;
 @end
 
 @implementation SFAudioOutput
+
+static volatile int32_t gIOCalls;   // the verify IO callback's count (one verify at a time: on Queue)
+static OSStatus verifyIO(AudioObjectID d, const AudioTimeStamp *now, const AudioBufferList *in, const AudioTimeStamp *inTime,
+                         AudioBufferList *out, const AudioTimeStamp *outTime, void *ctx) {
+    for (UInt32 i = 0; i < out->mNumberBuffers; i++) memset(out->mBuffers[i].mData, 0, out->mBuffers[i].mDataByteSize);   // silence
+    OSAtomicIncrement32(&gIOCalls);
+    return noErr;
+}
 
 static dispatch_queue_t Queue(void) {
     static dispatch_queue_t q; static dispatch_once_t once;
@@ -48,6 +58,7 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 SFLog(@"audio: output now %@", name ?: @"?");
                 [[NSNotificationCenter defaultCenter] postNotificationName:SFAudioOutputChangedNotification object:nil];
+                [self checkCurrentIfBluetooth];
             });
         });
         AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &kDevices, Queue(), ^(UInt32 n, const AudioObjectPropertyAddress *addr) {
@@ -78,6 +89,7 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
                     UInt32 transport = 0, ts = sizeof transport;
                     AudioObjectGetPropertyData(d[i], &t, 0, NULL, &ts, &transport);
                     o.bluetooth = transport == kAudioDeviceTransportTypeBluetooth;
+                    o.builtIn = transport == kAudioDeviceTransportTypeBuiltIn;
                     o.current = d[i] == cur;
                     if (o.current) [out insertObject:o atIndex:0]; else [out addObject:o];
                 }
@@ -88,6 +100,11 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
 }
 
 + (void)choose:(SFAudioOutput *)o done:(void (^)(BOOL))done {
+    if (SFDevMode) {   // dev instances never move the real sound (like the volume: SFScreen volumeStep)
+        SFLog(@"audio: choose %@ -> skipped (dev instance)", o.name);
+        if (done) dispatch_async(dispatch_get_main_queue(), ^{ done(NO); });
+        return;
+    }
     dispatch_async(Queue(), ^{
         AudioDeviceID d = o.deviceID;
         BOOL ok = AudioObjectSetPropertyData(kAudioObjectSystemObject, &kDefault, 0, NULL, sizeof d, &d) == noErr;
@@ -116,5 +133,71 @@ static BOOL hasOutputStreams(AudioDeviceID d) {
                                                              queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { look(); }];
     look();   // there already
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ finish(nil); });
+}
+
+// A healthy device calls back ~40-90 times a second (512-1024 frames at 44.1 kHz); 0.6 s with
+// fewer than 5 calls is a device that takes no audio. A hanging start (StartIO timeout) blocks
+// AudioDeviceStart itself for seconds - on Queue, never on main.
++ (void)verify:(SFAudioOutput *)o done:(void (^)(BOOL))done {
+    dispatch_async(Queue(), ^{
+        AudioDeviceIOProcID proc = NULL;
+        BOOL plays = NO;
+        NSDate *t0 = [NSDate date];
+        if (AudioDeviceCreateIOProcID(o.deviceID, verifyIO, NULL, &proc) == noErr) {
+            gIOCalls = 0;
+            if (AudioDeviceStart(o.deviceID, proc) == noErr) {
+                usleep(600000);
+                plays = gIOCalls >= 5;
+                AudioDeviceStop(o.deviceID, proc);
+            }
+            AudioDeviceDestroyIOProcID(o.deviceID, proc);
+        }
+        SFLog(@"audio: %@ %@ (%d calls, %.1f s)", o.name, plays ? @"takes audio" : @"takes NO audio", (int)gIOCalls, -[t0 timeIntervalSinceNow]);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(plays); });
+    });
+}
+
+// after a switch, once it has settled (1.5 s without another): a connecting headset switches the
+// output several times while it comes up, and its first moments are no verdict
++ (void)checkCurrentIfBluetooth {
+    static NSUInteger generation;
+    NSUInteger n = ++generation;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (n == generation) [self checkSettledIfBluetooth];
+    });
+}
+
++ (void)checkSettledIfBluetooth {
+    [self outputs:^(NSArray *outputs) {
+        SFAudioOutput *cur = outputs.firstObject;
+        if (cur.current && cur.bluetooth) [self check:cur among:outputs];
+    }];
+}
+
++ (void)checkCurrent {
+    [self outputs:^(NSArray *outputs) {
+        SFAudioOutput *cur = outputs.firstObject;
+        if (cur.current) [self check:cur among:outputs];
+    }];
+}
+
++ (void)check:(SFAudioOutput *)cur among:(NSArray *)outputs {
+    if (SFDevMode) return;   // dev instances play into no device (SOFA_AUDIO_OUT) and never move the sound
+    static BOOL checking;   // one check at a time (a switch and a stalled player may both ask)
+    if (checking) return;
+    checking = YES;
+    [self verify:cur done:^(BOOL plays) {
+        checking = NO;
+        if (plays || cur.builtIn) return;   // the built-in output is the last resort: stays
+        SFAudioOutput *to = nil;
+        for (SFAudioOutput *o in outputs) if (o.builtIn) { to = o; break; }
+        if (!to) return;
+        [self choose:to done:^(BOOL ok) {
+            if (!ok) return;
+            SFLog(@"audio: %@ takes no audio - back to %@", cur.name, to.name);
+            [[NSNotificationCenter defaultCenter] postNotificationName:SFAudioOutputFellBackNotification object:nil
+                                                              userInfo:@{@"from": cur.name ?: @"?", @"to": to.name ?: @"?"}];
+        }];
+    }];
 }
 @end

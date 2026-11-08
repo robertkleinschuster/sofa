@@ -126,8 +126,14 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
         if (!ok) { [nav toast:[NSString stringWithFormat:pair ? @"Koppeln mit %@ hat nicht geklappt" : @"%@ ist nicht erreichbar – eingeschaltet?", name]]; return; }
         [SFAudioOutput waitForOutput:d.address timeout:10 done:^(SFAudioOutput *o) {
             if (!o) { SFLog(@"bluetooth: %@ connected, no sound output", name); [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", name]]; return; }
-            [SFAudioOutput choose:o done:^(BOOL chosen) {
-                [nav toast:chosen ? [NSString stringWithFormat:@"Ton über %@", o.name] : [NSString stringWithFormat:@"%@ verbunden", name]];
+            // macOS usually moves the sound to a connecting headset by itself: one more switch would
+            // only add a change while the device comes up (each one reloads the player's output)
+            if (o.current) { [nav toast:[NSString stringWithFormat:@"Ton über %@", o.name]]; return; }   // (checked by itself)
+            [SFAudioOutput verify:o done:^(BOOL plays) {
+                if (!plays) { [nav toast:[NSString stringWithFormat:@"%@ ist verbunden, spielt aber keinen Ton – ist es noch mit einem anderen Gerät verbunden?", name]]; return; }
+                [SFAudioOutput choose:o done:^(BOOL chosen) {
+                    [nav toast:chosen ? [NSString stringWithFormat:@"Ton über %@", o.name] : [NSString stringWithFormat:@"%@ verbunden", name]];
+                }];
             }];
         }];
     };

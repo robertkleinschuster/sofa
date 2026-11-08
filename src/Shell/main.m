@@ -93,6 +93,10 @@ NSString *gInstance = @"view";
     self.nav.rootMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU on Home
     self.nav.holdMenuHandler = ^{ [SFQuickMenu showOn:wnav]; };   // MENU held, anywhere (user 2026-11-08)
     [SFAudioOutput start];
+    [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputFellBackNotification object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *n) {
+        [wnav toast:[NSString stringWithFormat:@"%@ spielt gerade keinen Ton – Ton über %@", n.userInfo[@"from"], n.userInfo[@"to"]]];
+    }];
     [SFPower setNavigator:self.nav];
     SFMigrateLibraryIfNeeded();
     [SFNet startMonitoring];
@@ -153,8 +157,10 @@ NSString *gInstance = @"view";
 //  3. reliably show it again when leaving (another app in front)
 - (void)enforceCursorHidden {
     if (SFDevMode || ![NSApp isActive]) return;
-    [SFBlankCursor() set];
+    // only when it shows: setting the cursor is a synchronous WindowServer call - every second it
+    // blocked the main thread for as long as the WindowServer was busy (10.5 s, hitch 2026-11-08)
     if (CGCursorIsVisible()) {
+        [SFBlankCursor() set];
         CGDisplayHideCursor(kCGNullDirectDisplay);
         static NSDate *lastLog;
         if (!lastLog || -[lastLog timeIntervalSinceNow] > 60) { lastLog = [NSDate date]; SFLog(@"cursor: was visible -> hidden"); }

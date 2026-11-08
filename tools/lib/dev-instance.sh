@@ -4,6 +4,11 @@
 # reached, so a generous one costs nothing - a short one failed whole suites when the real app
 # was busy next to test-all (2026-11-07: 10 s / 5 s, a loaded machine needs more).
 
+# The instances play into mpv's null audio output: real time, no device. On the system's output the
+# suites depended on whatever it was - Bluetooth headphones that hung kept mpv's audio clock at 0
+# and failed test-playback (2026-11-08) - and a run was audible.
+export SOFA_AUDIO_OUT=null
+
 # dev_wait_ready PID LOG: until the instance is ready - exits the tool if it ended first or is not
 # ready after 30 s (a loaded machine - a port build next to the suites - needs more than a few s).
 dev_wait_ready() {

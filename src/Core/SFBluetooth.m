@@ -11,8 +11,18 @@
 
 #pragma mark - The real radio (IOBluetooth)
 
+// A device's name as it is: IOBluetooth (10.9) hands a name from a search over as Latin-1 although
+// Bluetooth names are UTF-8 ("AirPods Max ð\u009f\u008e§ ..." for "AirPods Max 🎧 ..."). Its
+// Latin-1 bytes decoded as UTF-8 give the real name; a genuine Latin-1 name ("Café") is no valid
+// UTF-8 and stays as it is.
+NSString *SFBluetoothName(NSString *name) {
+    NSData *bytes = [name dataUsingEncoding:NSISOLatin1StringEncoding allowLossyConversion:NO];
+    NSString *utf8 = bytes ? [[NSString alloc] initWithData:bytes encoding:NSUTF8StringEncoding] : nil;
+    return utf8.length ? utf8 : name;
+}
+
 static SFBluetoothDevice *Wrap(IOBluetoothDevice *d) {
-    return [SFBluetoothDevice deviceWithAddress:d.addressString name:d.name paired:d.isPaired connected:d.isConnected];
+    return [SFBluetoothDevice deviceWithAddress:d.addressString name:SFBluetoothName(d.name) paired:d.isPaired connected:d.isConnected];
 }
 
 // One asynchronous IOBluetooth operation: the target of its callbacks, alive until it ends
@@ -24,11 +34,18 @@ static SFBluetoothDevice *Wrap(IOBluetoothDevice *d) {
 static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's delegates and targets are not retained)
 
 @implementation SFBTOperation
-+ (instancetype)operation:(void (^)(BOOL))done {
+// An operation ends after `limit` seconds at the latest: a device that never answers (switched off
+// mid-way, out of reach) must not leave the caller waiting for good
++ (instancetype)operation:(void (^)(BOOL))done limit:(NSTimeInterval)limit {
     SFBTOperation *o = [self new];
     o.done = done;
     if (!gRunning) gRunning = [NSMutableSet new];
     [gRunning addObject:o];
+    __weak SFBTOperation *wo = o;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(limit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SFBTOperation *x = wo;
+        if (x.done) { SFLog(@"bluetooth: no answer after %.0f s", limit); [x.pairing stop]; [x end:NO]; }
+    });
     return o;
 }
 - (void)end:(BOOL)ok {
@@ -88,7 +105,7 @@ static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's dele
 - (void)connect:(NSString *)address done:(void (^)(BOOL))done {
     IOBluetoothDevice *d = [IOBluetoothDevice deviceWithAddressString:address];
     if (d.isConnected) { done(YES); return; }
-    SFBTOperation *op = [SFBTOperation operation:done];
+    SFBTOperation *op = [SFBTOperation operation:done limit:20];   // paging alone may take ~10 s
     if (!d || [d openConnection:op] != kIOReturnSuccess) [op end:NO];
 }
 
@@ -96,7 +113,7 @@ static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's dele
 
 - (void)pair:(NSString *)address done:(void (^)(BOOL))done {
     IOBluetoothDevice *d = [IOBluetoothDevice deviceWithAddressString:address];
-    SFBTOperation *op = [SFBTOperation operation:done];
+    SFBTOperation *op = [SFBTOperation operation:done limit:60];   // pairing, services, connection
     op.pairing = d ? [IOBluetoothDevicePair pairWithDevice:d] : nil;
     op.pairing.delegate = op;
     if (!op.pairing || [op.pairing start] != kIOReturnSuccess) [op end:NO];

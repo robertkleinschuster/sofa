@@ -268,6 +268,7 @@ static __weak SFNavigator *gMainNav;
     float v;
     if (SFDevMode) { devVol = MAX(0, MIN(1, roundf(devVol * 16 + dir) / 16)); v = devVol; }
     else { [SFVolume step:dir]; v = [SFVolume volume]; }
+    if (v == SFVolumeOnDevice) { [self toast:@"Lautstärke an den Kopfhörern einstellen (z. B. an der Krone)"]; return; }
     if (v < 0) { [self toast:@"Lautstärke ist für dieses Ausgabegerät nicht regelbar"]; return; }
     CGSize sz = self.bounds.size;
     if (!_volHUD) {

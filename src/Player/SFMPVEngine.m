@@ -73,6 +73,8 @@ static NSArray *SFTracksFromNode(const mpv_node *list) {
     NSTimeInterval _loadedAfter;   // open -> file loaded (headers read), for the first-frame line
     NSTimer *_tick;
     id _outputObs;                   // SFAudioOutputChangedNotification observer
+    NSUInteger _outputChange;        // the latest output change (the reload waits until it settles)
+    BOOL _outputChecked;             // this standstill had the audio output checked already
     dispatch_block_t _pendingLoad;   // loadfile deferred until the layer has a render context
     NSInteger _voHeals, _voDownTicks; // self-healing of a dead video output (audio-only playback)
     double _stallTime;                // stall watchdog: position at _stallSince
@@ -115,7 +117,7 @@ static mpv_handle *SFCreateCore(void) {
     if (!mpv) return NULL;
     const char *opts[][2] = {
         {"vo", "libmpv"}, {"hwdec", "no"},   // videotoolbox hwaccel fails on 10.9 (measured 2026-11-04)
-        {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},
+        {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},   // (dev tests: SOFA_AUDIO_OUT, below)
         {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
         {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
         {"cache", "yes"}, {"demuxer-max-bytes", "200MiB"}, {"demuxer-readahead-secs", "30"},
@@ -130,6 +132,10 @@ static mpv_handle *SFCreateCore(void) {
         {"demuxer-mkv-probe-image", "no"},
     };
     for (size_t i = 0; i < sizeof opts / sizeof opts[0]; i++) mpv_set_option_string(mpv, opts[i][0], opts[i][1]);
+    // dev test instances: no audio device (tools/lib/dev-instance.sh sets "null" - mpv's output
+    // that keeps the clock in real time); the real app always plays on the system's output
+    const char *ao = SFDevMode ? getenv("SOFA_AUDIO_OUT") : NULL;
+    if (ao && *ao) mpv_set_option_string(mpv, "ao", ao);
     // Deliberately without TLS certificate verification (ffmpeg default tls_verify=0, user decision
     // 2026-11-04): pure media data, an outdated CA bundle on the frozen 10.9 must never break
     // playback. Code (updater) is still loaded with verification.
@@ -167,7 +173,7 @@ static dispatch_queue_t SetupQueue(void) {
         // the sound moves with it at once (mpv reopens its audio output on the new default device)
         __weak SFMPVEngine *ws = self;
         _outputObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFAudioOutputChangedNotification object:nil
-            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [ws reloadAudioOutput]; }];
+            queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [ws outputChanged]; }];
         dispatch_async(SetupQueue(), ^{
             mpv_handle *mpv = SFCreateCore();
             dispatch_async(dispatch_get_main_queue(), ^{ [self adoptCore:mpv]; });
@@ -192,6 +198,19 @@ static dispatch_queue_t SetupQueue(void) {
 
 - (void)whenReady:(dispatch_block_t)b {
     if (_coreReady) b(); else [_whenReady addObject:[b copy]];
+}
+
+// One reload once the output has settled (0.6 s without a change). Bluetooth headphones switch the
+// default output several times while they come up (4x in 0.8 s, AirPods Max 2026-11-08); a reload
+// per change crashed libmpv: its coreaudio output's hotplug listener, already queued on main, ran
+// after that output was torn down (use after free in hotplug_cb). Settled, those calls have run.
+- (void)outputChanged {
+    NSUInteger n = ++_outputChange;
+    __weak SFMPVEngine *ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SFMPVEngine *s = ws;
+        if (s && s->_outputChange == n) [s reloadAudioOutput];
+    });
 }
 
 // asynchronous: reopening the audio device waits on coreaudiod - never on the main thread
@@ -306,7 +325,15 @@ static dispatch_queue_t SetupQueue(void) {
     // loading counts too, paused or not: an open that never shows its first frame is a stall (a
     // paused open decodes that frame as well - until then it waits for data like any other)
     BOOL shouldRun = !_eof && (!_paused || !_started);
-    if (!shouldRun || _time != _stallTime || !_stallSince) { _stallTime = _time; _stallSince = [NSDate date]; return; }
+    if (!shouldRun || _time != _stallTime || !_stallSince) { _stallTime = _time; _stallSince = [NSDate date]; _outputChecked = NO; return; }
+    // playing, not waiting for data, and still no progress: mpv's clock is the audio output - one
+    // that takes no audio holds the video. Its check leaves a dead one for the built-in output
+    // (the video goes on) long before the watchdog would give the stream up.
+    if (_started && !_paused && !_waiting && !_outputChecked && -[_stallSince timeIntervalSinceNow] >= 3) {
+        _outputChecked = YES;
+        SFLog(@"mpv: no progress for 3 s with data at hand at %.1f s - checking the audio output", _time);
+        [SFAudioOutput checkCurrent];
+    }
     if (-[_stallSince timeIntervalSinceNow] < SFStallLimit()) return;
     _stallFired = YES;
     SFLog(@"mpv: no progress for %.0f s at %.1f s (%@) - treating as failed", SFStallLimit(), _time, _loaded ? @"playing" : @"loading");

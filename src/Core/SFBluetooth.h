@@ -24,6 +24,8 @@
 - (void)stopSearch;
 @end
 
+NSString *SFBluetoothName(NSString *name);   // a device name, repaired when IOBluetooth decoded UTF-8 as Latin-1
+
 @interface SFBluetooth : NSObject
 + (BOOL)poweredOn;
 + (NSArray *)pairedAudioDevices;                                       // SFBluetoothDevice, most recently used first
