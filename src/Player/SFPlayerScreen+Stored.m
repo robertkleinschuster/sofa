@@ -53,13 +53,7 @@ static const NSTimeInterval kStoredRefresh = 3;
         [layers addObject:l];
     }
     SFNoAnimate(^{ self->_barStored.sublayers = layers; });
-    if (_storedRanges) SFLog(@"player: stored %lu range(s), %.0f of %.0f s", (unsigned long)_storedRanges.count, [self storedSeconds], d);
-}
-
-- (NSTimeInterval)storedSeconds {
-    NSTimeInterval n = 0;
-    for (NSArray *r in _storedRanges) n += [r[1] doubleValue] - [r[0] doubleValue];
-    return n;
+    if (_storedRanges) SFLog(@"player: stored %lu range(s), %.0f of %.0f s", (unsigned long)_storedRanges.count, SFRangesSeconds(_storedRanges, d), d);
 }
 
 @end

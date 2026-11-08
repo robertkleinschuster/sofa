@@ -144,6 +144,12 @@ void SFRangesAppend(NSMutableArray *r, double start, double end) {
     else [r addObject:@[@(start), @(end)]];
 }
 
+double SFRangesSeconds(NSArray *r, double limit) {
+    double n = 0;
+    for (NSArray *x in r) n += MAX(0, MIN(limit, [x[1] doubleValue]) - MAX(0, [x[0] doubleValue]));
+    return n;
+}
+
 NSString *SFFormatBytes(unsigned long long b) {
     if (b < 1000000000ULL) return [NSString stringWithFormat:@"%llu MB", b / 1000000ULL];
     return [NSString stringWithFormat:@"%.0f GB", b / 1e9];

@@ -27,5 +27,9 @@ int main(void){ @autoreleasepool {
   NSMutableArray *m = [NSMutableArray new];
   SFRangesAppend(m, 0, 4); SFRangesAppend(m, 4, 6); SFRangesAppend(m, 8, 9); SFRangesAppend(m, 9, 9);
   expect([m isEqual:@[@[@0, @6], @[@8, @9]]], "append joins touching ranges, skips empty ones");
+  // the seconds the player reports: within its own duration (a manifest's 960 s on a 959 s video)
+  expect(SFRangesSeconds(@[@[@0, @960]], 959) == 959, "seconds stop at the player's duration");
+  expect(SFRangesSeconds(@[@[@0, @4], @[@10, @20]], 15) == 9, "a range past the end counts up to it");
+  expect(SFRangesSeconds(@[@[@970, @980]], 959) == 0, "a range wholly past the end counts nothing");
   return bad ? 1 : 0;
 }}

@@ -43,6 +43,7 @@ NSString *SFFormatClock(NSDate *d);                // "18:05" (main thread)
 // Time ranges @[@[start s, end s]], sorted and disjoint (what of a video is on disk: the timeline)
 NSArray *SFRangesIntersect(NSArray *a, NSArray *b);      // where both are
 void SFRangesAppend(NSMutableArray *r, double start, double end);   // in order; joins a touching range
+double SFRangesSeconds(NSArray *r, double limit);   // their length within [0, limit] (a source's duration may run past the player's)
 NSString *SFFormatBytes(unsigned long long b);      // "340 MB", "12 GB" (decimal, as Finder)
 NSString *SFFormatDateShort(NSDate *d);            // "Heute", "Gestern", "12. Okt."
 // Tile subtitles: joins the non-empty parts with " · " (nil/"" parts are skipped, so a missing
