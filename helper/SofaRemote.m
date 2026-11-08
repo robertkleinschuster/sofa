@@ -250,9 +250,22 @@ static NSString *RunningMarker(void) {
 
 #pragma mark HID
 
+// Diagnosis switch remoteRawLog (de.sofa.app, `defaults write de.sofa.app remoteRawLog -bool YES`,
+// read at every event): every HID value as it comes, before any decoding - the decoder drops what it
+// cannot place (unknown array cookies, direct elements while arrays exist), which hid whether a
+// held MENU sends anything at all (2026-11-08).
+static BOOL rawLogEnabled(void) {
+    CFPreferencesAppSynchronize(CFSTR("de.sofa.app"));
+    Boolean valid = false;
+    return CFPreferencesGetAppBooleanValue(CFSTR("remoteRawLog"), CFSTR("de.sofa.app"), &valid) && valid;
+}
+
 static void inputCallback(void *ctx, IOReturn result, void *sender, IOHIDValueRef value) {
     SRHelper *h = (__bridge SRHelper *)ctx;
     IOHIDElementRef el = IOHIDValueGetElement(value);
+    if (rawLogEnabled())
+        [h log:[NSString stringWithFormat:@"raw page=0x%x usage=0x%x cookie=%u value=%ld", IOHIDElementGetUsagePage(el),
+                IOHIDElementGetUsage(el), (uint32_t)IOHIDElementGetCookie(el), (long)IOHIDValueGetIntegerValue(value)]];
     [h page:IOHIDElementGetUsagePage(el) usage:IOHIDElementGetUsage(el) value:IOHIDValueGetIntegerValue(value)
      cookie:(uint32_t)IOHIDElementGetCookie(el)];
 }
