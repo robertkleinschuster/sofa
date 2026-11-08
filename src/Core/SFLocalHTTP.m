@@ -85,18 +85,31 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 
 #pragma mark - Exchange
 
+// The connection's socket, touched only on the connection's queue (`_io`). Closed exactly once:
+// fd -1 afterwards, so a write or shutdown queued later goes nowhere. (The bare fd number was closed
+// by the watch when the reader hung up, then reused by the next accepted connection - the pending
+// answer and the second close hit that one: test-units websocket flake 2026-11-08.) `handedOver`:
+// the WebSocket owns the fd now.
+@interface SFHTTPSocket : NSObject
+@property (nonatomic) int fd;
+@property (nonatomic) BOOL handedOver;
+@end
+@implementation SFHTTPSocket
+- (void)close { if (_fd >= 0 && !_handedOver) close(_fd); _fd = -1; }
+@end
+
 // State lives on the server's queue (`_queue`); the socket is only touched on the connection's own
 // serial queue (`_io`), so a blocking write to a slow reader holds up nobody else.
 @implementation SFHTTPExchange {
-    int _fd;
+    int _fd;                    // for the read source and the handover; I/O goes through _sock
+    SFHTTPSocket *_sock;
     dispatch_queue_t _queue, _io;
     dispatch_source_t _watch;   // readable after the request = the reader closed (or sent garbage)
     BOOL _begun, _finished;
-    NSMutableDictionary *_fdOwner;   // @"keep": the socket was handed over (WebSocket) - the watch must not close it
 }
 
 - (instancetype)initWithFD:(int)fd request:(SFHTTPRequest *)r queue:(dispatch_queue_t)queue io:(dispatch_queue_t)io {
-    if ((self = [super init])) { _fd = fd; _request = r; _queue = queue; _io = io; _fdOwner = [NSMutableDictionary new]; }
+    if ((self = [super init])) { _fd = fd; _request = r; _queue = queue; _io = io; _sock = [SFHTTPSocket new]; _sock.fd = fd; }
     return self;
 }
 
@@ -104,6 +117,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 - (void)watch {
     _watch = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)_fd, 0, _io);
     int fd = _fd;
+    SFHTTPSocket *sock = _sock;
     __weak SFHTTPExchange *ws = self;
     dispatch_source_set_event_handler(_watch, ^{
         char buf[512];
@@ -114,8 +128,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
         dispatch_source_cancel(x->_watch);
         dispatch_async(x->_queue, ^{ [x readerGone]; });
     });
-    NSMutableDictionary *owner = _fdOwner;
-    dispatch_source_set_cancel_handler(_watch, ^{ if (!owner[@"keep"]) close(fd); });
+    dispatch_source_set_cancel_handler(_watch, ^{ [sock close]; });
     dispatch_resume(_watch);
 }
 
@@ -142,11 +155,11 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 }
 
 - (void)send:(NSData *)d done:(void (^)(BOOL))done {
-    int fd = _fd;
+    SFHTTPSocket *sock = _sock;
     dispatch_queue_t q = _queue;
     __weak SFHTTPExchange *ws = self;
     dispatch_async(_io, ^{
-        BOOL ok = writeAll(fd, d.bytes, d.length);
+        BOOL ok = sock.fd >= 0 && writeAll(sock.fd, d.bytes, d.length);
         dispatch_async(q, ^{
             if (!ok) [ws readerGone];
             if (done) done(ok);
@@ -160,11 +173,11 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     _finished = YES;
     self.onClose = nil;
     dispatch_source_t w = _watch;
-    int fd = _fd;
+    SFHTTPSocket *sock = _sock;
     // after the queued writes: shut down the socket; the watch's cancel handler closes it
     dispatch_async(_io, ^{
-        shutdown(fd, SHUT_WR);
-        if (w) dispatch_source_cancel(w); else close(fd);
+        if (sock.fd >= 0) shutdown(sock.fd, SHUT_WR);
+        if (w) dispatch_source_cancel(w); else [sock close];
     });
 }
 
@@ -191,12 +204,12 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     NSString *head = [NSString stringWithFormat:@"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %@\r\n\r\n", SFWSAccept(key)];
     NSData *d = [head dataUsingEncoding:NSISOLatin1StringEncoding];
     dispatch_source_t w = _watch;
-    NSMutableDictionary *owner = _fdOwner;
-    int fd = _fd;
+    SFHTTPSocket *sock = _sock;
     dispatch_async(_io, ^{
-        owner[@"keep"] = @YES;
+        if (sock.fd < 0) { [ws ended]; return; }   // the reader hung up before the handover: onClose
+        sock.handedOver = YES;
         if (w) dispatch_source_cancel(w);   // the socket reads its frames from here on
-        writeAll(fd, d.bytes, d.length);
+        writeAll(sock.fd, d.bytes, d.length);
         [ws startReading];   // a failed write: the read source sees the broken connection and ends it
     });
     return ws;

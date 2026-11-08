@@ -253,11 +253,41 @@ static void testChannel(void) {
     [s stop];
 }
 
+// A reader that hangs up before its answer: the late answer (and the closing) must not hit the next
+// connection, which under load gets the same fd number on the server (the flake 2026-11-08: the plain
+// request read the 403 of the connection before it)
+static void testHangupBeforeAnswer(void) {
+    dispatch_queue_t q = dispatch_queue_create("test.hangup", DISPATCH_QUEUE_SERIAL);
+    SFLocalHTTP *s = [[SFLocalHTTP alloc] initWithName:@"test" queue:q maxBody:1024 handler:^(SFHTTPExchange *x) {
+        BOOL late = [x.request.pathParts.firstObject isEqual:@"late"];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((late ? 0.4 : 0.8) * NSEC_PER_SEC)), q, ^{
+            [x respond:late ? 403 : 200 type:nil body:nil];
+        });
+    }];
+    [s startPreferringPort:0];
+    BOOL clean = YES;
+    for (int i = 0; i < 5; i++) {
+        int a = connectTo(s.port);
+        sendAll(a, D("GET /late HTTP/1.1\r\n\r\n"));
+        usleep(100000);
+        close(a);                                  // gone before the answer; the server notices
+        usleep(100000);
+        int b = connectTo(s.port);                 // likely the freed fd number on the server
+        sendAll(b, D("GET /ok HTTP/1.1\r\n\r\n"));
+        NSString *h = readHead(b);
+        if (![h hasPrefix:@"HTTP/1.1 200 "]) { fprintf(stderr, "got <%s>\n", h.UTF8String); clean = NO; }
+        close(b);
+    }
+    CHECK(clean, "an answer to a reader that hung up never reaches the next connection");
+    [s stop];
+}
+
 int main(void) {
     @autoreleasepool {
         testCodec();
         testDecodeBinary();
         testChannel();
+        testHangupBeforeAnswer();
     }
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     printf("websocket ok\n");

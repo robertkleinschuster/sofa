@@ -5,4 +5,5 @@
 // `fd` is the socket's from now on (it closes it); `io` the connection's serial queue, `queue` the server's.
 - (instancetype)initWithFD:(int)fd queue:(dispatch_queue_t)queue io:(dispatch_queue_t)io maxMessage:(NSUInteger)max;
 - (void)startReading;   // on `io`, once the 101 answer is written
+- (void)ended;          // on `io`: the connection is over (also: the reader hung up before the handover)
 @end

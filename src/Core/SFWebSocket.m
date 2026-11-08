@@ -134,7 +134,7 @@ static BOOL WriteAll(int fd, NSData *d) {
 - (void)ended {
     if (_ioDone) return;
     _ioDone = YES;
-    dispatch_source_cancel(_read);   // closes the fd
+    if (_read) dispatch_source_cancel(_read);   // closes the fd (none yet: the handover never happened)
     _read = nil;
     dispatch_async(_queue, ^{
         if (self->_closed) return;
