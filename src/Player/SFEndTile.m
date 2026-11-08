@@ -1,5 +1,7 @@
 #import "SFEndTile.h"
 
+static NSString *const kPlaylistChip = @"☰  Playlist", *const kFollowing = @"✓ Gefolgt", *const kFollow = @"Folgen";
+
 @implementation SFEndTile {
     SFTheme *_theme;
     CALayer *_holder;            // shadow carrier
@@ -16,6 +18,20 @@
 - (NSString *)elementTitle {
     NSString *t = _element[@"title"];
     return [t isKindOfClass:[NSString class]] && t.length ? t : nil;
+}
+
+// a round tile's caption below its name (focused)
+- (NSString *)captionAction {
+    if ([_kind isEqualToString:SFEndCardChannel]) return @"Zum Kanal";
+    return _following ? @"Du folgst diesem Kanal" : @"Kanal folgen";
+}
+
+- (NSArray *)texts {
+    NSMutableArray *a = [NSMutableArray arrayWithObjects:[self elementTitle] ?: @"Kanal", [self okAction], nil];
+    if ([_kind isEqualToString:SFEndCardPlaylist]) [a addObject:kPlaylistChip];
+    if ([_kind isEqualToString:SFEndCardFollow]) [a addObjectsFromArray:@[kFollowing, kFollow, @"Du folgst diesem Kanal", @"Kanal folgen"]];
+    if ([_kind isEqualToString:SFEndCardChannel]) [a addObject:@"Zum Kanal"];
+    return a;
 }
 
 - (CGRect)captionFrame {
@@ -68,7 +84,7 @@
     }
     if ([_kind isEqualToString:SFEndCardPlaylist]) {   // always visible: tells a playlist from a video
         _chipLabel = [SFLabel labelWithFont:[theme bold:20] color:[NSColor whiteColor]];
-        _chipLabel.text = @"☰  Playlist";
+        _chipLabel.text = kPlaylistChip;
         CGFloat w = ceil([_chipLabel.text sizeWithAttributes:@{NSFontAttributeName: [theme bold:20]}].width) + U(24);
         [_chipLabel sizeToFitWidth:w - U(24)];
         _chip = [CALayer layer];
@@ -120,7 +136,7 @@
     if (![_kind isEqualToString:SFEndCardFollow] || !_chip) return;
     CGSize sz = self.bounds.size;
     SFNoAnimate(^{
-        self->_chipLabel.text = self->_following ? @"✓ Gefolgt" : @"Folgen";
+        self->_chipLabel.text = self->_following ? kFollowing : kFollow;
         CGFloat w = MAX(sz.width * 0.8, ceil([self->_chipLabel.text sizeWithAttributes:@{NSFontAttributeName: [self->_theme bold:20]}].width) + U(28));
         self->_chip.frame = CGRectMake((sz.width - w) / 2, sz.height - U(22), w, U(34));
         self->_chip.backgroundColor = self->_following ? [NSColor colorWithDeviceWhite:0.18 alpha:0.95].CGColor : self->_theme.accent.CGColor;
@@ -142,7 +158,7 @@
         SFNoAnimate(^{
             CGSize sz = self.bounds.size;
             self->_capName.text = [self elementTitle] ?: @"Kanal";
-            self->_capAction.text = [self.kind isEqualToString:SFEndCardChannel] ? @"Zum Kanal" : (self->_following ? @"Du folgst diesem Kanal" : @"Kanal folgen");
+            self->_capAction.text = [self captionAction];
             CGFloat tw = MAX([self->_capName.text sizeWithAttributes:@{NSFontAttributeName: self->_capName.font}].width,
                              [self->_capAction.text sizeWithAttributes:@{NSFontAttributeName: self->_capAction.font}].width);
             CGFloat w = MIN(MAX(ceil(tw) + U(36), sz.width), U(460)), pad = U(10);

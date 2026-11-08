@@ -72,6 +72,7 @@
     BOOL _esShown;               // at least one tile visible
     BOOL _esEndDeferred;         // video ended while the tiles had focus: end flow runs on leaving them
     CGRect _esVideoRect;         // where the picture is (letterboxing respected)
+    BOOL _esReady;               // the texts' fonts are loaded (measured off the main thread): tiles may be built
     NSDate *_lastVolumeAt;       // last UP/DOWN volume step (DOWN keeps adjusting the volume right after)
 }
 @end

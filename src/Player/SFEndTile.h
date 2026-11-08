@@ -18,5 +18,7 @@ static NSString *const SFEndCardVideo = @"video", *const SFEndCardPlaylist = @"p
 - (void)setLook:(BOOL)engaged focused:(BOOL)focused bounds:(CGRect)limit;
 - (NSString *)elementTitle;
 - (NSString *)okAction;                      // what OK does, for the hint
+// every text the tile may draw - measured off the main thread before it is built (fonts warm)
+- (NSArray *)texts;
 - (CGRect)captionFrame;                      // focused round tile: its name caption (superlayer coords), else null
 @end

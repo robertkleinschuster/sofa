@@ -33,9 +33,26 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 - (SFTheme *)esTheme { return [SFTheme themeNamed:_item.source ?: @"home"]; }
 - (BOOL)esEngaged { return _esFocus >= 0 && _esFocus < (NSInteger)_esTiles.count; }
 
+// the hint's texts (esLayoutHint), warmed with the tiles'
+static NSString *const kHintBack = @"zurück zum Video", *const kHintEnter = @"Empfehlungen des Kanals";
+static NSString *const kKeyOK = @"OK", *const kKeyMenu = @"MENU", *const kKeyDown = @"▼";
+
+// Fonts load on first use; the cold path (font files, a symbol's fallback font, the font server
+// under disk load) blocked the main thread up to 1 s at a video's start - for tiles shown minutes
+// later (hitch 2026-11-08). Measuring every text once off the main thread loads them; then `done`
+// on the main thread.
+static void SFWarmFonts(NSArray *texts, NSArray *fonts, dispatch_block_t done) {
+    SFBackground(^{
+        @autoreleasepool {
+            for (NSString *s in texts) for (NSFont *f in fonts) [s sizeWithAttributes:@{NSFontAttributeName: f}];
+        }
+        SFMain(done);
+    });
+}
+
 - (void)esReset {
     [_esLayer removeFromSuperlayer]; _esLayer = nil; _esScrim = nil; _esHint = nil;
-    _esTiles = nil; _esData = nil; _esFocus = -1; _esShown = NO; _esEndDeferred = NO;
+    _esTiles = nil; _esData = nil; _esFocus = -1; _esShown = NO; _esEndDeferred = NO; _esReady = NO;
     _esVideoRect = CGRectZero;
 }
 
@@ -84,13 +101,25 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     _esHint.opacity = 0;
     [_esLayer addSublayer:_esHint];
     SFNoAnimate(^{ [self.layer insertSublayer:self->_esLayer above:self->_videoHost]; });
-    [self esPlace];
+    // built once the fonts are warm (readiness: still this data - a newer source drops the answer)
+    NSMutableArray *texts = [NSMutableArray arrayWithObjects:kHintBack, kHintEnter, kKeyOK, kKeyMenu, kKeyDown, nil];
+    for (SFEndTile *t in tiles) [texts addObjectsFromArray:t.texts];
+    SFTheme *th = [self esTheme];
+    NSTimeInterval t0 = [NSDate timeIntervalSinceReferenceDate];
+    __weak SFPlayerScreen *ws = self;
+    SFWarmFonts(texts, @[[th bold:20], [th medium:20]], ^{
+        SFPlayerScreen *s = ws;
+        if (!s || s->_esData != data) return;
+        s->_esReady = YES;
+        SFLog(@"endscreen: texts ready after %.0f ms", ([NSDate timeIntervalSinceReferenceDate] - t0) * 1000);
+        [s esPlace];
+    });
 }
 
 // Tiles at the creator's positions: fractions of the picture (letterboxing respected); height from
 // the element's aspect ratio
 - (void)esPlace {
-    if (!_esLayer) return;
+    if (!_esLayer || !_esReady) return;
     _esVideoRect = [self esComputeVideoRect];
     CGRect vr = _esVideoRect;
     SFTheme *th = [self esTheme];
@@ -130,7 +159,7 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
     NSArray *data = SFMPVSourceFor(_openURL)[@"endCards"];
     if (![data isKindOfClass:[NSArray class]] || _failed || !_engine) data = nil;
     if (data != _esData) [self esBuild:data];
-    if (!_esTiles.count) return;
+    if (!_esTiles.count || !_esReady) return;   // (the tiles come once their fonts are warm)
     if (!CGRectEqualToRect([self esComputeVideoRect], _esVideoRect)) [self esPlace];   // video size known later
     if (!_ended) _esEndDeferred = NO;
     double t = [self currentTime], first = HUGE_VAL;
@@ -212,11 +241,11 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
             x += w;
         };
         if (engaged) {
-            key(@"OK"); text([self->_esTiles[self->_esFocus] okAction], NO);
+            key(kKeyOK); text([self->_esTiles[self->_esFocus] okAction], NO);
             x += U(30);
-            key(@"MENU"); text(@"zurück zum Video", YES);
+            key(kKeyMenu); text(kHintBack, YES);
         } else {
-            key(@"▼"); text(@"Empfehlungen des Kanals", NO);
+            key(kKeyDown); text(kHintEnter, NO);
         }
         CGFloat w = x + pad;
         self->_esHint.bounds = CGRectMake(0, 0, w, h);

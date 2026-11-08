@@ -282,6 +282,11 @@ waitlog $m 'endscreen: shown at' 60
 at=$(since $m | grep 'endscreen: shown at' | head -1 | sed 's/.*shown at \([0-9.]*\) s/\1/')
 awk "BEGIN{exit !($at >= 2.0 && $at < 4)}" 2>/dev/null && ok "tiles appear at the first startMs ($at s)" || bad "tiles appeared at '$at' (want 2 s)"
 since $m | grep -q 'endscreen: video rect {{0, 0}, {1920, 1080}}' && ok "tiles placed over the video rect" || bad "video rect: $(since $m | grep 'video rect' | tail -1)"
+# the tiles' fonts warm off the main thread first (hitch 2026-11-08: up to 1 s at a video's start):
+# nothing is placed before "texts ready"
+order=$(since $m | grep -E 'endscreen: (texts ready|video rect)' | head -1 | sed 's/.*endscreen: \(texts ready\|video rect\).*/\1/')
+[ "$order" = "texts ready" ] && ok "the tiles are built only once their texts are measured off the main thread ($(since $m | grep -o 'texts ready after [0-9]* ms' | head -1))" \
+  || bad "tiles placed before their texts were ready: $(since $m | grep 'endscreen:' | head -3 | tr '\n' '|')"
 sleep 1.5; shot "$T/endscreen.png"; [ -s "$T/endscreen.png" ] && { ok "end screen rendered"; keep "$T/endscreen.png"; } || bad "no end screen screenshot"
 # each key waits for its focus line (under test-all's load a fixed pause was too short once)
 m=$(mark); n=0
