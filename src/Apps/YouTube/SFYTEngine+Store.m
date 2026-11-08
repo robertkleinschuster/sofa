@@ -112,7 +112,15 @@ static NSString *Enc(NSString *s) {
         [self noteSession:sid video:vid stored:NO tracks:@{SubsKey(key): @{@"id": subs.lastObject[@"id"], @"total": @0, @"mimeType": @"text/vtt"}}];
     }
     m[@"subs"] = subs;
-    [Store() setManifest:m forItem:ItemOf(vid)];
+    // the tracks' segment indexes (SFYTEngine+Timeline.m) stay while the tracks are the same: a
+    // reopen used to drop them (each open rewrites the manifest)
+    SFBackground(^{   // the old manifest: the store's queue, not the main thread
+        NSDictionary *oldIndex = dict(dict([Store() manifestOf:ItemOf(vid)])[@"index"]);
+        NSMutableDictionary *index = [NSMutableDictionary new];
+        for (NSString *tid in m[@"required"]) if (oldIndex[tid]) index[tid] = oldIndex[tid];
+        if (index.count) m[@"index"] = index;
+        [Store() setManifest:m forItem:ItemOf(vid)];
+    });
 }
 
 // The stored session of a video whose video and main audio are complete on disk; nil otherwise.
