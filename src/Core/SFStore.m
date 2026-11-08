@@ -317,8 +317,10 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
             [self runNow:s[0] args:s.count > 1 ? s[1] : nil];
             if (self->_errors != before) break;
         }
+        if (self->_errors == before) [self exec:@"COMMIT"];   // deferred references are checked here
+        // a failed statement or COMMIT leaves the transaction open: every later write would join it
+        // and never commit - end it
         if (self->_errors != before) { [self exec:@"ROLLBACK"]; SFLog(@"store: %lu writes rolled back", (unsigned long)statements.count); }
-        else [self exec:@"COMMIT"];
     });
 }
 

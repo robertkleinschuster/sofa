@@ -160,6 +160,7 @@ static BOOL usable(NSString *img) {
 // A missing or gone picture: the show's app finds the current one (SFApp showImage, on its own
 // budget) - written only when it changed.
 - (void)renewImage:(NSString *)identifier {
+    [self ready];
     if (![self needsImage:identifier]) return;
     Class<SFApp> app = [SFAppRegistry appForRef:identifier];
     if (![app respondsToSelector:@selector(showImage:done:)]) return;

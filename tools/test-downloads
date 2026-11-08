@@ -267,6 +267,17 @@ grep -q "pre-buffered example:3 expired (not watched in time)" "$LOG" && grep -q
 check "expired: dismissed (not fetched again), bytes left as buffer" \
   "$(SQ "select group_concat(state, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4 4/2"
 check "expired: its tile still says geladen (the bytes are there)" "$(chip example:3)" "geladen"
+# unfollowing ends the auto-download in one transaction: its episodes - the deleted ones too - let
+# go of the subscription, else the commit fails on the reference (review 2026-11-09) and leaves the
+# connection in an open transaction that swallows every later write
+m=$(wc -l < "$LOG"); cmd "unfollow exampleshow:demo"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: unfollowed" && break; sleep 0.25; done
+check "unfollowed: subscription gone, its episodes (deleted ones too) let go of it" \
+  "$(SQ "select count(*) from subscriptions where id='exampleshow:demo'")/$(SQ "select count(*) from downloads where sub='exampleshow:demo'")" "0/0"
+tail -n +$((m + 1)) "$LOG" | grep -q "rolled back" && bad "the unfollow was rolled back" || ok "the unfollow committed"
+m=$(wc -l < "$LOG"); cmd "unfollow example:never-followed"; cmd "follows"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: follows end" && break; sleep 0.25; done
+check "a write after it commits (no transaction left open)" "$(SQ "select count(*) from follows where id='exampleshow:demo'")" "0"
 # "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
 SQ "$DEMOSUB insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
     insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"

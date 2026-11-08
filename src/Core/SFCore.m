@@ -184,15 +184,15 @@ NSString *SFFormatDateShortAt(NSDate *d, NSDate *now) {
     // remembered until the day (or the zone) changes (hitch 2026-11-08: ~150 ms per refresh)
     static NSMutableDictionary *cache;
     static long cachedToday;
-    static NSTimeZone *cachedZone;
+    static NSString *cachedZone;   // its name (localTimeZone is a proxy: the object always equals the current one)
     static NSObject *lock;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ lock = [NSObject new]; });
     NSTimeZone *tz = [NSTimeZone localTimeZone];
     long today = LocalDay(now.timeIntervalSince1970, tz), day = LocalDay(d.timeIntervalSince1970, tz);
     @synchronized (lock) {
-        if (!cache || today != cachedToday || ![tz.name isEqual:cachedZone.name]) {
-            cache = [NSMutableDictionary new]; cachedToday = today; cachedZone = tz;
+        if (!cache || today != cachedToday || ![tz.name isEqual:cachedZone]) {
+            cache = [NSMutableDictionary new]; cachedToday = today; cachedZone = [tz.name copy];
         }
         NSString *s = cache[@(day)];
         if (!s) cache[@(day)] = s = DateLabel(today - day, d, now, tz);

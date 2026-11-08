@@ -63,9 +63,11 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
 
 - (void)subscribe:(SFItem *)folder {
     if (![self canSubscribe:folder]) return;
+    // auto-download requires following - the follow first: the subscription row refers to it
+    [[SFFollows shared] follow:folder];
+    if (![[SFFollows shared] isFollowing:folder.identifier]) { SFLog(@"downloads: auto-download needs a follow - %@ cannot be followed", folder.identifier); return; }
     SFSubscription *s = [self newSub:folder.identifier keepDays:90 since:0];
     SFLog(@"downloads: auto-download on: %@ (%@)", folder.title, folder.identifier);
-    [[SFFollows shared] follow:folder];   // auto-download requires following
     [self changed:folder.identifier];
     [self checkSub:s];   // a follow it already had: now; a new one: when its first check brings the list
 }
@@ -80,9 +82,11 @@ void SFFeedFromPage(SFPageLoader l, SFFeedDone done) {
     [_subs removeObjectForKey:fid];
     NSMutableArray *writes = [NSMutableArray arrayWithObject:@[@"DELETE FROM subscriptions WHERE id=?", @[fid]]];
     // already downloaded episodes stay, but are no longer deleted automatically (a pre-buffered one
-    // keeps its expiry: it is no download)
+    // keeps its expiry: it is no download); every episode lets go of the subscription - a deleted
+    // one too (its record still says "not again"; a reference to a row deleted here would fail the
+    // transaction, schema 18)
     for (SFDownloadRecord *r in _recs.allValues)
-        if ([r.sub isEqualToString:fid] && r.state != SFDLDismissed) {
+        if ([r.sub isEqualToString:fid]) {
             r.sub = nil;
             if (r.state == SFDLRetrying) r.state = SFDLFailed;   // nobody retries it now
             [writes addObject:[self write:r]];

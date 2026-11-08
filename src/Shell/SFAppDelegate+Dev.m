@@ -58,6 +58,7 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
 }
 
 - (void)listenFifo:(int)fd at:(NSString *)p {
+    if (self.fifoStopped) { if (fd >= 0) close(fd); unlink(p.fileSystemRepresentation); return; }   // quit came first
     if (fd < 0) { SFLog(@"dev: fifo open failed"); return; }
     self.fifoBuf = [NSMutableString new];
     self.fifoSrc = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
@@ -79,8 +80,8 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
 
 // on quit: the control pipe goes with the instance (the shared cache dir holds only live ones)
 - (void)stopFifo {
-    if (!self.fifoSrc) return;
-    dispatch_source_cancel(self.fifoSrc);
+    self.fifoStopped = YES;   // (the setup may still be on its way: listenFifo then lets go)
+    if (self.fifoSrc) dispatch_source_cancel(self.fifoSrc);
     unlink(fifoPath().fileSystemRepresentation);
 }
 
@@ -218,6 +219,10 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         for (SFItem *f in [[SFFollows shared] follows:nil])
             SFLog(@"dev: follows %@ image=%@ needs=%d", f.identifier, f.image ?: @"-", [[SFFollows shared] needsImage:f.identifier]);
         SFLog(@"dev: follows end");
+    } else if ([cmd isEqualToString:@"unfollow"] && arg) {   // Dev: unfollow a show/channel (also ends its auto-download - one transaction)
+        [[SFFollows shared] unfollow:arg];
+        [[SFStore shared] flush];   // its transaction done (dev only: a short wait on the main thread)
+        SFLog(@"dev: unfollowed %@", arg);
     } else if ([cmd isEqualToString:@"region"] && arg) {     // Dev: "region XX 0|1|-" - pretend a geo check found the device outside/inside XX; - = forget
         NSArray *a = [arg componentsSeparatedByString:@" "];
         if (a.count == 2 && [a[1] isEqualToString:@"-"]) [[SFStore shared] setSetting:nil forKey:[@"geo.region." stringByAppendingString:a[0]]];

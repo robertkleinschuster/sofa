@@ -17,6 +17,7 @@ void SFClearRunningMarker(void);   // autostart crash detection, see main()
 // internal (used by the categories)
 @property (nonatomic, strong) dispatch_source_t fifoSrc;
 @property (nonatomic, strong) NSMutableString *fifoBuf;
+@property (nonatomic) BOOL fifoStopped;   // quit began: a pipe set up after this is not listened to
 - (void)hideCursor:(BOOL)hide;
 - (void)welcomeIfFirstRun;
 @end

@@ -17,6 +17,7 @@
 //    while paused); at the end of the video the "Als Nächstes" card takes over - unless the
 //    viewer is choosing among the tiles: then the end flow waits until they leave the tiles
 #import "SFPlayerScreen+Private.h"
+#import "SFFontWarmup.h"
 #import "SFPlayerInfoScreen.h"
 #import "SFBrowseScreen.h"
 #import "SFFollows.h"
@@ -37,18 +38,6 @@ static NSString *SFStr(id v) { return [v isKindOfClass:[NSString class]] && [v l
 static NSString *const kHintBack = @"zurück zum Video", *const kHintEnter = @"Empfehlungen des Kanals";
 static NSString *const kKeyOK = @"OK", *const kKeyMenu = @"MENU", *const kKeyDown = @"▼";
 
-// Fonts load on first use; the cold path (font files, a symbol's fallback font, the font server
-// under disk load) blocked the main thread up to 1 s at a video's start - for tiles shown minutes
-// later (hitch 2026-11-08). Measuring every text once off the main thread loads them; then `done`
-// on the main thread.
-static void SFWarmFonts(NSArray *texts, NSArray *fonts, dispatch_block_t done) {
-    SFBackground(^{
-        @autoreleasepool {
-            for (NSString *s in texts) for (NSFont *f in fonts) [s sizeWithAttributes:@{NSFontAttributeName: f}];
-        }
-        SFMain(done);
-    });
-}
 
 - (void)esReset {
     [_esLayer removeFromSuperlayer]; _esLayer = nil; _esScrim = nil; _esHint = nil;

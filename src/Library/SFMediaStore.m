@@ -1,4 +1,5 @@
 #import "SFMediaStore.h"
+#import <libkern/OSAtomic.h>
 #import <pthread.h>
 #import "SFCore.h"
 #import <sqlite3.h>
@@ -39,6 +40,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     // the block files checked against the index (checkBlocks) - until then a track the index calls
     // whole may have lost a block, so completeness waits for that
     dispatch_group_t _opened, _checked;
+    volatile int32_t _pendingWrites;   // write: calls queued, not yet done (hasComplete: orders behind them)
 }
 
 - (instancetype)initWithDirectory:(NSString *)dir {
@@ -283,27 +285,34 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 - (void)write:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start {
     if (!data.length || !key.length || !item.length) return;
     data = [data copy];
+    OSAtomicIncrement32Barrier(&_pendingWrites);
     dispatch_async(_q, ^{
-        SFMediaTrack *t = self->_tracks[key];
-        NSTimeInterval now = [NSDate date].timeIntervalSince1970;
-        if (!t) {
-            if (![self run:@"INSERT INTO tracks (key, item, kind, total, used) VALUES (?, ?, ?, ?, ?)" args:@[key, item, kind ?: @"", @(total), @(now)]]) return;
-            t = [SFMediaTrack new];
-            t.rowid = sqlite3_last_insert_rowid(self->_db);
-            t.key = key; t.item = item; t.kind = kind ?: @""; t.used = now;
-            t.extents = [SFExtentSet new];
-            self->_tracks[key] = t;
-        }
-        if (total > 0) t.total = total;
-        if (![self writeTrack:t data:data at:start]) return;
-        long long before = t.extents.bytes;
-        [t.extents addStart:start end:start + (long long)data.length];
-        [self account:t delta:t.extents.bytes - before];
-        t.used = now;
-        [self saveExtents:t];
-        self->_sinceEvict += (long long)data.length;
-        if (self->_sinceEvict >= kEvictEvery) { self->_sinceEvict = 0; [self evict]; }
+        [self writeNow:data key:key item:item kind:kind total:total at:start];
+        OSAtomicDecrement32Barrier(&self->_pendingWrites);
     });
+}
+
+// on _q
+- (void)writeNow:(NSData *)data key:(NSString *)key item:(NSString *)item kind:(NSString *)kind total:(long long)total at:(long long)start {
+    SFMediaTrack *t = self->_tracks[key];
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    if (!t) {
+        if (![self run:@"INSERT INTO tracks (key, item, kind, total, used) VALUES (?, ?, ?, ?, ?)" args:@[key, item, kind ?: @"", @(total), @(now)]]) return;
+        t = [SFMediaTrack new];
+        t.rowid = sqlite3_last_insert_rowid(self->_db);
+        t.key = key; t.item = item; t.kind = kind ?: @""; t.used = now;
+        t.extents = [SFExtentSet new];
+        self->_tracks[key] = t;
+    }
+    if (total > 0) t.total = total;
+    if (![self writeTrack:t data:data at:start]) return;
+    long long before = t.extents.bytes;
+    [t.extents addStart:start end:start + (long long)data.length];
+    [self account:t delta:t.extents.bytes - before];
+    t.used = now;
+    [self saveExtents:t];
+    self->_sinceEvict += (long long)data.length;
+    if (self->_sinceEvict >= kEvictEvery) { self->_sinceEvict = 0; [self evict]; }
 }
 
 - (SFExtentSet *)extentsOf:(NSString *)key {
@@ -343,7 +352,13 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
     _manifests[item] = m;
     pthread_mutex_unlock(&_lock);
     NSString *s = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
-    dispatch_async(_q, ^{ [self run:@"INSERT OR REPLACE INTO manifests (item, json) VALUES (?, ?)" args:@[item, s]]; });
+    dispatch_async(_q, ^{
+        [self run:@"INSERT OR REPLACE INTO manifests (item, json) VALUES (?, ?)" args:@[item, s]];
+        // the row is back even if the item was dropped in between (evicted): the mirror says the same
+        pthread_mutex_lock(&self->_lock);
+        self->_manifests[item] = m;
+        pthread_mutex_unlock(&self->_lock);
+    });
 }
 
 - (NSDictionary *)manifestOf:(NSString *)item {
@@ -377,6 +392,9 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 - (BOOL)hasComplete:(NSArray *)keys {
     if (!keys.count) return NO;
     dispatch_group_wait(_checked, DISPATCH_TIME_FOREVER);   // at once after the startup check
+    // writes still queued (a fill just handed over a segment): the answer includes them, as when
+    // this read ran on the queue - otherwise no wait
+    if (_pendingWrites > 0) dispatch_sync(_q, ^{});
     pthread_mutex_lock(&_lock);
     BOOL ok = YES;
     for (NSString *k in keys) if (![_complete containsObject:k]) { ok = NO; break; }

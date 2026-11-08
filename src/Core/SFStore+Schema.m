@@ -197,9 +197,9 @@
                    "sub TEXT REFERENCES subscriptions(id) %@, error TEXT, tries INTEGER NOT NULL DEFAULT 0 CHECK (tries >= 0), "
                    "keep INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)), online INTEGER CHECK (online IN (0, 1)), "
                    "onlineAt REAL, retryAt REAL, expires REAL", fk, fk],
-                  @"id, IFNULL(source, ''), IFNULL(channel, ''), thumb, IFNULL(state, 0), MIN(MAX(IFNULL(progress, 0), 0), 1), "
+                  (@"id, IFNULL(source, ''), IFNULL(channel, ''), thumb, IFNULL(state, 0), MIN(MAX(IFNULL(progress, 0), 0), 1), "
                    "IFNULL(added, 0), published, sub, error, MAX(IFNULL(tries, 0), 0), IFNULL(keep, 0) <> 0, "
-                   "CASE WHEN online IS NULL THEN NULL ELSE online <> 0 END, onlineAt, retryAt, expires"],
+                   "CASE WHEN online IS NULL THEN NULL ELSE online <> 0 END, onlineAt, retryAt, expires")],
                 @[@"follows", @"id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL, image TEXT, added REAL NOT NULL, checked REAL",
                   @"id, IFNULL(source, ''), IFNULL(title, ''), image, IFNULL(added, 0), checked"],
                 @[@"follow_items", [NSString stringWithFormat:@"follow TEXT NOT NULL REFERENCES follows(id) %@, "

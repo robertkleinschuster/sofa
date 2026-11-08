@@ -1,6 +1,7 @@
 #import "SFEndTile.h"
 
 static NSString *const kPlaylistChip = @"☰  Playlist", *const kFollowing = @"✓ Gefolgt", *const kFollow = @"Folgen";
+static NSString *const kToChannel = @"Zum Kanal", *const kFollowingChannel = @"Du folgst diesem Kanal", *const kFollowChannel = @"Kanal folgen";
 
 @implementation SFEndTile {
     SFTheme *_theme;
@@ -22,15 +23,15 @@ static NSString *const kPlaylistChip = @"☰  Playlist", *const kFollowing = @"�
 
 // a round tile's caption below its name (focused)
 - (NSString *)captionAction {
-    if ([_kind isEqualToString:SFEndCardChannel]) return @"Zum Kanal";
-    return _following ? @"Du folgst diesem Kanal" : @"Kanal folgen";
+    if ([_kind isEqualToString:SFEndCardChannel]) return kToChannel;
+    return _following ? kFollowingChannel : kFollowChannel;
 }
 
 - (NSArray *)texts {
     NSMutableArray *a = [NSMutableArray arrayWithObjects:[self elementTitle] ?: @"Kanal", [self okAction], nil];
     if ([_kind isEqualToString:SFEndCardPlaylist]) [a addObject:kPlaylistChip];
-    if ([_kind isEqualToString:SFEndCardFollow]) [a addObjectsFromArray:@[kFollowing, kFollow, @"Du folgst diesem Kanal", @"Kanal folgen"]];
-    if ([_kind isEqualToString:SFEndCardChannel]) [a addObject:@"Zum Kanal"];
+    if ([_kind isEqualToString:SFEndCardFollow]) [a addObjectsFromArray:@[kFollowing, kFollow, kFollowingChannel, kFollowChannel]];
+    if ([_kind isEqualToString:SFEndCardChannel]) [a addObject:kToChannel];
     return a;
 }
 
