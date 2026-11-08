@@ -1,4 +1,5 @@
 #import "SFMediaProxy+Private.h"
+#import "SFMP4Index.h"
 #import "SFLocalHTTP.h"
 #import "SFCurl.h"
 #import "SFDownloads.h"
@@ -62,7 +63,25 @@ NSString *SFProxyHash(NSString *s) {
     dispatch_async(_q, ^{
         SFProxySession *s = [self sessionWithID:sid];
         if (s.hls && s.vod) [self storedHLSRangesOf:s done:done];
-        else SFMain(^{ done(nil); });   // a progressive file: bytes -> time needs its index (not yet)
+        else if (!s.hls && s.key && s.total > 0) [self storedFileRangesOf:s done:done];
+        else SFMain(^{ done(nil); });
+    });
+}
+
+// on the queue: a progressive MP4 by its moov's sample tables (SFMP4Index), parsed once it is on disk
+- (void)storedFileRangesOf:(SFProxySession *)s done:(void (^)(NSArray *))done {
+    NSString *key = s.key;
+    long long total = s.total;
+    SFMP4Index *known = s.mp4Index;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{   // the store's queue: not the server's
+        SFMediaStore *store = SFProxyStore();
+        SFMP4Index *ix = known ?: [SFMP4Index indexWithLength:total read:^NSData *(long long off, NSUInteger len) {
+            return [store read:key start:off length:len];
+        }];
+        if (ix && !known) dispatch_async(self.queue, ^{ s.mp4Index = ix; });
+        SFExtentSet *have = [store extentsOf:key];
+        NSArray *r = [ix storedRanges:^BOOL(long long a, long long b) { return [have coversStart:a end:b]; }];
+        SFMain(^{ done(r); });
     });
 }
 

@@ -17,8 +17,8 @@
 // ({lang, kind, name, url}). nil: not complete, or not a file item
 - (NSURL *)storedURLFor:(NSString *)item subs:(NSArray **)subs;
 // What of the item playing from `url` (a URL of this proxy) is on disk, as time ranges @[@[start s,
-// end s]] - exact only: HLS by its segments' durations (video and audio rendition both); nil when
-// not known (a progressive file: bytes -> time needs the container's index). done on the main queue.
+// end s]] - exact: HLS by its segments' durations (video and audio rendition both), an MP4 file by its
+// moov's sample tables (SFMP4Index); nil when not known (no moov on disk yet, not an MP4). done on main.
 - (void)storedRangesFor:(NSURL *)url done:(void (^)(NSArray *ranges))done;
 // A download: the file and its subtitles (player source entries) into the store, paced at 3x the
 // playback rate (`duration` in s; 0: unpaced); progress 0..1 and done(nil | error) on the main queue.

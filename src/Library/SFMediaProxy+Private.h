@@ -19,6 +19,7 @@
 // player reads resources of (its variant and audio rendition, not every variant it parsed)
 @property (nonatomic, strong) NSMutableDictionary *segments, *segmentPlaylist;
 @property (nonatomic, strong) NSMutableSet *activePlaylists;
+@property (nonatomic, strong) id mp4Index;       // file: its SFMP4Index once its moov was on disk (the timeline)
 @end
 
 static inline SFMediaStore *SFProxyStore(void) { return [SFDownloads shared].mediaStore; }

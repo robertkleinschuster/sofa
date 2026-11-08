@@ -1,7 +1,7 @@
 # Media store: buffer and download are one thing
 
-Status: agreed with the user 2026-11-08; phases 1-4 built - every download is the store's (YouTube, the
-mediatheks' progressive files, ORF's HLS); the UI (5) follows.
+Status: agreed with the user 2026-11-08; phases 1-5 built - every download is the store's (YouTube, the
+mediatheks' progressive files, ORF's HLS); tiles, "noch X MB" and the exact timeline shade show it.
 
 ## What the user sees
 
@@ -135,4 +135,6 @@ store can hold; existing downloads may be deleted (no migration of old files).
       byte offset -> ms, once their init segments arrived); Sofa keeps them in the manifest ("index",
       by track identity - stored sessions have them offline) and counts a span when its bytes are all
       on disk, video and audio both (SFYTTimeline, SFYTEngine+Timeline.m; app hook storedRangesOf:).
-      Open: progressive MP4 files of the mediatheks (their moov sample tables).
+      Done for the mediatheks' progressive MP4 files: SFMP4Index reads the moov's sample tables from
+      the store (stco/co64, stsc, stsz, stts, an edit list's start) - every audio/video chunk's byte and
+      time span; parsed once per session when the moov is on disk (faststart or at the end).

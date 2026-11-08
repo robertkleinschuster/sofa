@@ -15,8 +15,9 @@
 #      "geladen" and "Herunterladen" says what is missing ("noch X MB"), the fill fetches only the rest;
 #      tracks gone from outside are noticed at start and filled again; removal frees them
 #   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
-#      by ranges (no ffmpeg); it plays from the store, "Online abspielen" (info panel) switches to the
-#      source, and it plays from the store without its source
+#      by ranges (no ffmpeg); the timeline shows what is on disk (exact, the file's moov sample tables);
+#      it plays from the store, "Online abspielen" (info panel) switches to the source, and it plays
+#      from the store without its source
 #   8d. an HLS source (ORF) through the media proxy: a master with two variants, AES-128 segments and
 #      their key - playing it shows what is on disk as a shade on the timeline (exact segments of the
 #      variant played); the download takes the better variant into the store (no ffmpeg), it then
@@ -323,12 +324,20 @@ for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame"
 sleep 1
 n=$(SS "select coalesce(sum(e.end - e.start), 0) from tracks t join extents e on e.track = t.id where t.item='example:3' and t.kind='file'")
 [ "${n:-0}" -gt 0 ] && ok "playback buffered through the proxy ($n bytes on disk)" || bad "nothing buffered while playing: $(SS "select group_concat(key || ' ' || kind) from tracks") / $(tail -n +$((m + 1)) "$LOG" | grep 'player\|media-proxy\|media-store\|mpv' | head -12)"
+cmd "key select"   # the bar: the timeline shows what is on disk (the file's moov sample tables)
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9]" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9][0-9]* range(s), [1-9][0-9]* of 60 s" && ok "the timeline shows what playback put on disk ($(tail -n +$((m + 1)) "$LOG" | grep -o 'stored [0-9].*' | tail -1))" \
+  || bad "no stored shade for the file: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 cmd "key menu"; sleep 0.5
 # a download plays from the store; "Online abspielen" (info panel) switches to the source at the same position
 m=$(wc -l < "$LOG")
 cmd "play example:2"
 for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
 tail -n +$((m + 1)) "$LOG" | grep -q "player: play .* from the store" && ok "a download plays from the store" || bad "not from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player:' | tail -2)"
+cmd "key select"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range" && break; sleep 0.25; done
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range(s), 60 of 60 s" && ok "a download: the timeline shaded end to end" \
+  || bad "stored shade of the download: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 m=$(wc -l < "$LOG"); cmd "key selecthold"
 for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "info: panel for" && break; sleep 0.25; done
 cmd "key select"   # first action of a downloaded video: "Online abspielen"
