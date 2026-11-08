@@ -200,14 +200,6 @@ since $m | grep -q 'player: failed' && ok "ended in a failure state" || bad "no 
 shot "$T/fail.png"; [ -s "$T/fail.png" ] && ok "error screen rendered ($T/fail.png kept until exit)" || bad "no screenshot"
 stop
 
-echo "==> 4b. a failed playlist entry: the message, then the next entry"
-start
-m=$(mark); cmd "playlist $T/local.mp4,$T/missing.mp4,$T/local.mp4"   # starts at the 2nd: a file that is not there
-waitlog $m 'player: failed' 60 && ok "the missing entry failed" || bad "no failure: $(since $m | grep 'player:' | tail -2)"
-waitlog $m 'player: failed - moving on to the next entry' 40 && ok "moved on after the message" || bad "stayed on the error"
-waitlog $m 'player: play local.mp4' 40 && ok "the next entry plays" || bad "next entry not started"
-stop
-
 echo "==> 4c. the end waits for a recommendation still on its way - within a limit"
 export SOFA_EXAMPLE_MEDIA="file://$T/local.mp4" SOFA_EXAMPLE_UPNEXT=2.5   # the answer takes 2.5 s
 start
@@ -265,6 +257,15 @@ stop
 
 fi   # part a
 if want b; then
+# (4b runs in part b: balances the parts - part a was the longer one)
+echo "==> 4b. a failed playlist entry: the message, then the next entry"
+start
+m=$(mark); cmd "playlist $T/local.mp4,$T/missing.mp4,$T/local.mp4"   # starts at the 2nd: a file that is not there
+waitlog $m 'player: failed' 60 && ok "the missing entry failed" || bad "no failure: $(since $m | grep 'player:' | tail -2)"
+waitlog $m 'player: failed - moving on to the next entry' 40 && ok "moved on after the message" || bad "stayed on the error"
+waitlog $m 'player: play local.mp4' 40 && ok "the next entry plays" || bad "next entry not started"
+stop
+
 start; stop   # the instance creates its database (section 8 writes a download into it before its start)
 echo "==> 8. YouTube end screen (fake data, offline)"
 # thumbnails (offline: OK on a video tile opens it in the player, its resolve fails without network)
@@ -328,9 +329,11 @@ unset SOFA_OFFLINE
 
 echo "==> 7b. stream breaks off after playback began -> one reopen, then a message"
 # the same server with a file whose index comes first: it plays a few seconds, then stops delivering
-# (160 KB = the index + ~6 s at the test video's 180 kbit/s; 600 KB played 27 s of it - 50 s for this check)
+# (cut where the media data starts + 40 KB = ~1.5 s at the test video's ~180 kbit/s: "played" needs
+# a frame, not seconds - each played second costs this check two)
 "$FF" -hide_banner -loglevel error -y -i "$T/local.mp4" -c copy -movflags +faststart "$T/fast.mp4"
-serve "$T/fast.mp4" 160000
+mdat=$(LC_ALL=C grep -obUa 'mdat' "$T/fast.mp4" | head -1 | cut -d: -f1)
+serve "$T/fast.mp4" $(( ${mdat:?no mdat box} + 40000 ))
 start
 m=$(mark); cmd "play http://127.0.0.1:$SPORT/fast.mp4"
 for i in $(seq 1 120); do since $m | grep -q 'player: failed' && break; sleep 0.5; done   # play, stall, reopen, play, stall
