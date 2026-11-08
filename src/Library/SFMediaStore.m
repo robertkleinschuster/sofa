@@ -3,6 +3,7 @@
 #import <sqlite3.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static const long long kBlock = 4LL << 20;            // bytes per block file
 static const long long kEvictEvery = 64LL << 20;      // an eviction pass after this many written bytes
@@ -36,6 +37,7 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
             return [[[NSFileManager defaultManager] attributesOfFileSystemForPath:d error:nil][NSFileSystemFreeSize] longLongValue];
         };
         dispatch_sync(_q, ^{ [self open]; });
+        dispatch_async(_q, ^{ [self checkBlocks]; });   // after open, before anything queued later
     }
     return self;
 }
@@ -130,6 +132,32 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
 }
 
 #pragma mark Files (on _q)
+
+// The index against the block files (once per open, queued before any later call): a range whose
+// block file is gone or short (deleted from outside, a crash before a write landed) leaves the
+// index - completeness answers the truth from then on and a download fills it again.
+- (void)checkBlocks {
+    NSUInteger fixed = 0;
+    for (SFMediaTrack *t in [_tracks.allValues copy]) {
+        SFExtentSet *gone = [SFExtentSet new];
+        for (NSArray *r in t.extents.ranges) {
+            long long s = [r[0] longLongValue], e = [r[1] longLongValue];
+            for (long long b = s / kBlock; b * kBlock < e; b++) {
+                struct stat st;
+                long long have = stat([self blockPath:t block:b].fileSystemRepresentation, &st) == 0 ? st.st_size : 0;
+                long long from = MAX(s, b * kBlock + have), to = MIN(e, (b + 1) * kBlock);
+                if (from < to) [gone addStart:from end:to];
+            }
+        }
+        if (!gone.bytes) continue;
+        for (NSArray *r in gone.ranges) [t.extents removeStart:[r[0] longLongValue] end:[r[1] longLongValue]];
+        _bytes -= gone.bytes;
+        [self saveExtents:t];
+        fixed++;
+        SFLog(@"media-store: %@ - %.1f MB of its blocks missing on disk, dropped from the index", t.key, gone.bytes / 1048576.0);
+    }
+    if (fixed) SFLog(@"media-store: %lu track(s) corrected against their block files", (unsigned long)fixed);
+}
 
 - (NSString *)blockPath:(SFMediaTrack *)t block:(long long)b {
     return [_dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%lld/%lld", t.rowid, b]];
@@ -268,6 +296,11 @@ static const NSTimeInterval kUsedPersistGap = 60;     // "used" goes to the data
         sqlite3_finalize(st);
     });
     return m;
+}
+
+- (BOOL)itemIsComplete:(NSString *)item {
+    NSArray *req = [self manifestOf:item][@"required"];
+    return [req isKindOfClass:[NSArray class]] && [self hasComplete:req];
 }
 
 - (BOOL)hasComplete:(NSArray *)keys {

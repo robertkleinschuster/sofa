@@ -73,10 +73,10 @@ static unsigned long long gReserve = 10 * kGB;
     return _storageFull;
 }
 
-// While ffmpeg runs (timer, every 10 s - also for unknown durations and the faststart phase, which
+// While a download runs (timer, every 10 s - also for unknown durations and the faststart phase, which
 // report no progress): stop it when the reserve is half used up.
 - (void)stopIfDiskRunsOut {
-    if (!_task.isRunning || self.freeBytes >= self.storageReserve / 2) return;
+    if (!(_task.isRunning || _fillCancel) || self.freeBytes >= self.storageReserve / 2) return;
     unsigned long long written = _runningPart ? [[[NSFileManager defaultManager] attributesOfItemAtPath:_runningPart error:nil] fileSize] : 0;
     SFLog(@"downloads: disk nearly full while loading %@ (%llu MB written) - stopping it (continues when there is room)", _runningID, written / 1000000ULL);
     if (_runningID) {
@@ -84,6 +84,7 @@ static unsigned long long gReserve = 10 * kGB;
         _diskNeed[_runningID] = @((unsigned long long)(written * 2.5) + kGB);
     }
     [self setStorageFull:YES];
+    if (_fillCancel) { NSString *ident = _runningID; [self abortRun]; [self finish:ident ok:NO error:@"Speicher voll"]; return; }   // -> deferred (disk)
     [_task terminate];   // termination -> finish:ok:NO -> deferred (disk), the part file is removed
 }
 

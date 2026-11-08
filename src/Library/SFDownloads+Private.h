@@ -52,7 +52,8 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 @interface SFDownloads () {
     NSMutableDictionary *_recs;      // id -> SFDownloadRecord
     NSMutableDictionary *_subs;      // id -> SFSubscription
-    NSTask *_task;
+    NSTask *_task;                   // the running ffmpeg (a file download), or
+    dispatch_block_t _fillCancel;    // ...cancels the running fill (a media store download)
     NSString *_runningID;
     BOOL _started, _starting;   // _started: orphans reaped, the worker may write
     NSTimer *_checkTimer;
@@ -74,12 +75,12 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
     NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
 }
-// Items whose buffered bytes a download is still going to read (queued, running, retrying): the media
-// store never evicts them. A snapshot the main thread swaps on every record write - the store asks
+// Items the media store never evicts: media store downloads, and what a pending download (queued,
+// running, retrying) is going to read. A snapshot the main thread swaps on every record write - the store asks
 // from its own queue and must never touch _recs.
 @property (atomic, copy) NSSet *storePinned;
 - (void)save:(SFDownloadRecord *)r;
-- (BOOL)fileExists:(SFDownloadRecord *)r;   // its file is there
+- (BOOL)hasContent:(SFDownloadRecord *)r;   // its file is there / it is a finished media store download
 - (SFDownloadRecord *)recOf:(NSString *)identifier;   // the record (not a copy); nil = none
 - (NSArray *)write:(SFDownloadRecord *)r;   // the statement save: runs - for several records in one runAll:
 - (void)changed:(NSString *)identifier;
@@ -103,6 +104,7 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 - (NSString *)targetPathFor:(SFDownloadRecord *)r item:(SFItem *)item;
 - (void)fetchThumb:(SFItem *)item rec:(SFDownloadRecord *)r;
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error;
+- (BOOL)abortRun;   // the running download ends without a verdict (exit, removal, disk); NO = none ran
 @end
 
 // Integrity layer (SFDownloads+Integrity.m): orphan reaping, unique part files, verification, audit
@@ -117,6 +119,13 @@ static inline NSTimeInterval SFRetryDelay(NSInteger tries) {
 @interface SFDownloads (Integrity)
 - (NSUInteger)reapOrphans;
 - (void)sweepStaleParts;
+// media store downloads whose tracks are not complete any more (block files gone from outside): queued
+// again - the fill fetches only what is missing. Once per launch.
+- (void)verifyStoreDownloads;
+// once (2026-11-08, docs/media-store.md, agreed with the user): the file downloads of sources whose
+// downloads fill the media store now (YouTube) go - removed like a user removal (subscription
+// episodes stay dismissed: no re-download in bulk)
+- (void)retireFilesOfFillingSources;
 - (NSString *)partSuffix;
 - (void)auditExistingDownloads;
 + (NSString *)problemWithFile:(NSString *)path expectedDuration:(double)expected ffmpeg:(NSString *)ff;

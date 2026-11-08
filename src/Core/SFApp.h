@@ -78,7 +78,12 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)feed:(NSString *)ref done:(void (^)(NSArray *items, NSError *e))done;   // newest episodes of a show ref
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *url))done;   // a followed show's picture when its stored one is missing/gone; done on main, nil = none (now)
 // --- library ---
-+ (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done;
++ (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done;   // a download as a file (ffmpeg -> MP4)
+// A download as the media store filled (docs/media-store.md; no file - preferred over
+// downloadSourceForItem): progress 0..1 (any queue is fine, called on main); done(info as in
+// SFDownloadURLDone, nil) once complete, else (nil, error; userInfo "bot" = the source paused).
+// Returns a block that cancels (no done after it).
++ (dispatch_block_t)fillItem:(SFItem *)item progress:(void (^)(double p))progress done:(void (^)(NSDictionary *info, NSError *e))done;
 + (NSTimeInterval)downloadSpacing;   // two download starts of this app at least this far apart (s; above a minute up to half of it more at random). Default 30 s
 + (NSUInteger)subscriptionDownloadsPerDay;   // subscription downloads of this app started within 24 h at most (a person's volume); absent: no limit. Manual downloads are not counted against it
 + (NSTimeInterval)backgroundPausedUntil;   // e.g. bot check: no background requests (feed refreshes, downloads) until then (epoch s, 0 = no pause)

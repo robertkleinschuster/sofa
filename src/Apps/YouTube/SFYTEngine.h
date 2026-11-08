@@ -54,6 +54,13 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (BOOL)canOpen:(NSString *)videoID;
 @end
 
+@interface SFYTEngine (Fill)   // SFYTEngine+Fill.m
+// A download: the video's tracks (video, main audio) and subtitles into the media store, through the
+// reads a player makes (what is on disk is skipped), paced at 3x the playback rate. progress 0..1;
+// done(open answer, nil) once complete, else (nil, error). The returned block cancels. Main queue.
+- (dispatch_block_t)fill:(NSString *)videoID progress:(void (^)(double p))progress done:(void (^)(NSDictionary *r, NSError *e))done;
+@end
+
 @interface SFYTEngine (Lounge)
 // The lounge's transport (SFLounge): its requests to www.youtube.com/api/lounge made by the
 // engine page - same origin, the profile's cookies, as youtube.com/tv makes them. Any queue;

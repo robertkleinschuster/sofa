@@ -131,6 +131,9 @@
         // title (YouTube localizes list titles to the interface language; the watch page carries the
         // original, 2026-11-08). One row per video ever opened - small, kept.
         ^{ [self exec:@"CREATE TABLE original_titles (id TEXT PRIMARY KEY, title TEXT NOT NULL)"]; },
+        // 14: a download's kind, explicit: 1 = its content is the media store's tracks (no file,
+        // docs/media-store.md), 0 = a file (path)
+        ^{ [self exec:@"ALTER TABLE downloads ADD COLUMN store INTEGER NOT NULL DEFAULT 0 CHECK (store IN (0, 1))"]; },
     ];
 }
 

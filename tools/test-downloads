@@ -15,8 +15,12 @@
 #      by itself once there is room (user 2026-11-05: never fill the disk, never delete by itself)
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
-#   tools/test-downloads   both parts side by side, each with its own instance and media server
-#                          (part a: 1-4, part b: 5-7, 4b); DLTEST_PART=a|b runs one part here
+#   8. media store downloads (docs/media-store.md; the Example app fills like YouTube, SOFA_EXAMPLE_FILL):
+#      a file download of a filling source is retired once at start; a fill completes as a store
+#      download (no file, pinned bytes); a quit mid-fill uses no attempt and the resume fetches only
+#      the rest; tracks gone from outside are noticed at start and filled again; removal frees them
+#   tools/test-downloads   the parts side by side, each with its own instance and media server
+#                          (part a: 1-4, part b: 5-7, 4b, part c: 8); DLTEST_PART=a|b|c runs one part here
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -29,10 +33,11 @@ if [ -z "$PART" ]; then   # both parts at once; output part by part
   O="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dlparts.XXXXXX")"
   DLTEST_PART=a "$0" > "$O/a" 2>&1 & A=$!
   DLTEST_PART=b "$0" > "$O/b" 2>&1 & B=$!
-  wait $A; ra=$?; wait $B; rb=$?
-  grep -hv '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b"
+  DLTEST_PART=c "$0" > "$O/c" 2>&1 & C=$!
+  wait $A; ra=$?; wait $B; rb=$?; wait $C; rc=$?
+  grep -hv '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b" "$O/c"
   rm -rf "$O"
-  [ $ra = 0 ] && [ $rb = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
+  [ $ra = 0 ] && [ $rb = 0 ] && [ $rc = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
 fi
 want() { [ "$PART" = "$1" ]; }
 INST=dltest-$PART
@@ -299,6 +304,44 @@ nx=$(/opt/local/bin/sqlite3 "$DEVDB" "select v > strftime('%s','now') - 60 from 
 check "next start of the source stored" "$nx" "1"
 
 fi   # part b
+
+if want c; then
+echo "==> 8. downloads into the media store"
+export SOFA_EXAMPLE_FILL=0.4   # the Example app fills (8 pieces, 0.4 s apart)
+SQ() { /opt/local/bin/sqlite3 "$DEVDB" "$@"; }
+SS() { /opt/local/bin/sqlite3 "$ROOT/.store/store.db" "$@"; }
+start; quit   # the database
+SQ "delete from settings where k='downloadsFilesOfFillingSourcesRetired'"   # as on the first start after the update
+mkdir -p "$ROOT/dev/Dev"; cp "$T/good.mp4" "$ROOT/dev/Dev/old.mp4"
+SQ "insert into items (id,json) values ('example:2','{\"id\":\"example:2\",\"kind\":0,\"title\":\"Alt\",\"source\":\"example\"}');
+    insert into downloads (id,source,channel,path,state,progress,bytes,added) values ('example:2','example','Dev','$ROOT/dev/Dev/old.mp4',2,1,1,strftime('%s','now'));"
+start
+for i in $(seq 1 40); do grep -q "file download(s) of media store sources removed" "$LOG" && break; sleep 0.25; done
+check "a filling source's file download retired at start" "$(SQ "select count(*) from downloads where id='example:2'")/$([ -e "$ROOT/dev/Dev/old.mp4" ] && echo file || echo gone)" "0/gone"
+cmd "dlget $REF"
+for i in $(seq 1 40); do grep -q "example: filled $REF piece 2" "$LOG" && break; sleep 0.25; done
+cmd updatequit; dev_wait_exit $APP; APP=
+check "quit mid-fill: still running, no attempt used" "$(SQ "select state || '/' || tries || '/' || store from downloads where id='$REF'")" "1/0/1"
+start
+for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0.25; done
+grep -q "downloads: done $REF" "$LOG" && ok "fill resumed and finished" || bad "fill not finished: $(grep "$REF\|downloads" "$LOG" | tail -3)"
+grep -q "example: filled $REF piece 0" "$LOG" && bad "the resume fetched stored pieces again" || ok "the resume fetched only the rest"
+check "a store download: done, no file, its bytes" "$(SQ "select state || '/' || store || '/' || coalesce(path, '-') || '/' || bytes from downloads where id='$REF'")" "2/1/-/8388608"
+check "its track in the store, complete" "$(SS "select count(*) || '/' || sum(e.end - e.start) from tracks t join extents e on e.track = t.id where t.item='$REF'")" "1/8388608"
+quit
+# the second block file (pieces 4-7) deleted from outside: noticed at start, queued again, only the
+# missing part filled
+rm -f "$ROOT/.store/"[0-9]*/1
+start
+for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0.25; done
+grep -q "$REF is incomplete in the media store" "$LOG" && ok "an incomplete store download noticed at start" || bad "not noticed: $(grep "$REF" "$LOG" | tail -2)"
+pieces=$(grep -o "example: filled $REF piece [0-9]" "$LOG" | awk '{print $NF}' | tr '\n' ' ')
+check "only the lost block filled again (pieces 4-7)" "$pieces" "4 5 6 7 "
+cmd "dlremove $REF"
+for i in $(seq 1 20); do grep -q "dev: removed download $REF" "$LOG" && break; sleep 0.25; done
+check "removal frees its tracks" "$(SS "select count(*) from tracks where item='$REF'")/$(SQ "select count(*) from downloads where id='$REF'")" "0/0"
+quit
+fi   # part c
 
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

@@ -1,6 +1,6 @@
 # Media store: buffer and download are one thing
 
-Status: agreed with the user 2026-11-08; phase 1 built (store, YouTube read-through, eviction).
+Status: agreed with the user 2026-11-08; phases 1 and 2 built (YouTube: buffer and download are one).
 
 ## What the user sees
 
@@ -38,13 +38,14 @@ Status: agreed with the user 2026-11-08; phase 1 built (store, YouTube read-thro
   - `extents (track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, start INTEGER NOT NULL, end INTEGER NOT NULL, CHECK (end > start), PRIMARY KEY (track, start)) WITHOUT ROWID`
   - Later (phase 2): what playing a complete entry offline needs (formats, duration, subtitles, end
     screen) without the source.
-- Retention lives with the item, in `downloads` (the user-facing record it already is). Until phase 2:
-  a pending download (queued, running, retrying) pins the item - its ffmpeg reads the YouTube tracks
-  through the same loopback path, so a watched part comes from disk instead of YouTube - and once its
-  MP4 is installed the store copy goes (the file is the copy; never twice on disk). The pin set is a
-  snapshot SFDownloads swaps on every record write (the store asks from its own queue). From phase 2
-  on a downloaded item is its pinned tracks; a pre-buffered episode gets an expiry (phase 3); an
-  item without a record is plain buffer.
+- Retention lives with the item, in `downloads` (the user-facing record it already is), its kind
+  explicit in `downloads.store` (1: the content is the store's tracks, 0: a file). A store download
+  and anything a pending download will read are pinned - a snapshot set SFDownloads swaps on every
+  record write (the store asks from its own queue). A file download (sources not in the store yet)
+  drops the store copy it was read through once its file is installed. A pre-buffered episode gets
+  an expiry (phase 3); an item without a record is plain buffer.
+- Integrity: on open the store checks its index against the block files (asynchronously); at launch
+  store downloads that are no longer complete are queued again and fill only what is missing.
 
 ### 2. Read-through at the proxies
 
@@ -86,7 +87,7 @@ Decided with the user 2026-11-08: download and buffer are merged, not bridged - 
 store can hold; existing downloads may be deleted (no migration of old files).
 
 1. Done: store + YouTube read-through + eviction (resume from disk; nothing visible but speed).
-2. YouTube merged:
+2. Done - YouTube merged (SFYTEngine+Store.m, SFYTEngine+Fill.m, SFApp fillItem:, test-downloads 8):
    a. Manifests in the store (schema v2): per item what playing it needs without its source - the
       tracks (video, main audio), subtitles (stored as small tracks), duration, end screen,
       published. Written when a session opens.

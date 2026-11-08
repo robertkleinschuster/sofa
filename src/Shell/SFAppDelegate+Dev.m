@@ -191,6 +191,9 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";
         [[SFDownloads shared] download:it];
+    } else if ([cmd isEqualToString:@"dlremove"] && arg) {  // Dev: delete a download like the context menu
+        [[SFDownloads shared] remove:arg];
+        SFLog(@"dev: removed download %@", arg);
     } else if ([cmd isEqualToString:@"stats"]) {            // Dev: usage counters of the last <days> days (default 30)
         NSInteger days = arg.integerValue > 0 ? arg.integerValue : 30;
         [SFStatsTotals(days) enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSNumber *n, BOOL *stop) { SFLog(@"stats: %@ = %@", k, n); }];

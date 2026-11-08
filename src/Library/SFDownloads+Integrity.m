@@ -10,7 +10,10 @@
 //   3. part files are unique per app process and stale ones are swept at start
 //   4. every finished file is verified (duration + decode probes) before it replaces the target
 //   5. a one-time audit verifies existing downloads and re-queues broken ones
+// Media store downloads (no file, docs/media-store.md) have none of this: no process, no part file,
+// the store writes its blocks itself - they are only checked for completeness once per launch.
 #import "SFDownloads+Private.h"
+#import "SFMediaStore.h"
 #import <sys/sysctl.h>
 #import <signal.h>
 
@@ -206,6 +209,43 @@ static double SFParseDuration(NSString *s) {
             });
         });
     });
+}
+
+#pragma mark Media store downloads
+
+- (void)verifyStoreDownloads {
+    NSMutableArray *ids = [NSMutableArray new];
+    for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone && r.inStore) [ids addObject:r.identifier];
+    if (!ids.count) return;
+    SFMediaStore *store = self.mediaStore;
+    SFBackground(^{   // waits for the store's block check (a cold disk: seconds) - never on the main thread
+        NSMutableArray *incomplete = [NSMutableArray new];
+        for (NSString *ident in ids) if (![store itemIsComplete:ident]) [incomplete addObject:ident];
+        SFMain(^{
+            NSMutableArray *writes = [NSMutableArray new];
+            for (NSString *ident in incomplete) {
+                SFDownloadRecord *r = self->_recs[ident];
+                if (r.state != SFDLDone || !r.inStore) continue;
+                SFLog(@"downloads: %@ is incomplete in the media store - loading the rest", ident);
+                r.state = SFDLQueued; r.progress = 0; r.error = nil; r.tries = 0; r.retryAt = 0;
+                [writes addObject:[self write:r]];
+                [self changed:ident];
+            }
+            if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
+        });
+    });
+}
+
+- (void)retireFilesOfFillingSources {
+    static NSString *const key = @"downloadsFilesOfFillingSourcesRetired";   // (a later source that starts filling: a new key)
+    if ([[SFStore shared] setting:key].length) return;
+    NSUInteger n = 0;
+    for (SFDownloadRecord *r in [_recs.allValues copy]) {
+        Class<SFApp> app = [SFAppRegistry appForRef:r.identifier];
+        if (!r.inStore && r.path.length && [app respondsToSelector:@selector(fillItem:progress:done:)]) { [self remove:r.identifier]; n++; }
+    }
+    if (n) SFLog(@"downloads: %lu file download(s) of media store sources removed (they fill the store now)", (unsigned long)n);
+    [[SFStore shared] setSetting:@"1" forKey:key];
 }
 
 @end

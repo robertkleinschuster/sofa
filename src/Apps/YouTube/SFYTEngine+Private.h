@@ -1,5 +1,5 @@
 // Shared between SFYTEngine.m (lifecycle, API), SFYTEngine+Media.m (local media routes),
-// SFYTEngine+Store.m (session table, media store) and SFYTEngine+Lounge.m (the phone lounge's transport).
+// SFYTEngine+Store.m (session table, media store), SFYTEngine+Fill.m (downloads) and SFYTEngine+Lounge.m (the phone lounge's transport).
 #import "SFYTEngine.h"
 #import "SFYTChannel.h"
 
@@ -24,6 +24,9 @@
 @interface SFYTEngine (Media)
 // GET|HEAD /s/<sid>/... (SFYTEngine+Media.m). Engine queue.
 - (void)serveSession:(SFHTTPExchange *)x;
+// A piece of a session's track: from the store when there, else from the engine (then kept). Engine queue.
+- (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
+        done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done;
 @end
 
 @interface SFYTEngine (Store)   // SFYTEngine+Store.m; any queue

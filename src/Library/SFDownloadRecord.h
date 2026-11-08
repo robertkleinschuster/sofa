@@ -21,7 +21,8 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 @property (nonatomic, copy) NSString *itemJSON;     // the item as last read/written (items table)
 @property (nonatomic) SFDLState state;
 @property (nonatomic) double progress;              // 0..1 while loading
-@property (nonatomic, copy) NSString *path;         // the file (Done; kept during a repair)
+@property (nonatomic) BOOL inStore;                 // a media store download: its tracks are the content, no file
+@property (nonatomic, copy) NSString *path;         // the file of a file download (Done; kept during a repair)
 @property (nonatomic, copy) NSString *thumb;        // local thumbnail
 @property (nonatomic) unsigned long long bytes;
 @property (nonatomic) NSTimeInterval added;         // when it was requested (queue order)

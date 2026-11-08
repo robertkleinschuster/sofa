@@ -1,5 +1,7 @@
 #import "SFExampleApp.h"
 #import "SFEngine.h"
+#import "SFDownloads.h"
+#import "SFMediaStore.h"
 
 // --- the "API client": a static catalogue (a real app maps its source's JSON to SFItems) ---
 
@@ -117,6 +119,43 @@ static NSArray *videos(NSString *filter) {
             return;
         }
     done(nil, SFError(@"Video nicht gefunden"));
+}
+
+// Downloads into the media store (fillItem:, docs/media-store.md) - tests only: SOFA_EXAMPLE_FILL=<s
+// per piece> makes the Example app a filling source (else its downloads are files via ffmpeg). One
+// track of 8 synthetic 1-MB pieces (two store blocks) plus the manifest naming it; a piece already stored is skipped
+// (a resumed download fetches only the rest), every fetched one is logged.
++ (BOOL)respondsToSelector:(SEL)sel {
+    if (sel == @selector(fillItem:progress:done:)) return SFDevEnv(@"SOFA_EXAMPLE_FILL") != nil;
+    return [super respondsToSelector:sel];
+}
+
++ (dispatch_block_t)fillItem:(SFItem *)item progress:(void (^)(double))progress done:(void (^)(NSDictionary *, NSError *))done {
+    __block BOOL cancelled = NO;
+    NSString *item_ = item.identifier, *track = [item.identifier stringByAppendingString:@":v"];
+    const long long piece = 1 << 20, total = 8 * piece;
+    double gap = [SFDevEnv(@"SOFA_EXAMPLE_FILL") doubleValue];
+    SFMediaStore *store = [SFDownloads shared].mediaStore;
+    if (![catalogue() filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF[0] == %@", SFRefID(item_)]].count) {
+        done(nil, SFError(@"Video nicht gefunden")); return ^{};
+    }
+    [store setManifest:@{@"required": @[track]} forItem:item_];
+    __block void (^step)(long long);
+    __block __weak void (^weakStep)(long long);
+    weakStep = step = ^(long long k) {
+        if (cancelled) return;
+        if (k >= 8) { [store sync]; done(@{}, nil); return; }
+        if ([[store extentsOf:track] coversStart:k * piece end:(k + 1) * piece]) { weakStep(k + 1); return; }
+        NSMutableData *d = [NSMutableData dataWithLength:(NSUInteger)piece];
+        memset(d.mutableBytes, (int)k + 1, (size_t)piece);
+        [store write:d key:track item:item_ kind:@"video" total:total at:k * piece];
+        SFLog(@"example: filled %@ piece %lld", item_, k);
+        progress((k + 1) / 8.0);
+        void (^next)(long long) = weakStep;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(gap * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ next(k + 1); });
+    };
+    step(0);
+    return ^{ cancelled = YES; step = nil; };
 }
 
 // Session streams (an app service behind the URL, like YouTube's engine): tests make the Example

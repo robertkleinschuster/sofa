@@ -99,6 +99,7 @@ static NSString *Enc(NSString *s) {
     m[@"video"] = tracks[@"video"];
     m[@"audioKey"] = akey;
     m[@"audio"] = tracks[akey];
+    m[@"required"] = @[str(tracks[@"video"][@"id"]) ?: @"", str(tracks[akey][@"id"]) ?: @""];   // (SFMediaStore itemIsComplete:)
     for (NSDictionary *a in [j[@"audios"] isKindOfClass:[NSArray class]] ? j[@"audios"] : @[])
         if ([LastPart(str(a[@"url"])) isEqualToString:akey]) { m[@"audioName"] = str(a[@"name"]) ?: @""; m[@"original"] = a[@"original"] ?: @YES; }
     NSMutableArray *subs = [NSMutableArray new];
@@ -119,7 +120,7 @@ static NSString *Enc(NSString *s) {
     NSDictionary *m = vid.length ? [Store() manifestOf:ItemOf(vid)] : nil;
     NSDictionary *v = dict(m[@"video"]), *a = dict(m[@"audio"]);
     NSString *akey = str(m[@"audioKey"]), *base = self.mediaBase;
-    if (!v || !a || !akey || !base || ![Store() hasComplete:@[str(v[@"id"]) ?: @"", str(a[@"id"]) ?: @""]]) return nil;
+    if (!v || !a || !akey || !base || ![Store() itemIsComplete:ItemOf(vid)]) return nil;
     NSString *sid = [@"st-" stringByAppendingString:[[[NSUUID UUID] UUIDString] substringToIndex:8].lowercaseString];
     NSString *u = [NSString stringWithFormat:@"%@/s/%@", base, sid];
     NSMutableDictionary *tracks = [@{@"video": v, @"audio": a, akey: a} mutableCopy];

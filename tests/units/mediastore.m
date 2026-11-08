@@ -2,7 +2,7 @@
 // flags: -Isrc/Library -I/opt/local/include -L/opt/local/lib -lsqlite3
 // SFMediaStore in a directory of its own: bytes back as written (also across a block boundary),
 // nothing for a range with a gap, the gapless part from a position, the index after a reopen, a block file deleted from outside
-// (dropped from the index, not served), eviction least recently used first while space is short -
+// (dropped from the index, not served; on open: checked against the files), eviction least recently used first while space is short -
 // a pinned item never - and removing an item (its ranges cascade; schema version 2), manifests
 // (kept with the item's bytes, gone with it), completeness, and eviction of whole items.
 #import <Foundation/Foundation.h>
@@ -48,6 +48,9 @@ int main(void) { @autoreleasepool {
     CHECK([again read:@"yt:v1:137:9000000" start:block length:1000] == nil, "a missing block file is not served");
     CHECK(![[again extentsOf:@"yt:v1:137:9000000"] coversStart:block end:block + 1000], "...and leaves the index");
     CHECK([[again read:@"yt:v1:137:9000000" start:0 length:100000] isEqual:a], "the rest stays");
+    [[NSFileManager defaultManager] removeItemAtPath:[trackDir stringByAppendingPathComponent:@"0"] error:nil];
+    SFMediaStore *third = [[SFMediaStore alloc] initWithDirectory:dir];
+    CHECK([third extentsOf:@"yt:v1:137:9000000"].bytes == 0 && third.bytes == 0, "on open: ranges whose block files are gone leave the index");
 
     // eviction on a 3 MB "disk": free space = 3 MB minus the block files on it (the function runs on
     // the store's queue - it reads the files, never the store)
@@ -89,7 +92,7 @@ int main(void) { @autoreleasepool {
     [[NSFileManager defaultManager] removeItemAtPath:dir3 error:nil];
     SFMediaStore *m = [[SFMediaStore alloc] initWithDirectory:dir3];
     m.freeSpace = ^long long { return 1LL << 40; };
-    NSDictionary *man = @{@"tracks": @{@"video": @"yt:v2:v", @"audio": @"yt:v2:a"}, @"duration": @12};
+    NSDictionary *man = @{@"required": @[@"yt:v2:v", @"yt:v2:a"], @"duration": @12};
     [m setManifest:man forItem:@"yt:v2"];
     [m setManifest:@{@"x": @1} forItem:@"yt:nobytes"];
     [m write:Bytes(1000, 7) key:@"yt:v2:v" item:@"yt:v2" kind:@"video" total:1000 at:0];
@@ -97,10 +100,11 @@ int main(void) { @autoreleasepool {
     [m sync];
     CHECK([[m manifestOf:@"yt:v2"] isEqual:man], "a manifest back as written");
     NSArray *both = @[@"yt:v2:v", @"yt:v2:a"], *withUnknown = @[@"yt:v2:v", @"yt:nope"];
-    CHECK(![m hasComplete:both] && [m hasComplete:@[@"yt:v2:v"]], "complete only when every track is whole");
+    CHECK(![m hasComplete:both] && [m hasComplete:@[@"yt:v2:v"]] && ![m itemIsComplete:@"yt:v2"], "complete only when every track is whole");
     [m write:Bytes(100, 9) key:@"yt:v2:a" item:@"yt:v2" kind:@"audio" total:600 at:500];
     [m sync];
     CHECK([m hasComplete:both] && ![m hasComplete:withUnknown] && ![m hasComplete:@[]], "...and then complete");
+    CHECK([m itemIsComplete:@"yt:v2"] && ![m itemIsComplete:@"yt:nobytes"] && ![m itemIsComplete:@"yt:none"], "an item complete by its manifest's required tracks");
     SFMediaStore *m2 = [[SFMediaStore alloc] initWithDirectory:dir3];
     CHECK([[m2 manifestOf:@"yt:v2"] isEqual:man] && [m2 manifestOf:@"yt:nobytes"] == nil, "after a reopen: kept with bytes, dropped without");
     // whole items go: v2 (two tracks, used long ago) before v3 (used now)

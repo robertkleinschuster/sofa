@@ -5,7 +5,8 @@
 // present ranges in an SFExtentSet. The index is in memory (reads decide from it, never wait on the
 // database) and persisted in the store's own database (store.db) next to the bytes - its own
 // connection and queue: the user database (SFStore) never waits on media writes.
-// Thread-safe; everything runs on the store's queue.
+// Thread-safe; everything runs on the store's queue. On open the index is checked against the block
+// files (asynchronously, before any later call): ranges whose files are gone leave it.
 #import <Foundation/Foundation.h>
 #import "SFExtentSet.h"
 
@@ -23,12 +24,14 @@
 - (SFExtentSet *)extentsOf:(NSString *)key;    // a copy (empty for an unknown track)
 - (long long)bytesOfItem:(NSString *)item;     // stored bytes of all its tracks
 - (void)removeItem:(NSString *)item;           // its tracks, bytes, index and manifest
-// An item's manifest: what playing it needs without its source (source-specific JSON object; the
-// YouTube app's: tracks, subtitles, duration, end screen). Kept while the item has bytes.
+// An item's manifest: what playing it needs without its source - a JSON object, source-specific
+// apart from `required` (the keys of the tracks playback cannot do without). Kept while the item has bytes.
 - (void)setManifest:(NSDictionary *)manifest forItem:(NSString *)item;
 - (NSDictionary *)manifestOf:(NSString *)item;
 // every one of these tracks is known with its length and present from 0 to it (playable offline)
 - (BOOL)hasComplete:(NSArray *)keys;
+// the item's manifest names the tracks playing it needs (`required`: track keys) and all are complete
+- (BOOL)itemIsComplete:(NSString *)item;
 @property (nonatomic, readonly) long long bytes;   // all stored bytes
 
 // Eviction: while the volume has less free space than `reserve`, whole items go (tracks and manifest),

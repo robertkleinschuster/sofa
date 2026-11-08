@@ -13,6 +13,7 @@
 #  12  an item's metadata once (items), merged from every table's copy: newest field wins, older
 #      fields kept, local paths left out; the item columns go
 #  13  original_titles: the uploader's title of a video (YouTube lists carry a localized one)
+#  14  downloads.store: a download's kind explicit (media store tracks or a file); existing rows files
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
@@ -84,7 +85,7 @@ ok "built ($(Q "select count(*) from sqlite_master where type='table'") tables)"
 
 echo "==> migrate"
 run
-check "schema version" "$(Q 'pragma user_version')" 13
+check "schema version" "$(Q 'pragma user_version')" 14
 check "integrity" "$(Q 'pragma integrity_check')" ok
 grep -q 'schema step .* failed' "$LOG" && bad "a step failed: $(grep 'store:' "$LOG")" || ok "no step failed"
 check "2: dev_* tables dropped" "$(Q "select count(*) from sqlite_master where name like 'dev_%'")" 0
@@ -119,6 +120,7 @@ check "12: newest title wins, older fields kept, no local paths" \
   "Neuer Titel|Nur hier|https://img.example/4.jpg|"
 check "12: no item column left" "$(Q "select count(*) from pragma_table_info('progress') p where name='item'") $(Q "select count(*) from pragma_table_info('downloads') where name='item'") $(Q "select count(*) from pragma_table_info('watch_later') where name='item'") $(Q "select count(*) from pragma_table_info('follow_items') where name='item'")" "0 0 0 0"
 check "13: original titles (id -> the uploader's title)" "$(Q "select group_concat(name) from pragma_table_info('original_titles')")" "id,title"
+check "14: downloads.store, existing downloads are files" "$(Q "select count(*) || '/' || sum(store = 0) from downloads where id in ('example:6')")" "1/1"
 check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2522"
 
 echo "==> restart (no step runs twice)"
@@ -130,7 +132,7 @@ echo "==> fresh database (first launch)"
 export SOFA_DATA_DIR="$T/fresh"; DB="$SOFA_DATA_DIR/sofa.db"
 mkdir -p "$SOFA_DATA_DIR"; FIFO="$SOFA_DATA_DIR/dev.fifo" LOG="$SOFA_DATA_DIR/sofa.log"
 run
-check "schema version" "$(Q 'pragma user_version')" 13
+check "schema version" "$(Q 'pragma user_version')" 14
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
   "downloads follow_items follows items original_titles progress recent_searches settings stats subscriptions watch_later"

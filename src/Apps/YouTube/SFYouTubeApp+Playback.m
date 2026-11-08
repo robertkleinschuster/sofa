@@ -198,24 +198,17 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     SFMain(^{ [[SFYTEngine shared] availability:vid done:done]; });
 }
 
-+ (void)downloadSourceForItem:(SFItem *)item done:(SFDownloadURLDone)done {
+// A download is the media store filled with the playback format (up to 1080p60 VP9/AV1 + Opus,
+// original audio track) and its subtitles - played back as a stored session (SFYTEngine+Store.m).
++ (dispatch_block_t)fillItem:(SFItem *)item progress:(void (^)(double))progress done:(void (^)(NSDictionary *, NSError *))done {
     NSString *vid = item.externalID ?: SFRefID(item.identifier);
-    // SABR: the playback format (up to 1080p60 VP9/AV1 + Opus, original audio track) as two local
-    // streams, muxed by ffmpeg into MP4 without re-encoding (ffmpeg's -readrate 3 also paces what
-    // SABR pulls)
     SFYTEngine *engine = [SFYTEngine shared];
-    if (!engine.available) { SFCount(@"yt.download.no-engine"); done(nil, nil, nil, SFError(kNoEngineMsg)); return; }
-    [engine openForDownload:vid done:^(NSDictionary *r, NSError *e) {
-        if (!r) {
-            // a bot check defers the download without using up an attempt (backgroundPausedUntil);
-            // anything else is a failed attempt, retried later
-            SFCount([@"yt.download." stringByAppendingString:outcome(e)]);
-            done(nil, nil, nil, e); return;
-        }
-        SFCount(@"yt.download.sabr");
-        // the verifier needs the real length to catch a truncated file (cut-off local stream)
-        if ([r[@"duration"] doubleValue] > 0) item.duration = [r[@"duration"] doubleValue];
-        done([NSURL URLWithString:r[@"video"]], [NSURL URLWithString:r[@"audio"]], publishedInfo(r), nil);
+    if (![engine canOpen:vid]) { SFCount(@"yt.download.no-engine"); done(nil, SFError(kNoEngineMsg)); return ^{}; }
+    return [engine fill:vid progress:progress done:^(NSDictionary *r, NSError *e) {
+        // a bot check defers the download without using up an attempt (backgroundPausedUntil);
+        // anything else is a failed attempt, retried later
+        SFCount(r ? @"yt.download.filled" : [@"yt.download." stringByAppendingString:outcome(e)]);
+        done(r ? (publishedInfo(r) ?: @{}) : nil, e);
     }];
 }
 @end

@@ -1,5 +1,7 @@
-// SFDownloads - the worker: picks the next download (per-source gaps, pauses, storage), runs ffmpeg
-// into a part file, installs and verifies the result, fetches the thumbnail, records the outcome.
+// SFDownloads - the worker: picks the next download (per-source gaps, pauses, storage) and runs it -
+// as the media store filled by its app (fillItem:, docs/media-store.md), or as ffmpeg into a part
+// file that is verified and installed (sources not in the store yet) - fetches the thumbnail and
+// records the outcome.
 #import "SFDownloads+Private.h"
 #import "SFHostFetch.h"
 #import "SFDownloadBudget.h"
@@ -33,8 +35,6 @@
     }
     if (!next) { if (wake) [self pumpAt:wake]; else [self setStorageFull:NO]; return; }
     if ([self checkStorageFor:next]) return;   // not enough room for it: wait (re-checked every minute, user asked)
-    NSString *ff = [SFDownloads ffmpegToolPath];
-    if (!ff) { SFLog(@"downloads: ffmpeg missing"); return; }
     SFDownloadRecord *r = next;
     SFItem *item = [self itemFromRec:r];
     if (!item) {
@@ -43,30 +43,78 @@
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
     }
+    Class<SFApp> app = [SFAppRegistry appForItem:item];
+    BOOL fills = [app respondsToSelector:@selector(fillItem:progress:done:)];
+    NSString *ff = fills ? nil : [SFDownloads ffmpegToolPath];
+    if (!fills && !ff) { SFLog(@"downloads: ffmpeg missing"); return; }
     _runningID = r.identifier;
     [self noteStartOf:[self sourceOf:r] at:now subscription:r.sub != nil];
     _resumeID = nil;
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
     [self changed:_runningID];
+    if (fills) { [self runFill:app rec:r item:item]; return; }
     NSString *ident = _runningID;
-    Class<SFApp> app = [SFAppRegistry appForItem:item];
     BOOL custom = [app respondsToSelector:@selector(downloadSourceForItem:done:)];
     SFDownloadURLDone got = ^(NSURL *url, NSURL *audio, NSDictionary *info, NSError *e) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             if (!url) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Kein Stream"]; return; }
-            NSDate *published = [info[@"published"] isKindOfClass:[NSDate class]] ? info[@"published"] : nil;
-            if (published) {   // exact time from the source replaces a list's approximation ("vor 2 Wochen")
-                item.date = published;
-                r.published = [published timeIntervalSince1970];
-                [self setItem:item ofRec:r];
-                [self save:r];
-            }
+            [self notePublished:info rec:r item:item];
             [self runFFmpeg:ff url:url audio:audio rec:r item:item];
         });
     };
     if (custom) [app downloadSourceForItem:item done:got]; else [item resolveURL:^(NSURL *url, NSError *e) { got(url, nil, nil, e); }];
+}
+
+// exact time from the source replaces a list's approximation ("vor 2 Wochen")
+- (void)notePublished:(NSDictionary *)info rec:(SFDownloadRecord *)r item:(SFItem *)item {
+    NSDate *published = [info[@"published"] isKindOfClass:[NSDate class]] ? info[@"published"] : nil;
+    if (!published) return;
+    item.date = published;
+    r.published = [published timeIntervalSince1970];
+    [self setItem:item ofRec:r];
+    [self save:r];
+}
+
+// A media store download: the app fills the item's tracks; the record keeps no file, its size is the
+// store's. Pinned while pending and once done (storePinned), so eviction never takes it.
+- (void)runFill:(Class<SFApp>)app rec:(SFDownloadRecord *)r item:(SFItem *)item {
+    NSString *ident = r.identifier;
+    if (!r.inStore) { r.inStore = YES; [self save:r]; }   // its kind from the start (pinned, not retired)
+    __block NSDate *lastUI = [NSDate distantPast];
+    _fillCancel = [app fillItem:item progress:^(double p) {
+        SFMain(^{
+            if (![ident isEqualToString:self->_runningID]) return;
+            r.progress = p;
+            if (-[lastUI timeIntervalSinceNow] > 2) { lastUI = [NSDate date]; [self changed:ident]; }
+        });
+    } done:^(NSDictionary *info, NSError *e) {
+        SFMain(^{
+            if (![ident isEqualToString:self->_runningID]) return;
+            self->_fillCancel = nil;
+            if (!info) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Fehler"]; return; }
+            [self notePublished:info rec:r item:item];
+            if (r.path) [[NSFileManager defaultManager] removeItemAtPath:r.path error:nil];   // (a file of the source's earlier kind)
+            r.path = nil; r.inStore = YES;
+            r.bytes = (unsigned long long)[self.mediaStore bytesOfItem:ident];
+            [self fetchThumb:item rec:r];
+            [self finish:ident ok:YES error:nil];
+        });
+    }];
+    [self watchDiskDuringRun:YES];
+    SFLog(@"downloads: loading %@ (media store)", item.title);
+}
+
+// Ends the running download without a verdict of its own (exit, removal, disk): the ffmpeg is
+// terminated (its handler sees it was let go), a fill cancelled. NO when nothing ran.
+- (BOOL)abortRun {
+    NSTask *t = _task;
+    dispatch_block_t cancel = _fillCancel;
+    _task = nil; _fillCancel = nil; _runningID = nil;
+    if (cancel) cancel();
+    if (t.isRunning) [t terminate];
+    return t != nil || cancel != nil;
 }
 
 - (void)runFFmpeg:(NSString *)ff url:(NSURL *)url audio:(NSURL *)audio rec:(SFDownloadRecord *)r item:(SFItem *)item {
@@ -163,7 +211,7 @@
     if (old.length && ![old isEqualToString:target]) [fm removeItemAtPath:old error:nil];
     [fm removeItemAtPath:target error:nil];
     [fm moveItemAtPath:part toPath:target error:nil];
-    r.path = target;
+    r.path = target; r.inStore = NO;
     r.bytes = [[fm attributesOfItemAtPath:target error:nil] fileSize];
     [self fetchThumb:item rec:r];
     [self finish:r.identifier ok:YES error:nil];
@@ -171,8 +219,10 @@
 
 - (void)fetchThumb:(SFItem *)item rec:(SFDownloadRecord *)r {
     NSString *img = item.image;
-    if (![img hasPrefix:@"http"] || !r.path) return;
-    NSString *thumb = [[r.path stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
+    if (![img hasPrefix:@"http"]) return;
+    // next to the file, or where the file of a media store download would be
+    NSString *thumb = [[(r.path ?: [self targetPathFor:r item:item]) stringByDeletingPathExtension] stringByAppendingString:@".jpg"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:[thumb stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *ident = r.identifier;
     void (^got)(NSData *, NSInteger) = ^(NSData *d, NSInteger st) {
         if (d.length && st < 400 && [d writeToFile:thumb atomically:YES]) SFMain(^{
@@ -274,7 +324,7 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
 
 - (void)finish:(NSString *)ident ok:(BOOL)ok error:(NSString *)error {
     SFDownloadRecord *r = _recs[ident];
-    _task = nil; _runningID = nil; _runningPart = nil;
+    _task = nil; _fillCancel = nil; _runningID = nil; _runningPart = nil;
     [self watchDiskDuringRun:NO];
     // a run that failed on a (nearly) full disk - ENOSPC, or stopped by the disk watch - is not the
     // download's fault: the live free space decides, not the cached flag (review 2026-11-05)
@@ -290,7 +340,7 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
     }
-    if (r && !ok && [self fileExists:r]) {
+    if (r && !ok && !r.inStore && [self hasContent:r]) {
         // a repair download failed: keep the existing file instead of losing it, and remember the
         // repair (retryAt, persisted) so retryDueRepairs tries again with backoff - YouTube's bot
         // check often blocks for hours, a single attempt would leave the file broken
@@ -306,9 +356,9 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
         r.progress = ok ? 1 : 0;
         if (ok) {
             r.state = SFDLDone; r.error = nil; r.retryAt = 0; r.tries = 0;
-            // the file is the copy now: the bytes it was read from (the media store's, for loopback
-            // sources) would only take the space twice
-            [self.mediaStore removeItem:ident];
+            // a file download is the copy now: bytes it was read from through the store would take
+            // the space twice (a store download keeps them - they are the download)
+            if (!r.inStore) [self.mediaStore removeItem:ident];
         }
         else {
             // the next attempt's time is kept for every failure under the limit (a subscription may find

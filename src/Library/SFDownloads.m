@@ -32,8 +32,8 @@ static NSString *ffmpegPath(void) {
     dispatch_once(&o, ^{
         m = [[SFMediaStore alloc] initWithDirectory:[[SFDownloads root] stringByAppendingPathComponent:@".store"]];
         m.reserve = (long long)self.storageReserve;
-        // what a pending download is going to read stays (a finished one has its own file: its store
-        // copy goes when it is installed - SFDownloads+Worker finish:)
+        // a media store download, and what a pending download is going to read, stay (a file download
+        // drops its store copy when the file is installed - SFDownloads+Worker finish:)
         __weak SFDownloads *ws = self;
         m.isPinned = ^BOOL(NSString *item) { return [ws.storePinned containsObject:item]; };
     });
@@ -72,8 +72,10 @@ static NSString *ffmpegPath(void) {
 
 #pragma mark Persistence
 
-// a download that is still going to read the item's bytes (through the loopback path that buffers them)
-static BOOL PinsStore(SFDownloadRecord *r) { return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying; }
+// pending (its bytes are on their way), or a media store download (its bytes are the download)
+static BOOL PinsStore(SFDownloadRecord *r) {
+    return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying || (r.state == SFDLDone && r.inStore);
+}
 
 - (void)notePinned:(BOOL)pinned item:(NSString *)item {
     NSSet *now = self.storePinned;
@@ -157,19 +159,22 @@ static BOOL PinsStore(SFDownloadRecord *r) { return r.state == SFDLQueued || r.s
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
     if (!r) return SFDLNone;
     if (progress) *progress = r.progress;
-    if (r.state == SFDLDone && ![self fileExists:r]) return SFDLNone;
+    if (r.state == SFDLDone && ![self hasContent:r]) return SFDLNone;
     return r.state;
 }
 
 - (SFDownloadRecord *)recOf:(NSString *)identifier { return identifier ? _recs[identifier] : nil; }
 
-- (BOOL)fileExists:(SFDownloadRecord *)r {
+// A finished download's content: its file, or (no file) its tracks in the media store - checked once
+// per launch (verifyStoreDownloads), not per call: tiles ask this for every item they show.
+- (BOOL)hasContent:(SFDownloadRecord *)r {
+    if (r.inStore) return r.state == SFDLDone;
     return r.path && [[NSFileManager defaultManager] fileExistsAtPath:r.path];
 }
 
 - (NSString *)fileFor:(NSString *)identifier {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
-    return r.state == SFDLDone && [self fileExists:r] ? r.path : nil;
+    return r.state == SFDLDone && !r.inStore && [self hasContent:r] ? r.path : nil;
 }
 
 - (SFItem *)itemFromRec:(SFDownloadRecord *)r {
@@ -200,7 +205,7 @@ static BOOL PinsStore(SFDownloadRecord *r) { return r.state == SFDLQueued || r.s
 
 - (SFItem *)itemFor:(NSString *)identifier {
     SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
-    return r.state == SFDLDone && [self fileExists:r] ? [self itemFromRec:r] : nil;
+    return r.state == SFDLDone && [self hasContent:r] ? [self itemFromRec:r] : nil;
 }
 
 - (NSArray *)recsWithState:(SFDLState)st source:(NSString *)source {
@@ -217,7 +222,7 @@ static BOOL PinsStore(SFDownloadRecord *r) { return r.state == SFDLQueued || r.s
 - (NSArray *)items:(NSString *)source {
     NSMutableArray *out = [NSMutableArray new];
     for (SFDownloadRecord *r in [self recsWithState:SFDLDone source:source]) {
-        if (![self fileExists:r]) continue;
+        if (![self hasContent:r]) continue;
         SFItem *i = [self itemFromRec:r];
         if (i) [out addObject:i];
     }
@@ -313,16 +318,15 @@ static NSString *gb(unsigned long long b) {
     SFDownloadRecord *r = _recs[identifier];
     if (!r) return;
     if ([identifier isEqualToString:_runningID]) {   // running: free the slot right away, drop the callbacks
-        NSTask *t = _task;
-        _task = nil; _runningID = nil;
-        [t terminate];
+        [self abortRun];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
     }
     if (r.path) [[NSFileManager defaultManager] removeItemAtPath:r.path error:nil];
+    if (r.inStore) [self.mediaStore removeItem:identifier];   // a media store download: its bytes are the download
     if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
-    [self pruneEmptyDirs:[r.path stringByDeletingLastPathComponent]];
+    [self pruneEmptyDirs:[(r.path ?: r.thumb) stringByDeletingLastPathComponent]];
     if (r.sub) {   // subscription episode: remember it so it does not come back
-        r.state = SFDLDismissed; r.bytes = 0; r.path = nil;
+        r.state = SFDLDismissed; r.bytes = 0; r.path = nil; r.inStore = NO;
         [self save:r];
     } else {
         [_recs removeObjectForKey:identifier];
@@ -354,14 +358,15 @@ static NSString *gb(unsigned long long b) {
 
 - (void)stopForExit {
     NSTask *t = _task;
-    if (!t.isRunning) return;
-    SFLog(@"downloads: stopping ffmpeg before exit (%@ resumes on the next start)", _runningID);
+    NSString *ident = _runningID;
+    if (!t.isRunning && !_fillCancel) return;
+    SFLog(@"downloads: stopping the download before exit (%@ resumes on the next start)", ident);
     // not a failure: let go of it first, so its termination handler only removes the part file
     // (it stays Running in the database; the next start queues it again). Before 2026-11-06 a
-    // handler that still ran (update restart) counted it as a failed attempt.
-    _task = nil; _runningID = nil;
+    // handler that still ran (update restart) counted it as a failed attempt. A fill keeps what it
+    // stored: the next start fetches only the rest.
     pid_t pid = t.processIdentifier;
-    [t terminate];
+    [self abortRun];
     for (int i = 0; i < 20 && t.isRunning; i++) usleep(50 * 1000);
     if (t.isRunning) kill(pid, SIGKILL);
 }
@@ -381,6 +386,8 @@ static NSString *gb(unsigned long long b) {
 
 - (void)startWorking {
     [self sweepStaleParts];
+    [self retireFilesOfFillingSources];
+    [self verifyStoreDownloads];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self retryDueRepairs];
         [self auditExistingDownloads];
