@@ -33,6 +33,15 @@ static SFBluetoothDevice *Wrap(IOBluetoothDevice *d) {
 
 static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's delegates and targets are not retained)
 
+// A connection Sofa opens: authenticated (an encrypted link, as the system's own Bluetooth menu and
+// the headset itself open it). openConnection: alone connects WITHOUT authentication (its header
+// says so) - the AirPods Max then let the Mac's audio stream time out (StartIO timeout, no sound,
+// video held) while every link they opened themselves played (2026-11-08). Page timeout ~10 s
+// (units of 0.625 ms).
+static IOReturn OpenAuthenticated(IOBluetoothDevice *d, id target) {
+    return [d openConnection:target withPageTimeout:16000 authenticationRequired:YES];
+}
+
 @implementation SFBTOperation
 // An operation ends after `limit` seconds at the latest: a device that never answers (switched off
 // mid-way, out of reach) must not leave the caller waiting for good
@@ -75,7 +84,7 @@ static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's dele
 }
 - (void)sdpQueryComplete:(IOBluetoothDevice *)device status:(IOReturn)status {
     if (device.isConnected) { [self end:YES]; return; }
-    if ([device openConnection:self] != kIOReturnSuccess) [self end:NO];
+    if (OpenAuthenticated(device, self) != kIOReturnSuccess) [self end:NO];
 }
 @end
 
@@ -106,7 +115,7 @@ static NSMutableSet *gRunning;   // the operations in flight (IOBluetooth's dele
     IOBluetoothDevice *d = [IOBluetoothDevice deviceWithAddressString:address];
     if (d.isConnected) { done(YES); return; }
     SFBTOperation *op = [SFBTOperation operation:done limit:20];   // paging alone may take ~10 s
-    if (!d || [d openConnection:op] != kIOReturnSuccess) [op end:NO];
+    if (!d || OpenAuthenticated(d, op) != kIOReturnSuccess) [op end:NO];
 }
 
 - (void)disconnect:(NSString *)address { [[IOBluetoothDevice deviceWithAddressString:address] closeConnection]; }
@@ -178,6 +187,18 @@ static NSString *Label(SFBluetoothDevice *d) { return d.name.length ? d.name : d
         SFLog(@"bluetooth: connect %@ -> %@", Label(device), ok ? @"ok" : @"failed");
         if (done) done(ok);
     }];
+}
+
++ (void)reconnect:(NSString *)address done:(void (^)(BOOL))done {
+    SFBluetoothDevice *d = nil;
+    for (SFBluetoothDevice *p in [Radio() pairedAudioDevices]) if ([p.address caseInsensitiveCompare:address] == NSOrderedSame) d = p;
+    if (!d) { if (done) done(NO); return; }
+    SFLog(@"bluetooth: reconnect %@", d.name ?: address);
+    [Radio() disconnect:d.address];
+    // the link down first (the device lets go of it), then anew
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self connect:[SFBluetoothDevice deviceWithAddress:d.address name:d.name paired:YES connected:NO] done:done];
+    });
 }
 
 + (void)disconnect:(SFBluetoothDevice *)device {

@@ -35,12 +35,7 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
     [SFAudioOutput outputs:^(NSArray *outputs) {
         NSMutableArray *opts = [NSMutableArray new];
         for (SFAudioOutput *o in outputs) {
-            SFMenuOption *opt = [SFMenuOption option:o.name action:^{
-                if (o.current) return;
-                [SFAudioOutput choose:o done:^(BOOL ok) {
-                    [nav toast:ok ? [NSString stringWithFormat:@"Ton über %@", o.name] : @"Dieser Ausgang lässt sich gerade nicht wählen"];
-                }];
-            }];
+            SFMenuOption *opt = [SFMenuOption option:o.name action:^{ [self useOutput:o takeOver:YES on:nav]; }];
             opt.detail = o.current ? @"Aktiv" : (o.bluetooth ? @"Bluetooth" : nil);
             [opts addObject:opt];
         }
@@ -126,17 +121,38 @@ static __weak SFMenuScreen *gOpen;   // the quick menu on screen (MENU held agai
         if (!ok) { [nav toast:[NSString stringWithFormat:pair ? @"Koppeln mit %@ hat nicht geklappt" : @"%@ ist nicht erreichbar – eingeschaltet?", name]]; return; }
         [SFAudioOutput waitForOutput:d.address timeout:10 done:^(SFAudioOutput *o) {
             if (!o) { SFLog(@"bluetooth: %@ connected, no sound output", name); [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", name]]; return; }
-            // macOS usually moves the sound to a connecting headset by itself: one more switch would
-            // only add a change while the device comes up (each one reloads the player's output)
-            if (o.current) { [nav toast:[NSString stringWithFormat:@"Ton über %@", o.name]]; return; }   // (checked by itself)
-            [SFAudioOutput verify:o done:^(BOOL plays) {
-                if (!plays) { [nav toast:[NSString stringWithFormat:@"%@ ist verbunden, spielt aber keinen Ton – ist es noch mit einem anderen Gerät verbunden?", name]]; return; }
-                [SFAudioOutput choose:o done:^(BOOL chosen) {
-                    [nav toast:chosen ? [NSString stringWithFormat:@"Ton über %@", o.name] : [NSString stringWithFormat:@"%@ verbunden", name]];
-                }];
-            }];
+            [self useOutput:o takeOver:YES on:nav];
         }];
     };
     if (pair) [SFBluetooth pair:d done:connected]; else [SFBluetooth connect:d done:connected];
+}
+
+// The sound to this output. A Bluetooth one is checked first: connected but taking no audio (its
+// headphones still play for another device) it is taken over once - the link anew, authenticated -
+// and checked again; only then the hint. The speakers need no check.
++ (void)useOutput:(SFAudioOutput *)o takeOver:(BOOL)takeOver on:(SFNavigator *)nav {
+    void (^moveThere)(void) = ^{
+        if (o.current) { [nav toast:[NSString stringWithFormat:@"Ton über %@", o.name]]; return; }
+        [SFAudioOutput choose:o done:^(BOOL ok) {
+            [nav toast:ok ? [NSString stringWithFormat:@"Ton über %@", o.name] : @"Dieser Ausgang lässt sich gerade nicht wählen"];
+        }];
+    };
+    if (!o.bluetooth) { moveThere(); return; }
+    [SFAudioOutput verify:o done:^(BOOL plays) {
+        if (plays) { moveThere(); return; }
+        NSString *address = [o.uid componentsSeparatedByString:@":"].firstObject;   // "<address>:output"
+        if (!takeOver || !address.length) {
+            [nav toast:[NSString stringWithFormat:@"%@ spielt keinen Ton – sind sie noch mit einem anderen Gerät verbunden? Dort trennen, dann hier wählen.", o.name]];
+            return;
+        }
+        [nav toast:[NSString stringWithFormat:@"Hole %@ zum Mac …", o.name]];
+        [SFBluetooth reconnect:address done:^(BOOL ok) {
+            if (!ok) { [nav toast:[NSString stringWithFormat:@"%@ ist nicht erreichbar – eingeschaltet?", o.name]]; return; }
+            [SFAudioOutput waitForOutput:address timeout:10 done:^(SFAudioOutput *again) {
+                if (!again) { [nav toast:[NSString stringWithFormat:@"%@ verbunden, aber ohne Tonausgang", o.name]]; return; }
+                [self useOutput:again takeOver:NO on:nav];
+            }];
+        }];
+    }];
 }
 @end

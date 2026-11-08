@@ -31,6 +31,9 @@ NSString *SFBluetoothName(NSString *name);   // a device name, repaired when IOB
 + (NSArray *)pairedAudioDevices;                                       // SFBluetoothDevice, most recently used first
 + (void)connect:(SFBluetoothDevice *)device done:(void (^)(BOOL ok))done;
 + (void)disconnect:(SFBluetoothDevice *)device;
+// The paired device with this address, its link anew (down, then up authenticated): brings
+// headphones over to the Mac whose audio link takes nothing (still held by another device)
++ (void)reconnect:(NSString *)address done:(void (^)(BOOL ok))done;
 + (void)pair:(SFBluetoothDevice *)device done:(void (^)(BOOL ok))done;  // pairs and connects
 // Audio devices in reach (~10 s): `found` per new or renamed device (the paired ones too), then `done`
 + (void)search:(void (^)(SFBluetoothDevice *device))found done:(void (^)(void))done;
