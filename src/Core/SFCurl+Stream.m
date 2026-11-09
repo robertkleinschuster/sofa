@@ -50,8 +50,8 @@ static size_t streamWrite(char *p, size_t sz, size_t n, void *ud) {
 }
 
 static int streamProgress(void *ud, curl_off_t total, curl_off_t now, curl_off_t upTotal, curl_off_t upNow) {
-    SFCurlStreamState *st=(__bridge SFCurlStreamState *)ud;
-    if(st.continuing && !st.continuing()) {st.stopped=YES;return 1;}
+    SFCurlStreamState *st = (__bridge SFCurlStreamState *)ud;
+    if (st.continuing && !st.continuing()) { st.stopped = YES; return 1; }
     return 0;
 }
 
@@ -62,7 +62,7 @@ BOOL SFCurlStreamWhile(NSString *url, long long start, long long end, long long 
     CURL *c = SFCurlNew();
     if (!c) return NO;
     SFCurlStreamState *st = [SFCurlStreamState new];
-    st.head = head; st.chunk = chunk; st.continuing=continuing; st.start = start; st.total = -1; st.length = -1; st.curl = c;
+    st.head = head; st.chunk = chunk; st.continuing = continuing; st.start = start; st.total = -1; st.length = -1; st.curl = c;
     NSString *range = end > start ? [NSString stringWithFormat:@"%lld-%lld", start, end - 1] : [NSString stringWithFormat:@"%lld-", start];
     curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
     curl_easy_setopt(c, CURLOPT_RANGE, range.UTF8String);
@@ -78,10 +78,10 @@ BOOL SFCurlStreamWhile(NSString *url, long long start, long long end, long long 
     curl_easy_setopt(c, CURLOPT_HEADERDATA, (__bridge void *)st);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, streamWrite);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, (__bridge void *)st);
-    if(continuing) {
-        curl_easy_setopt(c,CURLOPT_NOPROGRESS,0L);
-        curl_easy_setopt(c,CURLOPT_XFERINFOFUNCTION,streamProgress);
-        curl_easy_setopt(c,CURLOPT_XFERINFODATA,(__bridge void *)st);
+    if (continuing) {
+        curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, streamProgress);
+        curl_easy_setopt(c, CURLOPT_XFERINFODATA, (__bridge void *)st);
     }
     CURLcode rc = curl_easy_perform(c);
     if (rc == CURLE_OK && !st.headDone) {   // an empty body: the head still answers

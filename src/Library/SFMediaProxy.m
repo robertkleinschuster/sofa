@@ -59,14 +59,16 @@ NSString *SFProxyHash(NSString *s) {
 - (SFProxySession *)sessionWithID:(NSString *)sid { return sid ? _sessions[sid] : nil; }
 
 - (void)releaseURL:(NSURL *)url {
-    NSArray *p=url.pathComponents;
+    NSArray *p = url.pathComponents;
     if (![url.host isEqualToString:@"127.0.0.1"] || url.port.unsignedShortValue!=self.port || p.count<3 ||
         (! [p[1] isEqualToString:@"f"] && ![p[1] isEqualToString:@"h"])) return;
-    NSString *sid=p[2];
-    dispatch_sync(_q,^{ [self->_sessions removeObjectForKey:sid]; });
+    NSString *sid = p[2];
+    dispatch_sync(_q, ^{ [self->_sessions removeObjectForKey:sid]; });
 }
 - (NSUInteger)sessionCountForTesting {
-    __block NSUInteger count=0; dispatch_sync(_q,^{count=self->_sessions.count;});return count;
+    __block NSUInteger count = 0;
+    dispatch_sync(_q, ^{ count = self->_sessions.count; });
+    return count;
 }
 
 - (void)storedRangesFor:(NSURL *)url done:(void (^)(NSArray *))done {
@@ -251,13 +253,15 @@ NSString *SFProxyHash(NSString *s) {
     };
     NSError *e = nil;
     BOOL ok = SFCurlStreamWhile(s.url, from, to, rate, ^BOOL {
-        BOOL alive=[SFHTTPBudget takeSource:0 token:budget]; if(!alive)stop=YES; return alive;
+        BOOL alive = [SFHTTPBudget takeSource:0 token:budget];
+        if (!alive) stop = YES;
+        return alive;
     }, ^BOOL(NSInteger status, long long total, NSString *mime) {
         if (status >= 400 || (s.total && total > 0 && total != s.total)) { stop = YES; return NO; }   // gone, or another file now
         if (from > 0 && status != 206) { stop = YES; SFLog(@"media-proxy: %@ - the source ignores ranges", s.item); return NO; }   // (its bytes would land at the wrong place)
         return YES;
     }, ^BOOL(NSData *bytes) {
-        if (![SFHTTPBudget takeSource:bytes.length token:budget]) { stop=YES; return NO; }
+        if (![SFHTTPBudget takeSource:bytes.length token:budget]) { stop = YES; return NO; }
         [buf appendData:bytes];
         if (buf.length >= kFlush && !flush()) { stop = YES; return NO; }
         return YES;

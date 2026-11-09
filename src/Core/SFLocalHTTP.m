@@ -319,7 +319,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
         [x watch];
         SFHTTPHandler h = self->_handler;
         dispatch_async(self->_queue, ^{
-            NSString *budget=[r header:@"x-sofa-read-budget"];
+            NSString *budget = [r header:@"x-sofa-read-budget"];
             if (budget && ![SFHTTPBudget remaining:budget]) { [x respond:503 type:nil body:nil]; return; }
             h(x);
         });

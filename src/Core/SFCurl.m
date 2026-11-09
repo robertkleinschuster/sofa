@@ -66,15 +66,15 @@ void *SFCurlNew(void) {
 
 typedef struct { __unsafe_unretained NSMutableData *data; __unsafe_unretained BOOL (^accept)(NSUInteger); } SFFetchSink;
 static size_t appendData(char *p, size_t sz, size_t n, void *ud) {
-    SFFetchSink *sink=ud;
-    NSUInteger bytes=sz*n;
+    SFFetchSink *sink = ud;
+    NSUInteger bytes = sz * n;
     if (sink->accept && !sink->accept(bytes)) return 0;
     [sink->data appendBytes:p length:bytes];
     return bytes;
 }
 
 static int fetchProgress(void *ud, curl_off_t total, curl_off_t now, curl_off_t upTotal, curl_off_t upNow) {
-    SFFetchSink *sink=ud;
+    SFFetchSink *sink = ud;
     return sink->accept && !sink->accept(0) ? 1 : 0; // cancellation even while no data arrives
 }
 
@@ -84,7 +84,7 @@ static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers,
     CURL *c = SFCurlNew();
     if (!c) return nil;
     NSMutableData *out = [NSMutableData new];
-    SFFetchSink sink={out,accept};
+    SFFetchSink sink = {out, accept};
     struct curl_slist *hl = NULL;
     for (NSString *k in headers) hl = curl_slist_append(hl, [NSString stringWithFormat:@"%@: %@", k, headers[k]].UTF8String);
     curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
@@ -133,7 +133,7 @@ NSData *SFCurlFetchFinal(NSString *url, NSInteger *status, NSString **effective,
 }
 
 NSData *SFCurlFetchLimitedFinal(NSString *url, NSInteger *status, NSString **effective, NSError **error, BOOL (^accept)(NSUInteger)) {
-    if (SFSimulatedOffline()) { if(error) *error=SFError(@"Keine Internetverbindung."); return nil; }
+    if (SFSimulatedOffline()) { if (error) *error = SFError(@"Keine Internetverbindung."); return nil; }
     return fetchFull(url,@"GET",nil,nil,status,effective,error,accept);
 }
 

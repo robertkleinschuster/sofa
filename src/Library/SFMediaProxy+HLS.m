@@ -316,7 +316,9 @@ static NSString *OneVariant(NSString *master, NSString *base) {
         };
         NSError *e = nil;
         BOOL ok = SFCurlStreamWhile(url, 0, -1, 0, ^BOOL {
-            BOOL alive=[SFHTTPBudget takeSource:0 token:[x.request header:@"x-sofa-read-budget"]];if(!alive)left=YES;return alive;
+            BOOL alive = [SFHTTPBudget takeSource:0 token:[x.request header:@"x-sofa-read-budget"]];
+            if (!alive) left = YES;
+            return alive;
         }, ^BOOL(NSInteger status, long long t, NSString *mime) {
             if (status >= 400) return NO;
             total = t;
