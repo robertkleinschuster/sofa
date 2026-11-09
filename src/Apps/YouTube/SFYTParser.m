@@ -150,6 +150,7 @@ static NSString *tvAvatar(NSString *avatar) {
         if (upcoming) return nil;   // not playable yet
         if (channel && meta) meta = [NSString stringWithFormat:@"%@ · %@", channel, meta];
         SFItem *vi = [self videoItem:cid title:title channel:channel channelID:chID meta:meta ?: channel thumb:thumb duration:dur live:live];
+        vi.channelImage = SFYTLastURL(SFYTPath(md, @"image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources"));
         for (NSString *part in [labels arrayByAddingObjectsFromArray:rowTexts.lastObject ?: @[]]) if ((vi.date = relativeDate(part))) break;
         for (NSString *part in rowTexts.lastObject) { long long n = SFYTViewCount(part); if (n >= 0) { vi.viewCount = n; break; } }
         return vi;
@@ -194,6 +195,7 @@ static NSString *tvAvatar(NSString *avatar) {
     SFItem *vi = [self videoItem:vid title:title channel:channel channelID:chID meta:[meta componentsJoinedByString:@" · "]
                            thumb:SFYTLastURL(SFYTPath(v, @"thumbnail.thumbnails")) duration:dur live:live];
     vi.date = relativeDate(when);
+    vi.channelImage = SFYTLastURL(SFYTPath(v, @"channelThumbnailSupportedRenderers.channelThumbnailWithLinkRenderer.thumbnail.thumbnails"));
     if (!live && SFYTViewCount(views) >= 0) vi.viewCount = SFYTViewCount(views);
     return vi;
 }

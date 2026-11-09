@@ -10,8 +10,9 @@
 static NSString *SFRowKey(SFRow *r) {
     NSMutableString *k = [NSMutableString stringWithFormat:@"%@|%d|%d|%lu", r.title ?: @"", (int)r.style, r.rail, (unsigned long)r.firstIndex];
     for (SFItem *i in r.items)
-        [k appendFormat:@"|%@~%@~%@~%@~%@~%d~%.0f", i.identifier ?: @"", i.title ?: @"", i.subtitle ?: @"", i.badge ?: @"",
-                        i.image ?: @"", i.tint != nil, i.duration];
+        [k appendFormat:@"|%@~%@~%@~%@~%@~%d~%.0f~%@~%@~%d", i.identifier ?: @"", i.title ?: @"", i.subtitle ?: @"", i.badge ?: @"",
+                        i.image ?: @"", i.tint != nil, i.duration,
+                        i.channelImage ?: @"", i.station ?: @"", i.showsSourceMark];   // what decides the avatar
     return k;
 }
 

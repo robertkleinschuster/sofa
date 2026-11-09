@@ -44,6 +44,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *image;           // path or URL
 @property (nonatomic, copy) NSString *backdrop;        // large background image
 @property (nonatomic, copy) NSString *channel;         // show / channel
+@property (nonatomic, copy) NSString *channelImage;    // the channel's avatar (URL or file), where the source names one; nil = none
 @property (nonatomic, copy) NSString *source;          // theme ID of the origin
 @property (nonatomic, copy) NSString *badge;           // "LIVE", "NEU", "UT", ...
 @property (nonatomic) BOOL drm;                        // copy-protected: not playable on 10.9 (no "Abspielen", selecting → notice)
@@ -68,7 +69,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *showRef;         // show/channel of the episode ("ytchannel:UC…", "zdfshow:…") → "Zur Sendung"
 @property (nonatomic) BOOL imageFit;                   // fit the image instead of filling (logos)
 @property (nonatomic, copy) NSString *logo;            // res/logos/<name>.png (app tiles)
-@property (nonatomic) BOOL showsSourceMark;            // tile shows the logo of its app (rows mixed from several apps); not copied - belongs to that row only
+@property (nonatomic) BOOL showsSourceMark;            // rows mixed from several apps: without a channel/station avatar the tile's avatar is its app's symbol; not copied - belongs to that row only
 @property (nonatomic) NSInteger logoVariant;           // SFLogoVariant
 @property (nonatomic) long long viewCount;             // views at the source (raw count, e.g. YouTube RSS media:statistics); 0 = unknown
 @property (nonatomic, copy) NSString *station;         // live: the TV channel itself ("3sat", "phoenix"), from the source's ids - the same channel offered by two apps

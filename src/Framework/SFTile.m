@@ -33,6 +33,8 @@ static id<SFTileStatusSource> gStatus;
     CALayer *_badgeBg;
     SFLabel *_badge;
     SFLabel *_title, *_subtitle;
+    SFImageLayer *_avatar;   // round avatar before the subtitle: the channel's picture or a mark
+    NSString *_avatarSource; // the channel's picture, loaded with the tile's own
     CAGradientLayer *_scrim;
     BOOL _imageRequested;
 }
@@ -148,26 +150,6 @@ static id<SFTileStatusSource> gStatus;
             [holder addSublayer:_badgeBg];
         }
 
-        // source mark top right: rows mixed from several apps say where an item comes from. The
-        // logo file is named like the item's source (res/logos/<source>.png); white pill because
-        // the original logos are made for white ground.
-        CGImageRef mark = item.showsSourceMark && item.source.length ? SFLogoImage(item.source, SFLogoOriginal) : NULL;
-        if (mark) {
-            CGFloat lh = U(22), lw = MIN(U(96), lh * CGImageGetWidth(mark) / MAX((size_t)1, CGImageGetHeight(mark)));
-            CALayer *pill = [CALayer layer];
-            pill.backgroundColor = [NSColor colorWithDeviceWhite:1 alpha:0.94].CGColor;
-            pill.cornerRadius = U(6);
-            pill.frame = CGRectMake(w - lw - U(16) - U(12), U(12), lw + U(16), lh + U(10));
-            pill.shadowOpacity = 0.35; pill.shadowRadius = U(4); pill.shadowOffset = CGSizeMake(0, -U(1));
-            SFShadowPathFromBounds(pill);
-            CALayer *lg = [CALayer layer];
-            lg.contents = (__bridge id)mark;
-            lg.contentsGravity = kCAGravityResizeAspect;
-            lg.frame = CGRectMake(U(8), U(5), lw, lh);
-            [pill addSublayer:lg];
-            [holder addSublayer:pill];
-        }
-
         // duration bottom right
         if (item.duration > 0 && (st == SFTileStyleLandscape)) {
             _duration = [SFLabel labelWithFont:[theme medium:19] color:[NSColor whiteColor]];
@@ -235,9 +217,28 @@ static id<SFTileStatusSource> gStatus;
             if (sub.length && !center) {
                 _subtitle = [SFLabel labelWithFont:[theme regular:21] color:theme.textDim];
                 _subtitle.text = sub;
-                [_subtitle sizeToFitWidth:w];
-                _subtitle.position = CGPointMake(0, ih + U(18) + tth);
+                // one round avatar before the line, never the same logo twice (user 2026-11-09): the
+                // channel's own picture where the line starts with its name; else the mark of the
+                // station that broadcast a video (not of a live channel: its picture often is that
+                // logo); else, in a row mixed from several apps, the app's symbol - where it comes from
+                NSString *picture = item.kind == SFItemVideo && item.channelImage.length && item.channel.length && [sub hasPrefix:item.channel] ? item.channelImage : nil;
+                CGImageRef mark = !picture && item.kind == SFItemVideo ? SFLogoMark(item.station) : NULL;
+                if (!picture && !mark && item.showsSourceMark) mark = SFLogoMark(item.source);
+                BOOL avatar = picture || mark;
+                CGFloat d = U(34), x = avatar ? d + U(10) : 0, y = ih + U(18) + tth;
+                CGFloat sh = [_subtitle sizeToFitWidth:w - x];
+                _subtitle.position = CGPointMake(x, y);
                 [self addSublayer:_subtitle];
+                if (avatar) {
+                    _avatar = [SFImageLayer layer];
+                    _avatar.frame = CGRectMake(0, y + sh / 2 - d / 2 + U(2), d, d);   // centred on the line (its glyphs sit low in it)
+                    _avatar.cornerRadius = d / 2;
+                    _avatar.masksToBounds = YES;
+                    _avatar.placeholderColor = theme.surface;
+                    if (mark) { _avatar.contents = (__bridge id)mark; _avatar.contentsGravity = kCAGravityResizeAspectFill; }
+                    else _avatarSource = picture;   // loaded with the tile's picture (loadImage)
+                    [self addSublayer:_avatar];
+                }
             }
         }
         [self refreshProgress];
@@ -254,6 +255,7 @@ static id<SFTileStatusSource> gStatus;
     if (_imageRequested) return;
     _imageRequested = YES;
     _image.source = self.item.image;
+    if (_avatarSource) _avatar.source = _avatarSource;
 }
 
 - (void)refreshDownload {

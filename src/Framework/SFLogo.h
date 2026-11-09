@@ -8,4 +8,7 @@ typedef NS_ENUM(NSInteger, SFLogoVariant) {
 };
 
 CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant);   // cached, do not release; any thread
+// The square mark of a brand (res/logos/marks/<name>.png: an app's symbol, a station's logo) for a
+// round avatar; NULL when there is none. Cached, do not release; any thread.
+CGImageRef SFLogoMark(NSString *name);
 void SFLogoPrepare(void);   // renders all of them in the background (at launch)

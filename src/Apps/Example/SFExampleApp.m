@@ -30,6 +30,7 @@ static SFItem *video(NSArray *entry) {
     i.title = entry[1];
     i.channel = @"Beispielsendung";
     i.showRef = @"exampleshow:demo";        // "Zur Sendung" + follow
+    i.channelImage = @"https://example.invalid/channel.jpg";   // the show's avatar, where a source names one
     i.duration = 60;
     i.viewCount = 1000 * [entry[0] integerValue];   // views at the source, where it has them
     i.source = [SFExampleApp appIdentifier];

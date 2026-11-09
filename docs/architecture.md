@@ -116,8 +116,10 @@ shown: first what can't play here is left out, then round-robin in registry orde
 app gets a place at the front; max 6 per app in Highlights). Live channels may carry their
 programme (`SFItem.schedule` of `SFBroadcast`, from the source's EPG: ARD programm-api, ORF
 /livestreams): tiles show what runs now ("Brisant · bis 18:00") with its progress, the hero
-its time, "Danach: …" and description. Tiles in mixed rows carry the app
-logo (`SFItem.showsSourceMark`). Watched videos are left out. Home only offers what plays here: no `drm` items and no
+its time, "Danach: …" and description. Every tile has at most one round avatar
+before its subtitle (never the same logo twice): the channel's picture (`SFItem.channelImage`, where the
+source names one), else the mark of the station that broadcast a video (`station`,
+`res/logos/marks`), else - in mixed rows (`SFItem.showsSourceMark`) - its app's symbol. Watched videos are left out. Home only offers what plays here: no `drm` items and no
 items whose `geoRegion` (raw source data, e.g. ZDF `geoLocation`) the device is known to be
 outside of (`SFNet stateOfRegion:` – learned from every `checkRegion:…region:`, stored 24 h;
 an app that features region-limited items probes once if the state is unknown).

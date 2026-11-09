@@ -78,6 +78,22 @@ CGImageRef SFLogoImage(NSString *name, SFLogoVariant variant) {
     return img ? keep(key, img) : NULL;
 }
 
+static NSString *markPath(NSString *name) {
+    return [[logosDir() stringByAppendingPathComponent:@"marks"] stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"png"]];
+}
+
+CGImageRef SFLogoMark(NSString *name) {
+    if (!name.length) return NULL;
+    NSString *key = [@"mark#" stringByAppendingString:name];
+    NSMutableDictionary *c = cache();
+    @synchronized (c) { id hit = c[key]; if (hit) return hit == [NSNull null] ? NULL : (__bridge CGImageRef)hit; }
+    CGImageRef img = NULL;
+    CGImageSourceRef src = CGImageSourceCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:markPath(name)], NULL);
+    if (src) { img = CGImageSourceCreateImageAtIndex(src, 0, NULL); CFRelease(src); }
+    if (!img) { @synchronized (c) { c[key] = [NSNull null]; } return NULL; }   // none: not looked up again
+    return keep(key, img);
+}
+
 // Every logo in every variant, off the main thread: decoding and recolouring them where the first
 // tiles asked for them took 310 ms of the main thread at launch (hitch monitor 2026-11-07).
 void SFLogoPrepare(void) {
@@ -92,5 +108,7 @@ void SFLogoPrepare(void) {
                 if (img) keep(key, img);
             }
         }
+        for (NSString *f in [[NSFileManager new] contentsOfDirectoryAtPath:[logosDir() stringByAppendingPathComponent:@"marks"] error:nil])
+            if ([f.pathExtension isEqualToString:@"png"]) SFLogoMark(f.stringByDeletingPathExtension);
     });
 }

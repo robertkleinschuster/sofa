@@ -244,7 +244,8 @@ static NSString *pictureOf(id url) {
 static NSString *changedField(NSArray *fresh, NSArray *stored) {   // nil: nothing one sees changed
     static NSArray *seen;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ seen = @[@"title", @"plot", @"duration", @"channel", @"drm", @"geo"]; });
+    // what a tile or the info panel shows (channelImage: the tile's avatar)
+    dispatch_once(&once, ^{ seen = @[@"title", @"plot", @"duration", @"channel", @"channelImage", @"drm", @"geo"]; });
     for (NSUInteger n = 0; n < fresh.count; n++) {
         NSDictionary *a = fresh[n], *b = n < stored.count ? stored[n] : nil;
         for (NSString *k in seen) if (a[k] != b[k] && ![a[k] isEqual:b[k]]) return k;
