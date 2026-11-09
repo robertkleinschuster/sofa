@@ -39,7 +39,7 @@ static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%l
         SFPage *p = [SFPage page:@"Downloads" theme:source ?: @"home" shelves:shelves];
         p.subtitle = [dl storageSummary:source];
         if (!shelves.count)
-            p.emptyText = @"Noch keine Downloads.\nBei einem Video OK gedrückt halten und „Herunterladen“ wählen –\nbei einer Sendung „Neue Folgen automatisch laden“.";
+            p.emptyText = @"Noch keine Downloads.\nBei einem Video OK gedrückt halten und „Herunterladen“ wählen.";
         done(p, nil);
     };
 }

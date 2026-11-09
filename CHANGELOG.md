@@ -6,6 +6,19 @@ Einstellungen → „Update installieren“.
 
 ## Unveröffentlicht
 
+- **Weniger Speicherverbrauch bei YouTube.** Der eingebaute Browser umgeht einen Mavericks-Fehler,
+  durch den gemeinsame Speicherbereiche auch nach dem Schließen erhalten blieben. Im Leerlauf
+  hält er außerdem weniger Reserveprozesse bereit.
+- **Gezielt vorladen statt ganze Videos automatisch laden.** Sofa bereitet kurze Abschnitte an
+  der Fortsetzungsposition vor. Die Auswahl berücksichtigt den Fokus, den Nutzungsverlauf und
+  bereits angezeigte Vorschläge. Die Kanaloption „Automatisch laden“ entfällt.
+  Automatisch gepufferte Videos erhalten kein zusätzliches Statuslabel auf ihren Kacheln.
+  Auch bei pausierter Wiedergabe bleibt der Vorlauf begrenzt.
+- **Ein gemeinsamer Puffer.** Wiedergabe, Vorladen und „Herunterladen“ nutzen dieselben Daten auf
+  der Platte. Nur „Herunterladen“ füllt den Puffer vollständig auf und schützt ihn vor
+  automatischer Löschung. Vorhandene manuelle Downloads bleiben erhalten; alte automatische
+  Aufträge werden beendet, ihre bereits geladenen Daten bleiben als normaler Puffer nutzbar.
+
 - **„Ausschalten“ steht ganz oben im Schnellmenü** (MENU auf der Startseite oder MENU gedrückt
   halten): ein Klick, und der Fernseher geht aus. Sleep-Timer und Ruhezustand bleiben unter „Energie“.
 - Die Startseite und der Videostart ruckeln seltener (Datumsangaben und Abfragen des Speichers

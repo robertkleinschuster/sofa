@@ -232,7 +232,9 @@ Sofa loopback server  <-- one WebSocket (token) -->  background.js   (extension 
 Prefs (`SFYTBrowser.m`): the extension's (above); the firefox-x11 port's remote-X defaults that a
 page can see go back to stock Firefox (frame rate, reduced motion, animations, autoplay, WebGL with
 the GPU process, fission); no first-run pages or prompts; `intl.accept_languages` the TV's;
-`media.volume_scale` 0.
+`media.volume_scale` 0. Sofa uses one preallocated spare content process
+(`dom.ipc.processPrelaunch.fission.number=1`) instead of the desktop default three; active-process
+limits, fission and WebGL stay as above. This targets idle reserve overhead for the single tab.
 
 Lives (HLS): the engine serves the media playlist with local segment URLs
 (`/s/<sid>/seg/<n>.<ext>`, one stable number per upstream URL, the extension kept for ffmpeg) and

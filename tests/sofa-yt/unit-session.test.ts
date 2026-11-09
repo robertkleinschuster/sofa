@@ -71,6 +71,29 @@ async function setup({ fail = null, stall = false, cfg = {}, infos = { [ID]: inf
 /** /open answer; the test states which kind it expects (a VOD unless said otherwise). */
 const openJson = async <T extends OpenAnswer = VodAnswer>(app: TestApp, q: string): Promise<T> => json<T>((await get(`${app.base}/open?${q}`)).body);
 
+test('predictive sessions are isolated from playback and closing one preserves the viewer', async () => {
+  const { app } = await setup();
+  try {
+    const playback = await app.engine.open({ v: ID, prefetch: false });
+    const prediction = await app.engine.open({ v: ID, bg: true, isolated: true, prefetch: false });
+    assert.ok('sid' in playback && 'sid' in prediction);
+    if (!('sid' in playback) || !('sid' in prediction)) return;
+    assert.notEqual(prediction.sid, playback.sid);
+    const predictiveSession = app.engine.sessions.get(prediction.sid);
+    assert.ok(predictiveSession && predictiveSession.kind === 'sabr');
+    if (predictiveSession?.kind === 'sabr') {
+      assert.equal(predictiveSession.cfg.HIGH_MS, 12000);
+      assert.equal(predictiveSession.cfg.MAX_BYTES.video + predictiveSession.cfg.MAX_BYTES.audio, 15 << 20);
+    }
+    const again = await app.engine.open({ v: ID, prefetch: false });
+    assert.ok('sid' in again);
+    if ('sid' in again) assert.equal(again.sid, playback.sid);
+    assert.equal(app.engine.close(prediction.sid), true);
+    assert.equal(app.engine.sessions.has(playback.sid), true);
+    assert.equal(app.engine.sessions.has(prediction.sid), false);
+  } finally { await app.close(); }
+});
+
 test('/open: dash-shaped answer with local URLs; reopen reuses the session, no second player request', async () => {
   const { app, youtube } = await setup();
   try {

@@ -1,0 +1,328 @@
+#!/opt/local/bin/python3.14
+"""Local Firefox IPC/audio lifetime probe. Never uses the user's browser profile.
+
+Run against a complete release bundle. --zones needs an already authenticated
+sudo session; the browser itself always runs as the invoking GUI user.
+"""
+import argparse
+import datetime
+import hashlib
+import http.server
+import json
+import os
+from pathlib import Path
+import secrets
+import select
+import signal
+import subprocess
+import tempfile
+import threading
+import time
+import traceback
+
+
+PARENT = r'''<!doctype html><meta charset="utf-8"><script>
+const nonce=__NONCE__, rounds=64, size=1024*1024;
+const origin='http://localhost:'+location.port;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function timeout(p,ms,label) {
+ return Promise.race([p,new Promise((_,bad)=>setTimeout(()=>bad(Error(label)),ms))]);
+}
+async function run() {
+ const frame=document.createElement('iframe');
+ const pending=new Map();
+ let ready;
+ const started=new Promise(r=>ready=r);
+ window.addEventListener('message',e=>{
+  if(e.source!==frame.contentWindow || e.origin!==origin || e.data.nonce!==nonce)return;
+  if(e.data.ready){ready();return;}
+  const got=pending.get(e.data.id);
+  if(got){pending.delete(e.data.id);got(e.data);}
+ });
+ frame.src=origin+'/child?nonce='+nonce;document.body.appendChild(frame);
+ await timeout(started,15000,'cross-site frame not ready');
+ for(let i=0;i<rounds;i++) {
+  const buffer=new ArrayBuffer(size), words=new Uint32Array(buffer);
+  let value=(0x9e3779b9+i)>>>0;
+  for(let k=0;k<words.length;k++) {
+   value^=value<<13;value^=value>>>17;value^=value<<5;words[k]=value>>>0;
+  }
+  const first=words[0],last=words[words.length-1];
+  const reply=new Promise(r=>pending.set(i,r));
+  frame.contentWindow.postMessage({nonce,id:i,buffer,first,last},origin,[buffer]);
+  if(buffer.byteLength!==0)throw Error('buffer was not transferred');
+  const answer=await timeout(reply,5000,'transfer timed out');
+  const returned=answer.buffer && new Uint32Array(answer.buffer);
+  if(answer.error || !returned || returned.byteLength!==size || returned[0]!==first || returned[returned.length-1]!==last)
+   throw Error('transferred bytes changed');
+ }
+ const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+ const gl=canvas.getContext('webgl');
+ if(!gl)throw Error('WebGL unavailable');
+ gl.clearColor(.2,.4,.6,1);gl.clear(gl.COLOR_BUFFER_BIT);
+ for(let i=0;i<3;i++) {
+  const ctx=new AudioContext(), oscillator=ctx.createOscillator(),gain=ctx.createGain();
+  gain.gain.value=0;oscillator.connect(gain);gain.connect(ctx.destination);
+  try {
+   oscillator.start();await timeout(ctx.resume(),5000,'audio context did not start');
+   if(ctx.state!=='running')throw Error('audio context not running');
+   await sleep(250);oscillator.stop();
+  } finally {await timeout(ctx.close(),5000,'audio context did not close');}
+ }
+ return {ok:true,transfers:rounds,transferredBytes:2*rounds*size,audioContexts:3,webgl:true};
+}
+window.addEventListener('load',async()=>{
+ let result;
+ try {result=await run();}catch(e){result={ok:false,error:String(e)};}
+ await fetch('/result/'+nonce,{method:'POST',body:JSON.stringify(result)});
+});
+</script>'''
+
+CHILD = r'''<!doctype html><script>
+const nonce=new URLSearchParams(location.search).get('nonce');
+const origin='http://127.0.0.1:'+location.port;
+window.addEventListener('message',e=>{
+ if(e.source!==parent || e.origin!==origin || e.data.nonce!==nonce)return;
+ const a=e.data,words=new Uint32Array(a.buffer);
+ const error=words[0]!==a.first || words[words.length-1]!==a.last;
+ parent.postMessage({nonce,id:a.id,buffer:a.buffer,error},origin,[a.buffer]);
+});
+parent.postMessage({nonce,ready:true},origin);
+</script>'''
+
+
+def digest(path):
+    h = hashlib.sha256()
+    marker = b'failed to size Darwin shm'
+    tail = b''
+    patched = False
+    with path.open('rb') as f:
+        for block in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(block)
+            patched = patched or marker in tail + block
+            tail = block[-len(marker):]
+    return h.hexdigest(), patched
+
+
+def zones():
+    r = subprocess.run(['/usr/bin/sudo', '-n', '/usr/bin/zprint'], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError('zprint requires a current sudo authentication')
+    result = {}
+    for line in r.stdout.splitlines():
+        fields = line.split()
+        if fields and fields[0] in ('vm.objects', 'ipc.ports', 'MAC.Labels', 'compressor_pager'):
+            result[fields[0]] = int(fields[6])
+    if len(result) != 4:
+        raise RuntimeError('unexpected Mavericks zprint format')
+    return result
+
+
+def stop(process):
+    if process is None:
+        return
+    # Reap an already-exited Xvfb first: Mavericks can return EPERM when
+    # signalling a process group whose only member is an unreaped zombie.
+    process.poll()
+    # Each probe process starts its own session. Never signal another process tree.
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait(timeout=5)
+    deadline = time.monotonic() + 5
+    while True:
+        live = []
+        for line in subprocess.check_output(['/bin/ps', '-axo', 'pgid=,stat='], text=True).splitlines():
+            fields = line.split()
+            if len(fields) == 2 and fields[0] == str(process.pid) and not fields[1].startswith('Z'):
+                live.append(fields[1])
+        if not live:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError('probe process group did not stop: %d' % process.pid)
+        time.sleep(.1)
+
+
+def process_memory(parent):
+    rows = []
+    for line in subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,rss='], text=True).splitlines():
+        try:
+            rows.append(tuple(map(int, line.split())))
+        except ValueError:
+            continue
+    owned = {parent}
+    while True:
+        expanded = owned | {pid for pid, ppid, rss in rows if ppid in owned}
+        if expanded == owned:
+            break
+        owned = expanded
+    return {'processes': len(owned), 'rssMiB': sum(rss for pid, ppid, rss in rows if pid in owned) / 1024}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('app', type=Path)
+    parser.add_argument('--rounds', type=int, default=3)
+    parser.add_argument('--zones', action='store_true', help='measure kernel object retention using sudo -n zprint')
+    parser.add_argument('--max-port-growth', type=int, default=64)
+    parser.add_argument('--out', type=Path)
+    args = parser.parse_args()
+    if os.geteuid() == 0:
+        parser.error('run as the normal GUI user, not root; --zones uses sudo only for measurement')
+    if not 1 <= args.rounds <= 5:
+        parser.error('--rounds must be between 1 and 5')
+
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt('probe interrupted')
+
+    signal.signal(signal.SIGTERM, interrupted)
+    rt = args.app.resolve() / 'Contents/Runtime'
+    browser = rt / 'lib/firefox/firefox'
+    if not browser.is_file():
+        parser.error('a complete Sofa release bundle is required')
+    library_hash, patched = digest(rt / 'lib/firefox/libxul.dylib')
+    if not patched:
+        parser.error('runtime lacks the Mavericks shm patch marker; use the newly patched browser, not the known leaking runtime')
+    report = {'started': datetime.datetime.now().isoformat(), 'runtimeLibSHA256': library_hash,
+              'runtimePatchMarker': True, 'portGrowthLimit': args.max_port_growth, 'rounds': []}
+    state = {'nonce': '', 'result': None, 'done': threading.Event()}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *unused):
+            pass
+
+        def do_GET(self):
+            page = CHILD if self.path.startswith('/child?') else PARENT.replace('__NONCE__', json.dumps(state['nonce']))
+            data = page.encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_POST(self):
+            if self.path != '/result/' + state['nonce']:
+                self.send_error(404)
+                return
+            length = int(self.headers.get('Content-Length', '0'))
+            if length > 4096:
+                self.send_error(413)
+                return
+            state['result'] = json.loads(self.rfile.read(length))
+            self.send_response(204)
+            self.end_headers()
+            state['done'].set()
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    prefs = {
+        'browser.shell.checkDefaultBrowser': False, 'browser.aboutwelcome.enabled': False,
+        'browser.startup.homepage_override.mstone': 'ignore', 'browser.startup.page': 0,
+        'datareporting.policy.dataSubmissionEnabled': False, 'toolkit.telemetry.enabled': False,
+        'app.update.enabled': False, 'network.captive-portal-service.enabled': False,
+        'network.connectivity-service.enabled': False, 'network.dns.disableIPv6': True,
+        'layers.gpu-process.enabled': True, 'webgl.disabled': False, 'webgl.force-enabled': True,
+        'fission.autostart': True, 'dom.ipc.processCount': 8,
+        'dom.ipc.processPrelaunch.fission.number': 1, 'media.volume_scale': '0.0',
+        'media.autoplay.default': 0, 'media.autoplay.blocking_policy': 0,
+        'media.autoplay.block-webaudio': False,
+    }
+    env = dict(os.environ, PATH=str(rt / 'bin') + ':/usr/bin:/bin:/usr/sbin:/sbin',
+               LIBGL_DRIVERS_PATH=str(rt / 'lib/dri'), FONTCONFIG_FILE=str(rt / 'etc/fonts/fonts.conf'),
+               FONTCONFIG_PATH=str(rt / 'etc/fonts'), GIO_MODULE_DIR=str(rt / 'lib/gio/modules'),
+               GDK_PIXBUF_MODULE_FILE=str(rt / 'etc/gdk-pixbuf-loaders.cache'),
+               OPENSSL_CONF=str(rt / 'etc/openssl.cnf'), SSL_CERT_FILE=str(rt / 'etc/cert.pem'))
+    env.pop('DYLD_INSERT_LIBRARIES', None)
+    success = False
+    try:
+        if args.zones:
+            report['before'] = zones()
+        for i in range(args.rounds):
+            state.update(nonce=secrets.token_hex(12), result=None)
+            state['done'].clear()
+            with tempfile.TemporaryDirectory(prefix='sofa-browser-memory-', dir='/private/tmp') as td:
+                td = Path(td)
+                profile = td / 'profile'
+                profile.mkdir()
+                (profile / 'user.js').write_text(''.join('user_pref(%s, %s);\n' % (json.dumps(k), json.dumps(v)) for k, v in prefs.items()))
+                sandbox = td / 'nomp.sb'
+                sandbox.write_text('(version 1)(allow default)(deny file-read* (subpath "/opt/local"))')
+                prefix = ['/usr/bin/sandbox-exec', '-f', str(sandbox)]
+                xvfb = firefox = None
+                readfd, writefd = os.pipe()
+                try:
+                    with (td / 'xvfb.log').open('w') as log:
+                        xvfb = subprocess.Popen(prefix + [str(rt / 'bin/Xvfb'), '-displayfd', str(writefd), '-terminate',
+                            '-screen', '0', '1280x720x24', '-nolisten', 'tcp', '-xkbdir', str(rt / 'share/X11/xkb'),
+                            '-xkbbindir', str(rt / 'bin'), '-fp', str(rt / 'share/fonts/misc') + ',built-ins'],
+                            pass_fds=(writefd,), stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+                    os.close(writefd)
+                    writefd = -1
+                    if not select.select([readfd], [], [], 15)[0]:
+                        raise RuntimeError('Xvfb display timeout')
+                    display = os.read(readfd, 32).decode().strip()
+                    if not display.isdigit():
+                        raise RuntimeError('Xvfb did not provide a display')
+                    with (td / 'firefox.log').open('w') as log:
+                        firefox = subprocess.Popen(prefix + [str(browser), '--no-remote', '--profile', str(profile),
+                            'http://127.0.0.1:%d/' % server.server_port], stdout=log, stderr=subprocess.STDOUT,
+                            env=dict(env, DISPLAY=':' + display), start_new_session=True)
+                    deadline = time.monotonic() + 90
+                    while not state['done'].wait(.1):
+                        if firefox.poll() is not None or time.monotonic() > deadline:
+                            raise RuntimeError('browser probe did not complete: ' + (td / 'firefox.log').read_text()[-1500:])
+                    result = dict(state['result'])
+                    result['browser'] = process_memory(firefox.pid)
+                    report['rounds'].append(result)
+                    if not result.get('ok'):
+                        raise RuntimeError(result.get('error', 'browser probe failed'))
+                finally:
+                    os.close(readfd)
+                    if writefd >= 0:
+                        os.close(writefd)
+                    try:
+                        stop(firefox)
+                    finally:
+                        stop(xvfb)
+            time.sleep(2)
+            if args.zones:
+                report['rounds'][-1]['after'] = zones()
+            print('ok browser memory round', i + 1, flush=True)
+        if args.zones:
+            # Audio/graphics services release Mach rights asynchronously after
+            # the client's last process has exited. Keep the transient samples,
+            # then require the final three samples to satisfy the same limit.
+            report['settled'] = []
+            for _ in range(6):
+                time.sleep(5)
+                report['settled'].append(zones())
+            report['portGrowth'] = max(x['ipc.ports'] for x in report['settled'][-3:]) - report['before']['ipc.ports']
+            if report['portGrowth'] > args.max_port_growth:
+                raise RuntimeError('kernel ports retained above tolerance after settling: %d' % report['portGrowth'])
+        success = True
+    except Exception as exc:
+        report['error'] = str(exc)
+        report['traceback'] = traceback.format_exc()
+    finally:
+        server.shutdown()
+        server.server_close()
+        report['ok'] = success
+        report['finished'] = datetime.datetime.now().isoformat()
+        if args.out:
+            args.out.write_text(json.dumps(report, indent=2))
+            args.out.chmod(0o600)
+        print(json.dumps(report, indent=2))
+    return 0 if success else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

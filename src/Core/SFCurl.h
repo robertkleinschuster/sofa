@@ -8,6 +8,10 @@
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
                     NSInteger *status, NSError **error);
 // A GET that also tells where it ended up after redirects (relative URIs of a playlist resolve there)
+// Optional gate runs before bytes are retained and with 0 during idle progress checks.
+// NO aborts immediately; the redirect URL is preserved.
+NSData *SFCurlFetchLimitedFinal(NSString *url, NSInteger *status, NSString **effective, NSError **error,
+                               BOOL (^accept)(NSUInteger bytes));
 NSData *SFCurlFetchFinal(NSString *url, NSInteger *status, NSString **effectiveURL, NSError **error);
 
 // curl_easy_init() without TLS certificate verification (see .m). Returns a CURL * (void *,
@@ -24,6 +28,12 @@ void *SFCurlNew(void);
 BOOL SFCurlStream(NSString *url, long long start, long long end, long long maxRate,
                   BOOL (^head)(NSInteger status, long long total, NSString *mime),
                   BOOL (^chunk)(NSData *bytes), NSError **error);
+
+// The same, with an optional liveness gate polled even when the origin sends no chunks.
+BOOL SFCurlStreamWhile(NSString *url, long long start, long long end, long long maxRate,
+                       BOOL (^continuing)(void),
+                       BOOL (^head)(NSInteger status, long long total, NSString *mime),
+                       BOOL (^chunk)(NSData *bytes), NSError **error);
 
 // Download a large file straight to disk (follows redirects, HTTP error = failure). Background only.
 BOOL SFCurlDownload(NSString *url, NSString *path, NSError **error);

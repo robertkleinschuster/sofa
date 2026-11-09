@@ -43,6 +43,17 @@ static NSString *const kWrite = @"INSERT OR REPLACE INTO downloads (id,source,ch
                @(_keep), _online >= 0 ? @(_online) : [NSNull null], timeOrNull(_onlineAt), timeOrNull(_expires)]];
 }
 
+// Called before interrupted jobs are resumed or integrity checks can requeue anything.
+// Keep explicit user intent; otherwise leave existing bytes as ordinary evictable cache.
+- (BOOL)retireAutomaticFill {
+    if (!_sub && _expires <= 0) return NO;
+    _sub = nil; _expires = 0; _retryAt = 0;
+    if (!_keep) {
+        _state = SFDLDismissed; _progress = 0; _error = nil; _tries = 0;
+    }
+    return YES;
+}
+
 - (id)copyWithZone:(NSZone *)zone {
     SFDownloadRecord *c = [[self class] new];
     c.identifier = _identifier; c.source = _source; c.channel = _channel; c.itemJSON = _itemJSON;

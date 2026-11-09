@@ -288,14 +288,13 @@
     };
 }
 
-// [Folgen] (red while not followed) · [Automatisch laden: An/Aus] (only when followed)
+// Following is independent of the automatically selected startup buffers.
 + (NSArray *)channelButtons:(NSString *)cid title:(NSString *)title header:(NSDictionary *)header {
-    SFDownloads *dl = [SFDownloads shared];
     SFFollows *fo = [SFFollows shared];
     NSString *fid = [@"ytchannel:" stringByAppendingString:cid];
     SFItem *folder = [SFItem new];
     folder.kind = SFItemFolder; folder.identifier = fid; folder.title = title; folder.source = @"youtube"; folder.image = header[@"avatar"];
-    BOOL following = [fo isFollowing:fid], autoDL = [dl isSubscribed:fid];
+    BOOL following = [fo isFollowing:fid];
     SFNavigator *(^navi)(void) = ^SFNavigator *{ return [SFNavigator main]; };
     NSMutableArray *buttons = [NSMutableArray new];
     SFItem *fb = [SFItem new];
@@ -306,20 +305,6 @@
     fb.backdrop = header[@"banner"]; fb.heroTitle = title; fb.heroMeta = header[@"meta"]; fb.plot = header[@"description"];
     fb.action = ^{ SFToggleFollow(navi(), folder, [SFTheme themeNamed:@"youtube"], YES); };
     [buttons addObject:fb];
-    if (following) {
-        SFItem *db = [SFItem new];
-        db.kind = SFItemAction; db.style = SFTileStyleButton; db.source = @"youtube"; db.themeName = @"youtube";
-        db.identifier = [@"ytautodl:" stringByAppendingString:cid];
-        db.title = autoDL ? @"Automatisch laden: An" : @"Automatisch laden: Aus";
-        db.backdrop = header[@"banner"]; db.heroTitle = title; db.heroMeta = header[@"meta"];
-        db.plot = @"Neue Videos dieses Kanals automatisch herunterladen – dann laufen sie auch ohne Internet.";
-        db.action = ^{
-            if ([dl isSubscribed:fid]) { [dl unsubscribe:fid]; [navi() toast:@"Automatisch laden aus – vorhandene Videos bleiben"]; }
-            else { [dl subscribe:folder]; [navi() toast:[NSString stringWithFormat:@"Neue Videos von „%@“ werden heruntergeladen", title]]; }
-            [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];
-        };
-        [buttons addObject:db];
-    }
     return buttons;
 }
 

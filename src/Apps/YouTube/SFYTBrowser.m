@@ -23,6 +23,9 @@ static NSDictionary *EnginePrefs(void) {
         @"general.smoothScroll": @YES, @"toolkit.cosmeticAnimations.enabled": @YES,
         @"media.autoplay.default": @1, @"media.autoplay.blocking_policy": @0,
         @"media.hardware-video-decoding.enabled": @YES, @"fission.autostart": @YES, @"dom.ipc.processCount": @8,
+        // One YouTube tab needs one warm spare, rather than desktop Firefox's three.
+        // Preserve fission and the active-process limits; this saves two idle processes.
+        @"dom.ipc.processPrelaunch.fission.number": @1,
         // nobody looks at this browser: no first-run pages, prompts or crash-restore dialogs
         @"browser.shell.checkDefaultBrowser": @NO, @"browser.aboutwelcome.enabled": @NO,
         @"browser.startup.homepage_override.mstone": @"ignore", @"browser.sessionstore.resume_from_crash": @NO,

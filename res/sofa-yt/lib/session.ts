@@ -297,6 +297,7 @@ export interface PlaybackSessionOptions {
 }
 
 export class PlaybackSession {
+  isolated = false; // predictive readers never borrow or close the viewer's session
   readonly kind: 'sabr';
   sid: string;
   info: VodInfo;

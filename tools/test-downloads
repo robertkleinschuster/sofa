@@ -11,8 +11,8 @@
 #   7. "Platz schaffen": bulk deletion removes only what is still online and not "Behalten";
 #      a video that is no longer online and a kept one stay
 #   8. media store downloads (the Example app fills like YouTube, SOFA_EXAMPLE_FILL): a fill completes
-#      as a download (pinned bytes); a quit mid-fill uses no attempt; a partly loaded video's tile says
-#      "geladen" and "Herunterladen" says what is missing ("noch X MB"), the fill fetches only the rest;
+#      as a download (pinned bytes); a quit mid-fill uses no attempt; ordinary buffers have no tile
+#      badge and "Herunterladen" says what is missing ("noch X MB"), the fill fetches only the rest;
 #      tracks gone from outside are noticed at start and filled again; removal frees them
 #   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
 #      by ranges (no ffmpeg); the timeline shows what is on disk (exact, the file's moov sample tables);
@@ -22,9 +22,8 @@
 #      their key - the player gets one variant, the one a download takes (lavf probes every variant
 #      before playing); playing shows what is on disk as a shade on the timeline (exact segments); the
 #      download finds what playback kept, then plays from the store without its source, shaded end to end
-#   8b. pre-buffering: a subscription episode filled into the store expires (14 days, or 3 days after
-#      it was watched) - dismissed, its bytes stay as plain buffer; "Herunterladen" on a pre-buffered
-#      episode keeps it without loading again
+#   8b. old automatic full fills retire before recovery; existing manual downloads and shared
+#      buffer bytes survive. Only an explicit Herunterladen fills an old automatic entry again.
 #   tools/test-downloads   the parts side by side, each with its own instance and media server
 #                          (part a: 0, 5, 6; part b: 4b, 8, 8b; part c: 8c, 8d; part d: 7 - its own
 #                          fresh data, and the parts take about as long); DLTEST_PART=a|b|c|d
@@ -49,7 +48,7 @@ if [ -z "$PART" ]; then   # all parts at once; output part by part
   [ $ra = 0 ] && [ $rb = 0 ] && [ $rc = 0 ] && [ $rd = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
 fi
 want() { [ "$PART" = "$1" ]; }
-INST=dltest-$PART
+INST=${SOFA_TEST_INSTANCE:-dltest-$PART}
 T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dltest.XXXXXX")"
 trap 'rm -rf "${T:?}"' EXIT   # until the full cleanup below takes over (a failed build exits before it)
 export SOFA_DATA_DIR="$T/data"   # the dev instance's whole state (SFSetDevInstance)
@@ -68,7 +67,8 @@ YTREF=yt:jNQXAC9IVRw   # never actually requested (section 5 keeps YouTube pause
 # readable afterwards - the next start empties the log
 fail=0; nfail=0; ok() { echo "  ok    $*"; }
 bad() { echo "  FAIL  $*"; fail=1; nfail=$((nfail + 1))
-        [ -n "${DLTEST_SHOTS:-}" ] && [ -s "$LOG" ] && cp "$LOG" "$DLTEST_SHOTS/part-$PART-fail$nfail.log" 2>/dev/null; return 0; }
+        [ -n "${DLTEST_SHOTS:-}" ] && [ -s "$LOG" ] && cp "$LOG" "$DLTEST_SHOTS/part-$PART-fail$nfail.log" 2>/dev/null
+        [ -n "${DLTEST_SHOTS:-}" ] && [ -s "$T/good.mp4" ] && cp "$T/good.mp4" "$DLTEST_SHOTS/part-$PART-fixture.mp4" 2>/dev/null; return 0; }
 check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # check NAME GOT WANT
 
 make -C "$SRC" >/dev/null || exit 1
@@ -100,8 +100,10 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$ROOT"
 
-# test media: a 60 s file
-"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t 60 \
+# Keep the pause probe longer than its 30 s window plus bounded transport read-ahead.
+MEDIA_SECONDS=60; [ "$PART" = c ] && MEDIA_SECONDS=180
+# test media: the isolated fixture only
+"$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t "$MEDIA_SECONDS" \
       -c:v libx264 -preset ultrafast -c:a aac -movflags +faststart "$T/good.mp4"
 # the Example app's media for the download sections: served at ~256 KB/s (a download takes a while)
 cat > "$T/slow.py" <<'PY'
@@ -110,6 +112,7 @@ F = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
+        with open(sys.argv[3], "a") as requests: requests.write(self.headers.get("Range", "full") + "\n")
         size = os.path.getsize(F); start, end = 0, size   # a single "bytes=a-[b]" range: 206 (the media proxy reads by ranges)
         r = self.headers.get("Range", "")
         if r.startswith("bytes=") and "," not in r:
@@ -132,7 +135,7 @@ os.rename(sys.argv[2] + ".tmp", sys.argv[2])
 s.serve_forever()
 PY
 # a free port (fixed ones collided with test-playback's servers under test-all), awaited before use
-/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" "$T/media.port" & SRV=$!
+/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" "$T/media.port" "$T/source-requests" & SRV=$!
 for i in $(seq 1 150); do [ -s "$T/media.port" ] && break; sleep 0.1; done
 MEDIA_PORT=$(cat "$T/media.port" 2>/dev/null)
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$MEDIA_PORT/good.mp4
@@ -190,7 +193,7 @@ SQ "delete from downloads where id='$REF';"
 fi   # part a
 
 if want b; then
-echo "==> 4b. a failed download: a subscription episode is retried later, a manual one gives up"
+echo "==> 4b. automatic requests retire, a failed manual download needs user retry"
 start; quit   # the database (the part's first section: nothing before it made one)
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where state in (0,1); $DEMOSUB
   insert or replace into items (id,json) values
@@ -200,10 +203,10 @@ start; quit   # the database (the part's first section: nothing before it made o
     ('example:8','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
     ('example:9','example','Dev',0,0,strftime('%s','now'),NULL);"
 start
-for i in $(seq 1 80); do [ "$(grep -c 'downloads: FAILED example:[89]' "$LOG")" -ge 2 ] && break; sleep 0.5; done
+for i in $(seq 1 80); do grep -q 'downloads: FAILED example:9' "$LOG" && break; sleep 0.5; done
 quit
-st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||(retryAt > strftime('%s','now')), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
-[ "$st" = "example:8=5/1/1 example:9=3/1/1" ] && ok "subscription episode: retried later (state 5, next attempt set); manual: failed" || bad "unexpected: $st"
+st=$(/opt/local/bin/sqlite3 "$DEVDB" "select group_concat(id||'='||state||'/'||tries||'/'||coalesce((retryAt > strftime('%s','now')),0), ' ') from (select * from downloads where id in ('example:8','example:9') order by id);")
+[ "$st" = "example:8=4/0/0 example:9=3/1/1" ] && ok "automatic full fill never starts/retries; manual request fails with a retry time" || bad "unexpected: $st"
 /opt/local/bin/sqlite3 "$DEVDB" "delete from downloads where id in ('example:8','example:9');"
 # the spacing of starts survives a restart (2026-11-06: an update restart started the next YouTube
 # download at once): the next allowed start of the source is stored
@@ -223,7 +226,7 @@ SQ "delete from downloads where id='$REF'"
 start
 chip() { m=$(wc -l < "$LOG"); cmd "chip $1"; for i in $(seq 1 20); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: chip $1 = " && break; sleep 0.1; done
          tail -n +$((m + 1)) "$LOG" | sed -n "s/.*dev: chip $1 = //p" | tail -1; }
-check "a partly loaded video: its tile says geladen" "$(chip $REF)" "geladen"
+check "a partly loaded video has no buffer badge" "$(chip $REF)" "-"
 cmd "dlget $REF"
 for i in $(seq 1 40); do grep -q "dev: download $REF - " "$LOG" && break; sleep 0.25; done
 grep -q "dev: download $REF - Wird heruntergeladen – noch [1-7] MB, der Rest ist schon geladen" "$LOG" && ok "Herunterladen on a partly loaded video says what is missing" \
@@ -248,50 +251,36 @@ for i in $(seq 1 20); do grep -q "dev: removed download $REF" "$LOG" && break; s
 check "removal frees its tracks" "$(SS "select count(*) from tracks where item='$REF'")/$(SQ "select count(*) from downloads where id='$REF'")" "0/0"
 quit
 
-echo "==> 8b. pre-buffering"
-SQ "$DEMOSUB insert or replace into items (id,json) values ('example:3','{\"id\":\"example:3\",\"kind\":0,\"title\":\"Folge\",\"source\":\"example\"}'),
-    ('example:4','{\"id\":\"example:4\",\"kind\":0,\"title\":\"Gesehen\",\"source\":\"example\"}');
-    insert into downloads (id,source,channel,state,progress,added,sub) values
-    ('example:3','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo'),
-    ('example:4','example','Dev',0,0,strftime('%s','now') + 1,'exampleshow:demo');"
+echo "==> 8b. retire automatic full fills, keep the common buffer"
+# Section 8 deliberately deleted its copy. Seed a real manual buffer for the migration check.
 start
-for i in $(seq 1 80); do [ "$(grep -c 'downloads: done example:[34]' "$LOG")" -ge 2 ] && break; sleep 0.25; done
-check "subscription episodes pre-buffered: expiry in 14 days" \
-  "$(SQ "select group_concat(id || '=' || (abs(expires - strftime('%s','now') - 14*86400) < 120), ' ') from (select * from downloads where id in ('example:3','example:4') order by id)")" \
-  "example:3=1 example:4=1"
-check "a pre-buffered episode: its tile says geladen, not downloaded" "$(chip example:3)" "geladen"
+cmd "dlget $REF"
+for i in $(seq 1 80); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0.25; done
 quit
-# example:3 past its expiry; example:4 watched four days ago (3 days after watching)
-SQ "update downloads set expires = strftime('%s','now') - 1 where id='example:3';
-    insert or replace into progress (id,pos,dur,watched,updated,source) values ('example:4',60,60,1,strftime('%s','now') - 4*86400,'example');"
+BEFORE_BYTES=$(SS "select coalesce(sum(end-start),0) from extents")
+SQ "$DEMOSUB
+    insert or replace into items (id,json) values
+    ('example:3','{\"id\":\"example:3\",\"kind\":0,\"title\":\"Queued\",\"source\":\"example\"}'),
+    ('example:4','{\"id\":\"example:4\",\"kind\":0,\"title\":\"Retry\",\"source\":\"example\"}'),
+    ('example:5','{\"id\":\"example:5\",\"kind\":0,\"title\":\"Running\",\"source\":\"example\"}'),
+    ('example:6','{\"id\":\"example:6\",\"kind\":0,\"title\":\"Auto done\",\"source\":\"example\"}');
+    insert into downloads (id,source,channel,state,progress,added,sub,retryAt,expires) values
+    ('example:3','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo',NULL,NULL),
+    ('example:4','example','Dev',5,0,strftime('%s','now'),'exampleshow:demo',1,NULL),
+    ('example:5','example','Dev',1,0.5,strftime('%s','now'),'exampleshow:demo',NULL,NULL),
+    ('example:6','example','Dev',2,1,strftime('%s','now'),'exampleshow:demo',NULL,strftime('%s','now')+86400);"
 start
-for i in $(seq 1 40); do [ "$(grep -c 'pre-buffered example:[34] expired' "$LOG")" -ge 2 ] && break; sleep 0.25; done
-grep -q "pre-buffered example:3 expired (not watched in time)" "$LOG" && grep -q "pre-buffered example:4 expired (watched)" "$LOG" \
-  && ok "expired: past the 14 days, and 3 days after watching" || bad "not expired: $(grep 'pre-buffered\|example:[34]' "$LOG" | tail -3)"
-check "expired: dismissed (not fetched again), bytes left as buffer" \
-  "$(SQ "select group_concat(state, ' ') from downloads where id in ('example:3','example:4')")/$(SS "select count(*) from tracks where item in ('example:3','example:4')")" "4 4/2"
-check "expired: its tile still says geladen (the bytes are there)" "$(chip example:3)" "geladen"
-# unfollowing ends the auto-download in one transaction: its episodes - the deleted ones too - let
-# go of the subscription, else the commit fails on the reference (review 2026-11-09) and leaves the
-# connection in an open transaction that swallows every later write
-m=$(wc -l < "$LOG"); cmd "unfollow exampleshow:demo"
-for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: unfollowed" && break; sleep 0.25; done
-check "unfollowed: subscription gone, its episodes (deleted ones too) let go of it" \
-  "$(SQ "select count(*) from subscriptions where id='exampleshow:demo'")/$(SQ "select count(*) from downloads where sub='exampleshow:demo'")" "0/0"
-tail -n +$((m + 1)) "$LOG" | grep -q "rolled back" && bad "the unfollow was rolled back" || ok "the unfollow committed"
-m=$(wc -l < "$LOG"); cmd "unfollow example:never-followed"; cmd "follows"
-for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "dev: follows end" && break; sleep 0.25; done
-check "a write after it commits (no transaction left open)" "$(SQ "select count(*) from follows where id='exampleshow:demo'")" "0"
-# "Herunterladen" on a pre-buffered episode: kept, nothing loaded again
-SQ "$DEMOSUB insert or replace into items (id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Testbild\",\"source\":\"example\"}');
-    insert or replace into downloads (id,source,channel,state,progress,added,sub) values ('example:1','example','Dev',0,0,strftime('%s','now'),'exampleshow:demo');"
-quit; start
-for i in $(seq 1 60); do grep -q "downloads: done example:1" "$LOG" && break; sleep 0.25; done
-m=$(wc -l < "$LOG")
-cmd "dlget example:1"
-for i in $(seq 1 20); do grep -q "example:1 pre-buffered -> downloaded" "$LOG" && break; sleep 0.25; done
-check "Herunterladen on a pre-buffered episode: kept, no expiry" "$(SQ "select state || '/' || coalesce(sub, '-') || '/' || coalesce(expires, '-') from downloads where id='example:1'")" "2/-/-"
-sleep 1; tail -n +$((m + 1)) "$LOG" | grep -q "example: filled example:1" && bad "it was loaded again" || ok "nothing loaded again"
+check "automatic queued/running/retry/done records retired before recovery"  "$(SQ "select count(*) from downloads where id in ('example:3','example:4','example:5','example:6') and state=4 and sub is null and retryAt is null and expires is null")" "4"
+check "retired subscription settings removed" "$(SQ "select count(*) from subscriptions")" "0"
+check "manual download remains complete" "$(SQ "select state || '/' || coalesce(sub,'-') from downloads where id='example:1'")" "2/-"
+check "existing persistent bytes preserved" "$(SS "select coalesce(sum(end-start),0) from extents")" "$BEFORE_BYTES"
+sleep 1
+grep -q 'downloads: loading \(Queued\|Retry\|Running\|Auto done\)' "$LOG" && bad "automatic full fill restarted" || ok "no retired full fills restart"
+# Only an explicit download makes the old automatic item a complete, retained buffer again.
+cmd "dlget example:3"
+for i in $(seq 1 80); do grep -q "downloads: done example:3" "$LOG" && break; sleep 0.25; done
+check "manual Herunterladen fills and retains the same store"  "$(SQ "select state || '/' || coalesce(sub,'-') || '/' || coalesce(expires,'-') from downloads where id='example:3'")" "2/-/-"
+check "manual request never resumes the other automatic entries"  "$(SQ "select count(*) from downloads where id in ('example:4','example:5','example:6') and state=4")" "3"
 quit
 
 fi   # part b
@@ -299,7 +288,40 @@ fi   # part b
 if want c; then
 echo "==> 8c. a progressive file through the media proxy"
 export SOFA_PROXY_LOOPBACK=1   # the Example app's file (local server) counts as a source's
+export SOFA_PREBUFFER_TEST=1   # explicit dev-only command; ignores display sleep, never player gates
 start
+cmd "proxytest"
+for i in $(seq 1 40); do grep -q "dev: proxy session lifecycle" "$LOG" && break; sleep 0.1; done
+grep -q "dev: proxy session lifecycle passed" "$LOG" && ok "proxy sessions released across 200 readers, active neighbor preserved" || bad "proxy sessions not released"
+# Same bytes/source/position, different item identities: compare first-frame latency with no cache
+# against the actual speculative buffer. This is a measurement, not a timing-sensitive assertion.
+m=$(log_mark "$LOG");cmd "play example:2 at 30"
+for i in $(seq 1 80); do log_since $m "$LOG" | grep -q 'mpv: first frame' && break; sleep .25; done
+COLD_START=$(log_since $m "$LOG" | sed -n 's/.*mpv: first frame \([0-9.][0-9.]*\) s after open.*/\1/p' | head -1)
+[ -n "$COLD_START" ] || bad "no cold-start frame for latency measurement"
+cmd "key menu";sleep .3
+# The actual predictive coordinator/reader writes at the saved position, without creating a download.
+SQ "insert or replace into items(id,json) values ('example:1','{\"id\":\"example:1\",\"kind\":0,\"title\":\"Resume\",\"source\":\"example\"}');
+    insert or replace into progress(id,pos,dur,watched,updated,source) values ('example:1',30,60,0,strftime('%s','now'),'example');"
+cmd "prefetch example:1"
+for i in $(seq 1 180); do grep -q 'prebuffer: example:1' "$LOG" && break; sleep 0.25; done
+grep -q 'prebuffer: example:1 at 30.0s:' "$LOG" && ok "predictive reader uses the saved position" || bad "predictive reader did not finish at resume: $(grep 'prebuffer:' "$LOG" | tail -2)"
+PREFETCH_BYTES=$(SS "select coalesce(sum(e.end-e.start),0) from tracks t join extents e on e.track=t.id where t.item='example:1'")
+PREFETCH_TOTAL=$(SS "select coalesce(sum(total),0) from tracks where item='example:1'")
+[ "$PREFETCH_BYTES" -gt 0 ] && [ "$PREFETCH_BYTES" -lt "$PREFETCH_TOTAL" ] && ok "predictive buffer is partial in the common store ($PREFETCH_BYTES/$PREFETCH_TOTAL bytes)" || bad "predictive buffer not partial: $PREFETCH_BYTES/$PREFETCH_TOTAL"
+check "predictive work creates no full-download record" "$(SQ "select count(*) from downloads where id='example:1'")" "0"
+m=$(log_mark "$LOG");cmd "play example:1 at 30"
+for i in $(seq 1 80); do log_since $m "$LOG" | grep -q 'mpv: first frame' && break; sleep .25; done
+WARM_START=$(log_since $m "$LOG" | sed -n 's/.*mpv: first frame \([0-9.][0-9.]*\) s after open.*/\1/p' | head -1)
+[ -n "$WARM_START" ] || bad "no prefetched-start frame for latency measurement"
+echo "  measurement first-frame at 30s: cold=${COLD_START:-missing}s prefetched=${WARM_START:-missing}s"
+cmd "key menu";sleep .3
+# Manual download of that same item must see exactly those already buffered bytes.
+cmd "dlget example:1"
+for i in $(seq 1 120); do grep -q "downloads: done example:1\|downloads: FAILED example:1" "$LOG" && break; sleep 0.25; done
+REUSED=$(grep 'media-proxy: filling example:1 ' "$LOG" | sed -n 's/.*buffered \([0-9][0-9]*\) bytes.*/\1/p' | tail -1)
+[ "${REUSED:-0}" -ge "$PREFETCH_BYTES" ] && grep -q 'downloads: done example:1' "$LOG" && ok "manual download reuses the actual predictive buffer ($REUSED bytes)" || bad "manual download did not reuse predictive bytes: $REUSED < $PREFETCH_BYTES"
+cmd "prefetch cancel"
 cmd "dlget example:2"
 for i in $(seq 1 120); do grep -q "downloads: done example:2\|downloads: FAILED example:2" "$LOG" && break; sleep 0.25; done
 grep -q "media-proxy: filling example:2" "$LOG" && grep -q "downloads: done example:2" "$LOG" && ok "filled through the proxy" \
@@ -312,12 +334,34 @@ check "its manifest: a file item" "$(SS "select json_extract(json, '$.kind') || 
 m=$(wc -l < "$LOG")
 cmd "play example:3"
 for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
-sleep 1
+# A paused player must stop fetching after the forward window, not fill the whole file.
+# The local server can deliver the complete fixture in ~16 s; hold longer than that.
+cmd "mpvset pause yes"
+sleep 20
+cmd "mpvprop demuxer-cache-duration"
+for i in $(seq 1 40); do log_since $m "$LOG" | grep -q 'dev: mpv demuxer-cache-duration =' && break; sleep .1; done
+FORWARD_SECONDS=$(log_since $m "$LOG" | sed -n 's/.*dev: mpv demuxer-cache-duration = //p' | tail -1)
+/opt/local/bin/python3.14 -c 'import sys; x=float(sys.argv[1]); sys.exit(0 if 8 <= x <= 35 else 1)' "${FORWARD_SECONDS:-nan}" \
+  && ok "paused playback keeps a bounded forward window ($FORWARD_SECONDS s)" || bad "paused forward window: $FORWARD_SECONDS s"
 n=$(SS "select coalesce(sum(e.end - e.start), 0) from tracks t join extents e on e.track = t.id where t.item='example:3' and t.kind='file'")
+[ "${n:-0}" -lt "$SIZE" ] && ok "paused playback leaves the persistent buffer partial ($n/$SIZE bytes)" || bad "paused playback filled the complete item ($n/$SIZE bytes)"
 [ "${n:-0}" -gt 0 ] && ok "playback buffered through the proxy ($n bytes on disk)" || bad "nothing buffered while playing: $(SS "select group_concat(key || ' ' || kind) from tracks") / $(tail -n +$((m + 1)) "$LOG" | grep 'player\|media-proxy\|media-store\|mpv' | head -12)"
+# Rewind through the common persistent ranges with no RAM backwards cache.
+cmd "mpvset time-pos 20"
+sleep 4
+BEFORE_REWIND=$(wc -l < "$T/source-requests")
+SEEK_MARK=$(log_mark "$LOG")
+cmd "mpvset time-pos 5"
+sleep 1
+cmd "mpvprop time-pos"
+for i in $(seq 1 40); do log_since $SEEK_MARK "$LOG" | grep -q 'dev: mpv time-pos =' && break; sleep .1; done
+REWIND_POSITION=$(log_since $SEEK_MARK "$LOG" | sed -n 's/.*dev: mpv time-pos = //p' | tail -1)
+/opt/local/bin/python3.14 -c 'import sys; sys.exit(0 if abs(float(sys.argv[1])-5)<1 else 1)' "${REWIND_POSITION:-nan}" \
+  && ok "backward seek reaches the cached position ($REWIND_POSITION s)" || bad "backward seek position: $REWIND_POSITION"
+check "backward seek reuses persistent bytes without another source request" "$(wc -l < "$T/source-requests" | tr -d ' ')" "$(echo "$BEFORE_REWIND" | tr -d ' ')"
 cmd "key select"   # the bar: the timeline shows what is on disk (the file's moov sample tables)
 for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9]" && break; sleep 0.25; done
-tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9][0-9]* range(s), [1-9][0-9]* of 60 s" && ok "the timeline shows what playback put on disk ($(tail -n +$((m + 1)) "$LOG" | grep -o 'stored [0-9].*' | tail -1))" \
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored [1-9][0-9]* range(s), [1-9][0-9]* of $MEDIA_SECONDS s" && ok "the timeline shows what playback put on disk ($(tail -n +$((m + 1)) "$LOG" | grep -o 'stored [0-9].*' | tail -1))" \
   || bad "no stored shade for the file: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 cmd "key menu"; sleep 0.5
 # a download plays from the store; "Online abspielen" (info panel) switches to the source at the same position
@@ -327,7 +371,7 @@ for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame"
 tail -n +$((m + 1)) "$LOG" | grep -q "player: play .* from the store" && ok "a download plays from the store" || bad "not from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player:' | tail -2)"
 cmd "key select"
 for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range" && break; sleep 0.25; done
-tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range(s), 60 of 60 s" && ok "a download: the timeline shaded end to end" \
+tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range(s), $MEDIA_SECONDS of $MEDIA_SECONDS s" && ok "a download: the timeline shaded end to end" \
   || bad "stored shade of the download: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 m=$(wc -l < "$LOG"); cmd "key selecthold"
 for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "info: panel for" && break; sleep 0.25; done
@@ -362,6 +406,14 @@ s.serve_forever()" "$H" "$T/hls.port" & HSRV=$!
 for i in $(seq 1 100); do [ -s "$T/hls.port" ] && break; sleep 0.1; done
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$(cat "$T/hls.port")/master.m3u8
 start
+# Exercise the actual speculative reader on rewritten HLS playlists and resources, not a full fill.
+cmd "prefetch example:4"
+for i in $(seq 1 150); do grep -q 'prebuffer: example:4' "$LOG" && break; sleep 0.25; done
+grep -q 'prebuffer: example:4 at 0.0s:' "$LOG" && ok "predictive HLS reader completed" || bad "predictive HLS reader did not complete"
+HLS_PREFETCH=$(SS "select coalesce(sum(e.end-e.start),0) from tracks t join extents e on e.track=t.id where t.item='example:4'")
+[ "$HLS_PREFETCH" -gt 0 ] && ok "predictive HLS resources use the same persistent store ($HLS_PREFETCH bytes)" || bad "predictive HLS stored no resources"
+check "predictive HLS creates no retained download" "$(SQ "select count(*) from downloads where id='example:4'")" "0"
+cmd "prefetch cancel"
 # playing online: what mpv fetched of its variant is on disk, the timeline shows it (exact segments)
 m=$(wc -l < "$LOG")
 cmd "play example:4"

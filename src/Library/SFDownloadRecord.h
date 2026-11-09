@@ -36,6 +36,7 @@ typedef NS_ENUM(NSInteger, SFDLState) {
 @property (nonatomic) NSTimeInterval onlineAt;      // when that was checked
 
 + (instancetype)recordWithRow:(NSDictionary *)row;  // a row of "SELECT d.*, i.json AS item ..."
+- (BOOL)retireAutomaticFill; // startup migration: automatic work becomes evictable cache; manual intent survives
 - (NSArray *)writeStatement;                        // @[sql, args]
 @end
 

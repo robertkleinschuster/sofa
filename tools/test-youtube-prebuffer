@@ -1,0 +1,18 @@
+#!/bin/bash
+# Local integration only. Real engine media/store/fill path and libmpv; no browser or YouTube calls.
+set -eu
+cd "$(dirname "$0")/.."
+TEST_DIR=$(mktemp -d /private/tmp/sofa-yt-prebuffer.XXXXXX)
+trap 'rm -rf "$TEST_DIR"' EXIT
+/opt/local/bin/ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=10 -t 180 -c:v libx264 -preset ultrafast -an -movflags +faststart "$TEST_DIR/video.mp4"
+/opt/local/bin/ffmpeg -hide_banner -loglevel error -y -f lavfi -i sine=frequency=440 -t 180 -vn -c:a aac -movflags +faststart "$TEST_DIR/audio.mp4"
+/opt/local/bin/python3.14 - "$TEST_DIR" <<'COMPILE'
+from pathlib import Path
+import sys,subprocess
+out=Path(sys.argv[1]);cc='/opt/local/bin/clang-mp-22';inc=['-I'+str(p) for p in Path('src').glob('*/')]+['-I'+str(p) for p in Path('src/Apps').glob('*/')]+['-I/opt/local/include'];objs=[]
+files=['tests/youtube-prebuffer.m','src/Core/SFCore.m','src/Core/SFLocalHTTP.m','src/Core/SFWebSocket.m','src/Core/SFHTTPBudget.m','src/Library/SFMediaStore.m','src/Library/SFExtentSet.m','src/Library/SFPrebufferReader.m','src/Apps/YouTube/SFYTEngine+Media.m','src/Apps/YouTube/SFYTEngine+Store.m','src/Apps/YouTube/SFYTEngine+Fill.m']
+for i,f in enumerate(files):
+ obj=str(out/(str(i)+'.o'));subprocess.run([cc,'-fobjc-arc','-mmacosx-version-min=10.9','-DSF_UNIT_TEST','-Wno-incomplete-implementation',*inc,'-c',f,'-o',obj],check=True);objs.append(obj)
+subprocess.run([cc,'-mmacosx-version-min=10.9',*objs,'-L/opt/local/lib','-lmpv','-lsqlite3','-framework','Cocoa','-framework','QuartzCore','-undefined','dynamic_lookup','-o',str(out/'check')],check=True)
+COMPILE
+"$TEST_DIR/check" "$TEST_DIR/video.mp4" "$TEST_DIR/audio.mp4" "$TEST_DIR/store"

@@ -104,13 +104,6 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
         if ([it.identifier hasPrefix:@"show:"]) {   // show in the offline inventory
             NSString *ch = it.channel ?: it.title, *src = it.source;
             NSString *sid = [dl subscriptionIDForChannel:ch source:src];
-            if (sid) {
-                SFMenuOption *o = [SFMenuOption option:@"Automatisch laden" action:^{
-                    [dl unsubscribe:sid]; [nav toast:@"Automatisch laden aus – vorhandene Folgen bleiben"];
-                }];
-                o.detail = @"An";
-                [opts addObject:o];
-            }
             SFShow *sh = [[SFLibrary shared] showNamed:ch source:src];
             NSUInteger n = sh.episodes.count;
             SFMenuOption *del = [SFMenuOption option:@"Alle Downloads löschen" action:^{
@@ -122,14 +115,14 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
                     }];
                     SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
                     [nav push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ löschen?", ch]
-                                                         subtitle:sid ? @"Die Folgen werden gelöscht und nicht mehr automatisch geladen." : @"Die Folgen werden vom Mac gelöscht."
+                                                         subtitle:@"Die Folgen werden vom Mac gelöscht."
                                                           options:@[no, yes] theme:ws.theme]];
                 });
             }];
             del.detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"];
             [opts addObject:del];
         }
-        // Folgen = core (Neue Folgen, Meine Sendungen); Automatisch herunterladen = optional add-on
+        // Following adds new episodes to the library; downloading is a per-video manual action.
         SFFollows *fo = [SFFollows shared];
         if ([fo canFollow:it]) {
             BOOL following = [fo isFollowing:it.identifier];
@@ -138,15 +131,7 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
                 else { [fo follow:it]; [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue Folgen erscheinen unter „Neue Folgen“", it.title]]; }
             }]];
         }
-        if ([dl canSubscribe:it]) {
-            BOOL on = [dl isSubscribed:it.identifier];
-            SFMenuOption *o = [SFMenuOption option:@"Automatisch herunterladen" action:^{
-                if (on) { [dl unsubscribe:it.identifier]; [nav toast:@"Automatisch herunterladen aus – vorhandene Folgen bleiben"]; }
-                else { [dl subscribe:it]; [nav toast:[NSString stringWithFormat:@"Neue Folgen von „%@“ werden heruntergeladen – auch offline verfügbar", it.title]]; }
-            }];
-            o.detail = on ? @"An" : @"Aus";
-            [opts addObject:o];
-        }
+
     }
     if (!opts.count) return;
     NSString *sub = it.channel && ![it.channel isEqualToString:it.title] ? it.channel : it.subtitle;

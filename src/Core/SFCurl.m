@@ -64,17 +64,27 @@ void *SFCurlNew(void) {
     return c;
 }
 
+typedef struct { __unsafe_unretained NSMutableData *data; __unsafe_unretained BOOL (^accept)(NSUInteger); } SFFetchSink;
 static size_t appendData(char *p, size_t sz, size_t n, void *ud) {
-    [(__bridge NSMutableData *)ud appendBytes:p length:sz * n];
-    return sz * n;
+    SFFetchSink *sink=ud;
+    NSUInteger bytes=sz*n;
+    if (sink->accept && !sink->accept(bytes)) return 0;
+    [sink->data appendBytes:p length:bytes];
+    return bytes;
+}
+
+static int fetchProgress(void *ud, curl_off_t total, curl_off_t now, curl_off_t upTotal, curl_off_t upNow) {
+    SFFetchSink *sink=ud;
+    return sink->accept && !sink->accept(0) ? 1 : 0; // cancellation even while no data arrives
 }
 
 static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers, NSData *body,
-                         NSInteger *status, NSString **effective, NSError **error) {
+                         NSInteger *status, NSString **effective, NSError **error, BOOL (^accept)(NSUInteger)) {
     SFCurlGlobalInit();
     CURL *c = SFCurlNew();
     if (!c) return nil;
     NSMutableData *out = [NSMutableData new];
+    SFFetchSink sink={out,accept};
     struct curl_slist *hl = NULL;
     for (NSString *k in headers) hl = curl_slist_append(hl, [NSString stringWithFormat:@"%@: %@", k, headers[k]].UTF8String);
     curl_easy_setopt(c, CURLOPT_URL, url.UTF8String);
@@ -86,7 +96,12 @@ static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers,
     curl_easy_setopt(c, CURLOPT_USERAGENT, SFNativeUserAgent().UTF8String);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, appendData);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, (__bridge void *)out);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &sink);
+    if (accept) {
+        curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, fetchProgress);
+        curl_easy_setopt(c, CURLOPT_XFERINFODATA, &sink);
+    }
     if (hl) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hl);
     if ([method isEqualToString:@"POST"]) {
         curl_easy_setopt(c, CURLOPT_POST, 1L);
@@ -109,12 +124,17 @@ static NSData *fetchFull(NSString *url, NSString *method, NSDictionary *headers,
 
 NSData *SFCurlFetch(NSString *url, NSString *method, NSDictionary *headers, NSData *body, NSInteger *status, NSError **error) {
     if (SFSimulatedOffline()) { if (error) *error = SFError(@"Keine Internetverbindung."); return nil; }
-    return fetchFull(url, method ?: @"GET", headers, body, status, NULL, error);
+    return fetchFull(url, method ?: @"GET", headers, body, status, NULL, error, nil);
 }
 
 NSData *SFCurlFetchFinal(NSString *url, NSInteger *status, NSString **effective, NSError **error) {
     if (SFSimulatedOffline()) { if (error) *error = SFError(@"Keine Internetverbindung."); return nil; }
-    return fetchFull(url, @"GET", nil, nil, status, effective, error);
+    return fetchFull(url, @"GET", nil, nil, status, effective, error, nil);
+}
+
+NSData *SFCurlFetchLimitedFinal(NSString *url, NSInteger *status, NSString **effective, NSError **error, BOOL (^accept)(NSUInteger)) {
+    if (SFSimulatedOffline()) { if(error) *error=SFError(@"Keine Internetverbindung."); return nil; }
+    return fetchFull(url,@"GET",nil,nil,status,effective,error,accept);
 }
 
 static size_t writeFile(char *p, size_t sz, size_t n, void *ud) {

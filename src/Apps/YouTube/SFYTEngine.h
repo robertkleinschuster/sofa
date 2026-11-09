@@ -23,6 +23,7 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // stored: a video complete in the media store comes from there (`stored` set, no engine, offline too);
 // NO: always a session of the engine (its reads still come from disk where stored).
 - (void)open:(NSString *)videoID background:(BOOL)bg stored:(BOOL)stored done:(void (^)(NSDictionary *r, NSError *e))done;
+- (void)prepare:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done; // isolated background session
 - (void)closeSession:(NSString *)sid;   // a retry then opens a fresh session
 // Playback of session `sid` starts at `seconds` (the player's start point): the engine fetches from
 // there at once, as youtube.com's player does, instead of after mpv's probe and seek. Fire and forget.

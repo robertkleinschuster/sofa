@@ -83,6 +83,7 @@ export interface OpenRequest {
   start?: number;
   /** default: prefetch unless bg */
   prefetch?: boolean;
+  isolated?: boolean;
   vcodec?: string;
   acodec?: string;
 }
@@ -470,7 +471,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     if (info.kind === 'hls') return openLive(info, { vid, bg, maxHeight, lang, cached, t0 });
     // an existing healthy session for the same choice keeps its buffered media
     for (const s of sessions.values()) {
-      if (s.kind !== 'hls' && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
+      if (s.kind !== 'hls' && s.isolated === !!q.isolated && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
           && s.vcodec === vcodec && s.acodec === acodec) {
         s.lastActivity = Date.now();
         if (prefetch && startSec) s.hint(startSec * 1000);
@@ -485,8 +486,14 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     makeRoom();
     const s = new PlaybackSession({
       info, formats, video, audio, audioChoices: list.map((t) => t.format), subs: subtitleTracks(info.captions, lang),
-      startPump: (opts) => startPump(info, formats, { ...opts, bg }), cfg: sessionCfg,
+      startPump: (opts) => startPump(info, formats, { ...opts, bg }),
+      // A predictive reader only warms a startup window. The browser pump must be bounded too,
+      // independently of mpv's cache and the loopback response budget.
+      cfg: q.isolated ? { ...sessionCfg, LOW_MS: 4000, HIGH_MS: 12000,
+        HIGH_BYTES: { video: 8 << 20, audio: 2 << 20 }, MAX_BYTES: { video: 12 << 20, audio: 3 << 20 },
+      } : sessionCfg,
     });
+    s.isolated = !!q.isolated;
     s.audioList = list;
     s.maxHeight = maxHeight;
     s.lang = lang;

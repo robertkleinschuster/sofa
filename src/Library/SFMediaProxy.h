@@ -12,6 +12,9 @@
 + (instancetype)shared;
 + (BOOL)canServe:(NSURL *)url;   // an http(s) file or HLS playlist (not loopback)
 // A local URL serving the file `url` of item `item` through the store
+// Drop only this local session's metadata after its reader shuts down; persistent tracks stay.
+- (void)releaseURL:(NSURL *)url;
+- (NSUInteger)sessionCountForTesting; // no network or store access
 - (NSURL *)localURLFor:(NSURL *)url item:(NSString *)item;
 // The item complete in the store as a local URL; *subs: its stored subtitles as player source entries
 // ({lang, kind, name, url}). nil: not complete, or not a file item

@@ -48,6 +48,17 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
             SFSubscription *sub = [SFSubscription subscriptionWithRow:row];
             if (sub.identifier) _subs[sub.identifier] = sub;
         }
+        // Retire automatic full fills atomically before recovery or pinning. Do not delete
+        // tracks: useful bytes stay in the shared store and can be reused by playback.
+        NSMutableArray *retired = [NSMutableArray new];
+        for (SFDownloadRecord *r in _recs.allValues)
+            if ([r retireAutomaticFill]) [retired addObject:r.writeStatement];
+        if (_subs.count || retired.count) {
+            [retired addObject:@[@"DELETE FROM subscriptions", @[]]];
+            [st runAll:retired];
+            [_subs removeAllObjects];
+            SFLog(@"downloads: retired automatic full fills; cached ranges preserved");
+        }
         // re-queue runs interrupted last time
         for (SFDownloadRecord *r in _recs.allValues)
             if (r.state == SFDLRunning) { r.state = SFDLQueued; _resumeID = r.identifier; }
@@ -256,7 +267,7 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 }
 
 - (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID {
-    if (!item.identifier || item.kind != SFItemVideo) return NO;
+    if (subID || !item.identifier || item.kind != SFItemVideo) return NO; // whole fills require explicit manual intent
     SFDownloadRecord *r = _recs[item.identifier];
     SFDLState st = r ? r.state : SFDLNone;
     if (!subID && r.sub && st == SFDLDone) {   // "Herunterladen" on a pre-buffered episode
@@ -353,12 +364,8 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
-    // subscriptions: a follow with news (its own refresh plan), plus all of them locally shortly
-    // after start and every 3 h
-    [[NSNotificationCenter defaultCenter] addObserverForName:SFFollowsNewItemsNotification object:nil queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification *n) { SFSubscription *s = self->_subs[n.object]; if (s) [self checkSub:s]; }];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self checkSubscriptionsNow]; });
-    _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(checkSubscriptionsNow) userInfo:nil repeats:YES];
+    // Only expiry maintenance remains; follow refreshes no longer enqueue full downloads.
+    _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(expirePrebuffers) userInfo:nil repeats:YES];
 }
 
 #pragma mark Paths

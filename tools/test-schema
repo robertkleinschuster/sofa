@@ -116,15 +116,15 @@ check "8: feed_cache gone (steps 5 + 8 ran: no broken entry blocked them)" "$(Q 
 check "9: subscriptions columns" "$(Q "select group_concat(name) from pragma_table_info('subscriptions')")" "id,keepDays,since,added"
 check "9: the follow's title wins over the stale copy" "$(Q "select title from follows where id='exampleshow:a'")" "Show A"
 check "9: subscription without follow became one" "$(Q "select title || ' ' || image from follows where id='exampleshow:b'")" "Show B https://img.example/b.jpg"
-check "9: its own fields kept" "$(Q "select keepDays || ' ' || since from subscriptions where id='exampleshow:b'")" "30 7.0"
+check "retired automatic settings removed; follows above preserved" "$(Q "select count(*) from subscriptions")" "0"
 check "9: old adoption marker gone" "$(Q "select count(*) from settings where k='follows.migrated'")" 0
 check "10: no cache table in the user database" "$(Q "select count(*) from sqlite_master where name like 'jcache%'")" 0
 check "10: cache entry moved along" "$(QC "select CAST(v AS TEXT) from jcache where k='GET https://fresh.example/'")" '{"a":1}'
 check "10: settings of removed code gone, others kept" "$(Q "select group_concat(k) from (select k from settings where k in ('kodi.imported','yt.feeds.v2','welcome.shown') order by k)")" "welcome.shown"
-check "11: retrying, next attempt after 2 failures (30 min)" "$(Q "select state || ' ' || (retryAt - $NOW) from downloads where id='example:5'")" "5 1800.0"
+check "legacy retrying automatic record retired before recovery" "$(Q "select state || ' ' || tries || ' ' || ifnull(retryAt,'-') || ' ' || ifnull(sub,'-') from downloads where id='example:5'")" "4 0 - -"
 # (a finished download is checked against the media store once the app runs: example:6 is queued again)
 check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || ifnull(retryAt - $NOW, '-') from downloads where id='example:6'")" "0 - -"
-check "11: gave up: failed, nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "3 -"
+check "legacy failed automatic record retired with nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "4 -"
 check "11: failedAt gone" "$(Q "select count(*) from pragma_table_info('downloads') where name='failedAt'")" 0
 check "12: items columns" "$(Q "select group_concat(name) from pragma_table_info('items')")" "id,json"
 check "12: one row per item" "$(Q "select group_concat(id, ' ') from (select id from items where json <> json_object('id', id) order by id)")" "example:1 example:2 example:3 example:4"
@@ -144,7 +144,7 @@ check "16: the subscription episode dismissed, the manual one gone" "$(Q "select
 check "11+16: a file with a pending repair: dismissed, nothing pending" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || tries || ' ' || ifnull(retryAt, '-') from downloads where id='example:10'")" "4 - 0 -"
 check "16: no path, no store column" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('path','store')")" 0
 check "17: no bytes column (a download's size is the media store's)" "$(Q "select count(*) from pragma_table_info('downloads') where name = 'bytes'")" 0
-check "user data kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2722"
+check "progress, downloads and follows kept; only obsolete auto settings removed" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2720"
 
 echo "==> restart (no step runs twice)"
 run

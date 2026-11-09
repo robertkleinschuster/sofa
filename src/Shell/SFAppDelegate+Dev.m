@@ -13,6 +13,8 @@
 #import "SFStats.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
+#import "SFMediaProxy.h"
+#import "SFPrebuffer.h"
 #import "SFPlayerScreen.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFPlayerScreen.h"
@@ -191,6 +193,27 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
             int st = SFRunProcess(@"/bin/sleep", @[@"30"], 1, NO, NULL);
             SFLog(@"dev: proctest status %d after %.1f s", st, -[t0 timeIntervalSinceNow]);
         });
+    } else if ([cmd isEqualToString:@"prefetch"] && arg && SFDevEnv(@"SOFA_PREBUFFER_TEST")) {
+        if ([arg isEqualToString:@"cancel"]) { [[SFPrebuffer shared] leave:NSApp]; SFLog(@"dev: prefetch cancelled"); }
+        else {
+            SFItem *it=[SFItem new];it.kind=SFItemVideo;it.identifier=arg;it.resolverRef=arg;it.title=arg;it.source=@"example";
+            [[SFPrebuffer shared] offer:@[it] focused:it owner:NSApp];
+        }
+    } else if ([cmd isEqualToString:@"proxytest"]) {
+        SFMediaProxy *p=[SFMediaProxy shared];
+        NSUInteger before=p.sessionCountForTesting;
+        NSURL *source=[NSURL URLWithString:@"https://example.invalid/test.mp4"];
+        NSURL *held=[p localURLFor:source item:@"example:held"];
+        BOOL ok=[[p localURLFor:held item:@"example:held"] isEqual:held] && p.sessionCountForTesting==before+1;
+        for (NSUInteger i=0;i<200;i++) {
+            NSURL *u=[p localURLFor:source item:@"example:temporary"];
+            [p releaseURL:u]; [p releaseURL:u];
+            if(p.sessionCountForTesting!=before+1) ok=NO;
+        }
+        [p releaseURL:[NSURL URLWithString:@"http://127.0.0.1:1/f/wrong/media.mp4"]];
+        ok=ok && p.sessionCountForTesting==before+1;
+        [p releaseURL:held];
+        SFLog(@"dev: proxy session lifecycle %@ (%lu -> %lu)",ok && p.sessionCountForTesting==before ? @"passed" : @"FAILED",(unsigned long)before,(unsigned long)p.sessionCountForTesting);
     } else if ([cmd isEqualToString:@"dlget"] && arg) {     // Dev: download a resolver ref (orf:…) like the context menu
         SFItem *it = [SFItem new];
         it.kind = SFItemVideo; it.identifier = arg; it.resolverRef = arg; it.title = arg; it.source = @"dev"; it.channel = @"Dev";

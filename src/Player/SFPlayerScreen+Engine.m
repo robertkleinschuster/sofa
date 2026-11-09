@@ -1,7 +1,9 @@
 // SFPlayerScreen - engine events: status, buffering, end and interruption, recovery of failed streams, teardown.
 #import "SFPlayerScreen+Private.h"
 #import "SFStats.h"
+#import "SFPrebuffer.h"
 #import "SFMPVEngine.h"
+#import "SFMediaProxy.h"
 #import "SFApp.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 
@@ -113,10 +115,13 @@ static const NSTimeInterval kReopenMinPlay = 60;
 - (void)teardownPlayer {
     _engine.delegate = nil;   // no late callbacks from the old engine
     [_engine shutdown];
+    [[SFMediaProxy shared] releaseURL:_servedURL];
+    _servedURL=nil;
     _engine = nil;
 }
 
 - (void)teardown {
+    [[SFPrebuffer shared] leave:self];
     if (_powerObs) { [[NSNotificationCenter defaultCenter] removeObserver:_powerObs]; _powerObs = nil; }
     if (_sabrObs) { [[NSNotificationCenter defaultCenter] removeObserver:_sabrObs]; _sabrObs = nil; }
     _closing = YES;

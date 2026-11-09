@@ -436,6 +436,10 @@ static id Clean(id v) {
     }];
 }
 
+- (void)prepare:(NSString *)vid done:(void (^)(NSDictionary *, NSError *))done {
+    [self open:vid request:@{@"v":vid ?: @"", @"bg":@YES, @"isolated":@YES, @"prefetch":@NO, @"maxHeight":@1080, @"lang":@"de"} done:done];
+}
+
 - (BOOL)preloadOnFocus:(NSString *)vid {
     if (!vid.length || !self.available || [SFYTBreaker shared].blockedUntil) return NO;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970;

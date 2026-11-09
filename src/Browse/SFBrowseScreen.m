@@ -4,6 +4,7 @@
 #import "SFStore.h"
 #import "SFMenuScreen.h"
 #import "SFDownloads.h"
+#import "SFPrebuffer.h"
 #import "SFNet.h"
 #import "SFFollows.h"
 #import "SFLibrary.h"
@@ -109,17 +110,20 @@
     _prefetchTimer = nil;
     SFItem *it = [self focusedItem];
     if (it.kind != SFItemVideo || [[SFDownloads shared] stateFor:it.identifier progress:NULL] == SFDLDone || ![SFNet isOnline]) return;
-    // only when the focus moved to another video: rebuilds after a follow check restore the same
-    // focus (2026-11-06: one video preloaded 184 times a day, also with the screen asleep)
-    if ([it.identifier isEqualToString:_prefetchedID]) return;
+    // The coordinator applies per-item cooldowns and display/player gates even on page rebuilds.
     _prefetchedID = it.identifier;
-    Class<SFApp> app = [SFAppRegistry appForItem:it];
-    if ([app respondsToSelector:@selector(preloadOnFocus:)]) [app preloadOnFocus:it];
+    NSMutableArray *suggestions = [NSMutableArray new];
+    for (SFShelf *shelf in _page.shelves) {
+        for (SFItem *candidate in shelf.items) { if (suggestions.count >= 100) break; [suggestions addObject:candidate]; }
+        if (suggestions.count >= 100) break;
+    }
+    [[SFPrebuffer shared] offer:suggestions focused:it owner:self];
 }
 
 #pragma mark Lifecycle
 
 - (void)willAppear {
+    [self schedulePrefetch];
     [self updateClock];
     [_clockTimer invalidate];   // after an overlay (menu) willAppear arrives without a preceding willDisappear
     _clockTimer = [NSTimer scheduledTimerWithTimeInterval:15 target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
@@ -128,7 +132,7 @@
         for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues) [tl refreshProgress];
     }
 }
-- (void)willDisappear { [_clockTimer invalidate]; _clockTimer = nil; [_prefetchTimer invalidate]; _prefetchTimer = nil; }
+- (void)willDisappear { [[SFPrebuffer shared] leave:self]; [_clockTimer invalidate]; _clockTimer = nil; [_prefetchTimer invalidate]; _prefetchTimer = nil; }
 - (void)didAppear {}
 
 // Notification-driven reloads coalesce: deleting 200 downloads posts 200 notifications, the page

@@ -90,6 +90,8 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (SFItem *)itemForRef:(NSString *)ref title:(NSString *)title image:(NSString *)image;   // playable item for a video ref (phone, end cards); local copy preferred
 + (void)updateStoredItem:(SFItem *)item;   // read back from storage (history, continue watching): refresh derived fields, e.g. picture URLs; a local picture stays
 + (SFPageLoader)listLoader:(NSString *)ref title:(NSString *)title;   // a playable list (playlist): first shelf = the videos in order
+// Prepare a private background reader; cleanup must release only its own session. No view reports.
++ (void)prepareItem:(SFItem *)item position:(double)position done:(void (^)(NSURL *url, dispatch_block_t cleanup))done;
 + (void)preloadOnFocus:(SFItem *)item;   // focus rests on a (not downloaded) video while online: start resolving early
 // --- remote control: a phone app as remote (YouTube "Mit TV verbinden"). The app owns pairing,
 //     protocol and its settings; the shell starts it with a host and shows its status. ---

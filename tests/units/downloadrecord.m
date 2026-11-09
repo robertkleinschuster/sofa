@@ -38,6 +38,20 @@ int main(void){ @autoreleasepool {
   expect([mw[@"source"] isEqual:@""] && [mw[@"channel"] isEqual:@""], "source/channel: empty text, never NULL");
   expect([SFDownloadRecord new].online == -1, "a new record: online unknown");
 
+  // Upgrade: queued/running/retrying automatic jobs cannot restart full fills; completed
+  // automatic copies become plain cache too. Every manual state remains untouched.
+  for (NSInteger state = SFDLQueued; state <= SFDLRetrying; state++) {
+      SFDownloadRecord *automatic = [SFDownloadRecord recordWithRow:@{@"id": @"example:auto", @"state": @(state), @"sub": @"exampleshow:a", @"retryAt": @999}];
+      expect([automatic retireAutomaticFill] && automatic.state == SFDLDismissed && !automatic.sub && !automatic.retryAt, "automatic work retired before recovery");
+      expect(![automatic retireAutomaticFill], "migration idempotent");
+      SFDownloadRecord *manual = [SFDownloadRecord recordWithRow:@{@"id": @"example:manual", @"state": @(state)}];
+      expect(![manual retireAutomaticFill] && manual.state == state, "manual intent unchanged");
+  }
+  SFDownloadRecord *kept = [SFDownloadRecord recordWithRow:full];
+  expect([kept retireAutomaticFill] && kept.state == SFDLDone && kept.keep && !kept.sub && !kept.expires, "explicitly kept copy survives without expiry");
+  SFDownloadRecord *detached = [SFDownloadRecord recordWithRow:@{@"id": @"example:detached", @"state": @2, @"expires": @3000}];
+  expect([detached retireAutomaticFill] && detached.state == SFDLDismissed, "expired-policy copy without subscription becomes cache");
+
   // subscriptions
   SFSubscription *s = [SFSubscription subscriptionWithRow:@{@"id": @"exampleshow:a", @"since": @7.0, @"added": @5.0}];
   expect(s.keepDays == 90, "subscription: window defaults to 90 days");

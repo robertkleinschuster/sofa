@@ -2,6 +2,7 @@
 #import "SFMP4Index.h"
 #import "SFLocalHTTP.h"
 #import "SFCurl.h"
+#import "SFHTTPBudget.h"
 #import "SFDownloads.h"
 #import "SFMediaStore.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -57,6 +58,17 @@ NSString *SFProxyHash(NSString *s) {
 
 - (SFProxySession *)sessionWithID:(NSString *)sid { return sid ? _sessions[sid] : nil; }
 
+- (void)releaseURL:(NSURL *)url {
+    NSArray *p=url.pathComponents;
+    if (![url.host isEqualToString:@"127.0.0.1"] || url.port.unsignedShortValue!=self.port || p.count<3 ||
+        (! [p[1] isEqualToString:@"f"] && ![p[1] isEqualToString:@"h"])) return;
+    NSString *sid=p[2];
+    dispatch_sync(_q,^{ [self->_sessions removeObjectForKey:sid]; });
+}
+- (NSUInteger)sessionCountForTesting {
+    __block NSUInteger count=0; dispatch_sync(_q,^{count=self->_sessions.count;});return count;
+}
+
 - (void)storedRangesFor:(NSURL *)url done:(void (^)(NSArray *))done {
     NSArray *p = url.pathComponents;   // "/", h|f, sid, ...
     NSString *sid = p.count > 2 && [url.host isEqualToString:@"127.0.0.1"] && url.port.unsignedShortValue == self.port ? p[2] : nil;
@@ -92,6 +104,10 @@ NSString *SFProxyHash(NSString *s) {
 }
 
 - (NSURL *)localURLFor:(NSURL *)url item:(NSString *)item {
+    // A resolver may already return this store's URL (e.g. a complete download).
+    // Never create a second track/manifest for our own route, including loopback tests.
+    if (_server.port && [url.scheme.lowercaseString isEqual:@"http"] && [url.host isEqual:@"127.0.0.1"]
+        && url.port.unsignedShortValue == _server.port) return url;
     if (!_server.port || !item.length || ![SFMediaProxy canServe:url]) return url;
     if ([SFMediaProxy isPlaylist:url]) return [self hlsURLFor:url item:item];
     SFProxySession *s = [SFProxySession new];
@@ -204,7 +220,7 @@ NSString *SFProxyHash(NSString *s) {
     long long gapEnd = gap ? [gap[1] longLongValue] : to;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         __block long long at = from;
-        BOOL ok = [self stream:s from:from to:gapEnd rate:0 each:^BOOL(NSData *piece) {
+        BOOL ok = [self stream:s from:from to:gapEnd rate:0 budget:[x.request header:@"x-sofa-read-budget"] each:^BOOL(NSData *piece) {
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
             __block BOOL written = NO;
             dispatch_async(self->_q, ^{ [x write:piece done:^(BOOL w) { written = w; dispatch_semaphore_signal(sem); }]; });
@@ -221,7 +237,7 @@ NSString *SFProxyHash(NSString *s) {
 
 // Background: the source's bytes [from, to) of the session's file, gathered to kFlush pieces, each
 // written to the store and handed to `each` (NO: stop). YES when all arrived.
-- (BOOL)stream:(SFProxySession *)s from:(long long)from to:(long long)to rate:(long long)rate each:(BOOL (^)(NSData *))each {
+- (BOOL)stream:(SFProxySession *)s from:(long long)from to:(long long)to rate:(long long)rate budget:(NSString *)budget each:(BOOL (^)(NSData *))each {
     __block long long at = from;
     __block BOOL stop = NO;
     NSMutableData *buf = [NSMutableData new];
@@ -234,11 +250,14 @@ NSString *SFProxyHash(NSString *s) {
         return each(piece);
     };
     NSError *e = nil;
-    BOOL ok = SFCurlStream(s.url, from, to, rate, ^BOOL(NSInteger status, long long total, NSString *mime) {
+    BOOL ok = SFCurlStreamWhile(s.url, from, to, rate, ^BOOL {
+        BOOL alive=[SFHTTPBudget takeSource:0 token:budget]; if(!alive)stop=YES; return alive;
+    }, ^BOOL(NSInteger status, long long total, NSString *mime) {
         if (status >= 400 || (s.total && total > 0 && total != s.total)) { stop = YES; return NO; }   // gone, or another file now
         if (from > 0 && status != 206) { stop = YES; SFLog(@"media-proxy: %@ - the source ignores ranges", s.item); return NO; }   // (its bytes would land at the wrong place)
         return YES;
     }, ^BOOL(NSData *bytes) {
+        if (![SFHTTPBudget takeSource:bytes.length token:budget]) { stop=YES; return NO; }
         [buf appendData:bytes];
         if (buf.length >= kFlush && !flush()) { stop = YES; return NO; }
         return YES;
@@ -283,10 +302,10 @@ NSString *SFProxyHash(NSString *s) {
         long long have = [SFProxyStore() extentsOf:s.key].bytes;
         // 3x the playback rate (as ffmpeg's -readrate 3 was): background loading never crowds out streaming
         long long rate = duration > 0 ? MAX(256 * 1024, (long long)(3 * total / duration)) : 0;
-        SFLog(@"media-proxy: filling %@ - %.0f of %.0f MB on disk already", item, have / 1048576.0, total / 1048576.0);
+        SFLog(@"media-proxy: filling %@ - %.0f of %.0f MB on disk already (buffered %lld bytes)", item, have / 1048576.0, total / 1048576.0, have);
         __block long long done_ = have;
         for (NSArray *gap in [[SFProxyStore() extentsOf:s.key] missingFrom:0 to:total]) {
-            BOOL ok = [self stream:s from:[gap[0] longLongValue] to:[gap[1] longLongValue] rate:rate each:^BOOL(NSData *piece) {
+            BOOL ok = [self stream:s from:[gap[0] longLongValue] to:[gap[1] longLongValue] rate:rate budget:nil each:^BOOL(NSData *piece) {
                 done_ += (long long)piece.length;
                 double p = MIN(0.99, (double)done_ / total);
                 SFMain(^{ if (!cancelled) progress(p); });

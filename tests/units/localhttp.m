@@ -1,8 +1,9 @@
-// sources: src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m
+// sources: src/Core/SFHTTPBudget.m src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m
 // SFLocalHTTP: request parsing (path, query, headers, body), 413 above the body limit, streamed
 // answers, a reader that goes away (onClose, failed writes). The WebSocket upgrade and the engine
 // channel on it: tests/units/websocket.m.
 #import "SFLocalHTTP.h"
+#import "SFHTTPBudget.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -106,6 +107,19 @@ static void testServer(void) {
 
     resp = roundTrip(port, @"GET /stream HTTP/1.1\r\n\r\n", nil);
     CHECK([bodyOf(resp) isEqual:@"abcdef"], "streamed pieces in order");
+
+    NSString *budget=[SFHTTPBudget open:4];
+    NSString *limited=[NSString stringWithFormat:@"GET /stream HTTP/1.1\r\nX-Sofa-Read-Budget: %@\r\n\r\n",budget];
+    resp=roundTrip(port,limited,nil);
+    CHECK([bodyOf(resp) isEqual:@"abc"], "shared byte budget ends a streamed response before exceeding its limit");
+    CHECK([SFHTTPBudget remaining:budget]==0, "over-limit chunk exhausts the budget");
+    resp=roundTrip(port,limited,nil);
+    CHECK([resp hasPrefix:@"HTTP/1.1 503 "], "retry/new audio connection cannot bypass exhausted budget");
+    [SFHTTPBudget close:budget];
+    resp=roundTrip(port,limited,nil);
+    CHECK([resp hasPrefix:@"HTTP/1.1 503 "], "revoked reader cannot restart requests");
+    resp=roundTrip(port,@"GET /stream HTTP/1.1\r\n\r\n",nil);
+    CHECK([bodyOf(resp) isEqual:@"abcdef"], "ordinary playback remains unlimited");
 
     resp = roundTrip(port, @"garbage\r\n\r\n", nil);
     CHECK([resp hasPrefix:@"HTTP/1.1 400 "], "malformed request: 400");

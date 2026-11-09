@@ -101,7 +101,13 @@ else
   bad "engine browser did not load the probe page"; tail -5 "$T/xvfb.log" "$T/firefox.log" 2>/dev/null | sed 's/^/        /'
 fi
 
+# Browser children can finish just after their parent. Give their IPC shutdown
+# a bounded grace period before asserting that no candidate process remains.
 stop
+for _ in $(seq 50); do
+  /bin/ps -axo command= | /usr/bin/grep -q "^$RT/" || break
+  sleep 0.1
+done
 /bin/ps -axo command= | /usr/bin/grep -q "^$RT/" && bad "processes from the bundle outlive the test" || ok "no bundle process left"
 [ $fail = 0 ] && echo "==> all ok" || echo "==> FAILED"
 exit $fail

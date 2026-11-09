@@ -1,4 +1,5 @@
 #import "SFLocalHTTP.h"
+#import "SFHTTPBudget.h"
 #import "SFWebSocket+Server.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -151,6 +152,13 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 
 - (void)write:(NSData *)piece done:(void (^)(BOOL))done {
     if (!_begun || _finished || _closed) { if (done) dispatch_async(_queue, ^{ done(NO); }); return; }
+    if (SFDevEnv(@"SOFA_PREBUFFER_TEST") && [_request header:@"x-sofa-read-budget"])
+        SFLog(@"prebuffer-http: %@ %@ bytes=%lu remaining=%lu", [_request.pathParts componentsJoinedByString:@"/"], [_request header:@"range"], (unsigned long)piece.length, (unsigned long)[SFHTTPBudget remaining:[_request header:@"x-sofa-read-budget"]]);
+    if (![SFHTTPBudget take:piece.length token:[_request header:@"x-sofa-read-budget"]]) {
+        [self readerGone]; [self finish];
+        if (done) dispatch_async(_queue, ^{ done(NO); });
+        return;
+    }
     [self send:piece done:done];
 }
 
@@ -187,7 +195,8 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     NSMutableDictionary *h = [@{@"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)body.length]} mutableCopy];
     if (type) h[@"Content-Type"] = type;
     [self begin:status headers:h];
-    if (body.length && ![_request.method isEqualToString:@"HEAD"]) [self send:body done:nil];
+    if (body.length && ![_request.method isEqualToString:@"HEAD"] &&
+        [SFHTTPBudget take:body.length token:[_request header:@"x-sofa-read-budget"]]) [self send:body done:nil];
     [self finish];
 }
 
@@ -309,7 +318,11 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
         SFHTTPExchange *x = [[SFHTTPExchange alloc] initWithFD:fd request:r queue:self->_queue io:io];
         [x watch];
         SFHTTPHandler h = self->_handler;
-        dispatch_async(self->_queue, ^{ h(x); });
+        dispatch_async(self->_queue, ^{
+            NSString *budget=[r header:@"x-sofa-read-budget"];
+            if (budget && ![SFHTTPBudget remaining:budget]) { [x respond:503 type:nil body:nil]; return; }
+            h(x);
+        });
     });
 }
 

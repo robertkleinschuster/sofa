@@ -6,6 +6,7 @@
 // manifest (kind "hls"), so the complete item plays from the store without the source.
 #import "SFMediaProxy+Private.h"
 #import "SFCurl.h"
+#import "SFHTTPBudget.h"
 
 static const int kMaxHeight = 1080;
 
@@ -184,7 +185,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     NSString *url = n < 0 ? s.url : s.playlists[(NSUInteger)n];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
-        NSData *d = SFCurlFetchFinal(url, &st, &eff, &e);
+        NSData *d = SFCurlFetchLimitedFinal(url, &st, &eff, &e, ^BOOL(NSUInteger n) { return [SFHTTPBudget takeSource:n token:[x.request header:@"x-sofa-read-budget"]]; });
         NSString *text = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
         if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = OneVariant(text, eff ?: url);
         dispatch_async(self.queue, ^{
@@ -227,7 +228,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     }
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{   // a range of a segment not on disk: whole, then the range
         NSInteger st = 0; NSError *e = nil;
-        NSData *d = SFCurlFetch(url, @"GET", nil, nil, &st, &e);
+        NSData *d = SFCurlFetchLimitedFinal(url, &st, NULL, &e, ^BOOL(NSUInteger n) { return [SFHTTPBudget takeSource:n token:[x.request header:@"x-sofa-read-budget"]]; });
         if (d.length && st < 400 && keep) [SFProxyStore() write:d key:key item:s.item kind:@"hls" total:(long long)d.length at:0];
         dispatch_async(self.queue, ^{
             if (!d || st >= 400) { [x respondJSON:st >= 400 ? st : 502 object:@{@"error": e.localizedDescription ?: @"resource"}]; return; }
@@ -314,7 +315,9 @@ static NSString *OneVariant(NSString *master, NSString *base) {
             return !left;
         };
         NSError *e = nil;
-        BOOL ok = SFCurlStream(url, 0, -1, 0, ^BOOL(NSInteger status, long long t, NSString *mime) {
+        BOOL ok = SFCurlStreamWhile(url, 0, -1, 0, ^BOOL {
+            BOOL alive=[SFHTTPBudget takeSource:0 token:[x.request header:@"x-sofa-read-budget"]];if(!alive)left=YES;return alive;
+        }, ^BOOL(NSInteger status, long long t, NSString *mime) {
             if (status >= 400) return NO;
             total = t;
             begun = YES;
@@ -322,6 +325,7 @@ static NSString *OneVariant(NSString *master, NSString *base) {
             if (t > 0) h[@"Content-Length"] = [NSString stringWithFormat:@"%lld", t];
             return onQueue(^(dispatch_semaphore_t sem) { [x begin:200 headers:h]; dispatch_semaphore_signal(sem); }) && !head;
         }, ^BOOL(NSData *bytes) {
+            if (![SFHTTPBudget takeSource:bytes.length token:[x.request header:@"x-sofa-read-budget"]]) { left=YES; return NO; }
             [all appendData:bytes];
             return onQueue(^(dispatch_semaphore_t sem) { [x write:bytes done:^(BOOL w) { if (!w) left = YES; dispatch_semaphore_signal(sem); }]; });
         }, &e);

@@ -122,7 +122,10 @@ static mpv_handle *SFCreateCore(void) {
         {"ao", "coreaudio"}, {"audio-client-name", "Sofa"},   // (dev tests: SOFA_AUDIO_OUT, below)
         {"ytdl", "no"}, {"input-default-bindings", "no"}, {"input-vo-keyboard", "no"}, {"osc", "no"},
         {"terminal", "no"}, {"msg-level", "all=warn"}, {"keep-open", "yes"}, {"idle", "yes"},
-        {"cache", "yes"}, {"demuxer-max-bytes", "200MiB"}, {"demuxer-readahead-secs", "30"},
+        // cache-secs must be explicit: cache=yes otherwise overrides the readahead limit.
+        // Earlier media is in the persistent store; keep no second backwards packet cache in RAM.
+        {"cache", "yes"}, {"cache-secs", "30"}, {"demuxer-max-bytes", "200MiB"},
+        {"demuxer-readahead-secs", "30"}, {"demuxer-max-back-bytes", "0"},
         {"network-timeout", "20"}, {"hr-seek", "yes"}, {"sub-auto", "no"}, {"sid", "no"},
         // the start time from the first cluster: a WebM start at the resume position made mpv read
         // media at 0 first - on a streamed track a whole fetch (5-6 s each for video and audio,

@@ -1,4 +1,4 @@
-// sources: src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m src/Apps/YouTube/SFYTChannel.m
+// sources: src/Core/SFHTTPBudget.m src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m src/Apps/YouTube/SFYTChannel.m
 // flags: -Isrc/Apps/YouTube -framework Security
 // SFWebSocket: the accept key (RFC 6455's example), server frames, the reader (masking, any split,
 // fragments, control frames, protocol errors, the size limit). SFYTChannelDecodeBinary: the

@@ -149,6 +149,18 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     else [self resolve:ref done:done];
 }
 
++ (void)prepareItem:(SFItem *)item position:(double)position done:(void (^)(NSURL *, dispatch_block_t))done {
+    NSString *ref = item.resolverRef ?: item.identifier;
+    if (![ref hasPrefix:@"yt:"]) { done(nil,nil); return; }
+    SFYTEngine *engine = [SFYTEngine shared];
+    [engine prepare:[ref substringFromIndex:3] done:^(NSDictionary *r, NSError *e) {
+        NSString *sid = str(r[@"sid"]);
+        dispatch_block_t cleanup = ^{ if (sid) [engine closeSession:sid]; };
+        if (!r || r[@"hls"]) { cleanup(); done(nil,nil); return; } // no speculative live streams
+        sabrPlay([ref substringFromIndex:3],r,^(NSURL *url, NSError *error) { done(url,cleanup); });
+    }];
+}
+
 + (void)preloadOnFocus:(SFItem *)item {
     NSString *ref = item.resolverRef ?: item.identifier;
     if ([ref hasPrefix:@"yt:"]) [[SFYTEngine shared] preloadOnFocus:[ref substringFromIndex:3]];

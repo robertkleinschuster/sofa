@@ -6,6 +6,7 @@
 #import "SFMPVEngine.h"
 #import "SFApp.h"
 #import "SFPower.h"
+#import "SFPrebuffer.h"
 
 NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
@@ -16,6 +17,7 @@ NSString *const SFPlayerStateNotification = @"SFPlayerStateNotification";
 
 - (instancetype)initWithItem:(SFItem *)item queue:(NSArray *)queue index:(NSUInteger)index {
     if ((self = [super initWithTheme:[SFTheme themeNamed:item.source ?: @"home"]])) {
+        [[SFPrebuffer shared] suspendForPlayer:self];
         _item = item;
         _queue = queue;
         _index = index;
