@@ -214,29 +214,35 @@ static id<SFTileStatusSource> gStatus;
             // live channel with a programme: what runs now instead of the static subtitle
             SFBroadcast *now = item.kind == SFItemLive ? [item broadcastAt:[NSDate date]] : nil;
             NSString *sub = now ? SFDotJoin(now.title, [@"bis " stringByAppendingString:SFFormatClock(now.end)]) : item.subtitle;
-            if (sub.length && !center) {
+            // one round avatar before the line, never the same logo twice (user 2026-11-09): the
+            // channel's own picture where the line starts with its name; else the mark of the
+            // station that broadcast a video (not of a live channel: its picture often is that
+            // logo); else, in a row mixed from several apps, the app's symbol - where it comes from,
+            // also on a tile without a line
+            NSString *picture = item.kind == SFItemVideo && item.channelImage.length && item.channel.length && [sub hasPrefix:item.channel] ? item.channelImage : nil;
+            CGImageRef mark = !picture && item.kind == SFItemVideo ? SFLogoMark(item.station) : NULL;
+            if (!picture && !mark && item.showsSourceMark) mark = SFLogoMark(item.source);
+            BOOL avatar = (picture || mark) && !center;
+            CGFloat d = U(34), x = avatar ? d + U(10) : 0, y = ih + U(18) + tth;
+            if ((sub.length || avatar) && !center) {
                 _subtitle = [SFLabel labelWithFont:[theme regular:21] color:theme.textDim];
-                _subtitle.text = sub;
-                // one round avatar before the line, never the same logo twice (user 2026-11-09): the
-                // channel's own picture where the line starts with its name; else the mark of the
-                // station that broadcast a video (not of a live channel: its picture often is that
-                // logo); else, in a row mixed from several apps, the app's symbol - where it comes from
-                NSString *picture = item.kind == SFItemVideo && item.channelImage.length && item.channel.length && [sub hasPrefix:item.channel] ? item.channelImage : nil;
-                CGImageRef mark = !picture && item.kind == SFItemVideo ? SFLogoMark(item.station) : NULL;
-                if (!picture && !mark && item.showsSourceMark) mark = SFLogoMark(item.source);
-                BOOL avatar = picture || mark;
-                CGFloat d = U(34), x = avatar ? d + U(10) : 0, y = ih + U(18) + tth;
-                CGFloat sh = [_subtitle sizeToFitWidth:w - x];
-                _subtitle.position = CGPointMake(x, y);
-                [self addSublayer:_subtitle];
+                CGFloat lh = [_subtitle heightForText:@"Ag" maxLines:1 width:w];   // one line: what the avatar is centred on
+                if (sub.length) {
+                    _subtitle.text = sub;
+                    [_subtitle sizeToFitWidth:w - x];
+                    _subtitle.position = CGPointMake(x, y);
+                    [self addSublayer:_subtitle];
+                } else _subtitle = nil;
                 if (avatar) {
                     _avatar = [SFImageLayer layer];
-                    _avatar.frame = CGRectMake(0, y + sh / 2 - d / 2 + U(2), d, d);   // centred on the line (its glyphs sit low in it)
+                    _avatar.frame = CGRectMake(0, y + lh / 2 - d / 2 + U(2), d, d);   // centred on the line (its glyphs sit low in it)
                     _avatar.cornerRadius = d / 2;
                     _avatar.masksToBounds = YES;
                     _avatar.placeholderColor = theme.surface;
-                    if (mark) { _avatar.contents = (__bridge id)mark; _avatar.contentsGravity = kCAGravityResizeAspectFill; }
-                    else _avatarSource = picture;   // loaded with the tile's picture (loadImage)
+                    if (mark) {   // marks are made for light ground (a dark ARD or WDR mark vanishes on the dark UI): a white plate
+                        _avatar.backgroundColor = CGColorGetConstantColor(kCGColorWhite);
+                        _avatar.contents = (__bridge id)mark; _avatar.contentsGravity = kCAGravityResizeAspectFill;
+                    } else _avatarSource = picture;   // loaded with the tile's picture (loadImage)
                     [self addSublayer:_avatar];
                 }
             }

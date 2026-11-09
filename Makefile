@@ -38,7 +38,7 @@ DEVAPP  := $(BUILD)/SofaDev.app
 DEVBIN  := $(DEVAPP)/Contents/MacOS/Sofa
 
 # targets are FILES (directory mtime doesn't change on relink)
-LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard res/logos/*.png))
+LOGOS   := $(patsubst res/logos/%,$(APP)/Contents/Resources/logos/%,$(wildcard res/logos/*.png res/logos/marks/*.png))
 
 # Sofa's own update key (SFSignature.h)
 KEYFILES := $(foreach b,$(APP) $(DEVAPP),$(b)/Contents/Resources/sofa-release-public.pem)
