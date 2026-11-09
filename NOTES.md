@@ -233,6 +233,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   showsSourceMark not copied (leaked into "Später ansehen"), badges stored. Regression: tools/test-home.
 
 ## Backlog (user requests — queue, tick off when done)
+- [ ] 2026-11-09 **Delete `~/Library/Application Support/Sofa/sofa-before-schema19.db`** (user: in a few days, not now) - from 2026-11-12, once schema 19 ran without anomalies: `pragma integrity_check`/`foreign_key_check` on the live DB, no `downloads:`/`store:` errors in Sofa.log since the migration.
 - [~] 2026-11-07 **YouTube engine in Firefox: roll out** (goals above). DONE: engine in the page via
       the extension (stream protection accepts it, `sps=1`), `SFYTEngine`/`SFYTBrowser`/`SFYTChannel`/
       `SFLocalHTTP` replace the node sidecar in Sofa, live-verified (test-playback 9); node sidecar,
