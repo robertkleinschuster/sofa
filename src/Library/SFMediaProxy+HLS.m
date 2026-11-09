@@ -7,51 +7,13 @@
 #import "SFMediaProxy+Private.h"
 #import "SFCurl.h"
 #import "SFHTTPBudget.h"
+#import "SFHLSPlaylist.h"
 
-static const int kMaxHeight = 1080;
-
-// a tag's attribute list: KEY=value / KEY="value"
-static NSDictionary *Attributes(NSString *line) {
-    NSRange colon = [line rangeOfString:@":"];
-    if (colon.location == NSNotFound) return @{};
-    NSString *list = [line substringFromIndex:colon.location + 1];
-    NSMutableDictionary *a = [NSMutableDictionary new];
-    NSScanner *sc = [NSScanner scannerWithString:list];
-    sc.charactersToBeSkipped = nil;
-    while (!sc.isAtEnd) {
-        NSString *k = nil, *v = nil;
-        [sc scanUpToString:@"=" intoString:&k];
-        if (![sc scanString:@"=" intoString:NULL]) break;
-        if ([sc scanString:@"\"" intoString:NULL]) { [sc scanUpToString:@"\"" intoString:&v]; [sc scanString:@"\"" intoString:NULL]; }
-        else [sc scanUpToString:@"," intoString:&v];
-        [sc scanString:@"," intoString:NULL];
-        if (k) a[[k stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]] = v ?: @"";
-    }
-    return a;
-}
-
-static NSString *Absolute(NSString *uri, NSString *base) {
-    return [[[NSURL URLWithString:uri relativeToURL:[NSURL URLWithString:base]] absoluteURL] absoluteString];
-}
-
+// a resource's track: host + path (a CDN's tokens in the query change, the resource does not); a URI
+// that does not parse (SFHLSAbsolute keeps it as given) is its own key
 static NSString *KeyOf(NSString *item, NSString *url) {
-    NSURL *u = [NSURL URLWithString:url];
-    return [NSString stringWithFormat:@"hls:%@:%@", item, SFProxyHash([u.host ?: @"" stringByAppendingString:u.path ?: @""])];
-}
-
-// The URIs of a media playlist (segments, keys, init sections), absolute against `base`
-static NSArray *ResourcesOf(NSString *text, NSString *base) {
-    NSMutableArray *out = [NSMutableArray new];
-    for (NSString *raw in [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
-        NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (!l.length) continue;
-        if (![l hasPrefix:@"#"]) { [out addObject:Absolute(l, base)]; continue; }
-        if ([l hasPrefix:@"#EXT-X-KEY"] || [l hasPrefix:@"#EXT-X-MAP"]) {
-            NSString *u = Attributes(l)[@"URI"];
-            if (u.length && ![u hasPrefix:@"data:"] && ![out containsObject:Absolute(u, base)]) [out addObject:Absolute(u, base)];
-        }
-    }
-    return out;
+    NSURL *u = url ? [NSURL URLWithString:url] : nil;
+    return [NSString stringWithFormat:@"hls:%@:%@", item, SFProxyHash(u ? [u.host ?: @"" stringByAppendingString:u.path ?: @""] : url ?: @"")];
 }
 
 // A media playlist's segments on its timeline: @[@[start s, end s, @[the keys a segment needs - itself,
@@ -65,14 +27,14 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
         if (!l.length) continue;
         if ([l hasPrefix:@"#EXTINF:"]) { dur = [[l substringFromIndex:8] doubleValue]; continue; }
         if ([l hasPrefix:@"#EXT-X-KEY"] || [l hasPrefix:@"#EXT-X-MAP"]) {
-            NSDictionary *a = Attributes(l);
+            NSDictionary *a = SFHLSAttributes(l);
             NSString *u = a[@"URI"];
-            NSString *k = u.length && ![u hasPrefix:@"data:"] && ![a[@"METHOD"] isEqual:@"NONE"] ? KeyOf(item, Absolute(u, base)) : nil;
+            NSString *k = u.length && ![u hasPrefix:@"data:"] && ![a[@"METHOD"] isEqual:@"NONE"] ? KeyOf(item, SFHLSAbsolute(u, base)) : nil;
             if ([l hasPrefix:@"#EXT-X-KEY"]) key = k; else map = k;
             continue;
         }
         if ([l hasPrefix:@"#"] || dur < 0) continue;
-        NSMutableArray *needs = [NSMutableArray arrayWithObject:KeyOf(item, Absolute(l, base))];
+        NSMutableArray *needs = [NSMutableArray arrayWithObject:KeyOf(item, SFHLSAbsolute(l, base))];
         if (key) [needs addObject:key];
         if (map) [needs addObject:map];
         [out addObject:@[@(t), @(t + dur), needs]];
@@ -142,7 +104,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     for (NSString *raw in [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
         NSString *l = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (!l.length) continue;
-        if (![l hasPrefix:@"#"]) { [out addObject:[self local:Absolute(l, base) playlist:master session:s]]; continue; }
+        if (![l hasPrefix:@"#"]) { [out addObject:[self local:SFHLSAbsolute(l, base) playlist:master session:s]]; continue; }
         NSRange q = [l rangeOfString:@"URI=\""];
         if (q.location != NSNotFound) {
             NSUInteger from = NSMaxRange(q);
@@ -151,7 +113,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
             if (uri.length && ![uri hasPrefix:@"data:"]) {
                 BOOL pl = [l hasPrefix:@"#EXT-X-MEDIA"] || [l hasPrefix:@"#EXT-X-I-FRAME-STREAM-INF"];
                 l = [l stringByReplacingCharactersInRange:NSMakeRange(from, end.location - from)
-                                               withString:[self local:Absolute(uri, base) playlist:pl session:s]];
+                                               withString:[self local:SFHLSAbsolute(uri, base) playlist:pl session:s]];
             }
         }
         [out addObject:l];
@@ -187,7 +149,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
         NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
         NSData *d = SFCurlFetchLimitedFinal(url, &st, &eff, &e, ^BOOL(NSUInteger n) { return [SFHTTPBudget takeSource:n token:[x.request header:@"x-sofa-read-budget"]]; });
         NSString *text = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
-        if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = OneVariant(text, eff ?: url);
+        if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = SFHLSOneVariant(text, eff ?: url);
         dispatch_async(self.queue, ^{
             if (!text || st >= 400) { [x respondJSON:st >= 400 ? st : 502 object:@{@"error": e.localizedDescription ?: @"playlist"}]; return; }
             NSString *body = [self rewrite:text base:eff ?: url session:s];
@@ -238,66 +200,6 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
 }
 
 #pragma mark Filling
-
-// the best variant up to kMaxHeight (by bandwidth), and the default audio rendition of its group if
-// it has its own playlist: @[variant URL, audio URL?], bandwidth
-static NSArray *ChooseVariant(NSString *master, NSString *base, long long *bandwidth) {
-    NSArray *lines = [master componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-    NSDictionary *best = nil; NSString *bestURL = nil; long long bestBW = -1; BOOL bestFits = NO;
-    NSMutableDictionary *audio = [NSMutableDictionary new];   // group -> URL (DEFAULT=YES wins)
-    for (NSUInteger i = 0; i < lines.count; i++) {
-        NSString *l = [lines[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if ([l hasPrefix:@"#EXT-X-MEDIA"]) {
-            NSDictionary *a = Attributes(l);
-            if ([a[@"TYPE"] isEqual:@"AUDIO"] && [a[@"URI"] length] && (!audio[a[@"GROUP-ID"] ?: @""] || [a[@"DEFAULT"] isEqual:@"YES"]))
-                audio[a[@"GROUP-ID"] ?: @""] = Absolute(a[@"URI"], base);
-        }
-        if (![l hasPrefix:@"#EXT-X-STREAM-INF"] || i + 1 >= lines.count) continue;
-        NSDictionary *a = Attributes(l);
-        NSString *uri = [lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        long long bw = [a[@"BANDWIDTH"] longLongValue];
-        int height = [[[a[@"RESOLUTION"] ?: @"" componentsSeparatedByString:@"x"] lastObject] intValue];
-        BOOL fits = height == 0 || height <= kMaxHeight;
-        if ((fits && !bestFits) || (fits == bestFits && bw > bestBW)) { best = a; bestURL = Absolute(uri, base); bestBW = bw; bestFits = fits; }
-    }
-    if (!bestURL) return nil;
-    *bandwidth = bestBW;
-    NSString *a = best[@"AUDIO"] ? audio[best[@"AUDIO"]] : nil;
-    return a ? @[bestURL, a] : @[bestURL];
-}
-
-// The master for the player with only the variant a download takes (ChooseVariant) and that variant's
-// audio renditions (an audio description stays choosable): lavf probes the first segments of every
-// variant before it plays - 8 variants made an ORF start 13-21 s (2026-11-08) - and it never switches
-// variants anyway. What playback keeps is then what a download needs.
-static NSString *OneVariant(NSString *master, NSString *base) {
-    long long bw = 0;
-    NSString *chosen = [ChooseVariant(master, base, &bw) firstObject];
-    if (!chosen) return master;
-    NSArray *lines = [master componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-    NSString *group = nil;
-    for (NSUInteger i = 0; i + 1 < lines.count; i++)
-        if ([lines[i] hasPrefix:@"#EXT-X-STREAM-INF"]
-            && [Absolute([lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]], base) isEqualToString:chosen])
-            group = Attributes(lines[i])[@"AUDIO"];
-    NSMutableArray *out = [NSMutableArray new];
-    for (NSUInteger i = 0; i < lines.count; i++) {
-        NSString *l = [lines[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if ([l hasPrefix:@"#EXT-X-I-FRAME-STREAM-INF"]) continue;
-        if ([l hasPrefix:@"#EXT-X-MEDIA"]) {
-            NSDictionary *a = Attributes(l);
-            if ([a[@"TYPE"] isEqual:@"AUDIO"] && ![a[@"GROUP-ID"] isEqual:group]) continue;
-        }
-        if ([l hasPrefix:@"#EXT-X-STREAM-INF"]) {
-            NSString *uri = i + 1 < lines.count ? [lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] : @"";
-            if ([Absolute(uri, base) isEqualToString:chosen]) [out addObjectsFromArray:@[l, uri]];
-            i++;   // its URI line: taken or dropped with it
-            continue;
-        }
-        [out addObject:l];
-    }
-    return [out componentsJoinedByString:@"\n"];
-}
 
 // on the queue: a whole resource from the source, its bytes to the reader as they arrive (lavf probes
 // the start of each variant's first segment: a whole fetch first made a start 3x slower, 2026-11-08);
@@ -376,7 +278,7 @@ static NSString *OneVariant(NSString *master, NSString *base) {
         if (!root) { fail(@"Wiedergabeliste nicht erreichbar"); return; }
         long long bandwidth = 0;
         NSArray *media = [root rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound
-            ? ChooseVariant(root, eff ?: url.absoluteString, &bandwidth) : @[eff ?: url.absoluteString];
+            ? SFHLSChooseVariant(root, eff ?: url.absoluteString, &bandwidth) : @[eff ?: url.absoluteString];
         if (!media.count) { fail(@"Keine Variante"); return; }
         NSMutableArray *playlists = [NSMutableArray new], *resources = [NSMutableArray new];
         for (NSString *mu in media) {
@@ -388,7 +290,7 @@ static NSString *OneVariant(NSString *master, NSString *base) {
             }
             if (!text || [text rangeOfString:@"#EXT-X-ENDLIST"].location == NSNotFound) { fail(@"Kein abgeschlossenes Video (live?)"); return; }
             [playlists addObject:@{@"text": text, @"base": meff ?: mu}];
-            [resources addObjectsFromArray:ResourcesOf(text, meff ?: mu)];
+            [resources addObjectsFromArray:SFHLSResources(text, meff ?: mu)];
         }
         NSMutableArray *keys = [NSMutableArray new];
         for (NSString *r in resources) [keys addObject:KeyOf(item, r)];
