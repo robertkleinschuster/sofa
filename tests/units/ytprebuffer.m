@@ -1,7 +1,7 @@
 // sources: src/Core/SFLocalHTTP.m src/Core/SFWebSocket.m src/Core/SFHTTPBudget.m src/Library/SFMediaStore.m src/Library/SFExtentSet.m src/Library/SFPrebufferReader.m src/Apps/YouTube/SFYTEngine+Media.m src/Apps/YouTube/SFYTEngine+Store.m src/Apps/YouTube/SFYTEngine+Fill.m
 // flags: -Isrc/Library -Isrc/Player -Isrc/Browse -Isrc/Shell -Isrc/Apps/YouTube -I/opt/local/include -L/opt/local/lib -lmpv -lsqlite3
 // The YouTube media path end to end with libmpv and the real store/fill code; only the browser RPC
-// is a fake (local files, the first read of each track delayed 6 s like a real SABR start):
+// is a fake (local files, the first read of the video track delayed 6 s like a real SABR start):
 // a predictive read at 70 s leaves a partial buffer in the persistent store, the manual fill
 // fetches exactly the missing bytes into that same buffer, the complete buffer opens as a stored
 // session that demuxes offline, and it persists across a store reopen.
@@ -19,7 +19,7 @@ static SFMediaStore *gStore;
 static NSDictionary *gFiles;          // track key -> the source's bytes (nil = the source is offline)
 static NSUInteger gFetched;           // bytes the fake RPC delivered
 static NSDictionary *gAnswer;         // the open answer of the online session
-static NSMutableSet *gFirstReads;     // tracks whose first read was delayed
+static BOOL gStarted;                 // the video track's first read was delayed
 
 NSError *SFError(NSString *m) { return [NSError errorWithDomain:@"fixture" code:1 userInfo:@{NSLocalizedDescriptionKey: m}]; }
 
@@ -68,9 +68,10 @@ NSError *SFError(NSString *m) { return [NSError errorWithDomain:@"fixture" code:
                    @"mimeType": [key isEqual:@"video"] ? @"video/mp4" : @"audio/mp4"}, nil);
         };
         // a real SABR start can take token setup plus ~5 s to its first segment: a five-second
-        // HTTP timeout would abort before either track has useful bytes
-        if (![gFirstReads containsObject:key]) {
-            [gFirstReads addObject:key];
+        // HTTP timeout would abort before the track has useful bytes (one track shows it - each
+        // delayed track costs the test its 6 s, the reads are sequential)
+        if ([key isEqual:@"video"] && !gStarted) {
+            gStarted = YES;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), self->_fixtureQueue, deliver);
         } else deliver();
     });
@@ -88,8 +89,8 @@ static BOOL Until(BOOL (^ready)(void), double seconds) {
     return ready();
 }
 
-// a 180 s track of one kind ("video" or "audio") made by ffmpeg
-static NSData *Track(NSString *dir, NSString *kind) {
+// a 180 s track of one kind ("video" or "audio") made by ffmpeg: started here, read with TrackData
+static NSTask *Track(NSString *dir, NSString *kind) {
     NSString *path = [dir stringByAppendingPathComponent:[kind stringByAppendingString:@".mp4"]];
     NSArray *media = [kind isEqual:@"video"]
         ? @[@"-f", @"lavfi", @"-i", @"testsrc=size=320x180:rate=10", @"-t", @"180", @"-c:v", @"libx264", @"-preset", @"ultrafast", @"-an"]
@@ -97,9 +98,11 @@ static NSData *Track(NSString *dir, NSString *kind) {
     NSMutableArray *a = [@[@"-hide_banner", @"-loglevel", @"error", @"-y"] mutableCopy];
     [a addObjectsFromArray:media];
     [a addObjectsFromArray:@[@"-movflags", @"+faststart", path]];
-    NSTask *t = [NSTask launchedTaskWithLaunchPath:@"/opt/local/bin/ffmpeg" arguments:a];
+    return [NSTask launchedTaskWithLaunchPath:@"/opt/local/bin/ffmpeg" arguments:a];
+}
+static NSData *TrackData(NSTask *t) {
     [t waitUntilExit];
-    return [NSData dataWithContentsOfFile:path];
+    return [NSData dataWithContentsOfFile:t.arguments.lastObject];
 }
 
 // a bounded read at 70 s of video+audio; nil when it did not finish within `seconds`
@@ -118,8 +121,8 @@ static NSDictionary *Read(NSString *video, NSString *audio, double seconds) {
 int main(void) { @autoreleasepool {
     NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"ytprebuffer-%d", getpid()]];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    gFirstReads = [NSMutableSet new];
-    gFiles = @{@"video": Track(dir, @"video"), @"140": Track(dir, @"audio")};
+    NSTask *v = Track(dir, @"video"), *a = Track(dir, @"audio");   // both encode at once
+    gFiles = @{@"video": TrackData(v), @"140": TrackData(a)};
     gStore = [[SFMediaStore alloc] initWithDirectory:[dir stringByAppendingPathComponent:@"store"]];
     SFYTEngine *engine = [SFYTEngine shared];
     NSString *video = [engine.mediaBase stringByAppendingString:@"/s/fixture/video"], *audio = [engine.mediaBase stringByAppendingString:@"/s/fixture/audio/140"];
