@@ -26,10 +26,13 @@ if [ "$(readlink "$LINK" 2>/dev/null)" != "../../build/vendor/sofa-yt-dev/node_m
   [ -e "$LINK" ] && [ ! -L "$LINK" ] && { echo "test-sofa-yt: $LINK is not a symlink - remove it"; exit 1; }
   rm -f "$LINK"; ln -s ../../build/vendor/sofa-yt-dev/node_modules "$LINK"
 fi
-# the type check runs beside the tests (independent; both must pass), its verdict is printed first
+# the type check runs beside the tests (independent; both must pass), its verdict is printed first.
+# Incremental (build/tsc, git-ignored): unchanged sources are not checked again - 17 of the suite's
+# CPU seconds under test-all's load; a change is still checked in full where it reaches
 TSC_OUT="$(mktemp "${TMPDIR:-/tmp}/sofa-tsc.XXXXXX")"
-( "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt" --pretty false > "$TSC_OUT" 2>&1 \
-  && "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt/web" --pretty false >> "$TSC_OUT" 2>&1 ) & TSC=$!
+mkdir -p "$SRC/build/tsc"
+tsc() { "$NODE" "$DEV/node_modules/typescript/bin/tsc" -p "$SRC/res/sofa-yt$1" --pretty false --incremental --tsBuildInfoFile "$SRC/build/tsc/sofa-yt$2.tsbuildinfo"; }
+( tsc "" "" > "$TSC_OUT" 2>&1 && tsc /web -web >> "$TSC_OUT" 2>&1 ) & TSC=$!
 
 # ---- tests ------------------------------------------------------------------------------------
 # the browser engine bundle (docs/youtube-engine.md): unit-engine loads it in Firefox, the live tests install the extension
