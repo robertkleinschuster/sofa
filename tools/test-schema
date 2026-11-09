@@ -19,10 +19,13 @@
 #      folders too; a subscription episode stays dismissed, a manual one leaves; path and store go
 #  17  downloads.bytes goes: a download's size is the media store's (read live)
 #  18  constraints: NOT NULL, CHECKs, foreign keys (deferred); stub items for references without one
+#  19  automatic downloads gone: subscriptions, a download's sub/expiry/attempts, states 4 and 5;
+#      their rows go, a kept one stays (a kept unfinished one: failed)
+# (the checks are on the end state: what a later step dropped is checked by what it left behind)
 # plus: integrity, nothing user-visible lost (follows, progress, downloads), idempotent restart.
 # Exit code 0 = all ok.
 set -u
-LATEST=18   # the newest schema step (SFStore+Schema.m migrations)
+LATEST=19   # the newest schema step (SFStore+Schema.m migrations)
 unset DYLD_INSERT_LIBRARIES
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
@@ -72,6 +75,11 @@ INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('
 INSERT INTO downloads (id, source, state, tries, failedAt, error) VALUES ('example:6', 'example', 2, 1, $NOW, 'repair: timeout');
 INSERT INTO downloads (id, source, state, sub, path, tries, failedAt, error) VALUES ('example:10', 'example', 2, 'exampleshow:a', '$SOFA_DATA_DIR/Downloads/example/Show/c.mp4', 1, $NOW, 'repair: timeout');
 INSERT INTO downloads (id, source, state, sub, tries, failedAt, error) VALUES ('example:7', 'example', 3, 'exampleshow:a', 6, $NOW, 'HTTP 404');
+-- step 19: subscription episodes the user kept ("Behalten", a column step 1 adds where missing): one
+-- finished, one waiting for its next attempt
+ALTER TABLE downloads ADD COLUMN keep INTEGER DEFAULT 0;
+INSERT INTO downloads (id, source, state, sub, keep) VALUES ('example:11', 'example', 2, 'exampleshow:a', 1);
+INSERT INTO downloads (id, source, state, sub, keep, tries, failedAt, error) VALUES ('example:12', 'example', 3, 'exampleshow:a', 1, 2, $NOW, 'HTTP 403');
 -- step 16: file downloads (files below), a manual one and a subscription episode
 INSERT INTO downloads (id, source, state, path, thumb, bytes) VALUES ('example:8', 'example', 2, '$SOFA_DATA_DIR/Downloads/example/Show/a.mp4', NULL, 9);
 INSERT INTO downloads (id, source, state, sub, path, thumb, bytes) VALUES ('example:9', 'example', 2, 'exampleshow:a', '$SOFA_DATA_DIR/Downloads/example/Show/b.mp4', '$SOFA_DATA_DIR/Downloads/example/Show/b.jpg', 9);
@@ -87,7 +95,7 @@ INSERT INTO follow_items VALUES ('exampleshow:a', 'example:3', '{"id":"example:3
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:2', '{"id":"example:2","kind":0,"title":"Mitte"}', 100);
 INSERT INTO follow_items VALUES ('exampleshow:a', 'example:1', '{"id":"example:1","kind":0,"title":"Alt"}', 100);
 INSERT INTO settings VALUES ('dev.keyboard.layout', 'qwertz'), ('lounge.dev.token', 'x'), ('lounge.token', 'keep'),
-  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json'), ('follows.migrated', '0'), ('kodi.imported', '1/0'), ('yt.feeds.v2', '1'), ('welcome.shown', '1');
+  ('search.recent.zdf', '["terra x","Bares für Rares"]'), ('search.recent.all', 'not json'), ('follows.migrated', '0'), ('downloads.subscriptionStarts.yt', '1,2'), ('kodi.imported', '1/0'), ('yt.feeds.v2', '1'), ('welcome.shown', '1');
 INSERT INTO jcache VALUES ('yt.feed.UCabcdefghijklmnopqrstuv', $NOW, CAST('{"sig":"a,b","items":[{"id":"yt:aaaaaaaaaaa","kind":0}]}' AS BLOB));
 INSERT INTO jcache VALUES ('yt.feed.UCbroken0000000000000000', $NOW, CAST('{"sig":' AS BLOB));   -- cut off: must not block step 5
 INSERT INTO jcache VALUES ('GET https://old.example/', $NOW - 30 * 86400, CAST('{}' AS BLOB));
@@ -108,43 +116,42 @@ check "1: downloads columns added" "$(Q "select count(*) from pragma_table_info(
 check "5: no feed left in the response cache" "$(QC "select count(*) from jcache where k like 'yt.feed.%'")" 0
 check "5: follow_items in written order" "$(Q "select group_concat(id, ' ') from (select id from follow_items order by follow, pos)")" "example:3 example:2 example:1"
 check "5: follow_items columns" "$(Q "select group_concat(name) from pragma_table_info('follow_items')")" "follow,id,pos"
-check "5: subscriptions without lastCheck" "$(Q "select count(*) from pragma_table_info('subscriptions') where name='lastCheck'")" 0
 check "6: recent searches newest first" "$(Q "select group_concat(query, '|') from (select query from recent_searches where source='zdf' order by at desc)")" "terra x|Bares für Rares"
 check "6: broken entry dropped, settings cleared" "$(Q "select count(*) from settings where k like 'search.recent.%'") $(Q "select count(*) from recent_searches where source='all'")" "0 0"
 check "7: follows.checked" "$(Q "select count(*) from pragma_table_info('follows') where name='checked'")" 1
 check "8: feed_cache gone (steps 5 + 8 ran: no broken entry blocked them)" "$(Q "select count(*) from sqlite_master where name='feed_cache'")" 0
-check "9: subscriptions columns" "$(Q "select group_concat(name) from pragma_table_info('subscriptions')")" "id,keepDays,since,added"
 check "9: the follow's title wins over the stale copy" "$(Q "select title from follows where id='exampleshow:a'")" "Show A"
 check "9: subscription without follow became one" "$(Q "select title || ' ' || image from follows where id='exampleshow:b'")" "Show B https://img.example/b.jpg"
-check "retired automatic settings removed; follows above preserved" "$(Q "select count(*) from subscriptions")" "0"
+check "19: no subscriptions table, no budget settings; follows above kept" "$(Q "select count(*) from sqlite_master where name='subscriptions'") $(Q "select count(*) from settings where k like 'downloads.subscriptionStarts.%'")" "0 0"
 check "9: old adoption marker gone" "$(Q "select count(*) from settings where k='follows.migrated'")" 0
 check "10: no cache table in the user database" "$(Q "select count(*) from sqlite_master where name like 'jcache%'")" 0
 check "10: cache entry moved along" "$(QC "select CAST(v AS TEXT) from jcache where k='GET https://fresh.example/'")" '{"a":1}'
 check "10: settings of removed code gone, others kept" "$(Q "select group_concat(k) from (select k from settings where k in ('kodi.imported','yt.feeds.v2','welcome.shown') order by k)")" "welcome.shown"
-check "legacy retrying automatic record retired before recovery" "$(Q "select state || ' ' || tries || ' ' || ifnull(retryAt,'-') || ' ' || ifnull(sub,'-') from downloads where id='example:5'")" "4 0 - -"
+check "19: automatic downloads gone (retrying, given up, dismissed)" "$(Q "select count(*) from downloads where id in ('example:5','example:7','example:9','example:10')")" "0"
+# (the finished one has nothing in this media store: the app queues it for the rest, as example:6)
+check "19: kept ones stay: the finished one a download, the unfinished one failed" "$(Q "select group_concat(id || '=' || state, ' ') from (select id, state from downloads where id in ('example:11','example:12') order by id)")" "example:11=0 example:12=3"
 # (a finished download is checked against the media store once the app runs: example:6 is queued again)
-check "11: repair pending: done, plain error, next attempt (15 min)" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || ifnull(retryAt - $NOW, '-') from downloads where id='example:6'")" "0 - -"
-check "legacy failed automatic record retired with nothing pending" "$(Q "select state || ' ' || ifnull(retryAt, '-') from downloads where id='example:7'")" "4 -"
+check "11: repair pending: a plain error, queued for the rest" "$(Q "select state || ' ' || ifnull(error, '-') from downloads where id='example:6'")" "0 -"
 check "11: failedAt gone" "$(Q "select count(*) from pragma_table_info('downloads') where name='failedAt'")" 0
 check "12: items columns" "$(Q "select group_concat(name) from pragma_table_info('items')")" "id,json"
 check "12: one row per item" "$(Q "select group_concat(id, ' ') from (select id from items where json <> json_object('id', id) order by id)")" "example:1 example:2 example:3 example:4"
-check "18: a download without metadata: a stub item (its id), nothing else invented" "$(Q "select group_concat(id, ' ') from (select id from items where json = json_object('id', id) order by id)")" "example:10 example:5 example:6 example:7 example:9"
+check "18: a download without metadata: a stub item (its id), nothing else invented" "$(Q "select group_concat(id, ' ') from (select id from items where json = json_object('id', id) order by id)")" "example:10 example:11 example:12 example:5 example:6 example:7 example:9"
 check "18: every reference has its row" "$(Q "pragma foreign_key_check" | wc -l | tr -d ' ')" "0"
-check "18: references declared" "$(Q "select (select count(*) from pragma_foreign_key_list('downloads')) || (select count(*) from pragma_foreign_key_list('follow_items')) || (select count(*) from pragma_foreign_key_list('progress')) || (select count(*) from pragma_foreign_key_list('subscriptions')) || (select count(*) from pragma_foreign_key_list('watch_later'))")" "22111"
+check "18: references declared" "$(Q "select (select count(*) from pragma_foreign_key_list('downloads')) || (select count(*) from pragma_foreign_key_list('follow_items')) || (select count(*) from pragma_foreign_key_list('progress')) || (select count(*) from pragma_foreign_key_list('watch_later'))")" "1211"
 check "18: a value out of range is refused" "$(Q "insert into downloads (id, source, state, added) values ('example:1', 'example', 9, 0)" 2>&1 | grep -c 'CHECK constraint failed')" "1"
 check "12: newest title wins, older fields kept, no local paths" \
   "$(Q "select json_extract(json,'$.title') || '|' || json_extract(json,'$.plot') || '|' || json_extract(json,'$.image') || '|' || ifnull(json_extract(json,'$.localPath'),'') || ifnull(json_extract(json,'$.url'),'') from items where id='example:4'")" \
   "Neuer Titel|Nur hier|https://img.example/4.jpg|"
 check "12: no item column left" "$(Q "select count(*) from pragma_table_info('progress') p where name='item'") $(Q "select count(*) from pragma_table_info('downloads') where name='item'") $(Q "select count(*) from pragma_table_info('watch_later') where name='item'") $(Q "select count(*) from pragma_table_info('follow_items') where name='item'")" "0 0 0 0"
 check "13: original titles (id -> the uploader's title)" "$(Q "select group_concat(name) from pragma_table_info('original_titles')")" "id,title"
-check "15: downloads.expires, existing downloads kept" "$(Q "select count(*) || '/' || sum(expires is null) from downloads where id in ('example:6')")" "1/1"
+check "19: downloads columns" "$(Q "select group_concat(name) from pragma_table_info('downloads')")" "id,source,channel,thumb,state,progress,added,published,error,keep,online,onlineAt"
+check "19: only states 0-3" "$(Q "insert into downloads (id, source, state, added) values ('example:1', 'example', 4, 0)" 2>&1 | grep -c 'CHECK constraint failed')" "1"
 check "16: files, thumbnail and the emptied folders deleted, others kept" \
   "$(cd "$SOFA_DATA_DIR/Downloads" && find . -type f -not -path './.store/*' | sort | tr '\n' ' ')" "./other/keep.mp4 "
-check "16: the subscription episode dismissed, the manual one gone" "$(Q "select group_concat(id || '=' || state || '/' || ifnull(thumb, '-'), ' ') from downloads where id in ('example:8','example:9')")" "example:9=4/-"
-check "11+16: a file with a pending repair: dismissed, nothing pending" "$(Q "select state || ' ' || ifnull(error, '-') || ' ' || tries || ' ' || ifnull(retryAt, '-') from downloads where id='example:10'")" "4 - 0 -"
+check "16+19: the file downloads gone (the manual one in 16, the dismissed episode in 19)" "$(Q "select count(*) from downloads where id in ('example:8','example:9')")" "0"
 check "16: no path, no store column" "$(Q "select count(*) from pragma_table_info('downloads') where name in ('path','store')")" 0
 check "17: no bytes column (a download's size is the media store's)" "$(Q "select count(*) from pragma_table_info('downloads') where name = 'bytes'")" 0
-check "progress, downloads and follows kept; only obsolete auto settings removed" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows) || (select count(*) from subscriptions)")" "2720"
+check "progress, the user's downloads and follows kept" "$(Q "select (select count(*) from progress) || (select count(*) from downloads) || (select count(*) from follows)")" "252"
 
 echo "==> restart (no step runs twice)"
 run
@@ -158,7 +165,7 @@ run
 check "schema version" "$(Q 'pragma user_version')" $LATEST
 check "integrity" "$(Q 'pragma integrity_check')" ok
 check "all tables" "$(Q "select group_concat(name, ' ') from (select name from sqlite_master where type='table' order by name)")" \
-  "downloads follow_items follows items original_titles progress recent_searches settings stats subscriptions watch_later"
+  "downloads follow_items follows items original_titles progress recent_searches settings stats watch_later"
 check "the cache file has its table" "$(QC "select count(*) from sqlite_master where name='jcache'")" 1
 
 [ $fail = 0 ] && echo "==> test-schema ok" || echo "==> test-schema FAILED"

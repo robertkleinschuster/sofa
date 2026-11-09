@@ -1,10 +1,10 @@
 // "Folgen" (follows): channels/shows the household follows – across all apps, without sign-in, shared.
 // Core of the concept (NOTES "Folgen statt Download-Abos"): followed shows feed "Neue Folgen"
-// (streamed) and "Meine Sendungen & Kanäle". "Automatisch herunterladen" (SFDownloads subscription) is
-// only an optional add-on per followed show and requires following.
+// (streamed) and "Meine Sendungen & Kanäle"; their lists come from the apps' feeds (SFFeed).
 // New episodes are fetched in the background (every 30 min, one after another) and cached so Home
 // appears instantly – not 128 requests on every open.
 #import "SFModel.h"
+#import "SFFeed.h"
 
 extern NSString *const SFFollowsDidChangeNotification;
 extern NSString *const SFFollowsNewItemsNotification;   // object = the follow's id: its list changed (new episodes/videos)

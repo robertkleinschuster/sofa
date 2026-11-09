@@ -3,7 +3,6 @@
 // (the file or HLS playlist the app resolves to) - fetches the thumbnail and records the outcome.
 #import "SFDownloads+Private.h"
 #import "SFHostFetch.h"
-#import "SFDownloadBudget.h"
 #import "SFMediaStore.h"
 #import "SFMediaProxy.h"
 #import "SFEngine.h"
@@ -22,24 +21,21 @@
 - (void)pump {
     if (!_started || _runningID) return;
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
-    // manual downloads before subscription downloads, oldest request first in each
+    // oldest request first
     SFDownloadRecord *next = nil;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;
     for (SFDownloadRecord *r in _recs.allValues) {
         if (r.state != SFDLQueued) continue;
         NSTimeInterval until = [self notBefore:r];
         if (until > now) { wake = wake ? MIN(wake, until) : until; continue; }   // source paused: later
-        if (!next) { next = r; continue; }
-        BOOL rm = r.sub == nil, nm = next.sub == nil;
-        if (rm != nm) { if (rm) next = r; continue; }
-        if (r.added < next.added) next = r;
+        if (!next || r.added < next.added) next = r;
     }
     if (!next) { if (wake) [self pumpAt:wake]; else [self setStorageFull:NO]; return; }
     if ([self checkStorageFor:next]) return;   // not enough room for it: wait (re-checked every minute, user asked)
     SFDownloadRecord *r = next;
     SFItem *item = [self itemFromRec:r];
     if (!item) {
-        r.state = SFDLFailed; r.error = @"Eintrag unlesbar"; r.tries = kSubMaxTries;
+        r.state = SFDLFailed; r.error = @"Eintrag unlesbar";
         [self save:r];
         dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });
         return;
@@ -47,7 +43,7 @@
     Class<SFApp> app = [SFAppRegistry appForItem:item];
     BOOL fills = [app respondsToSelector:@selector(fillItem:progress:done:)];
     _runningID = r.identifier;
-    [self noteStartOf:[self sourceOf:r] at:now subscription:r.sub != nil];
+    [self noteStartOf:[self sourceOf:r] at:now];
     _resumeID = nil;
     r.state = SFDLRunning; r.progress = 0;
     [self save:r];
@@ -100,9 +96,6 @@
             self->_fillCancel = nil;
             if (!info) { [self finish:ident ok:NO error:e.localizedDescription ?: @"Fehler"]; return; }
             [self notePublished:info rec:r item:item];
-            // a subscription episode is pre-buffered: it goes after a while (SFDownloads+Subscriptions
-            // expirePrebuffers); a manual download stays
-            r.expires = r.sub ? [NSDate date].timeIntervalSince1970 + kPrebufferDays * 86400.0 : 0;
             [self fetchThumb:item rec:r];
             [self finish:ident ok:YES error:nil];
         });
@@ -154,7 +147,6 @@ static NSTimeInterval SFStartSpacing(NSString *src) {
 }
 
 static NSString *nextStartKey(NSString *src) { return [@"downloads.nextStart." stringByAppendingString:src]; }
-static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionStarts." stringByAppendingString:src]; }
 
 - (NSTimeInterval)nextStartOf:(NSString *)src {
     if (!_nextStart) _nextStart = [NSMutableDictionary new];
@@ -163,34 +155,11 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
     return n.doubleValue;
 }
 
-- (void)noteStartOf:(NSString *)src at:(NSTimeInterval)now subscription:(BOOL)sub {
+- (void)noteStartOf:(NSString *)src at:(NSTimeInterval)now {
     NSTimeInterval next = now + SFStartSpacing(src);
     if (!_nextStart) _nextStart = [NSMutableDictionary new];
     _nextStart[src] = @(next);
     [[SFStore shared] setSetting:[NSString stringWithFormat:@"%.0f", next] forKey:nextStartKey(src)];
-    if (!sub || !SFSubscriptionDownloadsPerDay([src stringByAppendingString:@":"])) return;
-    NSMutableArray *starts = [[self subscriptionStartsOf:src now:now] mutableCopy];
-    [starts addObject:@(now)];
-    _subStarts[src] = starts;
-    [[SFStore shared] setSetting:[starts componentsJoinedByString:@","] forKey:subStartsKey(src)];
-}
-
-// The source's subscription download starts within the last 24 h (oldest first).
-- (NSArray *)subscriptionStartsOf:(NSString *)src now:(NSTimeInterval)now {
-    if (!_subStarts) _subStarts = [NSMutableDictionary new];
-    NSArray *all = _subStarts[src];
-    if (!all) {
-        NSMutableArray *read = [NSMutableArray new];
-        for (NSString *t in [[[SFStore shared] setting:subStartsKey(src)] componentsSeparatedByString:@","]) if (t.doubleValue > 0) [read addObject:@(t.doubleValue)];
-        all = read;
-    }
-    return _subStarts[src] = SFDownloadBudgetRecent(all, now);
-}
-
-// When the source's daily subscription budget allows the next start (0 = now).
-- (NSTimeInterval)subscriptionBudgetFreeAt:(NSString *)src {
-    NSUInteger max = SFSubscriptionDownloadsPerDay([src stringByAppendingString:@":"]);
-    return SFDownloadBudgetFreeAt([self subscriptionStartsOf:src now:[NSDate date].timeIntervalSince1970], max);
 }
 
 - (NSString *)sourceOf:(SFDownloadRecord *)r {
@@ -203,14 +172,11 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
     return SFBackgroundPausedUntil([[self sourceOf:r] stringByAppendingString:@":"]);
 }
 
-// pausedUntil plus the per-source spacing of starts and, for subscription downloads, the daily
-// budget (not for the run an exit interrupted - the same
+// pausedUntil plus the per-source spacing of starts (not for the run an exit interrupted - the same
 // download going on, e.g. after an update, 2026-11-06: it waited 16 min)
 - (NSTimeInterval)notBefore:(SFDownloadRecord *)r {
     if ([r.identifier isEqualToString:_resumeID]) return [self pausedUntil:r];
-    NSString *src = [self sourceOf:r];
-    NSTimeInterval t = MAX([self pausedUntil:r], [self nextStartOf:src]);
-    return r.sub ? MAX(t, [self subscriptionBudgetFreeAt:src]) : t;   // the daily budget: subscriptions only
+    return MAX([self pausedUntil:r], [self nextStartOf:[self sourceOf:r]]);
 }
 
 - (void)pumpAt:(NSTimeInterval)when {
@@ -244,15 +210,8 @@ static NSString *subStartsKey(NSString *src) { return [@"downloads.subscriptionS
     }
     if (r) {
         r.progress = ok ? 1 : 0;
-        if (ok) { r.state = SFDLDone; r.error = nil; r.retryAt = 0; r.tries = 0; }
-        else {
-            // the next attempt's time is kept for every failure under the limit (a subscription may find
-            // a manual one later); only a subscription episode is retried by Sofa itself
-            NSInteger n = r.tries + 1;
-            r.error = error ?: @"Fehler"; r.tries = n;
-            r.retryAt = n < kSubMaxTries ? [NSDate date].timeIntervalSince1970 + SFRetryDelay(n) : 0;
-            r.state = r.sub && n < kSubMaxTries ? SFDLRetrying : SFDLFailed;
-        }
+        r.state = ok ? SFDLDone : SFDLFailed;   // a failed one waits for the user ("Herunterladen" again)
+        r.error = ok ? nil : error ?: @"Fehler";
         [self save:r];
         SFLog(@"downloads: %@ %@%@", ok ? @"done" : @"FAILED", ident, ok ? @"" : [@" – " stringByAppendingString:error ?: @""]);
     }

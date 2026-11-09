@@ -128,9 +128,8 @@
 // Downloads at a viewer's pace: each one is a player request plus a whole video's media. 85 a day,
 // up to 17 player requests an hour, preceded every bot check on 2026-11-06 - now at most ~3 an hour.
 // A person's volume, spread over the day (user 2026-11-07, bot checks came on days with 40-70
-// downloads): starts an hour (+ up to 30 min) apart, at most 18 subscription downloads a day.
+// downloads): starts an hour (+ up to 30 min) apart.
 + (NSTimeInterval)downloadSpacing { return 60 * 60; }
-+ (NSUInteger)subscriptionDownloadsPerDay { return 18; }
 + (void)showImage:(NSString *)ref done:(void (^)(NSString *))done { [SFYTFeeds avatar:SFRefID(ref) done:done]; }
 
 // channel of a video without a stored channel ID (older watch-later/continue watching/downloads)

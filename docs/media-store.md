@@ -73,7 +73,8 @@ Implementation checkpoint:
 - Channel buttons/context actions and download empty-state text no longer offer auto-downloads.
 - Startup retires old automatic queued/running/retrying/done records into ordinary cache before
   recovery and integrity checks; explicit kept/manual records survive. Subscription records are
-  removed in the same transaction; no media bytes are deleted. Full-fill enqueue rejects automatic
+  removed in the same transaction; no media bytes are deleted. (Since schema step 19 this is a
+  migration step, and the subscription columns, table and code are gone.) Full-fill enqueue rejects automatic
   callers; follow notifications no longer start fills. Record migration tests pass. The app binary
   builds with clang-22 and its Mach-O minimum deployment target is 10.9. Deployed as Build 15;
   Build 16 additionally removes the redundant "geladen" tile badge.

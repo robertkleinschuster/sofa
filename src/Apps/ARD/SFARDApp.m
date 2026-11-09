@@ -146,7 +146,7 @@ static NSString *imageURL(NSDictionary *images, NSString *key, int width) {
             if (![j isKindOfClass:[NSDictionary class]]) { done(nil, e ?: SFError(@"ARD Mediathek nicht erreichbar.")); return; }
             SFPage *p = [self pageFromGateway:j title:nil];
             NSMutableArray *shelves = [p.shelves mutableCopy];
-            // local subscriptions + continue watching first, navigation (categories / A-Z) as its own row
+            // continue watching first, navigation (categories / A-Z) as its own row
             NSArray *cont = [[SFStore shared] continueWatching:20 source:@"ard"];
             NSMutableArray *front = [NSMutableArray new];
             if (cont.count) [front addObject:[SFShelf shelf:@"Weiterschauen" style:SFTileStyleLandscape items:cont]];

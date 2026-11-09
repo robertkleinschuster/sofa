@@ -229,6 +229,29 @@
             NSArray *left = [self rowsNow:@"PRAGMA foreign_key_check" args:nil];
             if (left.count) [self failStep:[NSString stringWithFormat:@"schema step 18: %lu rows break a reference (%@)", (unsigned long)left.count, left.firstObject]];
         },
+        // 19: automatic downloads are gone (user 2026-11-09: pre-buffering at the resume position;
+        // only "Herunterladen" fills a whole item) - and with them what only they used: their
+        // settings (subscriptions, the daily start budget), a download's subscription and expiry,
+        // the states dismissed (4: "do not fetch again") and retrying (5), and the attempt
+        // bookkeeping only their retries read (tries, retryAt). Their rows go - one the user kept
+        // ("Behalten") stays a download, a kept one that never finished is failed (the user decides);
+        // their bytes stay in the media store as ordinary, evictable buffer.
+        ^{
+            [self exec:@"DELETE FROM downloads WHERE state = 4 OR (keep = 0 AND (sub IS NOT NULL OR expires IS NOT NULL))"];
+            [self exec:@"UPDATE downloads SET state = 3 WHERE state = 5"];
+            NSString *const fk = @"DEFERRABLE INITIALLY DEFERRED";
+            [self exec:[NSString stringWithFormat:@"CREATE TABLE downloads_new (id TEXT PRIMARY KEY REFERENCES items(id) %@, "
+                        "source TEXT NOT NULL, channel TEXT NOT NULL DEFAULT '', thumb TEXT, state INTEGER NOT NULL CHECK (state BETWEEN 0 AND 3), "
+                        "progress REAL NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 1), added REAL NOT NULL, published REAL, error TEXT, "
+                        "keep INTEGER NOT NULL DEFAULT 0 CHECK (keep IN (0, 1)), online INTEGER CHECK (online IN (0, 1)), onlineAt REAL)", fk]];
+            [self exec:@"INSERT INTO downloads_new SELECT id, source, channel, thumb, state, progress, added, published, error, keep, online, onlineAt FROM downloads"];
+            [self exec:@"DROP TABLE downloads"];
+            [self exec:@"ALTER TABLE downloads_new RENAME TO downloads"];
+            [self exec:@"DROP TABLE subscriptions"];
+            [self exec:@"DELETE FROM settings WHERE k LIKE 'downloads.subscriptionStarts.%'"];
+            NSArray *left = [self rowsNow:@"PRAGMA foreign_key_check" args:nil];
+            if (left.count) [self failStep:[NSString stringWithFormat:@"schema step 19: %lu rows break a reference (%@)", (unsigned long)left.count, left.firstObject]];
+        },
     ];
 }
 

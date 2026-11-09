@@ -50,8 +50,7 @@ the sidecar got no answer. Fixed causes:
   own schedule - a quarter of its median upload gap, 2 h .. 24 h (2 h with fewer than 3 dates; was 45 min .. 6 h until 2026-11-07),
   ±20 % jitter, doubled at night (0-6 h), at least 20-40 s between two checks; `follows.checked`
   persists it across launches; during a bot-check pause the due follow waits for its end
-  (`backgroundPausedUntil`, also what downloads wait for). Subscriptions use the followed lists (no
-  requests of their own).
+  (`backgroundPausedUntil`, also what downloads wait for).
 - No RSS (gone since 2026-11-05 ~21:30, HTTP 404), no table `feed_cache`.
 
 Everything ships in the app bundle (user requirement): node and the sidecar's node_modules -

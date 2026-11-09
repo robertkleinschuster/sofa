@@ -22,7 +22,7 @@
                 SFDownloadRecord *r = self->_recs[ident];
                 if (r.state != SFDLDone) continue;
                 SFLog(@"downloads: %@ is incomplete in the media store - loading the rest", ident);
-                r.state = SFDLQueued; r.progress = 0; r.error = nil; r.tries = 0; r.retryAt = 0;
+                r.state = SFDLQueued; r.progress = 0; r.error = nil;
                 [writes addObject:[self write:r]];
                 [self changed:ident];
             }

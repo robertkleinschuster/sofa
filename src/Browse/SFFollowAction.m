@@ -1,6 +1,5 @@
 #import "SFFollowAction.h"
 #import "SFFollows.h"
-#import "SFDownloads.h"
 #import "SFMenuScreen.h"
 #import "SFApp.h"
 
@@ -15,16 +14,14 @@ void SFToggleFollow(SFNavigator *nav, SFItem *folder, SFTheme *theme, BOOL askAl
         [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ – neue %@ erscheinen unter „Neue Folgen“", title, news]];
         return;
     }
-    BOOL autoDL = [[SFDownloads shared] isSubscribed:fid];
     dispatch_block_t unfollow = ^{
-        [fo unfollow:fid];   // also ends "Automatisch herunterladen"
+        [fo unfollow:fid];
         [nav toast:[NSString stringWithFormat:@"Du folgst „%@“ nicht mehr", title]];
     };
-    if (!autoDL && !askAlways) { unfollow(); return; }
+    if (!askAlways) { unfollow(); return; }
     SFMenuOption *no = [SFMenuOption option:@"Abbrechen" action:^{}];
     SFMenuOption *yes = [SFMenuOption option:@"Nicht mehr folgen" action:unfollow];
-    NSString *sub = autoDL ? [NSString stringWithFormat:@"Neue %@ erscheinen nicht mehr unter „Neue Folgen“ und werden nicht mehr geladen. Vorhandene Downloads bleiben.", news]
-                           : [NSString stringWithFormat:@"Neue %@ erscheinen dann nicht mehr unter „Neue Folgen“.", news];
+    NSString *sub = [NSString stringWithFormat:@"Neue %@ erscheinen dann nicht mehr unter „Neue Folgen“.", news];
     // after the current key event (the button's action runs inside it)
     dispatch_async(dispatch_get_main_queue(), ^{
         [nav push:[[SFMenuScreen alloc] initWithTitle:[NSString stringWithFormat:@"„%@“ nicht mehr folgen?", title]

@@ -193,7 +193,7 @@ static CGFloat textWidth(SFLabel *l) {
     }
     if (![_hint.text isEqualToString:@"halten: Optionen"]) { SFNoAnimate(^{ self->_hint.text = @"halten: Optionen"; }); [self layoutStatusRow]; }
     SFItem *it = _headerFocus ? nil : [self focusedItem];
-    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFDownloads shared] canSubscribe:it] || [[SFFollows shared] canFollow:it])));
+    BOOL show = it && (it.kind == SFItemVideo || it.kind == SFItemLive || (it.kind == SFItemFolder && ([it.identifier hasPrefix:@"show:"] || [it.identifier hasPrefix:@"downloads:"] || [[SFFollows shared] canFollow:it])));
     SFAnimate(0.2, ^{ self->_hint.opacity = show ? 0.85 : 0; self->_hintKey.opacity = show ? 0.85 : 0; });
 }
 

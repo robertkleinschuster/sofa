@@ -103,13 +103,11 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
         }
         if ([it.identifier hasPrefix:@"show:"]) {   // show in the offline inventory
             NSString *ch = it.channel ?: it.title, *src = it.source;
-            NSString *sid = [dl subscriptionIDForChannel:ch source:src];
             SFShow *sh = [[SFLibrary shared] showNamed:ch source:src];
             NSUInteger n = sh.episodes.count;
             SFMenuOption *del = [SFMenuOption option:@"Alle Downloads löschen" action:^{
                 dispatch_async(dispatch_get_main_queue(), ^{
                     SFMenuOption *yes = [SFMenuOption option:[NSString stringWithFormat:@"Ja, %lu %@ löschen", (unsigned long)n, n == 1 ? @"Folge" : @"Folgen"] action:^{
-                        if (sid) [dl unsubscribe:sid];
                         [dl removeAllOfChannel:ch source:src];
                         [nav toast:[NSString stringWithFormat:@"„%@“ gelöscht", ch]];
                     }];

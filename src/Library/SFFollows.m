@@ -136,11 +136,9 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     if (!_follows[identifier]) return;
     [_follows removeObjectForKey:identifier];
     [_items removeObjectForKey:identifier];
-    // one transaction: the follow, its items and its auto-download (following is
-    // a prerequisite of auto-download)
-    NSArray *writes = @[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
-                        @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]]];
-    [[SFStore shared] runAll:[writes arrayByAddingObjectsFromArray:[[SFDownloads shared] unsubscribeWrites:identifier]]];
+    // one transaction: the follow and its items
+    [[SFStore shared] runAll:@[@[@"DELETE FROM follows WHERE id=?", @[identifier]],
+                               @[@"DELETE FROM follow_items WHERE follow=?", @[identifier]]]];
     SFLog(@"follows: - %@", identifier);
     [self changed];
 }

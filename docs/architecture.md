@@ -152,7 +152,7 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   Never change a shipped step, add one. Modules only read and write their tables. `tools/test-schema`
   migrates a 0.3.8 database and checks every step - extend it with each new step.
 - The schema states the rules (step 18): required columns `NOT NULL`, value ranges as `CHECK`s,
-  references as foreign keys to `items`, `follows`, `subscriptions` - `DEFERRABLE INITIALLY
+  references as foreign keys to `items` and `follows` - `DEFERRABLE INITIALLY
   DEFERRED` (checked at commit: write parent and child in one `runAll:` in any order), enforced
   (`PRAGMA foreign_keys=ON` after the migration). A row others refer to is written as an upsert
   (`INSERT ... ON CONFLICT DO UPDATE`), never `INSERT OR REPLACE` (that deletes it first). A size or
@@ -160,8 +160,9 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   bytes are the media store's). A statement the database refuses fails the test suite that caused
   it (`tools/lib/dev-instance.sh`).
 - Tables: `progress` (positions, history), `settings`,
-  `downloads`, `subscriptions` (a follow's auto-download: only `keepDays`, `since`, `added` - title,
-  picture and source are the follow's, no copies), `follows` (with `checked`: the spread refresh plan) / `follow_items`
+  `downloads` (what the user downloads: states queued/running/done/failed, "Behalten", the online
+  check - automatic downloads and their `subscriptions` went with step 19), `follows` (with
+  `checked`: the spread refresh plan) / `follow_items`
   (a follow's newest items, ordered by `pos`), `watch_later`, `stats`, `recent_searches`,
   `original_titles` (a video's title as its uploader wrote it, where the source's lists show another:
   `-[SFStore setOriginalTitle:forID:]`; a known one wins in every item write and in the stored item).
@@ -174,7 +175,7 @@ aussehen wie ein Bot"; survey of all apps in NOTES).
   over the item's. Rows nothing references go with the daily housekeeping.
 - Loaded into memory at launch; indexes exist only where a query pages or sorts on disk
   (`progress(updated)`, `jcache(t)`).
-- In memory a row is a typed record, never a dictionary: `SFDownloadRecord` and `SFSubscription`
+- In memory a row is a typed record, never a dictionary: `SFDownloadRecord`
   (`src/Library/SFDownloadRecord.h`), `SFFollow` (`SFFollows.h`). Each reads its row
   (`...WithRow:`) and gives the statement that stores it (`writeStatement`) - the column list
   lives in one place. Absent values: nil / 0 / -1 ("unknown"), written as NULL

@@ -83,7 +83,6 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 // Returns a block that cancels (no done after it).
 + (dispatch_block_t)fillItem:(SFItem *)item progress:(void (^)(double p))progress done:(void (^)(NSDictionary *info, NSError *e))done;
 + (NSTimeInterval)downloadSpacing;   // two download starts of this app at least this far apart (s; above a minute up to half of it more at random). Default 30 s
-+ (NSUInteger)subscriptionDownloadsPerDay;   // subscription downloads of this app started within 24 h at most (a person's volume); absent: no limit. Manual downloads are not counted against it
 + (NSTimeInterval)backgroundPausedUntil;   // e.g. bot check: no background requests (feed refreshes, downloads) until then (epoch s, 0 = no pause)
 + (void)availabilityOfItem:(SFItem *)item done:(SFAvailabilityDone)done;
 // --- items ---
@@ -130,7 +129,6 @@ BOOL SFItemShowsAreChannels(SFItem *item);
 BOOL SFSourceShowsAreChannels(NSString *source);   // by app identifier
 NSTimeInterval SFBackgroundPausedUntil(NSString *ref);   // the owning app's backgroundPausedUntil (0 = go)
 NSTimeInterval SFDownloadSpacing(NSString *ref);         // the owning app's downloadSpacing (default 30 s)
-NSUInteger SFSubscriptionDownloadsPerDay(NSString *ref); // the owning app's subscriptionDownloadsPerDay (0 = no limit)
 
 // "prefix:id" helpers
 NSString *SFRefPrefix(NSString *ref);   // nil without ':'

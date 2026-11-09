@@ -1,6 +1,6 @@
 // SFDownloads – core: persistence (downloads table), queries and actions. A download is its item's
 // tracks in the media store, pinned (docs/media-store.md); the queue and the fill: SFDownloads+Worker.m.
-// Subscriptions and pre-buffering: SFDownloads+Subscriptions.m; shared ivars: +Private.h.
+// Shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
 #import "SFMediaStore.h"
 #import "SFMediaProxy.h"
@@ -38,26 +38,10 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
     if ((self = [super init])) {
         SFStore *st = [SFStore shared];
         _recs = [NSMutableDictionary new];
-        _subs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];
         for (NSDictionary *row in [st rows:@"SELECT d.*, i.json AS item FROM downloads d LEFT JOIN items i ON i.id = d.id" args:nil]) {
             SFDownloadRecord *r = [SFDownloadRecord recordWithRow:row];
             if (r.identifier) _recs[r.identifier] = r;
-        }
-        for (NSDictionary *row in [st rows:@"SELECT * FROM subscriptions" args:nil]) {
-            SFSubscription *sub = [SFSubscription subscriptionWithRow:row];
-            if (sub.identifier) _subs[sub.identifier] = sub;
-        }
-        // Retire automatic full fills atomically before recovery or pinning. Do not delete
-        // tracks: useful bytes stay in the shared store and can be reused by playback.
-        NSMutableArray *retired = [NSMutableArray new];
-        for (SFDownloadRecord *r in _recs.allValues)
-            if ([r retireAutomaticFill]) [retired addObject:r.writeStatement];
-        if (_subs.count || retired.count) {
-            [retired addObject:@[@"DELETE FROM subscriptions", @[]]];
-            [st runAll:retired];
-            [_subs removeAllObjects];
-            SFLog(@"downloads: retired automatic full fills; cached ranges preserved");
         }
         // re-queue runs interrupted last time
         for (SFDownloadRecord *r in _recs.allValues)
@@ -65,7 +49,7 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
         NSMutableSet *pinned = [NSMutableSet new];
         for (SFDownloadRecord *r in _recs.allValues) if (PinsStore(r)) [pinned addObject:r.identifier];
         self.storePinned = pinned;
-        SFLog(@"downloads: %lu entries, %lu subscriptions", (unsigned long)_recs.count, (unsigned long)_subs.count);
+        SFLog(@"downloads: %lu entries", (unsigned long)_recs.count);
         __weak SFDownloads *ws = self;
         SFSetLocalCopyLookup(^NSURL *(NSString *ident) { return [ws localCopyOf:ident]; });
     }
@@ -76,7 +60,7 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 // pending (its bytes are on their way), or done (its bytes are the download)
 static BOOL PinsStore(SFDownloadRecord *r) {
-    return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLRetrying || r.state == SFDLDone;
+    return r.state == SFDLQueued || r.state == SFDLRunning || r.state == SFDLDone;
 }
 
 - (void)notePinned:(BOOL)pinned item:(NSString *)item {
@@ -100,11 +84,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     return r.writeStatement;
 }
 
-
-
-- (BOOL)willRetry:(NSString *)identifier {
-    return [self recOf:identifier].state == SFDLRetrying;
-}
 
 - (void)storageChangedSoon {
     if (_storagePostPending) return;
@@ -132,11 +111,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     if (!r) return SFDLNone;
     if (progress) *progress = r.progress;
     return r.state;
-}
-
-- (BOOL)isPrebuffered:(NSString *)identifier {
-    SFDownloadRecord *r = [self recOf:identifier];
-    return r.state == SFDLDone && r.expires > 0 && !r.keep;
 }
 
 - (SFDownloadRecord *)recOf:(NSString *)identifier { return identifier ? _recs[identifier] : nil; }
@@ -237,7 +211,7 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     for (SFDownloadRecord *r in [_recs.allValues copy]) {
         NSString *rc = r.channel.length ? r.channel : SFUnsortedChannel;
         if (![rc isEqualToString:channel] || (source && ![r.source isEqualToString:source])) continue;
-        if (r.state == SFDLDismissed || r.keep) continue;   // "Behalten" survives deleting the show
+        if (r.keep) continue;   // "Behalten" survives deleting the show
         [self remove:r.identifier];
         n++;
     }
@@ -247,13 +221,9 @@ static BOOL PinsStore(SFDownloadRecord *r) {
 
 #pragma mark Actions
 
-- (void)download:(SFItem *)item { [self enqueue:item sub:nil]; }
-
 - (void)download:(SFItem *)item told:(void (^)(NSString *))told {
     NSString *ident = item.identifier;
-    BOOL wasPrebuffered = [self isPrebuffered:ident];
     [self download:item];
-    if (wasPrebuffered) { told(@"Heruntergeladen – bleibt, bis du es löschst"); return; }
     SFMediaStore *store = self.mediaStore;
     if ([store bytesOfItem:ident] <= 0) { told(@"Wird heruntergeladen – auch offline verfügbar"); return; }
     SFBackground(^{   // the missing bytes wait for the store's queue (its tracks' ranges)
@@ -266,45 +236,26 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     });
 }
 
-- (BOOL)enqueue:(SFItem *)item sub:(NSString *)subID {
-    if (subID || !item.identifier || item.kind != SFItemVideo) return NO; // whole fills require explicit manual intent
+// queued unless it is already there (pending or done); a failed one is tried again
+- (void)download:(SFItem *)item {
+    if (!item.identifier || item.kind != SFItemVideo) return;
     SFDownloadRecord *r = _recs[item.identifier];
-    SFDLState st = r ? r.state : SFDLNone;
-    if (!subID && r.sub && st == SFDLDone) {   // "Herunterladen" on a pre-buffered episode
-        r.sub = nil; r.expires = 0;   // now the user's download: kept, nothing to load
-        [self save:r]; [self changed:r.identifier];
-        SFLog(@"downloads: %@ pre-buffered -> downloaded (kept)", r.identifier);
-        return YES;
-    }
-    if (r && (st == SFDLQueued || st == SFDLRunning || st == SFDLDone)) return NO;
-    if (subID && r && st == SFDLDismissed) return NO;
-    if (subID && r && (st == SFDLFailed || st == SFDLRetrying)) {
-        if (r.tries >= kSubMaxTries) return NO;                                   // given up
-        if ([NSDate date].timeIntervalSince1970 < r.retryAt) return NO;          // keep waiting
-    }
-    if (subID && r && !r.sub) subID = nil;   // downloaded manually once = manual (no retention)
-    // subscription episodes belong to the subscription's show (ZDF/ARD often name the series
-    // differently) - the download's channel; the item itself keeps its source's
-    NSString *subTitle = subID ? [[SFFollows shared] recordOf:subID].title : nil;
+    if (r && r.state != SFDLFailed) return;
     r = r ?: [SFDownloadRecord new];
     r.identifier = item.identifier;
     r.source = item.source ?: @"";
-    r.channel = subTitle.length ? subTitle : item.channel ?: @"";
+    r.channel = item.channel ?: @"";
     [self setItem:item ofRec:r];
     r.state = SFDLQueued;
     r.progress = 0;
     r.added = [[NSDate date] timeIntervalSince1970];
     if (item.date) r.published = [item.date timeIntervalSince1970];
-    r.sub = subID;   // nil = manual: never deleted automatically
-    r.expires = 0;   // (a subscription episode in the store gets its expiry when it is complete)
-    if (!subID) r.tries = 0;
-    r.error = nil; r.retryAt = 0;
+    r.error = nil;
     _recs[item.identifier] = r;
     [self save:r];
     [self changed:item.identifier];
-    SFLog(@"downloads: + %@ (%@)", item.title, subID ? @"subscription" : @"manual");
+    SFLog(@"downloads: + %@", item.title);
     [self pump];
-    return YES;
 }
 
 - (void)remove:(NSString *)identifier {
@@ -317,16 +268,11 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     [self.mediaStore removeItem:identifier];   // its bytes are the download
     if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
     [self pruneEmptyDirs:[r.thumb stringByDeletingLastPathComponent]];
-    if (r.sub) {   // subscription episode: remember it so it does not come back
-        r.state = SFDLDismissed; r.thumb = nil;
-        [self save:r];
-    } else {
-        [_recs removeObjectForKey:identifier];
-        [_itemCache removeObjectForKey:identifier];
-        [self notePinned:NO item:identifier];
-        _generation++;
-        [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
-    }
+    [_recs removeObjectForKey:identifier];
+    [_itemCache removeObjectForKey:identifier];
+    [self notePinned:NO item:identifier];
+    _generation++;
+    [[SFStore shared] run:@"DELETE FROM downloads WHERE id=?" args:@[identifier]];
     [self changed:identifier];
     [self storageChangedSoon];   // "Platz schaffen" follows (coalesced: bulk deletions post once)
     if (_storageFull) dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });   // room again? (pump re-checks)
@@ -360,12 +306,9 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     if (_started) return;
     _started = YES;
     [self verifyStoreDownloads];
-    [self expirePrebuffers];   // (also every 3 h with the subscription check)
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
     [self pump];
-    // Only expiry maintenance remains; follow refreshes no longer enqueue full downloads.
-    _checkTimer = [NSTimer scheduledTimerWithTimeInterval:3 * 3600 target:self selector:@selector(expirePrebuffers) userInfo:nil repeats:YES];
 }
 
 #pragma mark Paths
