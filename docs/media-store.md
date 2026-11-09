@@ -83,7 +83,7 @@ Implementation checkpoint:
 - SFPrebufferReader is a headless paused libmpv worker (null audio/video); bounded forward cache,
   no backward cache, cancellable polling and wall-time limit. Its first local MP4 probe stops at
   the cache threshold at the actual resume position (70 s tested, with cancellation-before-start).
-  Reproducible local-only probe: tools/test-prebuffer-reader. Integration with the common store,
+  Reproducible local-only probe: tests/units/prebufferreader.m (tools/test-units). Integration with the common store,
   transfer caps and mid-read cancellation now pass the tests recorded below. The current
   stream-bytes-read property returns zero for the local MP4 probe; SFHTTPBudget therefore enforces
   the shared response-body limit in the loopback server rather than relying on that property.
@@ -145,7 +145,7 @@ Implementation checkpoint:
   Sofa/browser heap ownership does not explain it. This is not proof of a particular kernel bug
   or original trigger. Same installed version restarted successfully (Sofa 41671, Firefox 41711)
   and engine ready observed. No running playback/download/build/pipeline was interrupted.
-- New local YouTube integration passes (tools/test-youtube-prebuffer; log
+- New local YouTube integration passes (tests/units/ytprebuffer.m in tools/test-units; first log
   ~/Library/Logs/sofa-memguard/youtube-prebuffer-20261109.log). Uses the real SFYTEngine Media,
   Store and Fill categories, media store and libmpv with separated real MP4 audio/video fixtures;
   only browser RPC is replaced. Resume at 70 s prepares partial common store; full fill fetches
