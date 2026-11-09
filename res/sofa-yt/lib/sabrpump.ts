@@ -15,6 +15,7 @@ import type { ReloadResponse, SegmentInfo } from 'googlevideo/sabr-stream';
 import type { Track, TrackCollection } from 'googlevideo/utils';
 import { toError } from './errors.ts';
 import { log, debug } from './log.ts';
+import { describeUmp } from './umpdiag.ts';
 import type { DescribedFormat } from './formats.ts';
 import type { PumpEnd, PumpHandle, PumpRequest, TrackKind } from './session.ts';
 import type { VodInfo } from './youtube.ts';
@@ -110,6 +111,9 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
       if (n === 2) debug(`${tag}: request 2 sent ${at - t0} ms into the run (server-ordered backoff ${sabr['nextRequestPolicy']?.backoffTimeMs ?? 0} ms)`);
       const r = await fetch(input, init);
       if (n <= 2) debug(`${tag}: request ${n} answered after ${Date.now() - at} ms (${Date.now() - t0} ms into the run, HTTP ${r.status})`);
+      // what answer 1 holds (the raw data for its backoff); read from a clone, never delays the stream
+      if (n === 1) r.clone().arrayBuffer().then((b) => describeUmp(new Uint8Array(b)))
+        .then((s) => debug(`${tag}: answer 1: ${s}`), (e: unknown) => debug(`${tag}: answer 1 unreadable: ${toError(e).message}`));
       return r;
     },
     callbacks: {

@@ -30,6 +30,18 @@ export const FIX = path.join(path.dirname(new URL(import.meta.url).pathname), 'f
 interface FormatXTagsCodec {
   FormatXTags: { encode(m: { xtags: { key: string; value: string }[] }): { finish(): Uint8Array } };
 }
+/** googlevideo's codecs for the SABR answer parts the UMP description decodes (unit-umpdiag). */
+interface Encoder<T> { encode(m: T): { finish(): Uint8Array } }
+interface SabrPartCodecs {
+  NextRequestPolicy: Encoder<{ backoffTimeMs?: number; targetVideoReadaheadMs?: number; playbackCookie?: Uint8Array }>;
+  StreamProtectionStatus: Encoder<{ status?: number }>;
+  SabrContextUpdate: Encoder<{ type?: number; value?: Uint8Array }>;
+}
+/** googlevideo's UMP writer, to build answers by hand. */
+interface UmpCodec {
+  CompositeBuffer: new () => { chunks: Uint8Array[] };
+  UmpWriter: new (b: { chunks: Uint8Array[] }) => { write(type: number, data: Uint8Array): void };
+}
 
 /**
  * The engine's modules, loaded at run time from res/sofa-yt (SOFA_YT_DIR, tools/test-sofa-yt);
@@ -48,7 +60,9 @@ interface Modules {
   'lib/session.ts': typeof import('../../res/sofa-yt/lib/session.ts');
   'lib/vfile.ts': typeof import('../../res/sofa-yt/lib/vfile.ts');
   'lib/youtube.ts': typeof import('../../res/sofa-yt/lib/youtube.ts');
-  'node_modules/googlevideo/dist/src/exports/protos.js': FormatXTagsCodec;
+  'lib/umpdiag.ts': typeof import('../../res/sofa-yt/lib/umpdiag.ts');
+  'node_modules/googlevideo/dist/src/exports/protos.js': FormatXTagsCodec & SabrPartCodecs;
+  'node_modules/googlevideo/dist/src/exports/ump.js': UmpCodec;
 }
 export const mod = <K extends keyof Modules>(rel: K): Promise<Modules[K]> => import(path.join(DIR, rel)) as Promise<Modules[K]>;
 
