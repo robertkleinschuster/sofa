@@ -82,6 +82,8 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
 
 - (void)ready { dispatch_group_wait(_loaded, DISPATCH_TIME_FOREVER); }
 
+- (void)whenReady:(dispatch_block_t)block { dispatch_group_notify(_loaded, dispatch_get_main_queue(), block); }
+
 - (void)start {
     dispatch_group_notify(_loaded, dispatch_get_main_queue(), ^{ [self startPlan]; });
 }

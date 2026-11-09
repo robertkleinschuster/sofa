@@ -31,6 +31,9 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 @interface SFFollows : NSObject
 + (instancetype)shared;
 - (void)start;                                         // migration + the spread refresh plan (SFRefreshPlan)
+// main thread, once the follows and their items are read (read on a queue at launch): what reads
+// them right away waits here instead of holding the main thread (the methods below would block)
+- (void)whenReady:(dispatch_block_t)block;
 - (BOOL)canFollow:(SFItem *)folder;                    // is there a feed + page for this type?
 - (BOOL)isFollowing:(NSString *)identifier;
 - (void)follow:(SFItem *)folder;

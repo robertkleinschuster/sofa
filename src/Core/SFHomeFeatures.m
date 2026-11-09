@@ -52,8 +52,41 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
     return nil;
 }
 
+// The rows as stored: topic -> app -> item dictionaries, plus what a dictionary leaves out but a
+// tile shows (badge). Pure: any thread.
+static NSDictionary *SFHomeFeaturesStoredForm(NSDictionary *lists) {
+    NSMutableDictionary *d = [NSMutableDictionary new];
+    for (NSString *topic in lists) {
+        NSMutableDictionary *t = [NSMutableDictionary new];
+        for (NSString *aid in lists[topic]) {
+            NSMutableArray *a = [NSMutableArray new];
+            for (SFItem *i in lists[topic][aid]) {
+                NSMutableDictionary *x = [[i dictionaryRepresentation] mutableCopy];
+                if (i.badge) x[@"badge"] = i.badge;
+                [a addObject:x];
+            }
+            t[aid] = a;
+        }
+        d[topic] = t;
+    }
+    return d;
+}
+
+// Everything that is kept, in a fixed order: a new broadcast on a channel changes its ref,
+// subtitle, drm. Pure: any thread.
+static NSString *SFHomeFeaturesSignature(NSDictionary *stored) {
+    NSMutableString *s = [NSMutableString new];
+    for (NSString *topic in [stored.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        for (NSString *aid in [[stored[topic] allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+            [s appendFormat:@"%@/%@:", topic, aid];
+            for (NSDictionary *x in stored[topic][aid]) [s appendFormat:@"%@,", x];
+        }
+    return s;
+}
+
 @implementation SFHomeFeatures {
     NSDictionary *_lists;       // topic -> app identifier -> SFItems in the app's order (merged only when shown)
+    NSString *_signature;       // of _lists as stored: a refresh that brings the same rows changes nothing
     BOOL _refreshing;
     NSTimer *_timer, *_boundary;
     NSDate *_lastRefresh;
@@ -171,25 +204,26 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
             }
             lists[topic] = t;
         }
-        BOOL same = [[self signature:lists] isEqualToString:[self signature:self->_lists]];
-        self->_lists = lists;
-        [self scheduleBoundaryRefresh];
-        if (same) return;   // same rows: no reload
-        [self store];
-        SFLog(@"home features: live %lu, news %lu, highlights %lu", (unsigned long)[self itemsForTopic:SFHomeTopicLive].count,
-              (unsigned long)[self itemsForTopic:SFHomeTopicNews].count, (unsigned long)[self itemsForTopic:SFHomeTopicHighlights].count);
-        [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil];
+        // the stored form, its signature and the write off the main thread: up to 0.6 s of it for
+        // ~150 items (hitch monitor 2026-11-09). The items are the apps' fresh ones - nobody changes them.
+        SFBackground(^{
+            NSDictionary *stored = SFHomeFeaturesStoredForm(lists);
+            NSString *sig = SFHomeFeaturesSignature(stored);
+            SFMain(^{
+                BOOL same = [sig isEqualToString:self->_signature];
+                NSDictionary *old = self->_lists;
+                SFBackground(^{ (void)old; });   // ~150 items freed off the main thread (dealloc was part of that hitch)
+                self->_lists = lists;
+                self->_signature = sig;
+                [self scheduleBoundaryRefresh];
+                if (same) return;   // same rows: no reload
+                [[SFStore shared] cacheJSON:stored forKey:kStoreKey];
+                SFLog(@"home features: live %lu, news %lu, highlights %lu", (unsigned long)[self itemsForTopic:SFHomeTopicLive].count,
+                      (unsigned long)[self itemsForTopic:SFHomeTopicNews].count, (unsigned long)[self itemsForTopic:SFHomeTopicHighlights].count);
+                [[NSNotificationCenter defaultCenter] postNotificationName:SFHomeFeaturesDidChangeNotification object:nil];
+            });
+        });
     });
-}
-
-- (NSString *)signature:(NSDictionary *)lists {
-    NSMutableString *s = [NSMutableString new];
-    for (NSString *topic in [lists.allKeys sortedArrayUsingSelector:@selector(compare:)])
-        for (NSString *aid in [[lists[topic] allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
-            [s appendFormat:@"%@/%@:", topic, aid];
-            for (SFItem *i in lists[topic][aid]) [s appendFormat:@"%@,", [self stored:i]];   // everything that is kept: a new broadcast on a channel changes ref, subtitle, drm
-        }
-    return s;
 }
 
 // A live channel's programme changes: ask the apps again when the first current broadcast ends
@@ -211,27 +245,6 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
 
 #pragma mark Store (Home shows the last rows at once after a launch)
 
-// an item as stored: its dictionary + what the dictionary leaves out but a tile shows (badge)
-- (NSDictionary *)stored:(SFItem *)i {
-    NSMutableDictionary *d = [[i dictionaryRepresentation] mutableCopy];
-    if (i.badge) d[@"badge"] = i.badge;
-    return d;
-}
-
-- (void)store {
-    NSMutableDictionary *d = [NSMutableDictionary new];
-    for (NSString *topic in _lists) {
-        NSMutableDictionary *t = [NSMutableDictionary new];
-        for (NSString *aid in _lists[topic]) {
-            NSMutableArray *a = [NSMutableArray new];
-            for (SFItem *i in _lists[topic][aid]) [a addObject:[self stored:i]];
-            t[aid] = a;
-        }
-        d[topic] = t;
-    }
-    [[SFStore shared] cacheJSON:d forKey:kStoreKey];
-}
-
 - (void)whenRestored:(dispatch_block_t)block {
     if (_restored) { block(); return; }
     if (!_whenRestored) _whenRestored = [NSMutableArray new];
@@ -244,8 +257,9 @@ NSArray *SFHomeFeaturesLeadVideos(SFPage *page) {
 - (void)restore {
     SFBackground(^{
         NSDictionary *d = [[SFStore shared] cachedJSON:kStoreKey maxAge:7 * 86400];
+        NSString *sig = [d isKindOfClass:[NSDictionary class]] ? SFHomeFeaturesSignature(d) : nil;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (!self->_lists && [d isKindOfClass:[NSDictionary class]]) [self adoptStored:d];   // a refresh that came first is newer
+            if (!self->_lists && sig) { [self adoptStored:d]; self->_signature = sig; }   // a refresh that came first is newer
             self->_restored = YES;
             NSArray *waiting = self->_whenRestored; self->_whenRestored = nil;
             for (dispatch_block_t b in waiting) b();

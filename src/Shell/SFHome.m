@@ -87,12 +87,16 @@ static NSArray *marked(NSArray *items) {
 
 + (SFScreen *)homeScreen {
     SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
-        // one build with everything Home shows at once: the library and the stored feature rows
+        // one build with everything Home shows at once: the library, the follows and the stored
+        // feature rows - waited for, not read while still loading (that held the launching main
+        // thread 260-330 ms in SFFollows latest:, hitch monitor 2026-11-09)
         [[SFHomeFeatures shared] whenRestored:^{
             [[SFLibrary shared] whenReady:^{
-                NSArray *shelves = [SFHomeSection shelvesFrom:[self homeSections]];
-                SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
-                done(p, nil);
+                [[SFFollows shared] whenReady:^{
+                    NSArray *shelves = [SFHomeSection shelvesFrom:[self homeSections]];
+                    SFPage *p = [SFPage page:nil theme:@"home" shelves:shelves];
+                    done(p, nil);
+                }];
             }];
         }];
     } theme:[SFTheme themeNamed:@"home"]];

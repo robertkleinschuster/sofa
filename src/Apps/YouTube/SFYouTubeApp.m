@@ -148,6 +148,11 @@
 // (views / median of its recent videos), so a small channel's hit counts like a big one's;
 // at most one per channel, from the last 7 days.
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
+    // asked right at launch: the follows may still be loading - wait for them instead of blocking
+    [[SFFollows shared] whenReady:^{ [self featuresFromFollows:done]; }];
+}
+
++ (void)featuresFromFollows:(void (^)(NSDictionary *))done {
     NSMutableDictionary *byChannel = [NSMutableDictionary new];
     for (SFItem *i in [[SFFollows shared] latest:2000 source:[self appIdentifier]]) {
         NSString *k = i.showRef ?: i.channel;
