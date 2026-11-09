@@ -74,6 +74,13 @@ static NSString *ErrorJSON(NSError *e) {
 // One piece of a track: done(bytes, total, mimeType) or an error. Engine queue.
 - (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max
         done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
+    [self read:sid track:key at:offset max:max superseded:nil done:done];
+}
+
+// The same; what is not on disk is asked of the engine only while `superseded` says NO (else error
+// 409): a reader the player has left behind starts no SABR run.
+- (void)read:(NSString *)sid track:(NSString *)key at:(long long)offset max:(NSUInteger)max superseded:(BOOL (^)(void))superseded
+        done:(void (^)(NSData *bytes, long long total, NSString *mime, NSError *e))done {
     SFMediaStore *store = [SFDownloads shared].mediaStore;
     NSDictionary *t = [self trackInfo:key session:sid];
     BOOL stored = [self isStoredSession:sid];   // no engine session behind it: the disk or nothing
@@ -85,12 +92,14 @@ static NSString *ErrorJSON(NSError *e) {
             dispatch_async(self.queue, ^{
                 if (disk) done(disk, total, str(t[@"mimeType"]) ?: @"application/octet-stream", nil);
                 else if (stored) done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:404 userInfo:@{NSLocalizedDescriptionKey: @"not in the media store"}]);
+                else if (superseded && superseded()) done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:409 userInfo:@{NSLocalizedDescriptionKey: @"superseded by a newer request on the track"}]);
                 else [self readFromEngine:sid track:key at:offset max:max done:done];
             });
         });
         return;
     }
     if (stored) { done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:offset >= total && total ? 416 : 404 userInfo:@{NSLocalizedDescriptionKey: @"not in the media store"}]); return; }
+    if (superseded && superseded()) { done(nil, 0, nil, [NSError errorWithDomain:@"SFYTEngine" code:409 userInfo:@{NSLocalizedDescriptionKey: @"superseded by a newer request on the track"}]); return; }
     [self readFromEngine:sid track:key at:offset max:max done:done];
 }
 
@@ -125,6 +134,11 @@ static NSString *ErrorJSON(NSError *e) {
         if (a.length && b.length) want = MAX(1, MIN((long long)kPiece, b.longLongValue + 1 - first));
     }
     BOOL head = [x.request.method isEqualToString:@"HEAD"];
+    // mpv leaves its header parse's connection open (reading ahead) after seeking to the resume
+    // position: once the newer request exists, the old one gets the disk's bytes but nothing from
+    // the engine - else its read past the stored start was a second SABR run (2026-11-09: a resume
+    // served from the store, the engine never saw the newer request)
+    NSUInteger n = head ? 0 : [self beginRequestOn:key session:sid];
     NSDate *asked = [NSDate date];
     [self read:sid track:key at:first max:head ? 1 : (NSUInteger)want done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
         // where a start's seconds go: a reader that waited for its first bytes (SABR fetching them)
@@ -146,26 +160,30 @@ static NSString *ErrorJSON(NSError *e) {
         if (partial) h[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", start, end - 1, total];
         [x begin:partial ? 206 : 200 headers:h];
         if (head) { [x finish]; return; }
-        if (start != first) { [self pump:key sid:sid from:start to:end into:x]; return; }   // suffix range: read again from its start
+        if (start != first) { [self pump:key sid:sid request:n from:start to:end into:x]; return; }   // suffix range: read again from its start
         NSData *piece = (long long)bytes.length > end - start ? [bytes subdataWithRange:NSMakeRange(0, (NSUInteger)(end - start))] : bytes;
         [x write:piece done:^(BOOL ok) {
-            if (ok) [self pump:key sid:sid from:start + (long long)piece.length to:end into:x]; else [x finish];
+            if (ok) [self pump:key sid:sid request:n from:start + (long long)piece.length to:end into:x]; else [x finish];
         }];
     }];
 }
 
-// Pieces [from, to) to the reader, one engine read at a time, until done or the reader is gone.
-- (void)pump:(NSString *)key sid:(NSString *)sid from:(long long)from to:(long long)to into:(SFHTTPExchange *)x {
+// Pieces [from, to) to the reader (request n on the track), one read at a time, until done, the reader
+// is gone or - for what is not on disk - a newer request on the track has begun.
+- (void)pump:(NSString *)key sid:(NSString *)sid request:(NSUInteger)n from:(long long)from to:(long long)to into:(SFHTTPExchange *)x {
     if (from >= to || x.closed) { [x finish]; return; }
-    [self read:sid track:key at:from max:(NSUInteger)MIN((long long)kPiece, to - from) done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
+    BOOL (^superseded)(void) = ^BOOL { return [self request:n supersededOn:key session:sid]; };
+    [self read:sid track:key at:from max:(NSUInteger)MIN((long long)kPiece, to - from) superseded:superseded
+          done:^(NSData *bytes, long long total, NSString *mime, NSError *e) {
         if (e || !bytes.length) {   // short body: the reader sees the premature end and reconnects
-            if (e) SFLog(@"yt-engine: read %@/%@ at %lld failed: %@", sid, key, from, e.localizedDescription);
+            if (e.code == 409) SFLog(@"yt-engine: %@/%@ a newer request took over - this one ends at %lld (no engine read)", sid, key, from);
+            else if (e) SFLog(@"yt-engine: read %@/%@ at %lld failed: %@", sid, key, from, e.localizedDescription);
             [x finish];
             return;
         }
         NSData *piece = (long long)bytes.length > to - from ? [bytes subdataWithRange:NSMakeRange(0, (NSUInteger)(to - from))] : bytes;
         [x write:piece done:^(BOOL ok) {
-            if (ok) [self pump:key sid:sid from:from + (long long)piece.length to:to into:x]; else [x finish];
+            if (ok) [self pump:key sid:sid request:n from:from + (long long)piece.length to:to into:x]; else [x finish];
         }];
     }];
 }

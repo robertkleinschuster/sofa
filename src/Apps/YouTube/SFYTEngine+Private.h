@@ -34,6 +34,11 @@
 // from the store alone (no engine session behind it)
 - (void)noteSession:(NSString *)sid video:(NSString *)vid stored:(BOOL)stored tracks:(NSDictionary *)tracks;
 - (NSDictionary *)trackInfo:(NSString *)key session:(NSString *)sid;
+// The player's requests on a session's track, newest wins (one track is one stream of the player,
+// read sequentially): begin = the new request's number (0 = session not in the table, never
+// superseded); superseded = a newer request on the track has begun since.
+- (NSUInteger)beginRequestOn:(NSString *)key session:(NSString *)sid;
+- (BOOL)request:(NSUInteger)n supersededOn:(NSString *)key session:(NSString *)sid;
 - (BOOL)isStoredSession:(NSString *)sid;
 - (NSString *)videoOfSession:(NSString *)sid;
 - (void)noteOpened:(NSDictionary *)answer;          // an engine open answer: table entry + the item's manifest

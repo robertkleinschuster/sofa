@@ -65,6 +65,25 @@ static NSString *Enc(NSString *s) {
     });
 }
 
+- (NSUInteger)beginRequestOn:(NSString *)key session:(NSString *)sid {
+    __block NSUInteger n = 0;
+    Locked(^{
+        NSMutableDictionary *s = gSessions[sid];
+        if (!s || !key) return;
+        NSMutableDictionary *reqs = s[@"requests"] ?: (s[@"requests"] = [NSMutableDictionary new]);
+        n = [reqs[key] unsignedIntegerValue] + 1;
+        reqs[key] = @(n);
+    });
+    return n;
+}
+
+- (BOOL)request:(NSUInteger)n supersededOn:(NSString *)key session:(NSString *)sid {
+    if (!n || !key) return NO;
+    __block BOOL newer = NO;
+    Locked(^{ newer = [gSessions[sid][@"requests"][key] unsignedIntegerValue] > n; });
+    return newer;
+}
+
 - (NSDictionary *)trackInfo:(NSString *)key session:(NSString *)sid {
     __block NSDictionary *t;
     Locked(^{ t = dict(gSessions[sid][@"tracks"][key]); });
