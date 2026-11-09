@@ -64,6 +64,10 @@
     sqlite3_free(sql);
     [self exec:@"PRAGMA cache.auto_vacuum=INCREMENTAL"];   // takes effect on a new file (before the first table)
     [self exec:@"PRAGMA cache.journal_mode=WAL"];
+    // per schema: the main database's synchronous=NORMAL does not reach an attached one - the cache
+    // stayed FULL, an fsync on the HDD for every ~1 MB answer stored, and the main thread's reads
+    // queued behind it (hitches of 270-500 ms, 2026-11-09). WAL + NORMAL stays consistent on a crash.
+    [self exec:@"PRAGMA cache.synchronous=NORMAL"];
     [self exec:@"CREATE TABLE IF NOT EXISTS cache.jcache (k TEXT PRIMARY KEY, t REAL, v BLOB)"];
     [self exec:@"CREATE INDEX IF NOT EXISTS cache.jcache_t ON jcache(t)"];
 }
@@ -273,12 +277,14 @@ static SFItem *playableItem(id json) {
     if (!d) return;
     double now = [NSDate date].timeIntervalSince1970;
     dispatch_async(_q, ^{
+        CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
         sqlite3_stmt *st;
         if (sqlite3_prepare_v2(self->_db, "INSERT OR REPLACE INTO cache.jcache (k,t,v) VALUES (?,?,?)", -1, &st, NULL) != SQLITE_OK) return;
         bindText(st, 1, key);
         sqlite3_bind_double(st, 2, now);
         sqlite3_bind_blob(st, 3, d.bytes, (int)d.length, SQLITE_TRANSIENT);
         sqlite3_step(st); sqlite3_finalize(st);
+        SFStoreNoteSlow(t0, [NSString stringWithFormat:@"caching %@ (%lu KB)", key, (unsigned long)d.length / 1024]);
     });
 }
 
@@ -303,13 +309,22 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
     sqlite3_finalize(st);
 }
 
+// A queue operation that took long is logged with what it was: the main thread's reads wait behind
+// it (the hitch monitor sees only the wait)
+static const double kSlowStoreMs = 150;
+static void SFStoreNoteSlow(CFAbsoluteTime t0, NSString *what) {
+    double ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000;
+    if (ms >= kSlowStoreMs) SFLog(@"store: %.0f ms for %@", ms, what.length > 90 ? [[what substringToIndex:90] stringByAppendingString:@"…"] : what);
+}
+
 - (void)run:(NSString *)sql args:(NSArray *)args {
-    dispatch_async(_q, ^{ [self runNow:sql args:args]; });
+    dispatch_async(_q, ^{ CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent(); [self runNow:sql args:args]; SFStoreNoteSlow(t0, sql); });
 }
 
 - (void)runAll:(NSArray *)statements {
     if (!statements.count) return;
     dispatch_async(_q, ^{
+        CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
         NSUInteger before = self->_errors;
         [self exec:@"BEGIN IMMEDIATE"];
         if (self->_errors != before) return;   // no transaction: write nothing rather than half
@@ -321,12 +336,15 @@ static void bindAny(sqlite3_stmt *st, int idx, id v) {
         // a failed statement or COMMIT leaves the transaction open: every later write would join it
         // and never commit - end it
         if (self->_errors != before) { [self exec:@"ROLLBACK"]; SFLog(@"store: %lu writes rolled back", (unsigned long)statements.count); }
+        SFStoreNoteSlow(t0, [NSString stringWithFormat:@"%lu writes (%@)", (unsigned long)statements.count, statements.firstObject[0]]);
     });
 }
 
 - (NSArray *)rows:(NSString *)sql args:(NSArray *)args {
     __block NSArray *out;
+    CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
     dispatch_sync(_q, ^{ out = [self rowsNow:sql args:args]; });
+    if ([NSThread isMainThread]) SFStoreNoteSlow(t0, [@"a main-thread read: " stringByAppendingString:sql]);   // what it waited behind is logged before
     return out;
 }
 
