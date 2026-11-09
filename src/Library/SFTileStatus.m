@@ -16,7 +16,7 @@
     // played from the downloads -> the chip was missing there (WBS Legal report 2026-11-04)
     else if (s == SFDLDone && [dl isKept:item.identifier]) t = @"\u2193 Behalten";   // also on the downloads page
     else if (s == SFDLDone && !item.inDownloadsList) t = @"\u2193 Offline";
-    else if (s == SFDLFailed) t = @"Download fehlgeschlagen";
+    else if (s == SFDLFailed && !item.inDownloadsList) t = @"Download fehlgeschlagen";   // there, its shelf says so
     return t;
 }
 - (double)progressForItem:(SFItem *)item { return [[SFStore shared] progressFor:item.identifier]; }

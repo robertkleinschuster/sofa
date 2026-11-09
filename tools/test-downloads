@@ -203,6 +203,7 @@ check "failed, with its error; tried once, not again by itself" "$(SQ "select st
 # listed on the downloads page, where the user decides (2026-11-09: failed ones were nowhere to be seen)
 cmd "shelves downloads"; for i in $(seq 1 20); do grep -q 'dev: shelves downloads end' "$LOG" && break; sleep 0.1; done
 check "listed under Fehlgeschlagen on the downloads page" "$(grep -c 'dev: shelves downloads | Fehlgeschlagen | 1 items .*example:9' "$LOG")" "1"
+cmd "open downloads"; sleep 1.5; shot "$T/downloads-failed.png"   # how it looks (DLTEST_SHOTS)
 quit
 SQ "delete from downloads where id='example:9'"
 # the spacing of starts survives a restart (2026-11-06: an update restart started the next YouTube
