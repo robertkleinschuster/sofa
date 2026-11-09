@@ -498,6 +498,29 @@ test('resume hint survives mpv probing the first cluster, is consumed at the res
   } finally { s.close('test'); }
 });
 
+test('header parse of a resume whose init came from Sofa\'s store: no run from 0 within the grace (the init end from the format)', () => {
+  const formats = describeFormats(info.formats);
+  const s = new PlaybackSession({ info, formats, video: must(pickVideo(formats)), audio: must(pickAudio(formats)),
+    startPump: () => ({ abort() {} }), cfg: CFG });
+  try {
+    // no init through the session: the native layer served [0, init end) from disk
+    assert.equal(s.video.file.init, null);
+    assert.equal(s.video.initEnd, VINIT.length, 'the init end from the format\'s indexRange');
+    s.hint(60000);
+    const now = Date.now();
+    for (const pos of [VINIT.length, VINIT.length + 4]) {
+      const probe = { pos, since: now, movedAt: now };
+      s.video.readers.add(probe);
+      const ds = s.video.demands(now);
+      assert.deepEqual(ds.map((d) => [d.off, d.ms]), [[null, 60000]], `a probe at ${pos}: only the resume hint, no demand at 0: ${JSON.stringify(ds)}`);
+      assert.ok(s.video.demands(now + s.cfg.PROBE_GRACE_MS).some((d) => d.off === pos), 'served once it waited the grace');
+      s.video.readers.delete(probe);
+    }
+    s.video.readers.add({ pos: VINIT.length + 5, since: now, movedAt: now });
+    assert.ok(s.video.demands(now).some((d) => d.off === VINIT.length + 5), 'a read past the Cluster ID is media: a demand');
+  } finally { s.close('test'); }
+});
+
 test('a request left open by the header parse is no demand once the player reads at the resume position', () => {
   const pumps = fakePumps(MEDIA, { stall: true });
   const formats = describeFormats(info.formats);

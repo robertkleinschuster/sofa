@@ -41,7 +41,7 @@ interface Waiter {
 }
 
 /** Matroska's Cluster element ID (EBML 0x1F43B675). */
-const CLUSTER_ID = Uint8Array.of(0x1f, 0x43, 0xb6, 0x75);
+export const CLUSTER_ID = Uint8Array.of(0x1f, 0x43, 0xb6, 0x75);
 
 export class VirtualFile {
   total: number;

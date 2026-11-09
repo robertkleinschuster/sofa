@@ -15,7 +15,7 @@
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
 import { clientNonce, randomHex } from './bytes.ts';
 import { background } from './timers.ts';
-import { VirtualFile } from './vfile.ts';
+import { CLUSTER_ID, VirtualFile } from './vfile.ts';
 import type { Segment } from './vfile.ts';
 import { errorMessage, toError } from './errors.ts';
 import { log, debug } from './log.ts';
@@ -177,10 +177,11 @@ class Track {
     for (const r of this.readers) {
       if ((r.since ?? 0) < newest) continue;
       live++;
-      // mpv's header parse just past the known first Cluster ID while the player starts elsewhere (an
-      // unconsumed start hint): it seeks there next - no run from 0 for it. Bounded: a client that does
-      // want the first cluster (mpv probing the start time) is served once it waited PROBE_GRACE_MS.
-      if (this.hint && this.file.known && r.pos >= this.file.initEnd && r.pos <= this.file.probeEnd && this.hint.ms > 0
+      // mpv's header parse at the first Cluster ID while the player starts elsewhere (an unconsumed
+      // start hint): it seeks there next - no run from 0 for it. Bounded: a client that does want the
+      // first cluster (mpv probing the start time) is served once it waited PROBE_GRACE_MS.
+      const probeEnd = this.probeEnd;
+      if (this.hint && this.hint.ms > 0 && probeEnd !== null && r.pos >= this.initEnd && r.pos <= probeEnd
           && now - (r.movedAt ?? 0) < this.session.cfg.PROBE_GRACE_MS) continue;
       out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
     }
@@ -204,6 +205,17 @@ class Track {
     if (this.file.initEnd) return this.file.initEnd;
     const ir = this.fmt.raw?.indexRange;
     return ir ? Number(ir.end) + 1 : 0;
+  }
+
+  /**
+   * Where mpv's header parse stops - a WebM track's first Cluster ID, right after the Cues - or null
+   * (MP4, or not known). From the init when it came through this session; else from the format: the
+   * init region was read from Sofa's media store, not through here (every resume of a stored video -
+   * its header parse then started a run from 0, a second SABR stream next to the resume's, 2026-11-09).
+   */
+  get probeEnd(): number | null {
+    if (this.file.init) return this.file.known ? this.file.probeEnd : null;
+    return (this.file.mimeType || '').includes('webm') && this.initEnd ? this.initEnd + CLUSTER_ID.length : null;
   }
 
   /**
