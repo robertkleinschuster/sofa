@@ -44,6 +44,11 @@ static BOOL SFIsChannelPage(NSString *here) { return here && [SFAppRegistry isSh
                 SFMenuOption *o = [SFMenuOption option:@"Download abbrechen" action:^{ [dl remove:ident]; [nav toast:@"Download abgebrochen"]; }];
                 o.detail = ds == SFDLRunning ? [NSString stringWithFormat:@"%d %%", (int)round(dp * 100)] : @"wartet";
                 [opts addObject:o];
+            } else if (ds == SFDLFailed) {   // given up: try again, or let it go
+                SFMenuOption *again = [SFMenuOption option:@"Erneut herunterladen" action:^{ [dl download:it told:^(NSString *m) { [nav toast:m]; }]; }];
+                again.detail = [dl failureOf:ident];
+                [opts addObject:again];
+                [opts addObject:[SFMenuOption option:@"Aus Downloads entfernen" action:^{ [dl remove:ident]; [nav toast:@"Aus Downloads entfernt"]; [ws reload]; }]];
             } else if (ds == SFDLDone || it.localPath) {
                 if (ds == SFDLDone) {
                     BOOL kept = [dl isKept:ident];

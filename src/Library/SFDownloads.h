@@ -35,6 +35,8 @@ extern NSString *const SFUnsortedChannel;   // show name for videos without a ch
 - (void)remove:(NSString *)identifier;           // cancel, or delete it (its tracks leave the store)
 - (NSArray *)items:(NSString *)source;           // finished downloads (SFItem, newest first); nil = all
 - (NSArray *)active;                             // running/waiting (SFItem)
+- (NSArray *)failed:(NSString *)source;          // given up (SFItem, newest first); "Herunterladen" tries again
+- (NSString *)failureOf:(NSString *)identifier;  // why a failed download gave up; nil otherwise
 @property (nonatomic, readonly) NSUInteger generation;   // changes on every state change (not on progress)
 - (unsigned long long)bytesOf:(NSString *)ident;         // its bytes in the media store (any thread; waits only for the store's open at launch)
 - (unsigned long long)bytesUsedFor:(NSString *)source;   // the finished downloads' bytes; nil = all

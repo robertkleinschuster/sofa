@@ -4,7 +4,8 @@
 #
 # Every download fills the media store (docs/media-store.md) - no files, no ffmpeg. Checks:
 #   0. a hung child process (SFRunProcess, used by the updater) is killed at its timeout
-#   4b. a failed download waits for the user (no automatic retry); the source's start spacing is stored
+#   4b. a failed download waits for the user (no automatic retry), listed on the downloads page;
+#       the source's start spacing is stored
 #   5. during a YouTube bot-check pause a queued YouTube download waits without any request
 #   6. storage guard: below the reserve no download starts and a running one stops - both stay
 #      queued (not failed), the user is asked to make room, and the queue continues
@@ -14,7 +15,8 @@
 #   8. media store downloads (the Example app fills like YouTube, SOFA_EXAMPLE_FILL): a fill completes
 #      as a download (pinned bytes); a quit mid-fill leaves it running (resumed); ordinary buffers have no tile
 #      badge and "Herunterladen" says what is missing ("noch X MB"), the fill fetches only the rest;
-#      tracks gone from outside are noticed at start and filled again; removal frees them
+#      tracks gone from outside are noticed at start and filled again; one complete already finishes
+#      inside its own start (set up first); removal frees them
 #   8c. a source's progressive file (mediatheks) through the media proxy: the download fills the store
 #      by ranges (no ffmpeg); the timeline shows what is on disk (exact, the file's moov sample tables);
 #      it plays from the store, "Online abspielen" (info panel) switches to the source, and it plays
@@ -198,6 +200,9 @@ start
 for i in $(seq 1 80); do grep -q 'downloads: FAILED example:9' "$LOG" && break; sleep 0.5; done
 sleep 1   # (a retry would start within the source's spacing)
 check "failed, with its error; tried once, not again by itself" "$(SQ "select state || '/' || (error is not null) from downloads where id='example:9'")/$(grep -c 'downloads: FAILED example:9' "$LOG")" "3/1/1"
+# listed on the downloads page, where the user decides (2026-11-09: failed ones were nowhere to be seen)
+cmd "shelves downloads"; for i in $(seq 1 20); do grep -q 'dev: shelves downloads end' "$LOG" && break; sleep 0.1; done
+check "listed under Fehlgeschlagen on the downloads page" "$(grep -c 'dev: shelves downloads | Fehlgeschlagen | 1 items .*example:9' "$LOG")" "1"
 quit
 SQ "delete from downloads where id='example:9'"
 # the spacing of starts survives a restart (2026-11-06: an update restart started the next YouTube
@@ -238,6 +243,15 @@ for i in $(seq 1 60); do grep -q "downloads: done $REF" "$LOG" && break; sleep 0
 grep -q "$REF is incomplete in the media store" "$LOG" && ok "an incomplete store download noticed at start" || bad "not noticed: $(grep "$REF" "$LOG" | tail -2)"
 pieces=$(grep -o "example: filled $REF piece [0-9]" "$LOG" | awk '{print $NF}' | tr '\n' ' ')
 check "only the lost block filled again (pieces 4-7)" "$pieces" "4 5 6 7 "
+# a download whose bytes are all stored already finishes inside its own start (2026-11-09: the run
+# was set up after that - a disk watch left ticking and a cancel kept for a finished fill)
+quit
+SQ "update downloads set state=3, error='test' where id='$REF'"
+start
+m=$(wc -l < "$LOG")
+cmd "dlget $REF"
+for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "downloads: done $REF" && break; sleep 0.25; done
+check "complete at once: set up, then done (in that order)" "$(tail -n +$((m + 1)) "$LOG" | grep -o "downloads: loading\|downloads: done $REF" | tr '\n' '|')" "downloads: loading|downloads: done $REF|"
 cmd "dlremove $REF"
 for i in $(seq 1 20); do grep -q "dev: removed download $REF" "$LOG" && break; sleep 0.25; done
 check "removal frees its tracks" "$(SS "select count(*) from tracks where item='$REF'")/$(SQ "select count(*) from downloads where id='$REF'")" "0/0"

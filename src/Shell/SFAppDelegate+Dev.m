@@ -251,10 +251,11 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         if (a.count == 2 && [a[1] isEqualToString:@"-"]) [[SFStore shared] setSetting:nil forKey:[@"geo.region." stringByAppendingString:a[0]]];
         else if (a.count == 2) [SFNet noteRegion:a[0] inside:[a[1] boolValue]];
         SFLog(@"dev: region %@ done", arg);
-    } else if ([cmd isEqualToString:@"shelves"] && arg) {   // Dev: an app's start page shelves (title, count, kinds) - content survey
+    } else if ([cmd isEqualToString:@"shelves"] && arg) {   // Dev: shelves (title, count, kinds) of an app's start page, or of "downloads"
         Class<SFApp> app = [SFAppRegistry appNamed:arg];
-        if (!app) { SFLog(@"dev: shelves: no app %@", arg); return; }
-        [app homeLoader](^(SFPage *p, NSError *e) {
+        SFPageLoader load = [arg isEqualToString:@"downloads"] ? [SFLibraryPages downloadsLoader:nil] : [app homeLoader];
+        if (!load) { SFLog(@"dev: shelves: no app %@", arg); return; }
+        load(^(SFPage *p, NSError *e) {
             for (SFShelf *sh in p.shelves) {
                 NSCountedSet *kinds = [NSCountedSet new];
                 for (SFItem *i in sh.items) [kinds addObject:@(i.kind)];

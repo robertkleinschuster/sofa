@@ -29,6 +29,15 @@ static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%l
         SFShelf *storage = [SFShelf shelf:@"Speicher" style:SFTileStyleLandscape items:@[[self roomTile]]];
         if (dl.storageFull) [shelves addObject:storage];
         if (active.count) [shelves addObject:[SFShelf shelf:dl.storageFull ? @"Wartet auf Platz" : @"Wird geladen" style:SFTileStyleLandscape items:active]];
+        // given up: the user decides (OK held: "Erneut herunterladen" or "Entfernen") - never retried by itself
+        NSMutableArray *failed = [NSMutableArray new];
+        for (SFItem *i in [dl failed:source]) {
+            SFItem *c = [i copy];
+            c.subtitle = SFDotJoin(c.channel, [dl failureOf:c.identifier]);
+            c.plot = [NSString stringWithFormat:@"Download fehlgeschlagen: %@\nOK gedrückt halten: erneut herunterladen oder entfernen.", [dl failureOf:c.identifier]];
+            [failed addObject:c];
+        }
+        if (failed.count) [shelves addObject:[SFShelf shelf:@"Fehlgeschlagen" style:SFTileStyleLandscape items:failed]];
         NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] recentDownloads:40 source:source] copyItems:YES];
         for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
         if (latest.count) [shelves addObject:[SFShelf shelf:@"Zuletzt geladen" style:SFTileStyleLandscape items:latest]];

@@ -84,7 +84,10 @@
             rec:(SFDownloadRecord *)r item:(SFItem *)item {
     NSString *ident = r.identifier;
     __block NSDate *lastUI = [NSDate distantPast];
-    _fillCancel = start(^(double p) {
+    // set up before the start: a fill whose bytes are all stored finishes inside it (2026-11-09)
+    [self watchDiskDuringRun:YES];
+    SFLog(@"downloads: loading %@", item.title);
+    dispatch_block_t cancel = start(^(double p) {
         SFMain(^{
             if (![ident isEqualToString:self->_runningID]) return;
             r.progress = p;
@@ -100,8 +103,7 @@
             [self finish:ident ok:YES error:nil];
         });
     });
-    [self watchDiskDuringRun:YES];
-    SFLog(@"downloads: loading %@", item.title);
+    if ([ident isEqualToString:_runningID]) _fillCancel = cancel;   // still running: what stops it
 }
 
 // Ends the running fill without a verdict of its own (exit, removal, disk): cancelled - what it stored
@@ -117,17 +119,21 @@
     NSString *img = item.image;
     if (![img hasPrefix:@"http"]) return;
     NSString *thumb = [self thumbPathFor:r item:item];
-    [[NSFileManager defaultManager] createDirectoryAtPath:[thumb stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *ident = r.identifier;
-    void (^got)(NSData *, NSInteger) = ^(NSData *d, NSInteger st) {
-        if (d.length && st < 400 && [d writeToFile:thumb atomically:YES]) SFMain(^{
+    void (^got)(NSData *, NSInteger) = ^(NSData *d, NSInteger st) {   // on a background queue: disk I/O (mkdir on the main thread: a 39 ms hitch, 2026-11-09)
+        if (!d.length || st >= 400) return;
+        [[NSFileManager defaultManager] createDirectoryAtPath:[thumb stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+        if ([d writeToFile:thumb atomically:YES]) SFMain(^{
             SFDownloadRecord *rr = self->_recs[ident];
             if (!rr) return;
             rr.thumb = thumb; [self save:rr]; [self changed:ident];
         });
     };
     SFHostFetcher own = SFHostFetcherFor([NSURL URLWithString:img]);
-    if (own) { own([NSURL URLWithString:img], got); return; }   // the source's own client (SFHostFetch.h)
+    if (own) {   // the source's own client (SFHostFetch.h), which answers on any queue
+        own([NSURL URLWithString:img], ^(NSData *d, NSInteger st) { SFBackground(^{ got(d, st); }); });
+        return;
+    }
     SFBackground(^{
         NSInteger st = 0;
         NSData *d = SFCurlFetch(img, @"GET", nil, nil, &st, NULL);

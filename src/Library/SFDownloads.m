@@ -179,6 +179,17 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     return out;
 }
 
+- (NSArray *)failed:(NSString *)source {
+    NSMutableArray *out = [NSMutableArray new];
+    for (SFDownloadRecord *r in [self recsWithState:SFDLFailed source:source]) { SFItem *i = [self itemFromRec:r]; if (i) [out addObject:i]; }
+    return out;
+}
+
+- (NSString *)failureOf:(NSString *)identifier {
+    SFDownloadRecord *r = identifier ? _recs[identifier] : nil;
+    return r.state == SFDLFailed ? (r.error.length ? r.error : @"Fehler") : nil;
+}
+
 - (unsigned long long)bytesOf:(NSString *)ident {
     long long n = ident ? [self.mediaStore bytesOfItem:ident] : 0;
     return n > 0 ? (unsigned long long)n : 0;
