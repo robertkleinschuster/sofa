@@ -25,8 +25,8 @@
 #   8b. old automatic full fills retire before recovery; existing manual downloads and shared
 #      buffer bytes survive. Only an explicit Herunterladen fills an old automatic entry again.
 #   tools/test-downloads   the parts side by side, each with its own instance and media server
-#                          (part a: 0, 5, 6; part b: 4b, 8, 8b; part c: 8c, 8d; part d: 7 - its own
-#                          fresh data, and the parts take about as long); DLTEST_PART=a|b|c|d
+#                          (part a: 0, 5, 6; part b: 4b, 8, 8b; part c: 8c; part d: 7; part e: 8d - each its own
+#                          fresh data, and the parts take about as long); DLTEST_PART=a|b|c|d|e
 #                          runs one part here
 # Exit code 0 = all ok.
 set -u
@@ -38,14 +38,13 @@ PART=${DLTEST_PART:-}
 if [ -z "$PART" ]; then   # all parts at once; output part by part
   make -C "$SRC" >/dev/null || exit 1
   O="$(mktemp -d "${TMPDIR:-/tmp}/sofa-dlparts.XXXXXX")"
-  DLTEST_PART=a "$0" > "$O/a" 2>&1 & A=$!
-  DLTEST_PART=b "$0" > "$O/b" 2>&1 & B=$!
-  DLTEST_PART=c "$0" > "$O/c" 2>&1 & C=$!
-  DLTEST_PART=d "$0" > "$O/d" 2>&1 & D=$!
-  wait $A; ra=$?; wait $B; rb=$?; wait $C; rc=$?; wait $D; rd=$?
-  grep -hv '^==> all ok$\|^==> FAILED$' "$O/a" "$O/b" "$O/c" "$O/d"
+  PIDS=
+  for P in a b c d e; do DLTEST_PART=$P "$0" > "$O/$P" 2>&1 & PIDS="$PIDS $!"; done
+  RC=0
+  for pid in $PIDS; do wait $pid || RC=1; done
+  for P in a b c d e; do grep -v '^==> all ok$\|^==> FAILED$' "$O/$P"; done
   rm -rf "$O"
-  [ $ra = 0 ] && [ $rb = 0 ] && [ $rc = 0 ] && [ $rd = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
+  [ $RC = 0 ] && { echo "==> all ok"; exit 0; } || { echo "==> FAILED"; exit 1; }
 fi
 want() { [ "$PART" = "$1" ]; }
 INST=${SOFA_TEST_INSTANCE:-dltest-$PART}
@@ -105,7 +104,8 @@ MEDIA_SECONDS=60; [ "$PART" = c ] && MEDIA_SECONDS=180
 # test media: the isolated fixture only
 "$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t "$MEDIA_SECONDS" \
       -c:v libx264 -preset ultrafast -c:a aac -movflags +faststart "$T/good.mp4"
-# the Example app's media for the download sections: served at ~256 KB/s (a download takes a while)
+# the Example app's media for the download sections: served at ~256 KB/s (a download takes a while);
+# part c only checks what is fetched, not how long it takes: ~1.3 MB/s
 cat > "$T/slow.py" <<'PY'
 import http.server, sys, time, os
 F = sys.argv[1]
@@ -128,14 +128,15 @@ class H(http.server.BaseHTTPRequestHandler):
                 if not b: break
                 try: self.wfile.write(b); self.wfile.flush()
                 except Exception: return
-                time.sleep(0.25)
+                time.sleep(float(sys.argv[4]))
 s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)   # a free port, written once listening
 with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
 os.rename(sys.argv[2] + ".tmp", sys.argv[2])
 s.serve_forever()
 PY
 # a free port (fixed ones collided with test-playback's servers under test-all), awaited before use
-/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" "$T/media.port" "$T/source-requests" & SRV=$!
+CHUNK_DELAY=0.25; [ "$PART" = c ] && CHUNK_DELAY=0.05
+/opt/local/bin/python3.14 -I "$T/slow.py" "$T/good.mp4" "$T/media.port" "$T/source-requests" "$CHUNK_DELAY" & SRV=$!
 for i in $(seq 1 150); do [ -s "$T/media.port" ] && break; sleep 0.1; done
 MEDIA_PORT=$(cat "$T/media.port" 2>/dev/null)
 export SOFA_EXAMPLE_MEDIA=http://127.0.0.1:$MEDIA_PORT/good.mp4
@@ -335,9 +336,15 @@ m=$(wc -l < "$LOG")
 cmd "play example:3"
 for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && break; sleep 0.25; done
 # A paused player must stop fetching after the forward window, not fill the whole file.
-# The local server can deliver the complete fixture in ~16 s; hold longer than that.
+# Hold until the item's bytes on disk stop growing for 3 s (the server delivers the whole fixture
+# in ~3 s here, so an unbounded read would have filled it by then), at most 20 s.
 cmd "mpvset pause yes"
-sleep 20
+last=-1; still=0
+for i in $(seq 1 40); do
+  n=$(SS "select coalesce(sum(e.end - e.start), 0) from tracks t join extents e on e.track = t.id where t.item='example:3' and t.kind='file'")
+  [ "$n" = "$last" ] && still=$((still + 1)) || still=0
+  last=$n; [ $still -ge 6 ] && break; sleep 0.5
+done
 cmd "mpvprop demuxer-cache-duration"
 for i in $(seq 1 40); do log_since $m "$LOG" | grep -q 'dev: mpv demuxer-cache-duration =' && break; sleep .1; done
 FORWARD_SECONDS=$(log_since $m "$LOG" | sed -n 's/.*dev: mpv demuxer-cache-duration = //p' | tail -1)
@@ -388,8 +395,11 @@ for i in $(seq 1 60); do tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame"
 tail -n +$((m + 1)) "$LOG" | grep -q "mpv: first frame" && ok "plays from the store with its source gone" \
   || bad "no playback from the store: $(tail -n +$((m + 1)) "$LOG" | grep 'player\|mpv' | tail -3)"
 quit
+fi   # part c
 
+if want e; then
 echo "==> 8d. an HLS source through the media proxy"
+export SOFA_PROXY_LOOPBACK=1 SOFA_PREBUFFER_TEST=1   # as in 8c
 H="$T/hls"; mkdir -p "$H"; head -c 16 /dev/urandom > "$H/enc.key"
 printf '../enc.key\n%s\n' "$H/enc.key" > "$T/keyinfo"
 ( cd "$H" && "$FF" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=10 -f lavfi -i sine -t 12 \
@@ -448,7 +458,7 @@ for i in $(seq 1 40); do tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 
 tail -n +$((m + 1)) "$LOG" | grep -q "player: stored 1 range(s), 1[12] of 1[12] s" && ok "a download: the timeline shaded end to end" \
   || bad "stored shade of a download: $(tail -n +$((m + 1)) "$LOG" | grep 'player: stored' | tail -1)"
 quit
-fi   # part c
+fi   # part e
 
 if want d; then
 echo "==> 7. Platz schaffen: only replaceable videos are deleted"
