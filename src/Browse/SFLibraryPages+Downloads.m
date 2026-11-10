@@ -16,10 +16,12 @@ static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%l
     return ^(SFPageDone done) {
         SFDownloads *dl = [SFDownloads shared];
         NSMutableArray *shelves = [NSMutableArray new];
+        BOOL mixed = !source;   // Sofa's own page: every app's downloads - each says where it comes from
         NSMutableArray *active = [NSMutableArray new];
         for (SFItem *i in [dl active]) {
             if (source && ![i.source isEqualToString:source]) continue;
             SFItem *c = [i copy];
+            c.showsSourceMark = mixed;
             double p = 0;
             SFDLState st = [dl stateFor:c.identifier progress:&p];
             c.subtitle = SFDotJoin(c.channel, st == SFDLRunning ? @"wird geladen" : dl.storageFull ? @"wartet auf Platz" : @"wartet");
@@ -33,13 +35,14 @@ static NSString *SFVideos(NSUInteger n) { return [NSString stringWithFormat:@"%l
         NSMutableArray *failed = [NSMutableArray new];
         for (SFItem *i in [dl failed:source]) {
             SFItem *c = [i copy];
+            c.showsSourceMark = mixed;
             c.subtitle = SFDotJoin(c.channel, [dl failureOf:c.identifier]);
             c.plot = [NSString stringWithFormat:@"Download fehlgeschlagen: %@\nOK gedrückt halten: erneut herunterladen oder entfernen.", [dl failureOf:c.identifier]];
             [failed addObject:c];
         }
         if (failed.count) [shelves addObject:[SFShelf shelf:@"Fehlgeschlagen" style:SFTileStyleLandscape items:failed]];
         NSArray *latest = [[NSArray alloc] initWithArray:[[SFLibrary shared] recentDownloads:40 source:source] copyItems:YES];
-        for (SFItem *e in latest) e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date));
+        for (SFItem *e in latest) { e.subtitle = SFDotJoin(e.channel, SFFormatDateShort(e.date)); e.showsSourceMark = mixed; }
         if (latest.count) [shelves addObject:[SFShelf shelf:@"Zuletzt geladen" style:SFTileStyleLandscape items:latest]];
         NSMutableArray *shows = [NSMutableArray new];
         for (SFShow *sh in [[SFLibrary shared] showsForSource:source]) [shows addObject:[self showTile:sh]];

@@ -73,6 +73,7 @@
             if (state) [sub addObject:state];
             e.subtitle = [sub componentsJoinedByString:@" · "];
             e.style = SFTileStyleLandscape;
+            e.showsSourceMark = YES;   // every app's videos in one list: say where each comes from
             [groups[g] addObject:e];
         }
         NSMutableArray *shelves = [NSMutableArray new];

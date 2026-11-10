@@ -44,6 +44,10 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (void)adopt:(SFFollow *)record;
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
+// For a source whose follows are channels (their picture is the channel's own): its stored items of
+// a followed channel that name no channel picture get the follow's - items stored before they
+// carried one, or from lists that name none. Idempotent, one statement in the background.
+- (void)lendPicturesToItemsOf:(NSString *)source;
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
 // the same for many (thousands: copying them is work): sorted and copied in the background once the
 // follows are loaded; done runs on the main thread

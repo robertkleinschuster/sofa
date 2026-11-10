@@ -119,7 +119,10 @@ programme (`SFItem.schedule` of `SFBroadcast`, from the source's EPG: ARD progra
 its time, "Danach: …" and description. Every tile has at most one round avatar
 before its subtitle (never the same logo twice): the channel's picture (`SFItem.channelImage`, where the
 source names one), else the mark of the station that broadcast a video (`station`,
-`res/logos/marks`), else - in mixed rows (`SFItem.showsSourceMark`) - its app's symbol. Watched videos are left out. Home only offers what plays here: no `drm` items and no
+`res/logos/marks`), else - in mixed rows (`SFItem.showsSourceMark`: Home's, the history, the
+all-apps downloads page) - its app's symbol; a live
+channel has none (its title and picture name the station). A followed YouTube channel's videos get
+the channel's picture from the follow (its uploads playlist names none). Watched videos are left out. Home only offers what plays here: no `drm` items and no
 items whose `geoRegion` (raw source data, e.g. ZDF `geoLocation`) the device is known to be
 outside of (`SFNet stateOfRegion:` – learned from every `checkRegion:…region:`, stored 24 h;
 an app that features region-limited items probes once if the state is unknown).

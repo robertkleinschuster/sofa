@@ -50,6 +50,7 @@
         [[SFYTEngine shared] image:url done:done];
     });
     [SFYTViewReport start];   // the player's state -> the view's stats pings, like youtube.com's player
+    [[SFFollows shared] lendPicturesToItemsOf:[self appIdentifier]];   // a followed channel's picture is its videos' avatar
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
 }
 
@@ -122,7 +123,16 @@
 
 #pragma mark Channels (shows)
 
-+ (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done { [SFYTFeeds feed:SFRefID(ref) done:done]; }
+// A channel's uploads playlist names no channel picture (its lockups have none, unlike a feed's);
+// the followed channel's own picture is its videos' avatar (main thread, like done)
++ (void)feed:(NSString *)ref done:(void (^)(NSArray *, NSError *))done {
+    [SFYTFeeds feed:SFRefID(ref) done:^(NSArray *items, NSError *e) {
+        NSString *picture = [[SFFollows shared] recordOf:ref].image;
+        if (picture.length)
+            for (SFItem *i in items) if (!i.channelImage.length && [i.showRef isEqualToString:ref]) i.channelImage = picture;
+        done(items, e);
+    }];
+}
 // feed checks and downloads wait during a bot-check pause (no request, no attempt used up)
 + (NSTimeInterval)backgroundPausedUntil { return [SFYTBreaker shared].blockedUntil; }
 // Downloads at a viewer's pace: each one is a player request plus a whole video's media. 85 a day,

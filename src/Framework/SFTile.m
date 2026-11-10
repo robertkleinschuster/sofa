@@ -216,12 +216,13 @@ static id<SFTileStatusSource> gStatus;
             NSString *sub = now ? SFDotJoin(now.title, [@"bis " stringByAppendingString:SFFormatClock(now.end)]) : item.subtitle;
             // one round avatar before the line, never the same logo twice (user 2026-11-09): the
             // channel's own picture where the line starts with its name; else the mark of the
-            // station that broadcast a video (not of a live channel: its picture often is that
-            // logo); else, in a row mixed from several apps, the app's symbol - where it comes from,
-            // also on a tile without a line
+            // station that broadcast a video; else, in a row mixed from several apps, the app's
+            // symbol - where it comes from, also on a tile without a line. A live channel has
+            // none: its title and picture name the station already, and the app that streams it
+            // is not its broadcaster (ARD's mark before 3sat's programme read wrong, 2026-11-10)
             NSString *picture = item.kind == SFItemVideo && item.channelImage.length && item.channel.length && [sub hasPrefix:item.channel] ? item.channelImage : nil;
             CGImageRef mark = !picture && item.kind == SFItemVideo ? SFLogoMark(item.station) : NULL;
-            if (!picture && !mark && item.showsSourceMark) mark = SFLogoMark(item.source);
+            if (!picture && !mark && item.showsSourceMark && item.kind != SFItemLive) mark = SFLogoMark(item.source);
             BOOL avatar = (picture || mark) && !center;
             CGFloat d = U(34), x = avatar ? d + U(10) : 0, y = ih + U(18) + tth;
             if ((sub.length || avatar) && !center) {

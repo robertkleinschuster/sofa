@@ -157,6 +157,18 @@ static BOOL usable(NSString *img) {
     return f && !usable(f.image);
 }
 
+// stored items of a source's follows without a channel picture get their follow's (http) one;
+// a follow's local picture is a file of this Mac, not the channel's
+static NSString *const kLendPictures = @"UPDATE items SET json = json_set(json, '$.channelImage', "
+    "(SELECT image FROM follows WHERE id = json_extract(items.json, '$.showRef'))) "
+    "WHERE json_extract(json, '$.channelImage') IS NULL "
+    "AND json_extract(json, '$.showRef') IN (SELECT id FROM follows WHERE source = ? AND image LIKE 'http%')";
+
+- (void)lendPicturesToItemsOf:(NSString *)source {
+    if (!source.length) return;
+    [self whenReady:^{ [[SFStore shared] run:kLendPictures args:@[source]]; }];
+}
+
 // A missing or gone picture: the show's app finds the current one (SFApp showImage, on its own
 // budget) - written only when it changed.
 - (void)renewImage:(NSString *)identifier {
