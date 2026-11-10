@@ -35,10 +35,12 @@ static CGFloat SFBackingScale(void) {
     return scale;
 }
 
-// Colour emoji are PNGs inside a 36 MB font: the first draw of each one reads its part of the file
+// Colour emoji are PNGs inside a large font (the one installed here: 189 MB in /Library/Fonts,
+// found by name, not by path): the first draw of each one reads its part of the file
 // from the disk - 15-80 ms per emoji on this iMac's HDD, a 556 ms hitch for a page of emoji titles
 // (2026-11-09) -, while with the file in the page cache a draw takes under 1 ms. Read once at
-// launch, in the background at background I/O priority; later draws find it in memory.
+// launch, in the background at background I/O priority; later draws find it in memory (page
+// cache: evictable, it costs no memory anything else needs).
 void SFLabelPrepare(void) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
         CTFontDescriptorRef d = CTFontDescriptorCreateWithNameAndSize(CFSTR("AppleColorEmoji"), 0);
