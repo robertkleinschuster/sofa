@@ -234,7 +234,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 
 ## Backlog (user requests — queue, tick off when done)
 - [x] 2026-11-09 **libmpv with the CoreAudio hotplug fix in the bundle** (mpv rev 12, backport-toolkit 5acfe60; crash 2026-11-08 12:48 in hotplug_cb): full bundle built (make-release, firefox-x11 rev 5 verified and committed as 19c8eb1), test-release all ok, deployed 22:14 via sofa-deploy --bundle. The engine took over its running Firefox: rev 5 (Mavericks shm fix) runs from the browser's next restart - then compare `yt-engine: memory: browser` (rev 3 on 2026-11-09: ~1.6 GB idle).
-- [ ] 2026-11-09 **Delete `~/Library/Application Support/Sofa/sofa-before-schema19.db`** (user: in a few days, not now) - from 2026-11-12, once schema 19 ran without anomalies: `pragma integrity_check`/`foreign_key_check` on the live DB, no `downloads:`/`store:` errors in Sofa.log since the migration.
+- [x] 2026-11-09 **Delete `~/Library/Application Support/Sofa/sofa-before-schema19.db`** (done 2026-11-10 at the user's go-ahead: integrity_check ok, no FK violations, no store/download errors since the migration; moved to the Trash) (user: in a few days, not now) - from 2026-11-12, once schema 19 ran without anomalies: `pragma integrity_check`/`foreign_key_check` on the live DB, no `downloads:`/`store:` errors in Sofa.log since the migration.
 - [~] 2026-11-07 **YouTube engine in Firefox: roll out** (goals above). DONE: engine in the page via
       the extension (stream protection accepts it, `sps=1`), `SFYTEngine`/`SFYTBrowser`/`SFYTChannel`/
       `SFLocalHTTP` replace the node sidecar in Sofa, live-verified (test-playback 9); node sidecar,
