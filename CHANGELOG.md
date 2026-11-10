@@ -4,8 +4,22 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
-## Unveröffentlicht
+## 0.3.12
 
+- **Kanalbilder auf den Kacheln.** Vor dem Kanalnamen steht jetzt ein rundes Kanalbild – bei
+  abonnierten YouTube-Kanälen auch für ältere Videos. Auf der Startseite, im Verlauf und auf der
+  Downloads-Seite zeigt eine Kachel ohne Kanalbild das Symbol ihrer App (YouTube, ZDF, ARD, ORF).
+  Das App-Etikett auf dem Vorschaubild entfällt; kein Logo erscheint zweimal. Live-Sender tragen
+  keines – Titel und Bild nennen den Sender schon.
+- **Fehlgeschlagene Downloads** stehen auf der Downloads-Seite unter „Fehlgeschlagen“ mit dem
+  Grund; OK gedrückt halten: erneut herunterladen oder entfernen.
+- **Die Zeitleiste zeigt, was schon auf der Platte liegt** – dieser Teil spielt sofort, auch ohne
+  Netz.
+- **ORF startet in etwa 2 Sekunden.**
+- Zwei Abstürze behoben: beim Wechsel des Audiogeräts während der Wiedergabe und bei einer
+  fehlerhaften Wiedergabeliste einer Mediathek.
+- Weniger Ruckler: Titel mit Emoji, die Startseiten-Aktualisierung und das Entfernen von
+  Downloads blockieren die Oberfläche nicht mehr.
 - **Weniger Speicherverbrauch bei YouTube.** Der eingebaute Browser umgeht einen Mavericks-Fehler,
   durch den gemeinsame Speicherbereiche auch nach dem Schließen erhalten blieben. Im Leerlauf
   hält er außerdem weniger Reserveprozesse bereit.
