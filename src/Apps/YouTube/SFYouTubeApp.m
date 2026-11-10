@@ -149,12 +149,12 @@
 // at most one per channel, from the last 7 days.
 + (void)homeFeatures:(void (^)(NSDictionary *))done {
     // asked right at launch: the follows may still be loading - wait for them instead of blocking
-    [[SFFollows shared] whenReady:^{ [self featuresFromFollows:done]; }];
+    [[SFFollows shared] latest:2000 source:[self appIdentifier] done:^(NSArray *items) { [self features:items done:done]; }];
 }
 
-+ (void)featuresFromFollows:(void (^)(NSDictionary *))done {
++ (void)features:(NSArray *)latest done:(void (^)(NSDictionary *))done {
     NSMutableDictionary *byChannel = [NSMutableDictionary new];
-    for (SFItem *i in [[SFFollows shared] latest:2000 source:[self appIdentifier]]) {
+    for (SFItem *i in latest) {
         NSString *k = i.showRef ?: i.channel;
         if (k) byChannel[k] = [(byChannel[k] ?: @[]) arrayByAddingObject:i];
     }

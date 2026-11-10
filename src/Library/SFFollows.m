@@ -199,14 +199,10 @@ static BOOL usable(NSString *img) {
     return out;
 }
 
-- (NSArray *)latest:(NSInteger)n source:(NSString *)source {
-    [self ready];
+// the newest n of the given lists, deduplicated, as labelled copies (pure: any thread)
+static NSArray *SFFollowsLatest(NSArray *lists, NSInteger n) {
     NSMutableArray *all = [NSMutableArray new];
-    for (NSString *fid in _items) {
-        SFFollow *f = _follows[fid];
-        if (!f || (source && ![f.source isEqualToString:source])) continue;
-        [all addObjectsFromArray:_items[fid]];
-    }
+    for (NSArray *l in lists) [all addObjectsFromArray:l];
     [all sortUsingComparator:^NSComparisonResult(SFItem *a, SFItem *b) {
         return [(b.date ?: [NSDate distantPast]) compare:(a.date ?: [NSDate distantPast])];
     }];
@@ -221,6 +217,33 @@ static BOOL usable(NSString *img) {
         [out addObject:c];
     }
     return out;
+}
+
+// on the main thread: the stored lists of a source's follows (immutable snapshots - a refresh
+// replaces a list, it never changes one)
+- (NSArray *)listsOf:(NSString *)source {
+    NSMutableArray *lists = [NSMutableArray new];
+    for (NSString *fid in _items) {
+        SFFollow *f = _follows[fid];
+        if (!f || (source && ![f.source isEqualToString:source])) continue;
+        [lists addObject:[_items[fid] copy]];
+    }
+    return lists;
+}
+
+- (NSArray *)latest:(NSInteger)n source:(NSString *)source {
+    [self ready];
+    return SFFollowsLatest([self listsOf:source], n);
+}
+
+- (void)latest:(NSInteger)n source:(NSString *)source done:(void (^)(NSArray *items))done {
+    [self whenReady:^{
+        NSArray *lists = [self listsOf:source];
+        SFBackground(^{
+            NSArray *items = SFFollowsLatest(lists, n);
+            dispatch_async(dispatch_get_main_queue(), ^{ done(items); });
+        });
+    }];
 }
 
 #pragma mark Refresh (background, one after another)

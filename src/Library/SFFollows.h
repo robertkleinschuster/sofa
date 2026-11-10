@@ -45,5 +45,8 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 - (NSArray *)follows:(NSString *)source;               // SFItem folders (alphabetical), nil = all
 - (BOOL)needsImage:(NSString *)identifier;             // followed, but without a usable picture
 - (NSArray *)latest:(NSInteger)n source:(NSString *)source;   // newest episodes of followed shows
+// the same for many (thousands: copying them is work): sorted and copied in the background once the
+// follows are loaded; done runs on the main thread
+- (void)latest:(NSInteger)n source:(NSString *)source done:(void (^)(NSArray *items))done;
 - (NSArray *)itemsOf:(NSString *)identifier;           // a follow's newest episodes (newest first) as last checked
 @end

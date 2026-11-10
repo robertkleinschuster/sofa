@@ -11,6 +11,21 @@ NSString *const SFDownloadsStorageDidChangeNotification = @"SFDownloadsStorageDi
 NSString *const SFUnsortedChannel = @"Einzelne Videos";
 
 
+// on _disk: a removed download's folders up to the root, while nothing but artwork is left
+static void SFDownloadsPruneEmptyDirs(NSString *dir) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *root = [SFDownloads root];
+    NSSet *decor = [NSSet setWithArray:@[@".DS_Store", @"poster.jpg", @"fanart.jpg"]];   // show artwork does not count as content
+    while (dir.length > root.length && [dir hasPrefix:root]) {
+        NSArray *c = [fm contentsOfDirectoryAtPath:dir error:nil];
+        BOOL empty = YES;
+        for (NSString *f in c) if (![decor containsObject:f]) { empty = NO; break; }
+        if (!empty) break;
+        [fm removeItemAtPath:dir error:nil];
+        dir = [dir stringByDeletingLastPathComponent];
+    }
+}
+
 @implementation SFDownloads
 
 + (instancetype)shared {
@@ -39,6 +54,7 @@ NSString *const SFUnsortedChannel = @"Einzelne Videos";
         SFStore *st = [SFStore shared];
         _recs = [NSMutableDictionary new];
         _itemCache = [NSMutableDictionary new];
+        _disk = dispatch_queue_create("sofa.downloads.disk", DISPATCH_QUEUE_SERIAL);
         for (NSDictionary *row in [st rows:@"SELECT d.*, i.json AS item FROM downloads d LEFT JOIN items i ON i.id = d.id" args:nil]) {
             SFDownloadRecord *r = [SFDownloadRecord recordWithRow:row];
             if (r.identifier) _recs[r.identifier] = r;
@@ -277,8 +293,11 @@ static BOOL PinsStore(SFDownloadRecord *r) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self pump]; });
     }
     [self.mediaStore removeItem:identifier];   // its bytes are the download
-    if (r.thumb) [[NSFileManager defaultManager] removeItemAtPath:r.thumb error:nil];
-    [self pruneEmptyDirs:[r.thumb stringByDeletingLastPathComponent]];
+    NSString *thumb = r.thumb;
+    if (thumb) dispatch_async(_disk, ^{   // a slow disk: deleting on the main thread was a 100 ms hitch (2026-11-10)
+        [[NSFileManager defaultManager] removeItemAtPath:thumb error:nil];
+        SFDownloadsPruneEmptyDirs([thumb stringByDeletingLastPathComponent]);
+    });
     [_recs removeObjectForKey:identifier];
     [_itemCache removeObjectForKey:identifier];
     [self notePinned:NO item:identifier];
@@ -287,20 +306,6 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     [self changed:identifier];
     [self storageChangedSoon];   // "Platz schaffen" follows (coalesced: bulk deletions post once)
     if (_storageFull) dispatch_async(dispatch_get_main_queue(), ^{ [self pump]; });   // room again? (pump re-checks)
-}
-
-- (void)pruneEmptyDirs:(NSString *)dir {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *root = [SFDownloads root];
-    NSSet *decor = [NSSet setWithArray:@[@".DS_Store", @"poster.jpg", @"fanart.jpg"]];   // show artwork does not count as content
-    while (dir.length > root.length && [dir hasPrefix:root]) {
-        NSArray *c = [fm contentsOfDirectoryAtPath:dir error:nil];
-        BOOL empty = YES;
-        for (NSString *f in c) if (![decor containsObject:f]) { empty = NO; break; }
-        if (!empty) break;
-        [fm removeItemAtPath:dir error:nil];
-        dir = [dir stringByDeletingLastPathComponent];
-    }
 }
 
 #pragma mark Worker

@@ -56,6 +56,7 @@ static inline NSString *idHash(NSString *s) {   // FNV-1a 64 bit, stable
     BOOL _checkingOnline;            // an online check run is active
     NSMutableArray *_onlineQueue;    // identifiers waiting for an online check
     NSMutableArray *_onlineDone;     // completion blocks of checkOnline:done:
+    dispatch_queue_t _disk;          // thumbnail files and their folders, in order (never the main thread)
 }
 // Items the media store never evicts: downloads, and what a pending download (queued, running) is
 // going to read. A snapshot the main thread swaps on every record write - the store asks
