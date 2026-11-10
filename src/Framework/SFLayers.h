@@ -26,6 +26,9 @@
 - (void)applyLook:(SFLabelLook *)look;   // main thread, after render:
 @end
 
+// Reads the colour emoji font into the page cache in the background (at launch): see SFLabel.m.
+void SFLabelPrepare(void);
+
 @interface SFLabelLook : NSObject
 @property (nonatomic, readonly, copy) NSString *text;
 @property (nonatomic, readonly) CGSize size;

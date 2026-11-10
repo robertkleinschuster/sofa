@@ -58,6 +58,7 @@ NSString *gInstance = @"view";
     SFCurlGlobalInit();   // before any worker thread uses curl/OpenSSL
     [SFVolume start];     // volume/mute kept current off the main thread (SFVolume)
     SFLogoPrepare();      // logos decoded off the main thread before the first tiles need them
+    SFLabelPrepare();     // the emoji font read into memory: a first emoji draw does not wait for the disk
     // Starting at login is the autostart agent's job (setting "Beim Anmelden starten"); macOS
     // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
     if (!SFDevMode) [NSApp disableRelaunchOnLogin];
