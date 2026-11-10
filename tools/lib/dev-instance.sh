@@ -22,6 +22,18 @@ dev_wait_ready() {
   echo "dev instance not ready after 30 s:"; tail -5 "$log" 2>/dev/null | sed 's/^/    /'; exit 1
 }
 
+# dev_wait_log PID LOG PATTERN: until a line matching PATTERN (grep -E) is in LOG - a state the
+# instance reaches after "fifo ready" (launch work that runs on). Exits the tool like dev_wait_ready.
+dev_wait_log() {
+  local pid=$1 log=$2 pat=$3 i
+  for i in $(seq 1 300); do
+    grep -qE "$pat" "$log" 2>/dev/null && return 0
+    kill -0 "$pid" 2>/dev/null || { echo "dev instance exited before: $pat"; tail -5 "$log" 2>/dev/null | sed 's/^/    /'; exit 1; }
+    sleep 0.1
+  done
+  echo "dev instance: no '$pat' after 30 s:"; tail -5 "$log" 2>/dev/null | sed 's/^/    /'; exit 1
+}
+
 # dev_wait_exit PID [SECONDS]: until the process has ended (default 30 s); 1 if it still runs.
 # Once it ended: a statement the database refused ("store: SQL -> error" - a constraint, a missing
 # table) is a failure of the suite, whatever it checked - such a write is lost silently otherwise.

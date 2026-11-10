@@ -8,10 +8,11 @@
 
 @implementation SFDownloads (Integrity)
 
+// "downloads: store check done" once its result is applied (the readiness signal test-schema waits for)
 - (void)verifyStoreDownloads {
     NSMutableArray *ids = [NSMutableArray new];
     for (SFDownloadRecord *r in _recs.allValues) if (r.state == SFDLDone) [ids addObject:r.identifier];
-    if (!ids.count) return;
+    if (!ids.count) { SFLog(@"downloads: store check done (no finished downloads)"); return; }
     SFMediaStore *store = self.mediaStore;
     SFBackground(^{   // waits for the store's block check (a cold disk: seconds) - never on the main thread
         NSMutableArray *incomplete = [NSMutableArray new];
@@ -27,6 +28,7 @@
                 [self changed:ident];
             }
             if (writes.count) { [[SFStore shared] runAll:writes]; [self pump]; }
+            SFLog(@"downloads: store check done (%lu of %lu incomplete)", (unsigned long)writes.count, (unsigned long)ids.count);
         });
     });
 }

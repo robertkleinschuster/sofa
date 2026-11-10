@@ -44,10 +44,13 @@ check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }   # che
 . "$SRC/tools/lib/dev-instance.sh"
 make -C "$SRC" >/dev/null || exit 1
 APP=
-run() {   # start the instance until its store is open, then quit
+run() {   # start the instance until its store is migrated and the downloads are checked, then quit
   : > "$LOG"
   "$BIN" --dev --instance $INST >/dev/null 2>&1 & APP=$!
   dev_wait_ready $APP "$LOG"   # the store is open (migrated) once the FIFO is
+  # finished downloads not in the media store are queued again by the launch's store check, in the
+  # background: quitting before it ended left them as migrated (failed under test-all load, 2026-11-10)
+  dev_wait_log $APP "$LOG" 'downloads: store check done'
   echo quit 1<>"$FIFO" 2>/dev/null
   dev_wait_exit $APP || kill $APP 2>/dev/null; APP=
 }
