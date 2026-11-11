@@ -364,8 +364,9 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
 }
 
 // After a system sleep the seize no longer holds although the device stays open: macOS's remote
-// daemon (rcd) got the presses again - volume HUD on up/down while Sofa navigated (2026-11-11,
-// since "Ausschalten" puts the Mac to sleep). On every wake the receiver is released and seized anew.
+// daemon (rcd) got the presses again - volume HUD on up/down while Sofa navigated (2026-11-11; earlier
+// sleeps went unnoticed: a deploy restarted the helper before the remote was used). On every wake the
+// receiver is released and seized anew.
 static void powerCallback(void *ctx, io_service_t service, natural_t type, void *arg) {
     SRHelper *h = (__bridge SRHelper *)ctx;
     [h power:type argument:arg];
