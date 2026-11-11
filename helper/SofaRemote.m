@@ -11,6 +11,7 @@
 #import <Cocoa/Cocoa.h>
 #import <IOKit/hid/IOHIDLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
+#import <IOKit/IOMessage.h>
 #import <sys/stat.h>
 #import "../src/Core/SFCore.h"
 #import "../src/Shell/SFRemote.h"
@@ -75,6 +76,7 @@ static NSString *ExternalUpdateDir(void) {
     ino_t _selfIno;     // file ID of our own executable at launch (Sofa.app replaced? -> restart)
     BOOL _replaced;     // "update" in progress: bundle was replaced from outside (new DMG), no swap
     SRSupervisor *_supervisor;
+    io_connect_t _powerPort;    // system sleep/wake messages (re-seize after a wake)
 }
 
 
@@ -94,6 +96,7 @@ static NSString *ExternalUpdateDir(void) {
                  [SofaAppPath() stringByAppendingPathComponent:@"Contents/MacOS/Sofa"]] ? SofaAppPath() : nil;
     [self log:[NSString stringWithFormat:@"SofaRemote start, Sofa=%@", _sofaPath]];
     [self open];
+    [self watchPower];
     _selfIno = [self selfInode];
     _updateTimer = [NSTimer scheduledTimerWithTimeInterval:3 target:self selector:@selector(checkUpdate) userInfo:nil repeats:YES];
     [self checkUpdate];
@@ -358,6 +361,37 @@ static void removalCallback(void *ctx, IOReturn result, void *sender) {
         else cur = nil;
     }
     [self log:[NSString stringWithFormat:@"array map: %@", _arrays]];
+}
+
+// After a system sleep the seize no longer holds although the device stays open: macOS's remote
+// daemon (rcd) got the presses again - volume HUD on up/down while Sofa navigated (2026-11-11,
+// since "Ausschalten" puts the Mac to sleep). On every wake the receiver is released and seized anew.
+static void powerCallback(void *ctx, io_service_t service, natural_t type, void *arg) {
+    SRHelper *h = (__bridge SRHelper *)ctx;
+    [h power:type argument:arg];
+}
+
+- (void)watchPower {
+    IONotificationPortRef port = NULL;
+    io_object_t notifier = 0;
+    _powerPort = IORegisterForSystemPower((__bridge void *)self, &port, powerCallback, &notifier);
+    if (!_powerPort) { [self log:@"no system power notifications - the receiver is not re-seized after a wake"]; return; }
+    CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(port), kCFRunLoopDefaultMode);
+}
+
+- (void)power:(natural_t)type argument:(void *)arg {
+    switch (type) {
+        case kIOMessageCanSystemSleep:
+        case kIOMessageSystemWillSleep:
+            IOAllowPowerChange(_powerPort, (long)arg);   // never in the way of sleep
+            break;
+        case kIOMessageSystemHasPoweredOn:
+            if (!_dev) break;   // not held (released by the setting, or no receiver): open/retry as before
+            [self log:@"system woke - seizing the Apple IR receiver anew"];
+            [self closeDevice];
+            [self open];
+            break;
+    }
 }
 
 - (void)scheduleRetry {
