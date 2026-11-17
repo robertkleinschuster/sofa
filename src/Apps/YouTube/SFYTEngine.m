@@ -60,6 +60,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     BOOL _aliveCheck;             // a liveness check after a timed-out call is running
     NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
     NSTimer *_memoryTimer;        // the browser's memory, watched while it runs (checkMemory)
+    NSUInteger _idleHeavyChecks;  // memory checks in a row: past the idle limit, no session
 }
 
 // Every change of _state goes through here: `ready` mirrors it for calls from other queues.
@@ -183,6 +184,14 @@ static NSUInteger BrowserMemoryLimitMB(void) {
     double v = [SFDevEnv(@"SOFA_ENGINE_MEMORY_LIMIT_MB") doubleValue];   // tests lower it
     return v > 0 ? (NSUInteger)v : 3000;
 }
+// Earlier while idle (user 2026-11-17): a browser that grew past ~2.2 GB with playing (1.4-1.5 GB
+// idle after a start, 2.0 GB after an afternoon of playback, 2026-11-16) is restarted once no
+// session has run for two checks in a row (~10 min: not between two videos) - nothing to lose then,
+// a fresh page instead of carrying the growth on towards the hard limit.
+static NSUInteger BrowserIdleRestartMB(void) {
+    double v = [SFDevEnv(@"SOFA_ENGINE_IDLE_RESTART_MB") doubleValue];   // tests lower it
+    return v > 0 ? (NSUInteger)v : 2200;
+}
 
 - (void)watchMemory {
     if (_memoryTimer) return;
@@ -204,6 +213,13 @@ static NSUInteger BrowserMemoryLimitMB(void) {
                       health[@"sessions"] ?: @"?", health[@"bufferedMB"] ?: @"?");
                 if (mb > BrowserMemoryLimitMB()) [self runFailed:[NSString stringWithFormat:@"browser uses %lu MB (limit %lu) - restarting it",
                                                                  (unsigned long)mb, (unsigned long)BrowserMemoryLimitMB()]];
+                else if (mb > BrowserIdleRestartMB() && health[@"sessions"] && [health[@"sessions"] integerValue] == 0) {
+                    if (++self->_idleHeavyChecks >= 2) {
+                        self->_idleHeavyChecks = 0;
+                        [self runFailed:[NSString stringWithFormat:@"browser uses %lu MB while idle (idle limit %lu) - restarting it",
+                                                                   (unsigned long)mb, (unsigned long)BrowserIdleRestartMB()]];
+                    }
+                } else self->_idleHeavyChecks = 0;
             });
         });
     }];
@@ -472,29 +488,4 @@ static id Clean(id v) {
     [self request:@"status" args:@[sid] timeout:3 done:^(id v, NSError *e) { SFMain(^{ done(dict(v)); }); }];
 }
 
-- (void)innertube:(NSString *)endpoint body:(NSDictionary *)body background:(BOOL)bg done:(void (^)(id, NSError *))done {
-    [self call:@"innertube" args:@[endpoint, body ?: @{}, @{@"bg": @(bg)}] timeout:kCallTimeout done:done];
-}
-
-- (void)suggest:(NSString *)prefix done:(void (^)(id, NSError *))done {
-    [self call:@"suggest" args:@[prefix ?: @""] timeout:10 done:done];
-}
-
-- (void)image:(NSURL *)url done:(void (^)(NSData *, NSInteger))done {
-    SFMain(^{
-        [self call:@"image" args:@[url.absoluteString ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
-            NSData *d = bin(dict(v)[@"data"]);
-            // an engine error carries the host's status; unanswered/not ready: none
-            NSInteger st = d ? 200 : (e && ![e.userInfo[@"unanswered"] boolValue] && e.code >= 400 && e.code < 500) ? e.code : 0;
-            done(d, st);
-        }];
-    });
-}
-
-- (void)availability:(NSString *)vid done:(void (^)(NSInteger))done {
-    [self call:@"availability" args:@[vid ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
-        NSInteger st = [v isKindOfClass:[NSNumber class]] ? [v integerValue] : 0;
-        done(st == 200 ? 1 : (st == 400 || st == 404) ? 0 : -1);
-    }];
-}
 @end

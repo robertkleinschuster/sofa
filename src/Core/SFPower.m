@@ -34,16 +34,6 @@ static __weak SFNavigator *gNav;
     });
 }
 
-+ (void)systemSleep {
-    [self announceOff];
-    if (SFDevMode) { SFLog(@"power: (dev) sleep simulated"); [gNav toast:@"(Dev) Ruhezustand"]; return; }
-    SFLog(@"power: sleep");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [NSTask launchedTaskWithLaunchPath:@"/usr/bin/pmset" arguments:@[@"sleepnow"]];
-    });
-}
-
-
 + (void)setSleepTimerMinutes:(NSInteger)minutes {
     [gSleepTimer invalidate]; gSleepTimer = nil;
     [gWarnTimer invalidate]; gWarnTimer = nil;
@@ -94,9 +84,9 @@ static __weak SFNavigator *gNav;
         dispatch_async(dispatch_get_main_queue(), ^{ [self showSleepTimerMenuOn:nav]; });
     }];
     timer.detail = [self timerDetail];
-    SFMenuOption *sleep = [SFMenuOption option:@"Ruhezustand" action:^{ [self systemSleep]; }];
-    sleep.detail = @"Mac schlafen legen";
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[timer, sleep] theme:nav.top.theme]];
+    // no "Ruhezustand" (user 2026-11-17): this iMac sometimes hung waking from system sleep, so
+    // Sofa never sends it to sleep - switching off is the display only ("Ausschalten", the timer)
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[timer] theme:nav.top.theme]];
 }
 
 + (void)setNavigator:(SFNavigator *)nav { gNav = nav; }

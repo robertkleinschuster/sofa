@@ -37,6 +37,9 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // Focus preload: the player response into the engine's cache, within a request budget and never
 // during a bot-check pause. NO when nothing was sent.
 - (BOOL)preloadOnFocus:(NSString *)videoID;
+@end
+
+@interface SFYTEngine (Calls)   // SFYTEngine+Calls.m
 // InnerTube for the app (browse, next, search, navigation/resolve_url; never "player"): the raw JSON.
 - (void)innertube:(NSString *)endpoint body:(NSDictionary *)body background:(BOOL)bg done:(void (^)(id json, NSError *e))done;
 // What youtube.com's search box suggests for `prefix` (its raw answer).

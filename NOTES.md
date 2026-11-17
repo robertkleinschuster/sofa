@@ -196,6 +196,15 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   read first (SFLayers.m). The `ytEngineDebug` diagnosis switch was switched off (94 % of the log).
   Not done on purpose: `synchronous=OFF` (crash safety), fetch `cache: 'no-store'` (adds request
   headers), turning off Alt-Svc/HTTP/3. Review: ~/Library/Logs/sofa-efficiency-review-2026-11-17.
+- 2026-11-17: **Slim engine browser** (user: as lean as sensible; Build 24). Off in the engine profile:
+  new-tab page and its feeds (activity stream, contile, weather, Pocket, preloaded about:newtab),
+  history, thumbnails, Safe Browsing updates, telemetry/studies/experiments/crash uploads, add-on/
+  search/system-add-on update checks, captive-portal/connectivity probes, search suggestions,
+  translations/ML, session store every hour instead of 15 s (SFYTBrowser.m, each with its reason).
+  Hard limit: nothing a page can see or that changes requests to YouTube - so page-driven
+  prefetch/preconnect, favicons, push, GMP codecs, remote settings (certificate revocation) and the
+  spare content process stay. The browser restarts early when idle: past 2.2 GB and no session for
+  two memory checks (~10 min) (SFYTEngine.m; the hard limit stays 3 GB).
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
@@ -239,6 +248,12 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   answers (2xx/403/451/wrong text; 5xx, refused HEAD, network errors teach nothing; outside valid
   6 h, inside 24 h), a topic an app leaves out keeps its old items (ORF on a failed request),
   showsSourceMark not copied (leaked into "Später ansehen"), badges stored. Regression: tools/test-home.
+- 2026-11-17: **No system sleep from Sofa any more** (user; removed, brought back, removed again the
+  same day - Build 24). The iMac hung waking from sleep: it ran on from RAM (ssh worked) but the disk/
+  SATA link did not come back after standby - disk errors, nothing could be written (host diagnosis
+  ~/Library/Logs/crash-diagnose-2026-11-17/bericht.md, Nachtrag 4). Sofa's "Energie -> Ruhezustand"
+  (`pmset sleepnow`) was practically the only trigger (pmset sleep 0). The entry and SFPower
+  systemSleep are gone; switching off is the display only ("Ausschalten", sleep timer).
 
 ## Backlog (user requests — queue, tick off when done)
 - [x] 2026-11-09 **libmpv with the CoreAudio hotplug fix in the bundle** (mpv rev 12, backport-toolkit 5acfe60; crash 2026-11-08 12:48 in hotplug_cb): full bundle built (make-release, firefox-x11 rev 5 verified and committed as 19c8eb1), test-release all ok, deployed 22:14 via sofa-deploy --bundle. The engine took over its running Firefox: rev 5 (Mavericks shm fix) runs from the browser's next restart - then compare `yt-engine: memory: browser` (rev 3 on 2026-11-09: ~1.6 GB idle).

@@ -1,5 +1,6 @@
 // Shared between SFYTEngine.m (lifecycle, API), SFYTEngine+Media.m (local media routes),
-// SFYTEngine+Store.m (session table, media store), SFYTEngine+Fill.m (downloads) and SFYTEngine+Lounge.m (the phone lounge's transport).
+// SFYTEngine+Store.m (session table, media store), SFYTEngine+Fill.m (downloads), SFYTEngine+Lounge.m (the phone lounge's transport) and
+// SFYTEngine+Calls.m (plain InnerTube calls).
 #import "SFYTEngine.h"
 #import "SFYTChannel.h"
 
@@ -10,6 +11,8 @@
 // with code = the status the engine answered (504: no answer) and userInfo = its failure body
 // (error, bot, ...; "unanswered" when the page did not answer).
 - (void)request:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id value, NSError *e))done;
+// A call once the engine is ready; done on the main thread (SFYTEngine+Calls.m uses it).
+- (void)call:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id value, NSError *e))done;
 // The page's engine answers calls - readable from any queue (mirrors the main-queue state).
 @property (atomic) BOOL ready;
 // http://127.0.0.1:<port> of the loopback server (started if it was not); nil when it can't run
