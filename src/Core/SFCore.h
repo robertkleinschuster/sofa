@@ -19,7 +19,9 @@ SFKey SFKeyFromName(NSString *name);
 extern CGFloat SFScale;
 static inline CGFloat U(CGFloat v) { return round(v * SFScale); }
 
-void SFLogFlush(void);   // wait until queued log lines are written (before _exit)
+void SFLogFlush(void);   // write the lines waiting in memory now (before _exit)
+void SFLogSetDelay(NSTimeInterval seconds);   // how long lines may wait in memory (0 = write at once)
+void SFLogWriteNowUnsafe(void);   // the lines waiting, written without the log queue (last resort before _exit)
 void SFLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
 // The log: ~/Library/Logs/Sofa.log; a dev instance ~/Library/Logs/Sofa-dev-<instance>.log, or
 // <SOFA_DATA_DIR>/sofa.log (tests: gone with their temporary directory). Fixed once SFLog ran.

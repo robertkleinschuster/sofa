@@ -1,4 +1,4 @@
-// sources: src/Framework/SFLayers.m src/Core/SFHostFetch.m
+// sources: src/Framework/SFLayers.m src/Framework/SFImageDiskLRU.m src/Core/SFHostFetch.m
 // SFImageCache: a picture fetched through a source's own client (SFHostFetch) that never answers
 // still completes - without a picture, after the fetch limit - instead of holding one of the six
 // fetch slots for the session (review 2026-11-08: the wait had no limit).

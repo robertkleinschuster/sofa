@@ -220,6 +220,18 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   last level. Warm = background work waits (prebuffer, preloads, follows/Home refreshes, decorative
   animations), hot = also no new download and an earlier idle restart (1.8 GB, never a restart
   during playback - the hard limit stays 3 GB), critical = new videos at most 720p.
+- 2026-11-17: **Quiet disk while idle and resting; RAM where it pays** (user: the disk was heard
+  seeking every few seconds; 16 GB, ~11 GB free; Build 27). The engine's Firefox profile runs on a
+  512 MB RAM disk (SFYTRamProfile: hdiutil ram://, HFS, no Spotlight/fseventsd); the disk
+  profile stays the lasting copy - changed files go back every 30 min awake, every 2 h at most
+  resting, and when the browser ends (SQLite through the backup API, so storage.sqlite.exclusiveLock
+  is off; files renamed into place, stale WALs removed first, deletions mirrored, caches never). A
+  reboot fills the RAM disk from the disk profile again. TMPDIR of browser and display on it (not
+  /var/folders: noatime is on, dirhelper would remove files there it thinks unused for 3 days). The
+  log waits in memory (30 s awake, 10 min resting; failures, 64 KB, exit and a crash handler write at
+  once). The picture cache counts uses itself (SFImageDiskLRU) - noatime leaves st_atime at the
+  creation time. Review leftovers: the fan socket is bound again when its path vanishes, a night
+  re-stop happens at most once a night (SFYTNight), PIDs written under the lock.
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**

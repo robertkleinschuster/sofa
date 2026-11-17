@@ -65,9 +65,22 @@ NSString *gInstance = @"view";
     // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
     if (!SFDevMode) [NSApp disableRelaunchOnLogin];
     SFRegisterApps();   // first: themes and apps are looked up from here on
+    // SIGTERM (kill, launchd, switch-to-kodi's pkill): end as at a quit - the engine's RAM profile
+    // synced back, the log written. Handled off the main thread: the 15-s fallback is armed first, so
+    // a hung main thread (the very case pkill is for) still ends - with the log written directly.
+    static dispatch_source_t term;
+    signal(SIGTERM, SIG_IGN);
+    dispatch_queue_t tq = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
+    term = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, tq);
+    dispatch_source_set_event_handler(term, ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), tq, ^{ SFLogWriteNowUnsafe(); _exit(0); });
+        dispatch_async(dispatch_get_main_queue(), ^{ SFLog(@"SIGTERM - quitting"); [NSApp terminate:nil]; });
+    });
+    dispatch_resume(term);
     [SFRest start];     // before the apps start: they see whether Sofa rests (autostart with the screen off)
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(restChanged:) name:SFRestDidChangeNotification object:nil];
     SFHitchMonitorSetPaused([SFRest resting]);
+    SFLogSetDelay([SFRest resting] ? 600 : 30);
     // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
     // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
     // > 15 s (the helper had to force-quit on every update, 2026-11-05). Idle system sleep stays allowed.
@@ -184,6 +197,7 @@ static NSTimer *gCursorWatch;
     BOOL rest = [SFRest resting];
     SFHitchMonitorSetPaused(rest);
     SFReducedMotion = [SFRest backgroundDeferred];
+    SFLogSetDelay(rest ? 600 : 30);   // log lines wait in memory: at rest 10 min (failures go out at once)
     if (rest) { [gCursorWatch invalidate]; gCursorWatch = nil; }
     else if (!SFDevMode && [NSApp isActive]) [self hideCursor:YES];
 }

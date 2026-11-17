@@ -50,36 +50,55 @@ NSDictionary *SFFanParseState(NSData *json) {
     return s;
 }
 
+// on gQ: Sofa's own socket, bound to its path (again after the path went away)
+static void (^gCallback)(NSDictionary *);
+static void Bind(void) {
+    if (gRead) { dispatch_source_cancel(gRead); gRead = nil; }   // its cancel handler closes the old socket
+    gFD = -1;
+    int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (fd < 0) return;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+    struct sockaddr_un a;
+    NSString *own = OwnPath();
+    if (!FillAddr(&a, own)) { close(fd); return; }
+    unlink(a.sun_path);   // left by an earlier Sofa (crash, update)
+    if (bind(fd, (struct sockaddr *)&a, (socklen_t)SUN_LEN(&a)) != 0) { SFLog(@"fand: cannot bind %@ (%s)", own, strerror(errno)); close(fd); return; }
+    chmod(a.sun_path, 0600);   // the daemon is root: it needs no permission
+    gFD = fd;
+    void (^cb)(NSDictionary *) = gCallback;
+    dispatch_source_t src = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, gQ);
+    dispatch_source_set_event_handler(src, ^{
+        uint8_t buf[kMaxDatagram + 1];
+        ssize_t n;
+        while ((n = recv(fd, buf, sizeof buf, 0)) > 0) {   // drain; a truncated (too long) one fails to parse
+            NSDictionary *s = n <= (ssize_t)kMaxDatagram ? SFFanParseState([NSData dataWithBytes:buf length:(NSUInteger)n]) : nil;
+            if (s && cb) dispatch_async(dispatch_get_main_queue(), ^{ cb(s); });
+        }
+    });
+    dispatch_source_set_cancel_handler(src, ^{ close(fd); });
+    gRead = src;
+    dispatch_resume(src);
+}
+
+void SFFanCheckSocket(void) {
+    if (!gQ) return;
+    dispatch_async(gQ, ^{
+        struct stat st;
+        if (gFD >= 0 && lstat(OwnPath().fileSystemRepresentation, &st) == 0 && S_ISSOCK(st.st_mode)) return;
+        SFLog(@"fand: own socket gone - binding again");
+        Bind();
+    });
+}
+
 void SFFanStart(void (^state)(NSDictionary *)) {
     NSString *dir = FanDir();
     if (!dir || gQ) return;
     gQ = dispatch_queue_create("sofa.fand", DISPATCH_QUEUE_SERIAL);
-    void (^cb)(NSDictionary *) = [state copy];
-    dispatch_async(gQ, ^{
-        int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-        if (fd < 0) return;
-        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-        fcntl(fd, F_SETFD, FD_CLOEXEC);
-        int one = 1;
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
-        struct sockaddr_un a;
-        NSString *own = OwnPath();
-        if (!FillAddr(&a, own)) { close(fd); return; }
-        unlink(a.sun_path);   // left by an earlier Sofa (crash, update)
-        if (bind(fd, (struct sockaddr *)&a, (socklen_t)SUN_LEN(&a)) != 0) { SFLog(@"fand: cannot bind %@ (%s)", own, strerror(errno)); close(fd); return; }
-        chmod(a.sun_path, 0622);   // the daemon (root) writes, nobody else needs to read
-        gFD = fd;
-        gRead = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, gQ);
-        dispatch_source_set_event_handler(gRead, ^{
-            uint8_t buf[kMaxDatagram + 1];
-            ssize_t n;
-            while ((n = recv(fd, buf, sizeof buf, 0)) > 0) {   // drain; a truncated (too long) one fails to parse
-                NSDictionary *s = n <= (ssize_t)kMaxDatagram ? SFFanParseState([NSData dataWithBytes:buf length:(NSUInteger)n]) : nil;
-                if (s) dispatch_async(dispatch_get_main_queue(), ^{ cb(s); });
-            }
-        });
-        dispatch_resume(gRead);
-    });
+    gCallback = [state copy];
+    dispatch_async(gQ, ^{ Bind(); });
 }
 
 void SFFanSendHint(NSString *context, float volume, int ttl) {

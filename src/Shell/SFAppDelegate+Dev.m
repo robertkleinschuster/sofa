@@ -187,6 +187,9 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         [SFHome showSettingsOn:self.nav];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
+    } else if ([cmd isEqualToString:@"hang"] && arg) {      // Dev: block the main thread for <seconds> (the SIGTERM fallback, test)
+        SFLog(@"dev: main thread blocked for %d s", arg.intValue);
+        sleep((unsigned)arg.intValue);
     } else if ([cmd isEqualToString:@"proctest"]) {          // Dev: SFRunProcess timeout path (sleep 30 with 1 s limit)
         SFBackground(^{
             NSDate *t0 = [NSDate date];

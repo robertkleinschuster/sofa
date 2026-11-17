@@ -33,3 +33,4 @@ extern NSString *const SFRestDidChangeNotification;
 // pure (tests): the rest decision and the context the daemon hears - playback before rest
 BOOL SFRestShouldRest(BOOL screensAsleep, BOOL switchedOff, BOOL playing);
 NSString *SFRestContextFor(BOOL resting, BOOL playing);
+void SFRestSetDisplayProbe(BOOL (*probe)(void));   // tests: whether the screen is off (NULL = the real one)

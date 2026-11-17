@@ -1,9 +1,9 @@
 #import "SFCore.h"
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
 
 CGFloat SFScale = 1.0;
-
-static dispatch_queue_t gLogQueue;   // set by the first SFLog
-void SFLogFlush(void) { if (gLogQueue) dispatch_sync(gLogQueue, ^{}); }
 
 static NSArray *KeyNames(void) {   // in SFKey order
     return @[@"up", @"down", @"left", @"right", @"select", @"menu", @"play", @"selecthold", @"menuhold",
@@ -12,44 +12,97 @@ static NSArray *KeyNames(void) {   // in SFKey order
 NSString *SFKeyName(SFKey key) { NSArray *n = KeyNames(); return key >= 0 && (NSUInteger)key < n.count ? n[key] : nil; }
 SFKey SFKeyFromName(NSString *name) { NSUInteger i = [KeyNames() indexOfObject:name.lowercaseString]; return i == NSNotFound ? -1 : (SFKey)i; }
 
-// The log is rotated past 4 MB (one previous file, .1) - while running too: Sofa runs for days,
-// and rotating only at launch let it grow past that (6.5 MB in ~28 h, 2026-11-17)
+// The log in memory, written together (user 2026-11-17: no disk writes while idle or resting - every
+// small write is several head moves on this SMR disk): lines wait up to SFLogSetDelay seconds (30 s
+// awake, 10 min resting - the shell sets it) and go out at once when they report a failure, when
+// 64 KB are waiting, at SFLogFlush (exit, update) - and from a crash handler (the lines just before
+// a crash are the ones that matter). Rotated past 4 MB (one previous file, .1), while running too.
 static const unsigned long long kLogRotateBytes = 4 * 1024 * 1024;
-static NSFileHandle *SFLogOpen(NSString *p, unsigned long long *size) {
+enum { kLogBuf = 256 * 1024, kLogSoon = 64 * 1024 };
+static dispatch_queue_t gLogQueue;          // set by the first SFLog; everything below on it
+static char gLogBuf[kLogBuf];
+static volatile size_t gLogLen;             // also read by the crash handler
+static volatile int gLogFD = -1;
+static NSString *gLogPath;
+static unsigned long long gLogSize;
+static NSTimeInterval gLogDelay = 30;
+static NSUInteger gLogFlushGen;             // a pending delayed flush is moot after a flush
+
+static void SFLogOpen(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
-    if ([[fm attributesOfItemAtPath:p error:nil] fileSize] > kLogRotateBytes) {
-        NSString *old = [p stringByAppendingString:@".1"];
+    if ([[fm attributesOfItemAtPath:gLogPath error:nil] fileSize] > kLogRotateBytes) {
+        NSString *old = [gLogPath stringByAppendingString:@".1"];
         [fm removeItemAtPath:old error:nil];
-        [fm moveItemAtPath:p toPath:old error:nil];
+        [fm moveItemAtPath:gLogPath toPath:old error:nil];
     }
-    if (![fm fileExistsAtPath:p]) [fm createFileAtPath:p contents:nil attributes:nil];
-    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:p];
-    *size = [fh seekToEndOfFile];
-    return fh;
+    gLogFD = open(gLogPath.fileSystemRepresentation, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0644);
+    struct stat st;
+    gLogSize = gLogFD >= 0 && fstat(gLogFD, &st) == 0 ? (unsigned long long)st.st_size : 0;
+}
+static void SFLogWriteNow(void) {   // on gLogQueue
+    gLogFlushGen++;
+    if (!gLogLen) return;
+    size_t off = 0;
+    while (gLogFD >= 0 && off < gLogLen) { ssize_t w = write(gLogFD, gLogBuf + off, gLogLen - off); if (w <= 0) break; off += (size_t)w; }
+    gLogSize += gLogLen;
+    gLogLen = 0;
+    if (gLogSize > kLogRotateBytes) { close(gLogFD); gLogFD = -1; SFLogOpen(); }
+}
+// async-signal-safe: write what waits, then the signal goes on to the default handler (crash report;
+// SIGTERM ends as before)
+static void SFLogCrashed(int sig) {
+    if (gLogFD >= 0 && gLogLen) { ssize_t w = write(gLogFD, gLogBuf, gLogLen); (void)w; }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+void SFLogFlush(void) { if (gLogQueue) dispatch_sync(gLogQueue, ^{ SFLogWriteNow(); }); }
+// the last way out (a hung main thread or log queue): what waits, written without the queue
+void SFLogWriteNowUnsafe(void) { if (gLogFD >= 0 && gLogLen) { ssize_t w = write(gLogFD, gLogBuf, gLogLen); (void)w; gLogLen = 0; } }
+// dev instances and tests write at once: their scripts wait for log lines
+// a change writes what waits at once: going to rest the lines before it matter, waking a pending
+// 10-min flush must not hold the new lines (it is moot after this write)
+void SFLogSetDelay(NSTimeInterval seconds) {
+    if (gLogQueue && !SFDevMode) dispatch_async(gLogQueue, ^{ if (gLogDelay != seconds) SFLogWriteNow(); gLogDelay = MAX(0, seconds); });
+}
+static void SFLogAtExit(void) { SFLogFlush(); }
+
+static BOOL SFLogUrgent(NSString *s) {
+    for (NSString *w in @[@"fail", @"error", @"crash", @"exited", @"unresponsive", @"killed", @"abort"])
+        if ([s rangeOfString:w options:NSCaseInsensitiveSearch].location != NSNotFound) return YES;
+    return NO;
 }
 
 void SFLog(NSString *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];
     va_end(ap);
-    static NSFileHandle *fh; static dispatch_queue_t q;
-    static NSString *path; static unsigned long long size;   // both on q after the first call
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        q = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
-        gLogQueue = q;
-        path = SFLogPath();
-        fh = SFLogOpen(path, &size);
+        gLogQueue = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
+        dispatch_sync(gLogQueue, ^{ gLogPath = SFLogPath(); SFLogOpen(); if (SFDevMode) gLogDelay = 0; });
+        atexit(SFLogAtExit);
+        for (int sig = 1; sig < NSIG; sig++)
+            if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGABRT || sig == SIGFPE || sig == SIGTRAP || sig == SIGTERM) {
+                struct sigaction cur;   // a SIGTERM the app handles itself (the shell: an orderly quit) stays its own
+                if (sig == SIGTERM && sigaction(sig, NULL, &cur) == 0 && cur.sa_handler != SIG_DFL) continue;
+                signal(sig, SFLogCrashed);
+            }
     });
     NSDate *now = [NSDate date];
-    dispatch_async(q, ^{
+    BOOL urgent = SFLogUrgent(s);
+    dispatch_async(gLogQueue, ^{
         static NSDateFormatter *df;
         if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS"; }
-        NSString *line = [NSString stringWithFormat:@"%@ %@\n", [df stringFromDate:now], s];
-        NSData *d = [line dataUsingEncoding:NSUTF8StringEncoding];
-        [fh writeData:d];
-        size += d.length;
-        if (size > kLogRotateBytes) { [fh closeFile]; fh = SFLogOpen(path, &size); }
+        NSData *d = [[NSString stringWithFormat:@"%@ %@\n", [df stringFromDate:now], s] dataUsingEncoding:NSUTF8StringEncoding];
+        if (gLogLen + d.length > kLogBuf) SFLogWriteNow();
+        if (d.length > kLogBuf) d = [d subdataWithRange:NSMakeRange(0, kLogBuf)];
+        memcpy(gLogBuf + gLogLen, d.bytes, d.length);
+        gLogLen += d.length;
+        if (urgent || gLogDelay <= 0 || gLogLen >= kLogSoon) { SFLogWriteNow(); return; }
+        if (gLogLen == d.length) {   // the first line waiting: one delayed write for all that follow
+            NSUInteger gen = gLogFlushGen;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(gLogDelay * NSEC_PER_SEC)), gLogQueue, ^{ if (gen == gLogFlushGen) SFLogWriteNow(); });
+        }
     });
 #ifdef DEBUG
     fprintf(stderr, "%s\n", s.UTF8String);

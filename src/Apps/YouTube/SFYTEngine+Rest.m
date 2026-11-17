@@ -8,9 +8,11 @@
 #import "SFRest.h"
 #import "SFLounge.h"
 #import "SFDownloads.h"
+#import "SFYTNight.h"
 
 static BOOL gWatching, gNightStopped;
 static NSTimer *gNightCheck;
+static NSString *gRestoppedNight;   // the night it was ended a second time (SFYTNightKey)
 
 @implementation SFYTEngine (Rest)
 
@@ -35,13 +37,19 @@ static NSTimer *gNightCheck;
 
 - (void)nightCheck {
     BOOL want = [SFRest resting] && [SFRest nightStopEnabled] && [SFRest isNight] && ![SFDownloads shared].active.count;
-    // also a browser some use started again during the night (a download queued in the evening)
-    if (want && (!gNightStopped || self.ready)) {
-        gNightStopped = YES;
-        SFLog(@"yt-engine: night rest - browser and phone connection end until the morning");
-        [[SFLounge shared] stop];   // its polls would start the browser again (at most 1.5 s: its goodbye to a phone)
-        [self restStop];            // the processes end in the background
-    } else if (!want && gNightStopped && (![SFRest isNight] || ![SFRest nightStopEnabled])) [self nightWake:@"morning"];
+    NSString *night = SFYTNightKey([NSDate date], nil);
+    switch (SFYTNightDecide(want, gNightStopped, self.ready, [night isEqualToString:gRestoppedNight], ![SFRest isNight] || ![SFRest nightStopEnabled])) {
+        case SFYTNightStop:
+            // also a browser some use started again during the night - once (no start/stop cycle)
+            if (gNightStopped) gRestoppedNight = night;
+            gNightStopped = YES;
+            SFLog(@"yt-engine: night rest - browser and phone connection end until the morning");
+            [[SFLounge shared] stop];   // its polls would start the browser again (at most 1.5 s: its goodbye to a phone)
+            [self restStop];            // the processes end in the background
+            break;
+        case SFYTNightWake: [self nightWake:@"morning"]; break;
+        case SFYTNightNone: break;
+    }
 }
 
 - (void)nightWake:(NSString *)why {

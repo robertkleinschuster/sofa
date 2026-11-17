@@ -20,5 +20,7 @@ void SFFanStart(void (^state)(NSDictionary *s));
 // volume 0..1, < 0 = unknown (null); ttl: seconds until the daemon falls back to its own control.
 // Asynchronous; skipped while an earlier one still waits (a hanging disk stalls a path lookup).
 void SFFanSendHint(NSString *context, float volume, int ttl);
+// Sofa's socket path still there? (a cleanup tool may remove it) - bound again if not. Asynchronous.
+void SFFanCheckSocket(void);
 // pure (tests): one datagram from the daemon -> the state, or nil when it is not a v1 state
 NSDictionary *SFFanParseState(NSData *json);

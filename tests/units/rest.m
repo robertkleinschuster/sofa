@@ -37,6 +37,8 @@ static void screens(BOOL asleep) {
                                                                             : NSWorkspaceScreensDidWakeNotification object:nil];
 }
 static FakePlayer *player;
+static BOOL displayAsleep;
+static BOOL probe(void) { return displayAsleep; }
 static void play(BOOL playing) { player.paused = !playing; [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerStateNotification object:player]; }
 static void closePlayer(void) { [[NSNotificationCenter defaultCenter] postNotificationName:SFPlayerStateNotification object:player userInfo:@{@"closed": @YES}]; }
 
@@ -50,6 +52,8 @@ int main(void) {
         NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"rest-%d", getpid()]];
         [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
         setenv("SOFA_FAND_DIR", dir.fileSystemRepresentation, 1);
+        setenv("SOFA_OFF_CHECK", "0.3", 1); setenv("SOFA_REST_BEAT", "0.3", 1); setenv("SOFA_FAND_FRESH", "1", 1);
+        SFRestSetDisplayProbe(probe);
         int d = socket(AF_UNIX, SOCK_DGRAM, 0);
         struct sockaddr_un a = {0}; a.sun_family = AF_UNIX;
         strcpy(a.sun_path, [dir stringByAppendingPathComponent:@"hint.sock"].fileSystemRepresentation);
@@ -80,7 +84,10 @@ int main(void) {
         int before = changes;
         for (int i = 0; i < 25; i++) { screens(YES); screens(NO); }
         spin(0.3);
-        expect(![SFRest resting] && changes - before == 50 && [lastHint() isEqual:@"idle"], @"quick in/out: ends awake, every edge told");
+        expect(![SFRest resting] && changes - before == 50, @"quick in/out: ends awake, every edge told");
+        NSString *heard = nil;   // under load a hint may be skipped (one in flight): the heartbeat repeats it
+        for (int i = 0; i < 10 && ![heard isEqual:@"idle"]; i++) { spin(0.3); NSString *h = lastHint(); if (h) heard = h; }
+        expect([heard isEqual:@"idle"], @"quick in/out: the daemon hears idle");
 
         play(YES); spin(0.1);
         expect([lastHint() isEqual:@"playback"], @"playing: playback");
@@ -103,11 +110,12 @@ int main(void) {
         expect(![SFRest resting], @"a key while awake: nothing");
 
         play(YES); spin(0.1);
+        displayAsleep = YES;   // the screen does go off (the 0.3 s check must not wake it)
         [SFRest noteSwitchedOff]; spin(0.1);
         expect(![SFRest resting], @"switched off while still playing: not yet");
         closePlayer(); spin(0.1);
         expect([SFRest resting] && [lastHint() isEqual:@"ruhe"], @"the player closed by switching off: rest");
-        screens(NO); spin(0.1);
+        screens(NO); displayAsleep = NO; spin(0.5);
 
         // thermal level from the daemon's answer
         expect([SFRest thermalLevel] == 0 && ![SFRest backgroundDeferred], @"no daemon answer: level 0");
@@ -124,6 +132,31 @@ int main(void) {
         sendto(d, cool, strlen(cool), 0, (struct sockaddr *)&sofa, sl);
         spin(0.3);
         expect([SFRest thermalLevel] == 0, @"cooled down");
+
+        // no answer for longer than the freshness (1 s here): level 0 again, and a removed socket path bound again
+        sendto(d, warm, strlen(warm), 0, (struct sockaddr *)&sofa, sl);
+        spin(0.3);
+        expect([SFRest thermalLevel] == 1, @"warm again");
+        NSString *own = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"sofa-%d.sock", getpid()]];
+        unlink(own.fileSystemRepresentation);
+        spin(1.8);
+        expect([SFRest thermalLevel] == 0, @"no answer for longer than its freshness: level 0");
+        expect([[NSFileManager defaultManager] fileExistsAtPath:own], @"the removed socket path is bound again");
+
+        // "Ausschalten" while the screen stays on: awake again after the check; a later switch-off is not undone by an earlier check
+        displayAsleep = NO;
+        [SFRest noteSwitchedOff]; spin(0.1);
+        expect([SFRest resting], @"switched off: resting");
+        spin(0.5);
+        expect(![SFRest resting], @"the screen stayed on: awake after the check");
+        displayAsleep = YES;
+        [SFRest noteSwitchedOff]; spin(0.1);
+        screens(NO); displayAsleep = YES;   // woken and switched off again before the first check
+        [SFRest noteSwitchedOff];
+        spin(0.6);
+        expect([SFRest resting], @"the screen went off: resting, the earlier check moot");
+        screens(NO); displayAsleep = NO;
+        spin(0.1);
         close(d);
         [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
     }

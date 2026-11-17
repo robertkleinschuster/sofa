@@ -4,122 +4,27 @@
 #import "SFYTPointer.h"
 #import "SFYTProcess.h"
 #import "SFYTPriority.h"
+#import "SFYTEnginePrefs.h"
+#import "SFYTRamProfile.h"
+#import "SFRest.h"
 #include <poll.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#include <copyfile.h>
+#include <sys/stat.h>
 
 static NSString *const kExtensionID = @"youtube-engine@sofa";
 static const int kScreenW = 1920, kScreenH = 1080;   // the TV's screen is what the page sees
 static const int kDisplayWaitMS = 10000;
 
-// user.js of the engine profile. Every value is a reason, grouped by it.
-static NSDictionary *EnginePrefs(void) {
-    return @{
-        // Sofa's own extension: unsigned and sideloaded (Firefox ESR honours these)
-        @"xpinstall.signatures.required": @NO, @"extensions.autoDisableScopes": @0, @"extensions.enabledScopes": @15,
-        // The firefox-x11 port's defaults are tuned for remote X (files/firefox-x11-remote.js); what
-        // a page can see of them goes back to stock Firefox: a user's browser, not a remote-X one.
-        // WebGL needs the GPU process (gfxPlatform disables it without); Mesa's softpipe needs force.
-        @"layers.gpu-process.enabled": @YES, @"webgl.disabled": @NO, @"webgl.force-enabled": @YES,
-        @"layout.frame_rate": @-1, @"ui.prefersReducedMotion": @0, @"image.animation_mode": @"normal",
-        @"general.smoothScroll": @YES, @"toolkit.cosmeticAnimations.enabled": @YES,
-        @"media.autoplay.default": @1, @"media.autoplay.blocking_policy": @0,
-        @"media.hardware-video-decoding.enabled": @YES, @"fission.autostart": @YES, @"dom.ipc.processCount": @8,
-        // One YouTube tab needs one warm spare, rather than desktop Firefox's three.
-        // Preserve fission and the active-process limits; this saves two idle processes.
-        @"dom.ipc.processPrelaunch.fission.number": @1,
-        // nobody looks at this browser: no first-run pages, prompts or crash-restore dialogs
-        @"browser.shell.checkDefaultBrowser": @NO, @"browser.aboutwelcome.enabled": @NO,
-        @"browser.startup.homepage_override.mstone": @"ignore", @"browser.sessionstore.resume_from_crash": @NO,
-        @"browser.startup.page": @0,
-        @"datareporting.policy.dataSubmissionEnabled": @NO, @"toolkit.telemetry.reportingpolicy.firstRun": @NO,
-        @"app.update.enabled": @NO, @"toolkit.telemetry.enabled": @NO,
-        // the TV's languages
-        @"intl.accept_languages": @"de-AT, de, en-US, en",
-        // IPv4 only (user decision 2026-11-07): YouTube had blocked this home's IPv6 /64 (its own
-        // player failed there with a fresh profile) while IPv4 played; one address family for the
-        // one identity
-        @"network.dns.disableIPv6": @YES,
-        // the engine never plays anything itself; a page that does stays silent
-        @"media.volume_scale": @"0.0",
-        // HTTP cache in RAM only (64 MB): on disk it held ~1 GB, 986 MB of it SABR answers (POSTs,
-        // never served again; Sofa's media store keeps the bytes) - ~12.5 MB/min written during
-        // playback, and its index rebuilt after every hard restart (2533 reads/min). The requests
-        // stay the same (a fetch with cache: 'no-store' would add Pragma/Cache-Control). 2026-11-17
-        @"browser.cache.disk.enable": @NO, @"browser.cache.disk.smart_size.enabled": @NO,
-        @"browser.cache.memory.capacity": @65536,
-        // Slim engine (user 2026-11-17: as lean as sensible). Only browser-side services nobody uses
-        // here: nothing a page can see and no request to YouTube changes (user agent, headers,
-        // HTTP/2/3, TLS, JS features, WebGL/canvas/codecs, cookies/storage stay; page-driven
-        // prefetch/preconnect, favicon loads, push, GMP codecs and remote settings - certificate
-        // revocation - stay on purpose).
-        // - the new-tab page and its feeds (topsites, Pocket stories, weather, sponsored tiles from
-        //   contile): fetched and written to activity-stream.*.json for a tab nobody opens; no
-        //   preloaded about:newtab (a privileged content process of its own)
-        @"browser.newtabpage.enabled": @NO, @"browser.newtab.preload": @NO,
-        @"browser.newtabpage.activity-stream.feeds.topsites": @NO,
-        @"browser.newtabpage.activity-stream.feeds.section.topstories": @NO,
-        @"browser.newtabpage.activity-stream.feeds.weatherfeed": @NO,
-        @"browser.newtabpage.activity-stream.showWeather": @NO,
-        @"browser.newtabpage.activity-stream.showSponsored": @NO,
-        @"browser.newtabpage.activity-stream.showSponsoredTopSites": @NO,
-        @"browser.newtabpage.activity-stream.feeds.telemetry": @NO,
-        @"browser.newtabpage.activity-stream.telemetry": @NO,
-        @"browser.topsites.contile.enabled": @NO, @"extensions.pocket.enabled": @NO,
-        // - history: places.sqlite(-wal) written on every navigation of the engine page, nobody reads
-        //   it (a page never sees history; :visited is not exposed to it)
-        @"places.history.enabled": @NO,
-        // - page thumbnails for the new-tab page
-        @"browser.pagethumbnails.capturing_disabled": @YES,
-        // - Safe Browsing list updates (MBs to safebrowsing/ on a timer, requests to Google's SB
-        //   API, not to YouTube); the engine only ever loads youtube.com
-        @"browser.safebrowsing.malware.enabled": @NO, @"browser.safebrowsing.phishing.enabled": @NO,
-        @"browser.safebrowsing.downloads.enabled": @NO, @"browser.safebrowsing.blockedURIs.enabled": @NO,
-        // - telemetry, studies, experiments, crash report uploads (pings and their files on disk)
-        @"toolkit.telemetry.unified": @NO, @"toolkit.telemetry.archive.enabled": @NO,
-        @"toolkit.telemetry.newProfilePing.enabled": @NO, @"toolkit.telemetry.shutdownPingSender.enabled": @NO,
-        @"toolkit.telemetry.firstShutdownPing.enabled": @NO, @"toolkit.telemetry.updatePing.enabled": @NO,
-        @"toolkit.telemetry.bhrPing.enabled": @NO,
-        @"datareporting.healthreport.uploadEnabled": @NO, @"datareporting.usage.uploadEnabled": @NO,
-        @"app.normandy.enabled": @NO, @"app.shield.optoutstudies.enabled": @NO,
-        @"messaging-system.rsexperimentloader.enabled": @NO, @"nimbus.rollouts.enabled": @NO,
-        @"browser.ping-centre.telemetry": @NO, @"browser.discovery.enabled": @NO,
-        @"browser.tabs.crashReporting.sendReport": @NO,
-        // - update checks of the add-ons, search engines and system add-ons (the browser's own are
-        //   off above; the bundle replaces the browser, Sofa's extension is sideloaded)
-        @"app.update.auto": @NO, @"extensions.update.enabled": @NO, @"extensions.getAddons.cache.enabled": @NO,
-        @"extensions.systemAddon.update.enabled": @NO, @"browser.search.update": @NO,
-        @"browser.region.update.enabled": @NO,
-        // - captive-portal and connectivity probes (detectportal.firefox.com on every network
-        //   change; the log's "Could not determine network status" is the service failing anyway)
-        @"network.captive-portal-service.enabled": @NO, @"network.connectivity-service.enabled": @NO,
-        // - search suggestions, page translation and local ML features (model downloads)
-        @"browser.search.suggest.enabled": @NO, @"browser.translations.enable": @NO,
-        @"browser.translations.automaticallyPopup": @NO, @"browser.ml.enable": @NO,
-        // - tours, promos and the Firefox account (sync)
-        @"browser.uitour.enabled": @NO, @"identity.fxaccounts.enabled": @NO, @"browser.vpn_promo.enabled": @NO,
-        // - session store: Sofa deletes it before every start and never restores (prepareProfile);
-        //   write the one-tab session rarely instead of every 15 s, no closed-tab/window history
-        @"browser.sessionstore.interval": @3600000, @"browser.sessionstore.max_tabs_undo": @0,
-        @"browser.sessionstore.max_windows_undo": @0,
-        // - the profile backup service (periodic backups of the whole profile; it fails here on
-        //   the Documents folder anyway, measured 2026-11-17)
-        @"browser.backup.enabled": @NO, @"browser.backup.scheduled.enabled": @NO,
-    };
-}
-
-static NSString *UserJS(NSDictionary *prefs) {
-    NSMutableString *s = [NSMutableString stringWithString:@"// written by Sofa on every engine start (SFYTBrowser.m)\n"];
-    for (NSString *k in [prefs.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
-        NSData *v = [NSJSONSerialization dataWithJSONObject:@[prefs[k]] options:0 error:nil];   // a JSON literal, unwrapped
-        NSString *lit = [[NSString alloc] initWithData:v encoding:NSUTF8StringEncoding];
-        [s appendFormat:@"user_pref(\"%@\", %@);\n", k, [lit substringWithRange:NSMakeRange(1, lit.length - 2)]];
-    }
-    return s;
-}
-
 @implementation SFYTBrowser {
-    NSString *_profile;
+    NSString *_profile;         // the one the browser uses: the RAM profile, else the disk one (launch queue)
+    NSString *_diskProfile;     // the lasting one (and where pid record, extension and log live)
+    SFYTRamProfile *_ram;       // real app only
+    NSTimer *_syncTimer;        // RAM profile -> disk now and then (main)
+    NSTimeInterval _lastSync;
+    BOOL _ramFull;              // the RAM disk ran nearly full: the next start runs on the disk profile
+    volatile BOOL _onRam;       // the running browser uses the RAM profile: only then is it synced back
     pid_t _xvfb, _firefox;
     int _display;
     SFYTWatcher *_watcher;
@@ -136,7 +41,9 @@ static NSString *UserJS(NSDictionary *prefs) {
 
 - (instancetype)initWithProfile:(NSString *)profileDir {
     if ((self = [super init])) {
-        _profile = profileDir; _display = -1;
+        _profile = _diskProfile = profileDir; _display = -1;
+        // the profile in RAM (SFYTRamProfile): the real app's; dev instances and tests keep theirs on disk
+        if (!SFDevMode) _ram = [[SFYTRamProfile alloc] initWithDiskProfile:profileDir mountPoint:[profileDir stringByAppendingString:@"-ram"] sizeMB:512];
         __weak SFYTBrowser *ws = self;
         _prio = [[SFYTPriority alloc] initWithApply:^(BOOL bg) { [ws applyBackgroundNow:bg]; }];
         _procQ = _prio.queue;
@@ -151,9 +58,18 @@ static NSString *FirefoxPath(void) { return SFRuntimePath(@"lib/firefox/firefox"
 static NSDictionary *MesaEnv(void) { return @{@"LIBGL_DRIVERS_PATH": SFRuntimePath(@"lib/dri")}; }
 
 static NSString *BuiltExtension(void) { return [[NSBundle mainBundle].resourcePath stringByAppendingPathComponent:@"youtube-engine"]; }
-- (NSString *)extensionCopy { return [_profile stringByAppendingString:@"-extension"]; }
-- (NSString *)pidFile { return [_profile stringByAppendingString:@"-processes.json"]; }
-- (NSString *)logFile { return [_profile stringByAppendingString:@"-firefox.log"]; }
+- (NSString *)extensionCopy { return [_diskProfile stringByAppendingString:@"-extension"]; }
+- (NSString *)pidFile { return [_diskProfile stringByAppendingString:@"-processes.json"]; }
+- (NSString *)diskLogFile { return [_diskProfile stringByAppendingString:@"-firefox.log"]; }
+// the browser's console: on the RAM disk when there is one (copied to the disk log with each sync)
+- (NSString *)logFile { NSString *t = [_ram tmpDir]; return t ? [[t stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"firefox.log"] : [self diskLogFile]; }
+// TMPDIR for the browser and its display: not /var/folders (macOS removes files there it thinks
+// unused for 3 days - by their access time, which noatime no longer keeps)
+- (NSString *)tmpDir {
+    NSString *t = [_ram tmpDir] ?: [SFSharedCacheDir() stringByAppendingPathComponent:@"engine-tmp"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:t withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:nil];
+    return t;
+}
 
 - (BOOL)available {
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -204,7 +120,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     BOOL proxyOK = [[NSString stringWithContentsOfFile:proxy encoding:NSUTF8StringEncoding error:nil] isEqualToString:ext]
         || [ext writeToFile:proxy atomically:YES encoding:NSUTF8StringEncoding error:nil];
     return proxyOK
-        && [UserJS(EnginePrefs()) writeToFile:[_profile stringByAppendingPathComponent:@"user.js"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        && [SFYTUserJS(SFYTEnginePrefs()) writeToFile:[_profile stringByAppendingPathComponent:@"user.js"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 #pragma mark Processes
@@ -213,14 +129,22 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     _stopping = NO;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         dispatch_sync(self->_procQ, ^{});   // a background stop still ending the last browser: one profile
+        // the profile a running browser uses: its record says (a crash mid-sync may have left the RAM
+        // disk's mark behind - the browser on it is still the one to take over and keep syncing)
+        NSString *recorded = [self record][@"profile"], *mounted = [self->_ram mountedProfile];
+        self->_profile = mounted && [recorded isEqualToString:mounted] ? mounted : [self->_ram existing] ?: self->_diskProfile;
+        self->_onRam = mounted && [self->_profile isEqualToString:mounted];
         BOOL adopted = self.handoverGrace > 0 && [self adoptForPort:port token:token];
         BOOL ok = adopted;
         if (!adopted) {
-            [self endLeftovers];
+            [self endLeftovers];   // first: the disk profile is filled into RAM only while nobody uses it
+            NSString *ram = self->_ramFull ? nil : [self->_ram attach];
+            self->_profile = ram ?: self->_diskProfile;
+            self->_onRam = ram != nil;
             ok = [self prepareProfileForPort:port token:token] && [self startDisplayAndBrowser];
         }
         SFMain(^{
-            if (ok) { [self watchProcesses]; [self applyPriority]; }   // taken over at background priority, or started while resting
+            if (ok) { [self watchProcesses]; [self applyPriority]; [self scheduleSync]; }   // priority: taken over at background priority, or started while resting
             else [self stop];
             done(ok, adopted);
         });
@@ -235,7 +159,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
 
 - (void)writeRecord {
     NSData *d = [NSJSONSerialization dataWithJSONObject:@{@"xvfb": @(_xvfb), @"firefox": @(_firefox), @"display": @(_display),
-                                                          @"watcher": @(_watcher.pid)} options:0 error:nil];
+                                                          @"watcher": @(_watcher.pid), @"profile": _profile ?: @""} options:0 error:nil];
     [d writeToFile:[self pidFile] atomically:YES];
 }
 
@@ -251,7 +175,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     if (!r || display < 0 || !SFYTProcessIs(ff, @"firefox") || !SFYTProcessIs(xv, @"Xvfb")) return NO;
     if (![self extensionCurrentForPort:port token:token]) { SFLog(@"yt-browser: the running browser has another extension build - starting anew"); return NO; }
     // prefs are read at Firefox's start: the running one must have started with these
-    if (![[NSString stringWithContentsOfFile:[_profile stringByAppendingPathComponent:@"user.js"] encoding:NSUTF8StringEncoding error:nil] isEqualToString:UserJS(EnginePrefs())]) {
+    if (![[NSString stringWithContentsOfFile:[_profile stringByAppendingPathComponent:@"user.js"] encoding:NSUTF8StringEncoding error:nil] isEqualToString:SFYTUserJS(SFYTEnginePrefs())]) {
         SFLog(@"yt-browser: the running browser has other prefs - starting anew");
         return NO;
     }
@@ -284,17 +208,20 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     NSString *previous = [[self logFile] stringByAppendingString:@".1"];
     [[NSFileManager defaultManager] removeItemAtPath:previous error:nil];
     [[NSFileManager defaultManager] moveItemAtPath:[self logFile] toPath:previous error:nil];
-    int log = open([self logFile].fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int log = open([self logFile].fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);   // O_APPEND: it may be truncated (syncNow)
     if (log < 0) return NO;
     int p[2];
     if (pipe(p) != 0) { close(log); return NO; }
     // -displayfd: Xvfb picks a free display and writes its number once it accepts clients;
     // -terminate: it ends with its last client (the browser) - no display outlives the browser;
     // keymaps, xkbcomp and fonts from where Xvfb is (bundle or MacPorts: same as its built-in paths there)
-    _xvfb = SFYTSpawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH],
+    NSMutableDictionary *xEnv = [MesaEnv() mutableCopy];
+    xEnv[@"TMPDIR"] = [self tmpDir];
+    pid_t xv = SFYTSpawn(SFTool(@"Xvfb"), @[@"-displayfd", @"3", @"-terminate", @"-screen", @"0", [NSString stringWithFormat:@"%dx%dx24", kScreenW, kScreenH],
                                      @"-nolisten", @"tcp", @"-xkbdir", SFRuntimePath(@"share/X11/xkb"), @"-xkbbindir", SFRuntimePath(@"bin"),
                                      @"-fp", [NSString stringWithFormat:@"%@,built-ins", SFRuntimePath(@"share/fonts/misc")]],
-                  MesaEnv(), -1, log, p[1]);
+                  xEnv, -1, log, p[1]);
+    @synchronized (self) { _xvfb = xv; }
     close(p[1]);
     // the whole line: Xvfb writes the number and its newline separately, and dies ("Cannot write
     // display number to fd 3") when the pipe closed in between (seen under load, 2026-11-07)
@@ -314,10 +241,12 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     if (_display < 0) { SFLog(@"yt-browser: no display from Xvfb"); close(log); return NO; }
     NSMutableDictionary *ffEnv = [MesaEnv() mutableCopy];
     ffEnv[@"DISPLAY"] = [NSString stringWithFormat:@":%d", _display];
+    ffEnv[@"TMPDIR"] = xEnv[@"TMPDIR"];
     @synchronized (self) { _pointer = [[SFYTPointer alloc] initWithDisplay:ffEnv[@"DISPLAY"]]; }
-    _firefox = SFYTSpawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
+    pid_t ff = SFYTSpawn(FirefoxPath(), @[@"--no-remote", @"--profile", _profile, @"--width", @(kScreenW).stringValue,
                                            @"--height", @(kScreenH).stringValue, @"https://www.youtube.com/"],
                      ffEnv, -1, log, -1);
+    @synchronized (self) { _firefox = ff; }
     if (_firefox > 0) [self startWatcher:log];
     close(log);
     [self writeRecord];
@@ -417,6 +346,37 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     _appliedBg = bg; _appliedN = n;
 }
 
+// RAM profile -> disk: every 30 min while Sofa is awake, every 2 h at most while it rests (only
+// changed files; a resting engine changes little), and when the browser ends
+- (void)scheduleSync {
+    if (!_onRam || _syncTimer) return;
+    _lastSync = [NSDate date].timeIntervalSince1970;
+    _syncTimer = [NSTimer scheduledTimerWithTimeInterval:1800 target:self selector:@selector(syncTick) userInfo:nil repeats:YES];
+    _syncTimer.tolerance = 120;
+}
+- (void)syncTick {
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+    // a RAM disk running full makes the browser's writes fail silently (SQLITE_FULL): said, and
+    // below 16 MB the next start runs on the (then synced) disk profile
+    long long free = [_ram freeBytes];
+    BOOL tight = free >= 0 && free < 64LL * 1048576;
+    if (tight) SFLog(@"yt-ram: RAM disk nearly full - %.0f MB free (%@)", free / 1048576.0, [_ram consumers]);
+    if (tight && free < 16LL * 1048576 && !_ramFull) { _ramFull = YES; SFLog(@"yt-ram: the next browser start runs on the disk profile"); }
+    if (!tight && [SFRest resting] && now - _lastSync < 7200) return;
+    _lastSync = now;
+    dispatch_async(_procQ, ^{ [self syncNow]; });
+}
+// on _procQ
+- (void)syncNow {
+    if (!_onRam) return;   // a browser on the disk profile (RAM disk full, none): nothing to bring back
+    [_ram syncForBrowserOn:_profile];
+    NSString *log = [self logFile], *disk = [self diskLogFile];   // the console log, for a look after a reboot
+    struct stat a, b;
+    if (stat(log.fileSystemRepresentation, &a) == 0 && (stat(disk.fileSystemRepresentation, &b) != 0 || a.st_mtime != b.st_mtime || a.st_size != b.st_size))
+        copyfile(log.fileSystemRepresentation, disk.fileSystemRepresentation, NULL, COPYFILE_DATA | COPYFILE_STAT);
+    if (![log isEqualToString:disk] && stat(log.fileSystemRepresentation, &a) == 0 && a.st_size > 1048576) truncate(log.fileSystemRepresentation, 0);   // copied; the browser appends (O_APPEND)
+}
+
 - (void)clickInRect:(CGRect)rect done:(void (^)(BOOL))done {
     SFYTPointer *pointer;
     @synchronized (self) { pointer = _pointer; }
@@ -429,6 +389,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
 
 - (void)stopWaiting:(BOOL)wait {
     _stopping = YES;
+    [_syncTimer invalidate]; _syncTimer = nil;
     @synchronized (self) { _pointer = nil; }
     for (dispatch_source_t s in @[_xvfbWatch ?: [NSNull null], _firefoxWatch ?: [NSNull null]]) if ((id)s != [NSNull null]) dispatch_source_cancel(s);
     _xvfbWatch = _firefoxWatch = nil;
@@ -444,7 +405,14 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
         SFYTEndProcess(ff, @"firefox");
         SFYTEndProcess(xv, @"Xvfb");
         [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
+        if (ff > 0) [self syncNow];   // the browser has closed its files: the RAM profile as it ended
     };
-    if (wait) dispatch_sync(_procQ, end); else dispatch_async(_procQ, end);
+    if (!wait) { dispatch_async(_procQ, end); return; }
+    // quitting: at most 12 s (macOS may end a slow app at logout/shutdown) - copies are durable per file
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_async(_procQ, ^{ end(); dispatch_semaphore_signal(done); });
+    NSDate *t0 = [NSDate date];
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12 * NSEC_PER_SEC)))) SFLog(@"yt-browser: stop still running after 12 s - quitting anyway");
+    else if (-[t0 timeIntervalSinceNow] > 1) SFLog(@"yt-browser: stopped and synced in %.1f s", -[t0 timeIntervalSinceNow]);
 }
 @end

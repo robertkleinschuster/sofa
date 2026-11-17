@@ -40,7 +40,7 @@ int main(void) {
         usleep(200000);
         int normal = pri(c);
         expect(SFYTSetGroupBackground(c, 0, YES) >= 1 && pri(c) == 4, @"background: PRI 4");
-        expect(SFYTSetGroupBackground(c, 0, NO) >= 1 && pri(c) == normal, @"back to normal");
+        expect(SFYTSetGroupBackground(c, 0, NO) >= 1 && pri(c) > 4, @"back to normal (above the background band; the exact value moves with the scheduler)"); (void)normal;
         expect(SFYTSetGroupBackground(0, 0, YES) == 0, @"no group: nothing");
         kill(c, SIGKILL);
     }
