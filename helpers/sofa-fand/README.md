@@ -142,8 +142,11 @@ statistics and arithmetic. Socket I/O and the `lstat` of Sofa's reply path run i
 thread. SMART runs in its own thread: the SMART user client is exclusive, so it is opened,
 read and closed every 30 s, and `smartctl` keeps working. Logging goes into a RAM ring that a
 log thread hands to syslog. If one of these threads blocks (vanished disk, stuck syslogd),
-regulation goes on; a stale SMART value becomes a fault. Both processes wire their code
-(`mlock` of all loaded images, ~10 MB), because Darwin has no `mlockall`.
+regulation goes on; a stale SMART value becomes a fault. Both processes wire only their own binary and their own stacks. They do **not** wire system
+libraries: wiring all loaded images, i.e. shared-cache pages, and an `mlockall` attempt
+(versions up to v3.1) coincided on 2026-11-17 from 22:19 with a system-wide crash wave in
+new processes (jump to 0x0 in CoreServicesInternal; the kernel logged "DYLD shared region
+unnest"). Never `mlock` shared-cache or foreign image segments on 10.9.
 
 **Floor 0 (the user's decision):** no fan has an unconditional minimum. When everything is
 cool, fans really stop. Floors (Apple minimum) only start at their thresholds.

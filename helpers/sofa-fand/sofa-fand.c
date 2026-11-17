@@ -996,22 +996,20 @@ static volatile sig_atomic_t ctl_stop;
 static void ctl_term(int sig) { (void)sig; ctl_stop = 1; }
 
 static void lock_memory(void) {
-  // mlockall is declared on Darwin but not implemented (returns an error on 10.9); then wire every
-  // loaded image's segments so no code page we run must come back from the (possibly vanished)
-  // boot disk. Stacks: prefault_stack(); heap: small and hot, not wired.
-  if (mlockall(MCL_CURRENT | MCL_FUTURE) == 0) { st.locked_kb = (unsigned long)-1; return; }
+  // Wire only this program's own segments. Earlier versions also wired every loaded system
+  // image (shared cache) and tried mlockall; on 10.9 that unnests the shared region for the
+  // process ("DYLD shared region unnest") and coincided with a system-wide crash wave on
+  // 2026-11-17 22:19. System libraries stay unwired: they are shared and hot in every process.
   unsigned long kb = 0;
-  for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-    const struct mach_header_64 *mh = (const struct mach_header_64 *)_dyld_get_image_header(i);
-    if (!mh || mh->magic != MH_MAGIC_64) continue;
-    intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-    const struct load_command *lc = (const struct load_command *)(mh + 1);
-    for (uint32_t j = 0; j < mh->ncmds; j++, lc = (const struct load_command *)((const char *)lc + lc->cmdsize)) {
-      if (lc->cmd != LC_SEGMENT_64) continue;
-      const struct segment_command_64 *sg = (const struct segment_command_64 *)lc;
-      if (!strcmp(sg->segname, "__PAGEZERO") || !strcmp(sg->segname, "__LINKEDIT") || !sg->vmsize) continue;
-      if (mlock((void *)(uintptr_t)(sg->vmaddr + (uint64_t)slide), (size_t)sg->vmsize) == 0) kb += (unsigned long)(sg->vmsize / 1024);
-    }
+  const struct mach_header_64 *mh = (const struct mach_header_64 *)_dyld_get_image_header(0);
+  if (!mh || mh->magic != MH_MAGIC_64) { st.locked_kb = 0; return; }
+  intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+  const struct load_command *lc = (const struct load_command *)(mh + 1);
+  for (uint32_t j = 0; j < mh->ncmds; j++, lc = (const struct load_command *)((const char *)lc + lc->cmdsize)) {
+    if (lc->cmd != LC_SEGMENT_64) continue;
+    const struct segment_command_64 *sg = (const struct segment_command_64 *)lc;
+    if (!strcmp(sg->segname, "__PAGEZERO") || !strcmp(sg->segname, "__LINKEDIT") || !sg->vmsize) continue;
+    if (mlock((void *)(uintptr_t)(sg->vmaddr + (uint64_t)slide), (size_t)sg->vmsize) == 0) kb += (unsigned long)(sg->vmsize / 1024);
   }
   st.locked_kb = kb;
 }
