@@ -2,6 +2,7 @@
 #   make                 build (warnings are errors) + config check
 #   make analyze         clang static analyzer
 #   sudo make install    binary + config + LaunchDaemon, (re)load it
+#   sudo make install-files  same without loading
 #   sudo make uninstall  unload, fans back to the SMC, remove files
 #   make tools           measurement tools in tools/ (smcfan, smcenum, smarttemp, fanlab)
 # Never put comments after values: make would keep the spaces before them.
@@ -33,13 +34,16 @@ tools: $(TOOLS)
 tools/%: tools/%.c Makefile
 	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $< $(LDFLAGS)
 
-install: $(BIN) check
+install: install-files
+	launchctl load -w $(PLIST)
+
+# files only, daemon stays unloaded (e.g. while fan measurements run)
+install-files: $(BIN) check
 	-launchctl unload $(PLIST) 2>/dev/null
 	install -d $(SBIN) $(ETC)
 	install -m 755 -o root -g wheel $(BIN) $(SBIN)/$(BIN)
 	install -m 644 -o root -g wheel sofa-fand.conf $(ETC)/sofa-fand.conf
 	install -m 644 -o root -g wheel $(LABEL).plist $(PLIST)
-	launchctl load -w $(PLIST)
 	@echo "installed $$(shasum $(SBIN)/$(BIN) | cut -c1-12) from $$(git rev-parse --short HEAD 2>/dev/null)$$(git diff --quiet HEAD -- . 2>/dev/null || echo ' (+uncommitted changes)')"
 
 uninstall:
@@ -51,4 +55,4 @@ clean:
 	rm -f $(BIN) $(TOOLS)
 	rm -rf $(BIN).dSYM
 
-.PHONY: all check analyze tools install uninstall clean
+.PHONY: all check analyze tools install install-files uninstall clean
