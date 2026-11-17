@@ -1,4 +1,5 @@
 #import "SFPrebuffer.h"
+#import "SFRest.h"
 #import "SFPrebufferPlan.h"
 #import "SFPrebufferReader.h"
 #import "SFApp.h"
@@ -45,6 +46,7 @@ static const NSTimeInterval kResolveDeadline = 45;      // a resolver that never
     [ws addObserver:self selector:@selector(sleep:) name:NSWorkspaceScreensDidSleepNotification object:nil];
     [ws addObserver:self selector:@selector(wake:) name:NSWorkspaceScreensDidWakeNotification object:nil];
     [nc addObserver:self selector:@selector(stateChanged:) name:SFNetOnlineDidChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(stateChanged:) name:SFRestDidChangeNotification object:nil];   // rest, warm
     [nc addObserver:self selector:@selector(stateChanged:) name:SFDownloadsDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(stateChanged:) name:SFDownloadsStorageDidChangeNotification object:nil];
     return self;
@@ -58,12 +60,14 @@ static const NSTimeInterval kResolveDeadline = 45;      // a resolver that never
     SFMain(^{
         // a manual download or a lost network takes priority even over a read already running
         SFDownloads *d = [SFDownloads shared];
-        if (![SFNet isOnline] || d.active.count || d.storageFull) [self cancel];
+        if (![SFNet isOnline] || d.active.count || d.storageFull || [self held]) [self cancel];
         [self pump];
     });
 }
 
 - (BOOL)isSleeping { return _asleep || (CGDisplayIsAsleep(CGMainDisplayID()) && !SFDevEnv(@"SOFA_PREBUFFER_TEST")); }
+// Sofa rests or the Mac runs warm (SFRest): background work waits, a read running stops
+- (BOOL)held { return [self isSleeping] || [SFRest resting] || [SFRest backgroundDeferred]; }
 
 // one pending wake-up: the earliest wins, a later request keeps it
 - (void)wakeAt:(NSTimeInterval)when {
@@ -111,7 +115,7 @@ static const NSTimeInterval kResolveDeadline = 45;      // a resolver that never
 }
 
 - (void)pump {
-    BOOL sleeping = [self isSleeping];
+    BOOL sleeping = [self held];
     if (SFDevEnv(@"SOFA_PREBUFFER_TEST"))
         SFLog(@"prebuffer-test: active=%d owner=%d players=%lu sleeping=%d online=%d candidates=%lu", _active != nil, _owner != nil,
               (unsigned long)_players.count, sleeping, [SFNet isOnline], (unsigned long)_candidates.count);

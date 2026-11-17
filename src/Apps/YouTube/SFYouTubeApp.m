@@ -52,6 +52,7 @@
     [SFYTViewReport start];   // the player's state -> the view's stats pings, like youtube.com's player
     [[SFFollows shared] lendPicturesToItemsOf:[self appIdentifier]];   // a followed channel's picture is its videos' avatar
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
+    [[SFYTEngine shared] watchRest];
 }
 
 + (void)stop { [[SFYTEngine shared] stop]; }

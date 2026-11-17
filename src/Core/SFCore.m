@@ -253,7 +253,9 @@ NSString *SFCacheDir(void) {
     return gDataDir ? ensureDir([gDataDir stringByAppendingPathComponent:@"Caches"]) : SFSharedCacheDir();
 }
 
+BOOL SFReducedMotion = NO;
 void SFAnimate(CFTimeInterval dur, dispatch_block_t changes) {
+    if (SFReducedMotion) { SFNoAnimate(changes); return; }
     [CATransaction begin];
     [CATransaction setAnimationDuration:dur];
     [CATransaction setAnimationTimingFunction:

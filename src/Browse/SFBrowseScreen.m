@@ -127,6 +127,7 @@
     [self updateClock];
     [_clockTimer invalidate];   // after an overlay (menu) willAppear arrives without a preceding willDisappear
     _clockTimer = [NSTimer scheduledTimerWithTimeInterval:15 target:self selector:@selector(updateClock) userInfo:nil repeats:YES];
+    _clockTimer.tolerance = 3;   // coalesced with other wake-ups (efficiency, 2026-11-17)
     if (!_page && !_loading) [self reload];
     else {
         for (SFRow *r in _rows) for (SFTileLayer *tl in r.tiles.allValues) [tl refreshProgress];

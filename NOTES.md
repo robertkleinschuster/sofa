@@ -205,6 +205,21 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   prefetch/preconnect, favicons, push, GMP codecs, remote settings (certificate revocation) and the
   spare content process stay. The browser restarts early when idle: past 2.2 GB and no session for
   two memory checks (~10 min) (SFYTEngine.m; the hard limit stays 3 GB).
+- 2026-11-17: **Rest mode and thermal-aware load** (user: efficient everywhere, smart, integrated;
+  Build 25, review fixes Build 26). "Ausschalten" and the sleep timer end playback (position saved),
+  turn the screen off and Sofa rests (SFRest; also when macOS turns the screen off - never while a
+  video plays on): no stall pings or pointer watchdog, no prebuffer/focus preload, follows in
+  batches (~2 h by day, 4-6 h by night, jittered, SFRefreshBatchStep), the engine's processes at
+  background priority (PRIO_DARWIN_BG, SFYTPriority: one serial queue applies the wanted state, also
+  to a new or taken-over browser). The engine keeps running (a restart = a new page + attestation,
+  bot risk); "Nachts ganz ruhen" (Energie, default off) ends it and the phone connection at night.
+  A key or the screen waking ends the rest at once. Fan daemon sofa-fand (helpers/sofa-fand, own
+  agent), datagrams only (SFFanLink, interface v1; the daemon does no disk I/O): Sofa sends its
+  context (playback + volume, idle, ruhe; heartbeat 30 s, fire and forget) from a bound socket, the
+  daemon answers with its thermal level; no answer for 120 s = level 0, a broken datagram keeps the
+  last level. Warm = background work waits (prebuffer, preloads, follows/Home refreshes, decorative
+  animations), hot = also no new download and an earlier idle restart (1.8 GB, never a restart
+  during playback - the hard limit stays 3 GB), critical = new videos at most 720p.
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**

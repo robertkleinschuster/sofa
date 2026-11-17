@@ -3,6 +3,7 @@
 // (the file or HLS playlist the app resolves to) - fetches the thumbnail and records the outcome.
 #import "SFDownloads+Private.h"
 #import "SFHostFetch.h"
+#import "SFRest.h"
 #import "SFMediaStore.h"
 #import "SFMediaProxy.h"
 #import "SFEngine.h"
@@ -21,6 +22,7 @@
 - (void)pump {
     if (!_started || _runningID) return;
     if (![SFNet isOnline]) return;   // offline: wait instead of using up attempts (continues on SFNetOnlineDidChange)
+    if ([SFRest thermalLevel] >= 2) return;   // hot (SFRest): no new download until it cools (SFRestDidChange)
     // oldest request first
     SFDownloadRecord *next = nil;
     NSTimeInterval now = [NSDate date].timeIntervalSince1970, wake = 0;

@@ -77,6 +77,9 @@ NSString *SFCacheDir(void);
 NSString *SFSharedCacheDir(void);
 
 // Animation helper: animate all changes in the block with a uniform curve.
+// SFReducedMotion (set by the shell while the Mac runs warm, SFRest): SFAnimate changes at once -
+// fewer frames to render
+extern BOOL SFReducedMotion;
 void SFAnimate(CFTimeInterval dur, dispatch_block_t changes);
 void SFNoAnimate(dispatch_block_t changes);
 // Fades a layer's opacity to `to` from what is on screen now (its presentation value): any running

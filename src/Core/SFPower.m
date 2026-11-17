@@ -2,10 +2,12 @@
 #import "SFScreen.h"
 #import "SFMenuScreen.h"
 #import "SFStore.h"
+#import "SFRest.h"
 #import <IOKit/IOKitLib.h>
 #import <IOKit/pwr_mgt/IOPMLib.h>
 
 NSString *const SFPowerWillTurnOffNotification = @"SFPowerWillTurnOffNotification";
+NSString *const SFPowerStopPlaybackKey = @"stop";
 
 static NSTimer *gSleepTimer, *gWarnTimer;
 static NSDate *gFireDate;
@@ -13,13 +15,20 @@ static __weak SFNavigator *gNav;
 
 @implementation SFPower
 
-+ (void)announceOff {
-    [[NSNotificationCenter defaultCenter] postNotificationName:SFPowerWillTurnOffNotification object:nil];
+// stop: switching off ends playback (the position is saved; "Weiterschauen" has it) - a paused
+// player behind a dark screen would keep its stream, buffers and the engine session for nothing
++ (void)announceOff:(BOOL)stop {
+    [[NSNotificationCenter defaultCenter] postNotificationName:SFPowerWillTurnOffNotification object:nil
+                                                      userInfo:@{SFPowerStopPlaybackKey: @(stop)}];
     [[SFStore shared] flush];
 }
 
 + (void)displayOff {
-    [self announceOff];
+    [self announceOff:NO];
+    [self screenOff];
+}
+
++ (void)screenOff {
     if (SFDevMode) { SFLog(@"power: (dev) display off simulated"); [gNav toast:@"(Dev) Bildschirm aus"]; return; }
     SFLog(@"power: display off");
     // Like "pmset displaysleepnow": send the IODisplayWrangler into the idle state
@@ -49,11 +58,17 @@ static __weak SFNavigator *gNav;
 
 + (void)sleepTimerWarn { [gNav toast:@"Sleep-Timer: Bildschirm geht in 1 Minute aus"]; }
 
-+ (void)switchOff { [self displayOff]; }
+// "Ausschalten" and the sleep timer: rest (SFRest) - playback ends, the screen goes off, Sofa stays
+// awake but quiet; never system sleep
++ (void)switchOff {
+    [self announceOff:YES];
+    [SFRest noteSwitchedOff];
+    [self screenOff];
+}
 
 + (void)sleepTimerFired {
     gSleepTimer = nil; gFireDate = nil;
-    [self displayOff];
+    [self switchOff];
 }
 
 + (NSString *)timerDetail {
@@ -84,9 +99,19 @@ static __weak SFNavigator *gNav;
         dispatch_async(dispatch_get_main_queue(), ^{ [self showSleepTimerMenuOn:nav]; });
     }];
     timer.detail = [self timerDetail];
+    BOOL night = [SFRest nightStopEnabled];
+    SFMenuOption *nights = [SFMenuOption option:@"Nachts ganz ruhen" action:^{
+        [SFRest setNightStopEnabled:!night];
+        [nav toast:!night ? @"Ausgeschaltet beendet Sofa nachts auch seine Hintergrunddienste"
+                          : @"Hintergrunddienste laufen auch nachts weiter (schneller Start)"];
+        [nav pop];
+        [self showPowerMenuOn:nav];
+    }];
+    nights.detail = night ? @"An" : @"Aus";
+    nights.keepOpen = YES;
     // no "Ruhezustand" (user 2026-11-17): this iMac sometimes hung waking from system sleep, so
     // Sofa never sends it to sleep - switching off is the display only ("Ausschalten", the timer)
-    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[timer] theme:nav.top.theme]];
+    [nav push:[[SFMenuScreen alloc] initWithTitle:@"Energie" subtitle:nil options:@[timer, nights] theme:nav.top.theme]];
 }
 
 + (void)setNavigator:(SFNavigator *)nav { gNav = nav; }

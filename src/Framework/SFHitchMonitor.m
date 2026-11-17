@@ -136,6 +136,16 @@ static NSString *describe(const SFStack *samples, int count) {
             count, leaf ? [NSString stringWithFormat:@" (leaf %@)", leaf] : @""];
 }
 
+static volatile BOOL gPaused;
+static dispatch_semaphore_t gResume;
+void SFHitchMonitorSetPaused(BOOL paused) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gResume = dispatch_semaphore_create(0); });
+    if (paused == gPaused) return;
+    gPaused = paused;
+    if (!paused) dispatch_semaphore_signal(gResume);
+}
+
 void SFHitchMonitorStart(void (^lastKey)(NSString **, NSTimeInterval *)) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -149,6 +159,7 @@ void SFHitchMonitorStart(void (^lastKey)(NSString **, NSTimeInterval *)) {
             NSTimeInterval lastLog = 0;
             NSUInteger quiet = 0;   // stalls not logged since the last line (at most one line per second)
             while (YES) {
+                if (gPaused) { while (gPaused) dispatch_semaphore_wait(gResume, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC))); lastLog = 0; }
                 NSTimeInterval sent = [NSDate timeIntervalSinceReferenceDate];
                 dispatch_async(dispatch_get_main_queue(), ^{ dispatch_semaphore_signal(ran); });
                 int count = 0;

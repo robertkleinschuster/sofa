@@ -5,8 +5,9 @@
 // (SofaRemote: the first press only wakes and brings Sofa to the front).
 #import "SFCore.h"
 
-// Before display off: pause the player + save progress.
+// Before display off: pause (or end, SFPowerStopPlaybackKey) the player + save progress.
 extern NSString *const SFPowerWillTurnOffNotification;
+extern NSString *const SFPowerStopPlaybackKey;   // userInfo: @YES = end playback (switch off), else pause
 
 @class SFNavigator;
 

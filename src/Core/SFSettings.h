@@ -12,6 +12,10 @@ BOOL SFRemoteLaunchEnabled(void);         // launch a closed Sofa with any Apple
 void SFSetRemoteLaunchEnabled(BOOL on);
 BOOL SFAutoUpdateEnabled(void);           // download updates from GitHub automatically + install when idle (default: on)
 void SFSetAutoUpdateEnabled(BOOL on);
+// End apps' background services (YouTube's browser) at night while Sofa rests (default: off -
+// every restart is a fresh page and attestation for YouTube; SFRest)
+BOOL SFNightStopEnabled(void);
+void SFSetNightStopEnabled(BOOL on);
 // Preferred subtitle language (e.g. "de"); nil = subtitles off (default). Remembered on every
 // choice in the player and applied to the next video when the language is available.
 NSString *SFSubtitleLanguage(void);

@@ -16,3 +16,14 @@ NSTimeInterval SFRefreshInterval(NSArray *uploadDates);
 NSDate *SFRefreshNextDue(NSArray *uploadDates, NSDate *checked, double r, NSTimeZone *tz);
 // pause before the next check of any follow
 NSTimeInterval SFRefreshGap(double r);
+// while Sofa rests or runs warm (SFRest), follows come in batches: the next batch after `now` -
+// about every 2 h by day, 4-6 h by night (23-6 h local time in `tz`), +/-20 % (r); skipNight
+// (the apps' services end at night): not before 6:00 (+ up to 30 min, r)
+NSDate *SFRefreshBatchAfter(NSDate *now, double r, BOOL skipNight, NSTimeZone *tz);
+// One planning step of SFFollows: `when` = the plain plan for the next follow (due, after the gap).
+// Batched (resting or warm): outside a batch the plan waits for *batchAt (drawn once, kept until that
+// batch has run); inside one (*inBatch, set by the caller when a batch's first check starts) every
+// follow due by `now` goes on, the first not yet due ends it and draws the next *batchAt. Not
+// batched: the plain plan, the state cleared.
+NSDate *SFRefreshBatchStep(NSDate *when, NSDate *due, NSDate *now, BOOL batched, BOOL *inBatch, NSDate **batchAt,
+                           double r, BOOL skipNight, NSTimeZone *tz);

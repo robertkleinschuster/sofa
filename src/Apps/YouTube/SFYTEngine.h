@@ -39,6 +39,10 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (BOOL)preloadOnFocus:(NSString *)videoID;
 @end
 
+@interface SFYTEngine (Rest)   // SFYTEngine+Rest.m
+- (void)watchRest;   // the real app, at start: quiet while Sofa rests (SFRest), night end if chosen
+@end
+
 @interface SFYTEngine (Calls)   // SFYTEngine+Calls.m
 // InnerTube for the app (browse, next, search, navigation/resolve_url; never "player"): the raw JSON.
 - (void)innertube:(NSString *)endpoint body:(NSDictionary *)body background:(BOOL)bg done:(void (^)(id json, NSError *e))done;

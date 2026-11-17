@@ -3,8 +3,10 @@
 #import "SFRuntime.h"
 #import "SFYTPointer.h"
 #import "SFYTProcess.h"
+#import "SFYTPriority.h"
 #include <poll.h>
 #include <sys/wait.h>
+#include <sys/resource.h>
 
 static NSString *const kExtensionID = @"youtube-engine@sofa";
 static const int kScreenW = 1920, kScreenH = 1080;   // the TV's screen is what the page sees
@@ -100,6 +102,9 @@ static NSDictionary *EnginePrefs(void) {
         //   write the one-tab session rarely instead of every 15 s, no closed-tab/window history
         @"browser.sessionstore.interval": @3600000, @"browser.sessionstore.max_tabs_undo": @0,
         @"browser.sessionstore.max_windows_undo": @0,
+        // - the profile backup service (periodic backups of the whole profile; it fails here on
+        //   the Documents folder anyway, measured 2026-11-17)
+        @"browser.backup.enabled": @NO, @"browser.backup.scheduled.enabled": @NO,
     };
 }
 
@@ -121,10 +126,22 @@ static NSString *UserJS(NSDictionary *prefs) {
     dispatch_source_t _xvfbWatch, _firefoxWatch;
     BOOL _stopping;
     SFYTPointer *_pointer;      // on the running display; set on the launch queue (@synchronized)
+    SFYTPriority *_prio;        // background priority while resting; its queue also orders background stops
+    dispatch_queue_t _procQ;    // = _prio.queue
+    BOOL _appliedBg;            // on _procQ: what the last run set (for the log)
+    NSUInteger _appliedN;
+    NSMutableSet *_throttled;   // on _procQ: the pids Sofa put at background priority (only these go back)
+    BOOL _unknownPriority;      // on _procQ: a browser not set by this Sofa yet (taken over: maybe throttled by the last one)
 }
 
 - (instancetype)initWithProfile:(NSString *)profileDir {
-    if ((self = [super init])) { _profile = profileDir; _display = -1; }
+    if ((self = [super init])) {
+        _profile = profileDir; _display = -1;
+        __weak SFYTBrowser *ws = self;
+        _prio = [[SFYTPriority alloc] initWithApply:^(BOOL bg) { [ws applyBackgroundNow:bg]; }];
+        _procQ = _prio.queue;
+        _unknownPriority = YES;
+    }
     return self;
 }
 
@@ -195,6 +212,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
 - (void)launchWithChannelPort:(uint16_t)port token:(NSString *)token done:(void (^)(BOOL, BOOL))done {
     _stopping = NO;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        dispatch_sync(self->_procQ, ^{});   // a background stop still ending the last browser: one profile
         BOOL adopted = self.handoverGrace > 0 && [self adoptForPort:port token:token];
         BOOL ok = adopted;
         if (!adopted) {
@@ -202,7 +220,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
             ok = [self prepareProfileForPort:port token:token] && [self startDisplayAndBrowser];
         }
         SFMain(^{
-            if (ok) [self watchProcesses];
+            if (ok) { [self watchProcesses]; [self applyPriority]; }   // taken over at background priority, or started while resting
             else [self stop];
             done(ok, adopted);
         });
@@ -238,7 +256,8 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
         return NO;
     }
     [SFYTWatcher endEarlier:[r[@"watcher"] intValue]];   // its processes are this Sofa's now
-    _firefox = ff; _xvfb = xv; _display = display;
+    @synchronized (self) { _firefox = ff; _xvfb = xv; }
+    _display = display;
     NSString *name = [NSString stringWithFormat:@":%d", display];
     @synchronized (self) { _pointer = [[SFYTPointer alloc] initWithDisplay:name]; }
     int log = open([self logFile].fileSystemRepresentation, O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -376,6 +395,28 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     return (NSUInteger)(kb / 1024);
 }
 
+- (void)setWantBackground:(BOOL)want { _prio.want = want; }
+- (BOOL)wantBackground { return _prio.want; }
+- (void)applyPriority { [_prio reapply]; }
+
+// on _procQ (SFYTPriority): the group's processes (Firefox and its children) and the display
+- (void)applyBackgroundNow:(BOOL)bg {
+    pid_t group, xvfb;
+    @synchronized (self) { group = _firefox; xvfb = _xvfb; }
+    if (group <= 0) return;
+    // back to normal: only what Sofa throttled - a priority Firefox may set itself stays its own
+    NSArray *pids = SFYTGroupPids(group, xvfb);
+    if (!_throttled) _throttled = [NSMutableSet new];
+    if (bg) [_throttled addObjectsFromArray:pids];
+    else if (!_unknownPriority) pids = [pids filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF IN %@", _throttled]];
+    _unknownPriority = NO;
+    NSUInteger n = SFYTSetBackground(pids, bg);
+    if (!bg) [_throttled removeAllObjects];
+    if (bg != _appliedBg || n != _appliedN)   // a repeat (memory checks) logs only a change
+        SFLog(@"yt-browser: %lu processes %@", (unsigned long)n, bg ? @"at background priority" : @"at normal priority");
+    _appliedBg = bg; _appliedN = n;
+}
+
 - (void)clickInRect:(CGRect)rect done:(void (^)(BOOL))done {
     SFYTPointer *pointer;
     @synchronized (self) { pointer = _pointer; }
@@ -383,17 +424,27 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     [pointer clickInRect:rect done:done];
 }
 
-- (void)stop {
+- (void)stop { [self stopWaiting:YES]; }
+- (void)stopInBackground { [self stopWaiting:NO]; }
+
+- (void)stopWaiting:(BOOL)wait {
     _stopping = YES;
     @synchronized (self) { _pointer = nil; }
     for (dispatch_source_t s in @[_xvfbWatch ?: [NSNull null], _firefoxWatch ?: [NSNull null]]) if ((id)s != [NSNull null]) dispatch_source_cancel(s);
     _xvfbWatch = _firefoxWatch = nil;
     [_watcher cancel];   // this stop ends them, nobody takes them over
     _watcher = nil;
-    SFYTEndProcess(_firefox, @"firefox");
-    SFYTEndProcess(_xvfb, @"Xvfb");
-    _firefox = _xvfb = 0;
+    pid_t ff, xv;
+    @synchronized (self) { ff = _firefox; xv = _xvfb; _firefox = _xvfb = 0; }
     _display = -1;
-    [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
+    void (^end)(void) = ^{
+        self->_appliedBg = NO; self->_appliedN = 0; [self->_throttled removeAllObjects]; self->_unknownPriority = YES;   // the next browser starts anew
+        // throttled processes end slowly (profile flush on the disk) - normal priority first
+        SFYTSetGroupBackground(ff, xv, NO);
+        SFYTEndProcess(ff, @"firefox");
+        SFYTEndProcess(xv, @"Xvfb");
+        [[NSFileManager defaultManager] removeItemAtPath:[self pidFile] error:nil];
+    };
+    if (wait) dispatch_sync(_procQ, end); else dispatch_async(_procQ, end);
 }
 @end

@@ -27,3 +27,28 @@ NSDate *SFRefreshNextDue(NSArray *dates, NSDate *checked, double r, NSTimeZone *
 }
 
 NSTimeInterval SFRefreshGap(double r) { return SFRefreshGapMin * (1 + r); }
+
+NSDate *SFRefreshBatchAfter(NSDate *now, double r, BOOL skipNight, NSTimeZone *tz) {
+    NSCalendar *cal = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
+    cal.timeZone = tz ?: [NSTimeZone localTimeZone];
+    NSInteger h = [cal component:NSCalendarUnitHour fromDate:now];
+    BOOL night = h >= 23 || h < 6;
+    NSDate *next = [now dateByAddingTimeInterval:(night ? 5 : 2) * 3600 * (0.8 + 0.4 * r)];
+    if (skipNight) {
+        NSInteger nh = [cal component:NSCalendarUnitHour fromDate:next];
+        if (night || nh >= 23 || nh < 6) {   // the morning after: 6:00 + up to 30 min
+            NSDate *six = [cal dateBySettingHour:6 minute:0 second:0 ofDate:(h >= 6 ? [now dateByAddingTimeInterval:86400] : now) options:0];
+            next = [six dateByAddingTimeInterval:r * 1800];
+        }
+    }
+    return next;
+}
+
+NSDate *SFRefreshBatchStep(NSDate *when, NSDate *due, NSDate *now, BOOL batched, BOOL *inBatch, NSDate **batchAt,
+                           double r, BOOL skipNight, NSTimeZone *tz) {
+    if (!batched) { *inBatch = NO; *batchAt = nil; return when; }
+    if (*inBatch && [due timeIntervalSinceDate:now] <= 0) return when;   // the batch goes on
+    if (*inBatch || !*batchAt) *batchAt = SFRefreshBatchAfter(now, r, skipNight, tz);
+    *inBatch = NO;
+    return [when laterDate:*batchAt];
+}

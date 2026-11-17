@@ -6,3 +6,6 @@
 
 // Starts once (main thread). `lastKey` describes the most recent key press and its time.
 void SFHitchMonitorStart(void (^lastKey)(NSString **name, NSTimeInterval *at));
+// Paused: the monitor thread sleeps without waking the main thread (Sofa at rest: nothing to see,
+// 20 pings a second for nothing).
+void SFHitchMonitorSetPaused(BOOL paused);

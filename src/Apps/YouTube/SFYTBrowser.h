@@ -33,6 +33,16 @@
 - (NSString *)processSnapshot;
 // Resident memory of all the browser's processes together (MB), 0 when it is not running. Blocking (ps).
 - (NSUInteger)memoryMB;
+// Sofa rests (SFRest): every browser process and the display at background priority - the kernel
+// throttles their CPU and disk I/O (PRIO_DARWIN_BG; same user, reversible). Setting it applies it;
+// applyPriority applies it again (processes started since, a taken-over or new browser). Both run
+// on one serial queue that reads the wanted state when it runs - the last run always sets the
+// current one, whatever the order of calls.
+@property (atomic) BOOL wantBackground;
+- (void)applyPriority;
+// As stop, but the processes end on that serial queue (seconds when they are slow): the main thread
+// goes on at once; a launch waits until they are gone (one profile).
+- (void)stopInBackground;
 // The browser or its display ended on its own. Main queue.
 @property (nonatomic, copy) void (^onExit)(NSString *why);
 @end

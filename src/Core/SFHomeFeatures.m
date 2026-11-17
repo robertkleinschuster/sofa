@@ -1,4 +1,5 @@
 #import "SFHomeFeatures.h"
+#import "SFRest.h"
 #import "SFApp.h"
 #import "SFStore.h"
 #import "SFNet.h"
@@ -122,7 +123,7 @@ static NSString *SFHomeFeaturesSignature(NSDictionary *stored) {
 // Asked like a person uses a TV (2026-11-06: 50-95 requests/h to ZDF/ARD/ORF around the clock,
 // nights included): while the screen is awake; asleep nothing - waking up asks once when the rows
 // are older than a few minutes. Without sleep notifications it is the plain periodic refresh.
-- (void)refreshIfSeen { if (!_asleep) [self refresh]; }
+- (void)refreshIfSeen { if (!_asleep && ![SFRest resting] && ![SFRest backgroundDeferred]) [self refresh]; }   // warm: the next round
 - (void)screensSlept { _asleep = YES; SFLog(@"home features: screen asleep, refresh paused"); }
 - (void)screensWoke {
     _asleep = NO;

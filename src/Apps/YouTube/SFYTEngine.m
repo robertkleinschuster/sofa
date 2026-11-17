@@ -6,6 +6,7 @@
 #import "SFUserAgent.h"
 #import "SFLocalHTTP.h"
 #import "SFJSON.h"
+#import "SFRest.h"
 
 NSString *const SFYTEngineSessionsLostNotification = @"SFYTEngineSessionsLost";
 
@@ -165,6 +166,9 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 
 // Quit: the browser ends now. An update's or a crash's end does not come here - the browser waits
 // out the hand-over grace for the next Sofa (SFYTBrowser).
+// night rest: ended without blocking (its processes end on the browser's queue), any use starts it again
+- (void)restStop { [_memoryTimer invalidate]; _memoryTimer = nil; [self setState:SFYTEngineIdle]; _run++; _nextStartAt = 0; [_browser stopInBackground]; }
+- (void)setBrowserBackground:(BOOL)bg { _browser.wantBackground = bg; }
 - (void)stop {
     [_memoryTimer invalidate]; _memoryTimer = nil;
     [self setState:SFYTEngineIdle];
@@ -182,7 +186,7 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 static const NSTimeInterval kMemoryCheckEvery = 300;
 static NSUInteger BrowserMemoryLimitMB(void) {
     double v = [SFDevEnv(@"SOFA_ENGINE_MEMORY_LIMIT_MB") doubleValue];   // tests lower it
-    return v > 0 ? (NSUInteger)v : 3000;
+    return v > 0 ? (NSUInteger)v : 3000;   // never lower when hot: a restart mid-video is worse than heat
 }
 // Earlier while idle (user 2026-11-17): a browser that grew past ~2.2 GB with playing (1.4-1.5 GB
 // idle after a start, 2.0 GB after an afternoon of playback, 2026-11-16) is restarted once no
@@ -190,10 +194,11 @@ static NSUInteger BrowserMemoryLimitMB(void) {
 // a fresh page instead of carrying the growth on towards the hard limit.
 static NSUInteger BrowserIdleRestartMB(void) {
     double v = [SFDevEnv(@"SOFA_ENGINE_IDLE_RESTART_MB") doubleValue];   // tests lower it
-    return v > 0 ? (NSUInteger)v : 2200;
+    return v > 0 ? (NSUInteger)v : [SFRest thermalLevel] >= 2 ? 1800 : 2200;   // hot (SFRest): earlier, still only idle
 }
 
 - (void)watchMemory {
+    [_browser applyPriority];   // ready: the page's processes are there now
     if (_memoryTimer) return;
     _memoryTimer = [NSTimer scheduledTimerWithTimeInterval:SFDevSeconds(@"SOFA_ENGINE_MEMORY_EVERY", kMemoryCheckEvery)
                                                     target:self selector:@selector(checkMemory) userInfo:nil repeats:YES];
@@ -207,6 +212,7 @@ static NSUInteger BrowserIdleRestartMB(void) {
         NSDictionary *health = dict(dict(h)[@"engine"]);   // the page's health carries the engine's under "engine"
         SFBackground(^{
             NSUInteger mb = [browser memoryMB];   // ps: off the main thread
+            [browser applyPriority];   // processes started since (content processes come and go)
             SFMain(^{
                 if (run != self->_run || self->_state != SFYTEngineReady || !mb) return;
                 SFLog(@"yt-engine: memory: browser %lu MB, %@ sessions holding %@ MB", (unsigned long)mb,
@@ -232,7 +238,7 @@ static NSUInteger BrowserIdleRestartMB(void) {
     BOOL wasReady = _state == SFYTEngineReady;
     [self setState:SFYTEngineIdle];
     _run++;
-    [_browser stop];
+    [_browser stopInBackground];   // (the next launch waits for it)
     [_channel failAll:SFError(@"engine: the browser went away")];
     BOOL healthy = _launchedAt && -[_launchedAt timeIntervalSinceNow] > kHealthyRun;
     _failures = healthy ? 0 : _failures + 1;
@@ -425,7 +431,8 @@ static id Clean(id v) {
 - (void)open:(NSString *)vid background:(BOOL)bg stored:(BOOL)stored done:(void (^)(NSDictionary *, NSError *))done {
     if (stored && [self openStored:vid done:done]) return;   // complete on disk: Sofa serves it alone
     // prefetch off: mpv's own reads (at the resume position) drive what SABR pulls
-    [self open:vid request:@{@"v": vid ?: @"", @"bg": @(bg), @"maxHeight": @1080, @"lang": @"de", @"prefetch": @NO} done:done];
+    // critical heat (SFRest level 3, the last step): new videos at most 720p - less to decode
+    [self open:vid request:@{@"v": vid ?: @"", @"bg": @(bg), @"maxHeight": @([SFRest thermalLevel] >= 3 ? 720 : 1080), @"lang": @"de", @"prefetch": @NO} done:done];
 }
 
 - (void)open:(NSString *)vid request:(NSDictionary *)req done:(void (^)(NSDictionary *, NSError *))done {
@@ -457,7 +464,7 @@ static id Clean(id v) {
 }
 
 - (BOOL)preloadOnFocus:(NSString *)vid {
-    if (!vid.length || !self.available || [SFYTBreaker shared].blockedUntil) return NO;
+    if (!vid.length || !self.available || [SFYTBreaker shared].blockedUntil || [SFRest backgroundDeferred]) return NO;   // warm: none
     NSTimeInterval now = [NSDate date].timeIntervalSince1970;
     while (_preloads.count && now - [_preloads[0] doubleValue] > kPreloadWindow) [_preloads removeObjectAtIndex:0];
     if (_preloads.count >= kPreloadBudget) return NO;

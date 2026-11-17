@@ -10,6 +10,7 @@
 #import "SFNet.h"
 #import "SFDownloads.h"
 #import "SFMediaProxy.h"
+#import "SFRest.h"
 BOOL SFDevMode = YES;
 static int bad = 0;
 static void expect(BOOL c, const char *what) { printf("%s %s\n", c ? "ok  " : "FAIL", what); if (!c) bad++; }
@@ -60,6 +61,12 @@ NSDictionary *SFMPVSourceFor(NSURL *u) { return nil; }
 NSString *const SFNetOnlineDidChangeNotification = @"fixture-online";
 @implementation SFNet
 + (BOOL)isOnline { return online; }
+@end
+static BOOL warm = NO;                    // SFRest state
+NSString *const SFRestDidChangeNotification = @"fixture-rest";
+@implementation SFRest
++ (BOOL)resting { return NO; }
++ (BOOL)backgroundDeferred { return warm; }
 @end
 NSString *const SFDownloadsDidChangeNotification = @"fixture-downloads";
 NSString *const SFDownloadsStorageDidChangeNotification = @"fixture-storage";
@@ -119,6 +126,15 @@ int main(void) { @autoreleasepool {
     online = YES;
     [nc postNotificationName:SFNetOnlineDidChangeNotification object:nil];
     expect(Until(^BOOL { return starts.count == 1; }, .5), "the network's return wakes the pending candidate");
+    [c leave:owner]; Drain(); [starts removeAllObjects];
+
+    c = [FixtureCoordinator new];
+    warm = YES;
+    [c offer:@[a] focused:a owner:owner];
+    expect(starts.count == 0, "warm (SFRest): no prebuffer");
+    warm = NO;
+    [nc postNotificationName:SFRestDidChangeNotification object:nil];
+    expect(Until(^BOOL { return starts.count == 1; }, .5), "cooled down: the pending candidate starts");
     [c leave:owner]; Drain(); [starts removeAllObjects];
 
     c = [FixtureCoordinator new];

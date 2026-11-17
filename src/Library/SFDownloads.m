@@ -2,6 +2,7 @@
 // tracks in the media store, pinned (docs/media-store.md); the queue and the fill: SFDownloads+Worker.m.
 // Shared ivars: +Private.h.
 #import "SFDownloads+Private.h"
+#import "SFRest.h"
 #import "SFMediaStore.h"
 #import "SFMediaProxy.h"
 #import "SFEngine.h"
@@ -324,6 +325,8 @@ static BOOL PinsStore(SFDownloadRecord *r) {
     [self verifyStoreDownloads];
     [[NSNotificationCenter defaultCenter] addObserverForName:SFNetOnlineDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification *n) { if ([SFNet isOnline]) [self pump]; }];
+    [[NSNotificationCenter defaultCenter] addObserverForName:SFRestDidChangeNotification object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *n) { [self pump]; }];   // cooled down
     [self pump];
 }
 

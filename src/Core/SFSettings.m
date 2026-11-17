@@ -26,6 +26,8 @@ BOOL SFRemoteLaunchEnabled(void) { return SFGetBool(CFSTR("remoteLaunch"), YES);
 void SFSetRemoteLaunchEnabled(BOOL on) { SFSetBool(CFSTR("remoteLaunch"), on); }
 BOOL SFAutoUpdateEnabled(void) { return SFGetBool(CFSTR("autoUpdate"), YES); }
 void SFSetAutoUpdateEnabled(BOOL on) { SFSetBool(CFSTR("autoUpdate"), on); }
+BOOL SFNightStopEnabled(void) { return SFGetBool(CFSTR("nightStop"), NO); }
+void SFSetNightStopEnabled(BOOL on) { SFSetBool(CFSTR("nightStop"), on); }
 
 NSString *SFSubtitleLanguage(void) {
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("subtitleLanguage"), SFDomain());

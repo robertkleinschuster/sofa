@@ -342,7 +342,8 @@ static const NSTimeInterval kFailedMoveOn = 5;
             if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [s sessionSource]) [s streamFailed:@"service exited"];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
-        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [wself remotePause]; [wself saveProgress]; }];
+        queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {   // switched off: ended (rest), else paused
+            [wself remotePause]; [wself saveProgress]; if ([n.userInfo[SFPowerStopPlaybackKey] boolValue]) [wself close]; }];
 
     NSTimeInterval resume = self.startFromBeginning ? 0 : [[SFStore shared] positionFor:_item.identifier];
     BOOL exact = self.startPosition > 0;

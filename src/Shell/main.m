@@ -33,6 +33,8 @@
 #import "SFUpdater.h"
 #import "SFVolume.h"
 #import "SFLogo.h"
+#import "SFRest.h"
+#import "SFHitchMonitor.h"
 
 #import <ImageIO/ImageIO.h>
 #include <sys/stat.h>
@@ -63,6 +65,9 @@ NSString *gInstance = @"view";
     // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
     if (!SFDevMode) [NSApp disableRelaunchOnLogin];
     SFRegisterApps();   // first: themes and apps are looked up from here on
+    [SFRest start];     // before the apps start: they see whether Sofa rests (autostart with the screen off)
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(restChanged:) name:SFRestDidChangeNotification object:nil];
+    SFHitchMonitorSetPaused([SFRest resting]);
     // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
     // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
     // > 15 s (the helper had to force-quit on every update, 2026-11-05). Idle system sleep stays allowed.
@@ -138,7 +143,7 @@ NSString *gInstance = @"view";
             queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) { [NSApp activateIgnoringOtherApps:YES]; }];
         __weak SFAppDelegate *ws = self;
         _remote = [SFRemote new];
-        _remote.handler = ^(SFKey k) { [ws.nav sendKey:k]; };
+        _remote.handler = ^(SFKey k) { [SFRest noteKey]; [ws.nav sendKey:k]; };
         _remote.updateHandler = ^{ [ws prepareForUpdate]; };
         [_remote start];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(screensChanged:)
@@ -172,15 +177,24 @@ NSString *gInstance = @"view";
         if (!lastLog || -[lastLog timeIntervalSinceNow] > 60) { lastLog = [NSDate date]; SFLog(@"cursor: was visible -> hidden"); }
     }
 }
+static NSTimer *gCursorWatch;
+// Sofa at rest or warm (SFRest): the shell's own periodic work follows - at rest no stall pings
+// (20/s) and no pointer watchdog (1/s); warm: decorative animations off (fewer frames)
+- (void)restChanged:(NSNotification *)n {
+    BOOL rest = [SFRest resting];
+    SFHitchMonitorSetPaused(rest);
+    SFReducedMotion = [SFRest backgroundDeferred];
+    if (rest) { [gCursorWatch invalidate]; gCursorWatch = nil; }
+    else if (!SFDevMode && [NSApp isActive]) [self hideCursor:YES];
+}
 - (void)hideCursor:(BOOL)hide {
     if (SFDevMode) return;
-    static NSTimer *watch;
     if (hide) {
         [self.window invalidateCursorRectsForView:self.nav];
         [self enforceCursorHidden];
-        if (!watch) watch = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(enforceCursorHidden) userInfo:nil repeats:YES];
+        if (!gCursorWatch && ![SFRest resting]) gCursorWatch = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(enforceCursorHidden) userInfo:nil repeats:YES];
     } else {
-        [watch invalidate]; watch = nil;
+        [gCursorWatch invalidate]; gCursorWatch = nil;
         for (int i = 0; i < 8 && !CGCursorIsVisible(); i++) CGDisplayShowCursor(kCGNullDirectDisplay);
         [[NSCursor arrowCursor] set];
     }

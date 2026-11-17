@@ -13,6 +13,10 @@
 - (void)request:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id value, NSError *e))done;
 // A call once the engine is ready; done on the main thread (SFYTEngine+Calls.m uses it).
 - (void)call:(NSString *)method args:(NSArray *)args timeout:(NSTimeInterval)timeout done:(void (^)(id value, NSError *e))done;
+// Rest (SFYTEngine+Rest.m): the browser ended for the night - any later use starts it again; its
+// processes at background priority or back (asynchronous)
+- (void)restStop;
+- (void)setBrowserBackground:(BOOL)bg;
 // The page's engine answers calls - readable from any queue (mirrors the main-queue state).
 @property (atomic) BOOL ready;
 // http://127.0.0.1:<port> of the loopback server (started if it was not); nil when it can't run

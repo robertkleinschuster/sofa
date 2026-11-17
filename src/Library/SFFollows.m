@@ -4,6 +4,7 @@
 #import "SFDownloads.h"
 #import "SFNet.h"
 #import "SFApp.h"
+#import "SFRest.h"
 
 NSString *const SFFollowsDidChangeNotification = @"SFFollowsDidChange";
 NSString *const SFFollowsNewItemsNotification = @"SFFollowsNewItems";
@@ -30,6 +31,8 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     NSTimer *_timer;                 // the next planned check (SFRefreshPlan)
     NSMutableDictionary *_jitter;    // id -> r of its current plan (drawn at each check)
     NSDate *_lastCheck;              // of any follow: the gap before the next one
+    NSDate *_batchAt;                // resting/warm: when the next batch of due follows starts
+    BOOL _inBatch;                   // a batch runs: every follow due now, one after another
     // readiness: the follows and their items read (1581 items parsed on a cold disk took ~100 ms of
     // the launching main thread, 2026-11-08) - on a queue at init; every public method waits for it
     // once (at once afterwards), start plans after it; all other access stays on the main thread
@@ -93,8 +96,10 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     _started = YES;
     _jitter = [NSMutableDictionary new];
     _lastCheck = [NSDate date];   // the first check a gap after launch
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(restChanged:) name:SFRestDidChangeNotification object:nil];
     [self planNext];
 }
+- (void)restChanged:(NSNotification *)n { if (!_inBatch || ![self batched]) [self planNext]; }
 
 #pragma mark Follows
 
@@ -374,13 +379,23 @@ static BOOL hasCounts(NSArray *dicts) {
     dispatch_once(&once, ^{ gapScale = SFDevSeconds(@"SOFA_FOLLOW_GAP", SFRefreshGapMin) / SFRefreshGapMin; });
     NSDate *earliest = [_lastCheck dateByAddingTimeInterval:gapScale * SFRefreshGap(arc4random_uniform(1000) / 1000.0)];
     NSDate *when = [due laterDate:earliest];
+    // resting or warm (SFRest): one batch now and then instead of a check every few minutes - the
+    // batch takes every follow due when it starts, with the usual gap; then the next one is planned
+    // (night end only matters while resting: warm with the user awake, the browser runs)
+    BOOL inBatch = _inBatch; NSDate *batchAt = _batchAt;
+    when = SFRefreshBatchStep(when, due, [NSDate date], [self batched], &inBatch, &batchAt, arc4random_uniform(1000) / 1000.0,
+                              [SFRest resting] && [SFRest nightStopEnabled], nil);
+    _inBatch = inBatch; _batchAt = batchAt;
     NSString *fid = next.identifier;
     _timer = [NSTimer scheduledTimerWithTimeInterval:MAX(1, when.timeIntervalSinceNow) target:self selector:@selector(checkDue:) userInfo:fid repeats:NO];
 }
 
+- (BOOL)batched { return [SFRest resting] || [SFRest backgroundDeferred]; }
+
 - (void)checkDue:(NSTimer *)t {
     SFFollow *f = _follows[t.userInfo];
     _timer = nil;
+    if ([self batched] && !_inBatch) { _inBatch = YES; SFLog(@"follows: batch (%@)", [SFRest resting] ? @"resting" : @"warm"); }
     if (!f) { [self planNext]; return; }
     if (![SFNet isOnline]) {   // offline: look again in a while (the plan stays)
         _timer = [NSTimer scheduledTimerWithTimeInterval:300 target:self selector:@selector(checkDue:) userInfo:t.userInfo repeats:NO];
