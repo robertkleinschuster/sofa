@@ -9,6 +9,7 @@ MP      ?= /opt/local
 CC      := $(MP)/bin/clang
 CFLAGS  := -mmacosx-version-min=10.9 -O2 -g -Wall -Wextra -Werror
 LDFLAGS := -mmacosx-version-min=10.9 -framework IOKit -framework CoreFoundation
+DLDFLAGS := $(LDFLAGS) -Wl,-bind_at_load
 BIN     := sofa-fand
 LABEL   := de.sofa.fand
 SBIN    := /usr/local/sbin
@@ -19,7 +20,7 @@ TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab
 all: $(BIN) check
 
 $(BIN): sofa-fand.c Makefile
-	$(CC) $(CFLAGS) -o $@ sofa-fand.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ sofa-fand.c $(DLDFLAGS)
 
 check: $(BIN)
 	./$(BIN) check -c sofa-fand.conf >/dev/null

@@ -32,6 +32,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <pthread.h>
 #include <signal.h>
 #include <syslog.h>
@@ -46,6 +47,10 @@
 #include <time.h>
 #include <math.h>
 #include <stddef.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
+#include <IOKit/IOMessage.h>
+
+int pthread_setugid_np(uid_t uid, gid_t gid);   // Darwin: per-thread credentials (sys/pthread)
 
 #define RUN_DIR     "/var/run/sofa-fand"
 #define HINT_SOCK   RUN_DIR "/hint.sock"
@@ -173,6 +178,7 @@ static unsigned log_head, log_sent;
 static pthread_mutex_t log_mx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t log_cv = PTHREAD_COND_INITIALIZER;
 static int log_threaded;
+static void drain_guard_log(void);
 
 static void logf_(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logf_(const char *fmt, ...) {
@@ -192,7 +198,14 @@ static void *log_thread(void *arg) {
   for (;;) {
     char line[LOG_LEN];
     pthread_mutex_lock(&log_mx);
-    while (log_sent == log_head) pthread_cond_wait(&log_cv, &log_mx);
+    while (log_sent == log_head) {
+      // wake at least every second to pass on the guard's lines
+      struct timespec ts; struct timeval tv; gettimeofday(&tv, NULL);
+      ts.tv_sec = tv.tv_sec + 1; ts.tv_nsec = tv.tv_usec * 1000;
+      pthread_mutex_unlock(&log_mx); drain_guard_log(); pthread_mutex_lock(&log_mx);
+      if (log_sent != log_head) break;
+      pthread_cond_timedwait(&log_cv, &log_mx, &ts);
+    }
     if (log_head - log_sent > LOG_LINES) log_sent = log_head - LOG_LINES;
     memcpy(line, log_ring[log_sent % LOG_LINES], LOG_LEN);
     log_sent++;
@@ -215,7 +228,8 @@ typedef struct {
   int max, minrun;                // max rpm; lowest rpm the fan runs stable at (0 < x < minrun -> minrun)
   double hyst;                    // deg C: falling demand is computed at T + hyst
   double up, down;                // ramp limits, rpm per second
-  int minon, minoff;              // s: once started stay on / once stopped stay off (unless warn)
+  int minon, minoff;              // s: once started stay on / once stopped stay off (unless warn/floor)
+  double pw, fw;                  // weight of the profile shift / of the feed-forward for this fan
   int ncurves; curve_t curves[MAX_CURVES];
   int nfloors; floor_t floors[MAX_FLOORS];
 } fan_cfg_t;
@@ -282,7 +296,7 @@ static int cfg_load(cfg_t *c, const char *path) {
       // fan N name X max R minrun R hyst H up R/s down R/s minon S minoff S
       int n = nt >= 2 ? atoi(tok[1]) : -1;
       if (nt < 2 || n < 0 || n >= MAX_FANS || c->fan[n].used) BAD("bad fan line", path, ln);
-      fan_cfg_t *fc = &c->fan[n]; fc->used = 1;
+      fan_cfg_t *fc = &c->fan[n]; fc->used = 1; fc->pw = 1; fc->fw = 1;
       for (int i = 2; i + 1 < nt; i += 2) {
         const char *k = tok[i], *v = tok[i + 1];
         if (!strcmp(k, "name")) snprintf(fc->name, sizeof fc->name, "%s", v);
@@ -293,10 +307,12 @@ static int cfg_load(cfg_t *c, const char *path) {
         else if (!strcmp(k, "down")) fc->down = atof(v);
         else if (!strcmp(k, "minon")) fc->minon = atoi(v);
         else if (!strcmp(k, "minoff")) fc->minoff = atoi(v);
+        else if (!strcmp(k, "profile_weight")) fc->pw = atof(v);
+        else if (!strcmp(k, "ff_weight")) fc->fw = atof(v);
         else BAD("unknown fan option", path, ln);
       }
       if (fc->max < 500 || fc->max > 6000 || fc->minrun < 0 || fc->minrun > fc->max || fc->hyst < 0 || fc->hyst > 10 ||
-          fc->up <= 0 || fc->down <= 0 || fc->minon < 0 || fc->minoff < 0) BAD("fan values out of range", path, ln);
+          fc->up <= 0 || fc->down <= 0 || fc->minon < 0 || fc->minoff < 0 || fc->pw < 0 || fc->pw > 1 || fc->fw < 0 || fc->fw > 1) BAD("fan values out of range", path, ln);
     } else if (!strcmp(tok[0], "curve")) {
       // curve N KEY T:R T:R ...   (linear between points, flat outside)
       int n = nt >= 2 ? atoi(tok[1]) : -1;
@@ -354,7 +370,7 @@ static void cfg_print(FILE *o, const cfg_t *c) {
   for (int i = 0; i < c->nsens; i++) fprintf(o, "sensor %-4s trip %.1f warn %.1f ff %s\n", c->sens[i].key, c->sens[i].trip, c->sens[i].warn, ffn[c->sens[i].ff]);
   for (int n = 0; n < MAX_FANS; n++) if (c->fan[n].used) {
     const fan_cfg_t *f = &c->fan[n];
-    fprintf(o, "fan %d %s max %d minrun %d hyst %.1f up %.0f down %.0f minon %d minoff %d\n", n, f->name, f->max, f->minrun, f->hyst, f->up, f->down, f->minon, f->minoff);
+    fprintf(o, "fan %d %s max %d minrun %d hyst %.1f up %.0f down %.0f minon %d minoff %d profile_weight %.2f ff_weight %.2f\n", n, f->name, f->max, f->minrun, f->hyst, f->up, f->down, f->minon, f->minoff, f->pw, f->fw);
     for (int k = 0; k < f->ncurves; k++) {
       fprintf(o, "  curve %-4s", c->sens[f->curves[k].sensor].key);
       for (int i = 0; i < f->curves[k].npts; i++) fprintf(o, " %.1f:%.0f", f->curves[k].pts[i].t, f->curves[k].pts[i].rpm);
@@ -408,7 +424,8 @@ static void *smart_thread(void *arg) {
   (void)arg;
   for (;;) {
     int t = smart_read_once();
-    if (t > 5 && t < 90) { pthread_mutex_lock(&hdd_mx); hdd_temp = t; hdd_when = now_s(); pthread_mutex_unlock(&hdd_mx); }
+    if (t < 0) { sleep(2); t = smart_read_once(); }          // smartctl may hold the client a moment
+    if (t > 5 && t < 100) { pthread_mutex_lock(&hdd_mx); hdd_temp = t; hdd_when = now_s(); pthread_mutex_unlock(&hdd_mx); }
     sleep((unsigned)cfg.hdd_interval);
   }
   return NULL;
@@ -451,9 +468,47 @@ static double gpu_load_raw(void) {                 // PM4 command rate / gpu_ful
   return r;
 }
 
+// The load samplers allocate CF objects and talk to the GPU driver: they run in their own
+// thread; the control loop only takes the last values (ignored when older than 10 s).
+static pthread_mutex_t load_mx = PTHREAD_MUTEX_INITIALIZER;
+static double load_cpu = NAN, load_gpu = NAN, load_when = -1;
+static void *load_thread(void *arg) {
+  (void)arg;
+  cpu_load_raw(); gpu_load_raw();
+  for (;;) {
+    sleep(2);
+    double c = cpu_load_raw(), g = gpu_load_raw();
+    pthread_mutex_lock(&load_mx); load_cpu = c; load_gpu = g; load_when = now_s(); pthread_mutex_unlock(&load_mx);
+  }
+  return NULL;
+}
+
 // ================================================================ state shared by threads
-typedef struct { volatile double beat; volatile int forced; } shared_t;   // controller -> guard
+// Guard <-> controller page. The guard never calls syslog synchronously once the controller
+// runs: it appends to glog[] and the controller's log thread passes the lines on (M4).
+#define GLOG_LINES 16
+typedef struct {
+  volatile double beat; volatile int forced;          // controller -> guard
+  volatile double trip_until; volatile int trip_max;  // survives a controller restart (N2)
+  volatile unsigned glog_head; char glog[GLOG_LINES][160];   // guard -> controller log thread
+} shared_t;
 static shared_t *shm;
+static unsigned glog_seen;
+static void drain_guard_log(void) {
+  if (!shm) return;
+  unsigned h = shm->glog_head;
+  if (h - glog_seen > GLOG_LINES) glog_seen = h - GLOG_LINES;
+  for (; glog_seen != h; glog_seen++) { char l[160]; memcpy(l, shm->glog[glog_seen % GLOG_LINES], sizeof l); l[159] = 0; syslog(LOG_ERR, "guard: %s", l); }
+}
+
+static void guard_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void guard_log(const char *fmt, ...) {
+  char line[160]; va_list ap; va_start(ap, fmt); vsnprintf(line, sizeof line, fmt, ap); va_end(ap);
+  unsigned h = shm->glog_head;
+  memcpy(shm->glog[h % GLOG_LINES], line, sizeof line);
+  __sync_synchronize();
+  shm->glog_head = h + 1;
+}
 
 typedef struct {                // controller -> socket thread (snapshot, under pub_mx)
   int level, mode, profile; unsigned level_seq;
@@ -472,6 +527,10 @@ static pthread_mutex_t hint_mx = PTHREAD_MUTEX_INITIALIZER;
 // ============================================================================== controller
 enum { M_CURVE, M_SMC, M_TRIP, M_DISABLED };
 static const char *mode_name[] = { "curve", "smc", "trip", "disabled" };
+
+static pthread_mutex_t ctl_mx = PTHREAD_MUTEX_INITIALIZER;   // control step vs. power events
+static volatile int sleeping;                                // between WillSleep and HasPoweredOn
+static volatile double woke_at = -1;
 
 static struct {
   int mode; char reason[96]; double trip_until;
@@ -504,6 +563,7 @@ static void fault(const char *why, double now) {
   char r[96]; snprintf(r, sizeof r, "%s%s", why, failed ? ", FS! RESET FAILED" : "");
   set_mode(M_TRIP, r);
   st.trip_until = now + cfg.trip_hold;
+  shm->trip_max = 0; shm->trip_until = st.trip_until;
   for (int n = 0; n < MAX_FANS; n++) { st.out[n] = st.ac[n] > 0 ? st.ac[n] : 0; st.stall_since[n] = 0; }
 }
 
@@ -558,10 +618,17 @@ static void update_level(void) {
   st.level = lv;
 }
 
+static void control_step_locked(void);
 static void control_step(void) {
+  pthread_mutex_lock(&ctl_mx);
+  if (!sleeping) control_step_locked();
+  pthread_mutex_unlock(&ctl_mx);
+}
+static void control_step_locked(void) {
   double now = now_s();
   read_sensors(now);
-  double c = cpu_load_raw(), g = gpu_load_raw();
+  double c = NAN, g = NAN;
+  pthread_mutex_lock(&load_mx); if (now - load_when < 10) { c = load_cpu; g = load_gpu; } pthread_mutex_unlock(&load_mx);
   // feed-forward smoothing: rise with tau 20 s, fall with tau 120 s (no pumping on short spikes)
   if (!isnan(c)) st.cpu_ema += (c - st.cpu_ema) * (LOOP_S / (c > st.cpu_ema ? 20.0 : 120.0));
   if (!isnan(g)) st.gpu_ema += (g - st.gpu_ema) * (LOOP_S / (g > st.gpu_ema ? 20.0 : 120.0));
@@ -571,6 +638,16 @@ static void control_step(void) {
 
   if (st.mode == M_DISABLED) { if (fs_get() != 0) smc_auto(); publish(prof, shift); return; }
 
+  // ---- after a wake: hint and drive reading are from before the sleep (monotonic time stood
+  // still), so drop them and wait for fresh values under SMC control
+  if (woke_at >= 0) {
+    pthread_mutex_lock(&hint_mx); hint.until = 0; pthread_mutex_unlock(&hint_mx);
+    pthread_mutex_lock(&hdd_mx); double hw = hdd_when; pthread_mutex_unlock(&hdd_mx);
+    if (hw < woke_at + 1) { if (st.mode != M_SMC || fs_get() != 0) { smc_auto(); shm->forced = 0; set_mode(M_SMC, "after wake, waiting for fresh sensors"); }
+      for (int n = 0; n < MAX_FANS; n++) st.out[n] = isnan(st.ac[n]) ? 0 : st.ac[n];
+      if (now - woke_at < cfg.hdd_stale) { publish(prof, shift); return; } }
+    woke_at = -1;
+  }
   // ---- faults -> SMC
   int bad = -1, over = -1;
   for (int i = 0; i < cfg.nsens; i++) {
@@ -586,13 +663,13 @@ static void control_step(void) {
     // hold: either SMC (fault) or all fans at max (temperature) - re-assert, nothing else
     if (strncmp(st.reason, "limit", 5) == 0) {
       int mask = 0;
-      for (int n = 0; n < st.fan_count; n++) if (cfg.fan[n].used) { if (tg_set(n, cfg.fan[n].max)) { fault("SMC write failed", now); break; } mask |= 1 << n; }
-      if (st.mode == M_TRIP && strncmp(st.reason, "limit", 5) == 0 && (fs_set(mask) || fs_get() != mask)) fault("SMC write failed", now);
+      for (int n = 0; n < st.fan_count; n++) if (cfg.fan[n].used) { if (tg_set(n, cfg.fan[n].max)) { fault("SMC write failed", now); publish(prof, shift); return; } mask |= 1 << n; }
+      if (fs_set(mask) || fs_get() != mask) fault("SMC write failed", now);
       else shm->forced = mask;
-    } else if (fs_get() != 0) { smc_auto(); shm->forced = 0; }
+    } else { if (fs_get() != 0) smc_auto(); shm->forced = 0; }
     publish(prof, shift); return;
   }
-  if (bad >= 0) { char w[96]; snprintf(w, sizeof w, "sensor %s unreadable", cfg.sens[bad].key); fault(w, now); publish(prof, shift); return; }
+  // a healthy sensor over its trip wins over another unreadable one: max cooling (V2-9)
   if (over >= 0) {
     // temperature limit with healthy sensors: maximum cooling beats the SMC's minimum here
     char w[96]; snprintf(w, sizeof w, "limit %s %.1f >= %.1f, all fans max", cfg.sens[over].key, st.temp[over], cfg.sens[over].trip);
@@ -600,9 +677,10 @@ static void control_step(void) {
     int mask = 0;
     for (int n = 0; n < st.fan_count; n++) if (cfg.fan[n].used) { if (tg_set(n, cfg.fan[n].max)) { fault("SMC write failed", now); publish(prof, shift); return; } mask |= 1 << n; st.out[n] = cfg.fan[n].max; }
     if (fs_set(mask) || fs_get() != mask) fault("SMC write failed", now);
-    else shm->forced = mask;
+    else { shm->forced = mask; shm->trip_max = 1; shm->trip_until = st.trip_until; }
     publish(prof, shift); return;
   }
+  if (bad >= 0) { char w[96]; snprintf(w, sizeof w, "sensor %s unreadable", cfg.sens[bad].key); fault(w, now); publish(prof, shift); return; }
   // a trip ends only once everything is 3 C below its trip point
   if (st.mode == M_TRIP) {
     for (int i = 0; i < cfg.nsens; i++) if (st.temp[i] >= cfg.sens[i].trip - 3) { st.trip_until = now + 30; publish(prof, shift); return; }
@@ -620,7 +698,7 @@ static void control_step(void) {
       double ff = 0;
       if (sc->ff == FF_CPU || sc->ff == FF_BOTH) ff += cfg.ff_cpu * st.cpu_ema;
       if (sc->ff == FF_GPU || sc->ff == FF_BOTH) ff += cfg.ff_gpu * st.gpu_ema;
-      double te = st.temp[cv->sensor] + ff - shift;
+      double te = st.temp[cv->sensor] + fc->fw * ff - fc->pw * shift;
       double u = interp(cv, te), d = interp(cv, te + fc->hyst);
       if (u > up) up = u;
       if (d > dn) dn = d;
@@ -630,7 +708,7 @@ static void control_step(void) {
     for (int k = 0; k < fc->nfloors; k++) if (st.temp[fc->floors[k].sensor] >= fc->floors[k].temp && fc->floors[k].rpm > fl) fl = fc->floors[k].rpm;
     if (up < fl) up = fl;
     if (dn < fl) dn = fl;
-    int urgent = 0;                 // a coupled sensor at warn overrides minoff
+    int urgent = fl > 0;            // an active floor (Apple minimum) or a sensor at warn overrides minoff (V2-2)
     for (int k = 0; k < fc->ncurves; k++) { int s = fc->curves[k].sensor; if (st.temp[s] >= cfg.sens[s].warn) urgent = 1; }
 
     double cur = st.out[n], want;
@@ -640,6 +718,7 @@ static void control_step(void) {
     if (want > 0 && want < fc->minrun) want = fc->minrun;
     // on/off discipline (mainly the HDD fan: its start is the audible part)
     if (cur <= 0 && want > 0 && !urgent && st.off_since[n] > 0 && now - st.off_since[n] < fc->minoff) want = 0;
+    if (want < fl) want = fl;       // floors hold in every case
     if (cur > 0 && want <= 0 && now - st.on_since[n] < fc->minon) want = fc->minrun > 0 ? fc->minrun : cur;
     // ramps
     double next;
@@ -668,38 +747,56 @@ static void control_step(void) {
 
 // ============================================================================ socket thread
 static int lfd_hint = -1, lfd_ctl = -1;
+static unsigned hints_dropped;
 
-static int json_str(const char *j, const char *key, char *out, size_t cap) {
-  char pat[24]; snprintf(pat, sizeof pat, "\"%s\"", key);
-  const char *p = strstr(j, pat); if (!p) return -1;
-  p += strlen(pat); while (*p == ' ' || *p == '\t') p++; if (*p++ != ':') return -1; while (*p == ' ' || *p == '\t') p++;
-  if (*p++ != '"') return -1;
-  size_t n = 0; while (*p && *p != '"' && n + 1 < cap) { if ((unsigned char)*p < 0x20 || *p == '\\') return -1; out[n++] = *p++; }
-  if (*p != '"') return -1;
-  out[n] = 0; return 0;
+// Minimal strict JSON: exactly one flat object, string/number/null/true/false values, no
+// duplicate keys, nothing but whitespace after the closing brace. Fills up to 8 fields.
+typedef struct { char key[12]; int type; char str[24]; double num; } jfield_t;   // type: 1 str, 2 num, 3 null, 4 bool
+static const char *jws(const char *p) { while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++; return p; }
+static const char *jstring(const char *p, char *out, size_t cap) {
+  if (*p++ != '"') return NULL;
+  size_t n = 0;
+  while (*p && *p != '"') { if ((unsigned char)*p < 0x20 || *p == '\\' || n + 1 >= cap) return NULL; out[n++] = *p++; }
+  if (*p != '"') return NULL;
+  out[n] = 0; return p + 1;
 }
-
-static int json_num(const char *j, const char *key, double *v, int *isnull) {
-  char pat[24]; snprintf(pat, sizeof pat, "\"%s\"", key);
-  const char *p = strstr(j, pat); if (!p) return -1;
-  p += strlen(pat); while (*p == ' ' || *p == '\t') p++; if (*p++ != ':') return -1; while (*p == ' ' || *p == '\t') p++;
-  if (!strncmp(p, "null", 4)) { *isnull = 1; return 0; }
-  char *e; double d = strtod(p, &e); if (e == p || !isfinite(d)) return -1;
-  *isnull = 0; *v = d; return 0;
+static int json_parse(const char *j, jfield_t *f, int max) {
+  const char *p = jws(j); int n = 0;
+  if (*p++ != '{') return -1;
+  p = jws(p);
+  if (*p == '}') return jws(p + 1)[0] ? -1 : 0;
+  for (;;) {
+    if (n >= max) return -1;
+    jfield_t *x = &f[n];
+    if (!(p = jstring(p, x->key, sizeof x->key))) return -1;
+    for (int i = 0; i < n; i++) if (!strcmp(f[i].key, x->key)) return -1;
+    p = jws(p); if (*p++ != ':') return -1; p = jws(p);
+    if (*p == '"') { x->type = 1; if (!(p = jstring(p, x->str, sizeof x->str))) return -1; }
+    else if (!strncmp(p, "null", 4)) { x->type = 3; p += 4; }
+    else if (!strncmp(p, "true", 4)) { x->type = 4; x->num = 1; p += 4; }
+    else if (!strncmp(p, "false", 5)) { x->type = 4; x->num = 0; p += 5; }
+    else { char *e; x->num = strtod(p, &e); if (e == p || !isfinite(x->num) || (*p != '-' && (*p < '0' || *p > '9'))) return -1; x->type = 2; p = e; }
+    n++;
+    p = jws(p);
+    if (*p == ',') { p = jws(p + 1); continue; }
+    if (*p == '}') return jws(p + 1)[0] ? -1 : n;
+    return -1;
+  }
 }
+static const jfield_t *jget(const jfield_t *f, int n, const char *key) { for (int i = 0; i < n; i++) if (!strcmp(f[i].key, key)) return &f[i]; return NULL; }
 
 // returns profile index or -1
 static int parse_hint(const char *msg, double *vol, double *ttl, int *pid) {
-  double v; int isnull;
-  if (json_num(msg, "v", &v, &isnull) || isnull || v != 1) return -1;
-  char ctx[16]; if (json_str(msg, "ctx", ctx, sizeof ctx)) return -1;
+  jfield_t f[8]; int n = json_parse(msg, f, 8);
+  if (n < 0) return -1;
+  const jfield_t *v = jget(f, n, "v"), *c = jget(f, n, "ctx"), *x;
+  if (!v || v->type != 2 || v->num != 1 || !c || c->type != 1) return -1;
   int p = -1;
-  if (!strcmp(ctx, "ruhe")) p = P_RUHE; else if (!strcmp(ctx, "idle")) p = P_IDLE; else if (!strcmp(ctx, "playback")) p = P_PLAYBACK;
+  if (!strcmp(c->str, "ruhe")) p = P_RUHE; else if (!strcmp(c->str, "idle")) p = P_IDLE; else if (!strcmp(c->str, "playback")) p = P_PLAYBACK;
   if (p < 0) return -1;
-  *vol = -1;
-  if (json_num(msg, "vol", &v, &isnull) == 0 && !isnull && v >= 0 && v <= 1) *vol = v;
-  *ttl = 90; if (json_num(msg, "ttl", &v, &isnull) == 0 && !isnull) *ttl = v < 10 ? 10 : v > 300 ? 300 : v;
-  *pid = 0; if (json_num(msg, "pid", &v, &isnull) == 0 && !isnull && v > 0 && v < 1e7) *pid = (int)v;
+  *vol = -1; if ((x = jget(f, n, "vol")) && x->type == 2 && x->num >= 0 && x->num <= 1) *vol = x->num;
+  *ttl = 90; if ((x = jget(f, n, "ttl")) && x->type == 2) *ttl = x->num < 10 ? 10 : x->num > 300 ? 300 : x->num;
+  *pid = 0; if ((x = jget(f, n, "pid")) && x->type == 2 && x->num > 0 && x->num < 1e7) *pid = (int)x->num;
   return p;
 }
 
@@ -713,10 +810,12 @@ static int reply_ok(const struct sockaddr_un *sa, socklen_t len) {
   size_t dl = strlen(cfg.reply_dir);
   if (strncmp(path, cfg.reply_dir, dl) || strchr(path + dl, '/') || !path[dl] || strstr(path, "..")) return 0;
   double now = now_s();
-  if (!strcmp(reply_cache.path, path) && now - reply_cache.checked < 600) return reply_cache.ok;
+  if (reply_cache.ok && !strcmp(reply_cache.path, path) && now - reply_cache.checked < 30) return 1;
   // lstat may touch the disk; this thread may block, the control loop does not care
   struct stat sd, sf; char dir[128]; snprintf(dir, sizeof dir, "%.*s", (int)(dl - 1), cfg.reply_dir);
-  int ok = lstat(dir, &sd) == 0 && S_ISDIR(sd.st_mode) && (int)sd.st_uid == cfg.allow_uid &&
+  // only uid allow_uid (or root) can bind a socket in a directory it owns that nobody else may
+  // write: a valid sender address therefore authenticates the sender (datagrams carry no creds)
+  int ok = lstat(dir, &sd) == 0 && S_ISDIR(sd.st_mode) && (int)sd.st_uid == cfg.allow_uid && (sd.st_mode & 022) == 0 &&
            lstat(path, &sf) == 0 && S_ISSOCK(sf.st_mode) && (int)sf.st_uid == cfg.allow_uid;
   snprintf(reply_cache.path, sizeof reply_cache.path, "%s", path); reply_cache.checked = now; reply_cache.ok = ok;
   return ok;
@@ -745,12 +844,13 @@ static int status_text(char *buf, size_t cap) {
   OUT("mode %s (%s)%s\nlevel %d\n", mode_name[p.mode], p.reason, dry ? " DRY RUN - SMC untouched" : "", p.level);
   OUT("profile %s shift %+.1f", prof_name[p.profile], p.shift);
   if (h.ctx >= 0 && now < h.until) OUT(" (hint %.0f s left, vol %.2f, pid %d)", h.until - now, h.vol, h.pid);
-  OUT("\nhints_received %u\nload cpu %.2f gpu %.2f\n", h.count, p.cpu, p.gpu);
+  OUT("\nhints_received %u dropped %u\nload cpu %.2f gpu %.2f\n", h.count, hints_dropped, p.cpu, p.gpu);
   for (int n = 0; n < MAX_FANS; n++) if (cfg.fan[n].used) OUT("fan %d %-4s actual %5.0f target %5.0f\n", n, cfg.fan[n].name, p.ac[n], p.target[n]);
   for (int i = 0; i < cfg.nsens; i++) {
     if (p.temp_ok[i]) OUT("temp %-4s %5.1f warn %.0f trip %.0f%s\n", cfg.sens[i].key, p.temp[i], cfg.sens[i].warn, cfg.sens[i].trip, ffn[cfg.sens[i].ff]);
     else OUT("temp %-4s  n/a  warn %.0f trip %.0f\n", cfg.sens[i].key, cfg.sens[i].warn, cfg.sens[i].trip);
   }
+  if (sleeping) OUT("sleeping yes (FS!=0, controller paused)\n");
   OUT("memlock %lu KB\nuptime %.0f\n", st.locked_kb, now - st.started);
   pthread_mutex_lock(&log_mx);
   unsigned from = log_head > 15 ? log_head - 15 : 0;
@@ -763,23 +863,30 @@ static int status_text(char *buf, size_t cap) {
 
 static void take_hint(const char *msg, const struct sockaddr_un *from, socklen_t flen, int *have_peer, struct sockaddr_un *peer, socklen_t *plen) {
   double vol, ttl; int pid;
+  if (from && !reply_ok(from, flen)) { hints_dropped++; return; }    // unauthenticated sender (V2-1)
   int p = parse_hint(msg, &vol, &ttl, &pid);
-  if (p < 0) return;
+  if (p < 0) { hints_dropped++; return; }
   double now = now_s();
   pthread_mutex_lock(&hint_mx);
   int changed = hint.ctx != p || now >= hint.until;
   hint.ctx = p; hint.vol = vol; hint.until = now + ttl; hint.pid = pid; hint.count++;
   pthread_mutex_unlock(&hint_mx);
-  if (changed) logf_("context %s (vol %.2f, ttl %.0f, pid %d)", prof_name[p], vol, ttl, pid);
-  if (from && reply_ok(from, flen)) {
+  static double last_log = -100;
+  if (changed && now - last_log >= 10) { last_log = now; logf_("context %s (vol %.2f, ttl %.0f, pid %d)", prof_name[p], vol, ttl, pid); }
+  if (from) {
     char b[1024]; int n = state_json(b, sizeof b);
     if (n > 0) sendto(lfd_hint, b, (size_t)n, MSG_DONTWAIT, (const struct sockaddr *)from, flen);
     memcpy(peer, from, sizeof *peer); *plen = flen; *have_peer = 1;
   }
 }
 
+static void power_sleep(void);
+static void power_wake(void);
 static void *socket_thread(void *arg) {
   (void)arg;
+  // This thread runs with uid allow_uid: lstat and sendto are then checked by the kernel with
+  // the user's rights, so a symlink swapped in after the check cannot make root write anywhere.
+  if (pthread_setugid_np((uid_t)cfg.allow_uid, (gid_t)20)) logf_("socket thread keeps root credentials (setugid failed)");
   struct sockaddr_un peer; socklen_t plen = 0; int have_peer = 0; unsigned seen_seq = 0;
   for (;;) {
     struct pollfd p[2] = { { lfd_hint, POLLIN, 0 }, { lfd_ctl, POLLIN, 0 } };
@@ -793,6 +900,7 @@ static void *socket_thread(void *arg) {
       int fd = accept(lfd_ctl, NULL, NULL);
       if (fd >= 0) {
         struct timeval tv = { 0, 300000 }; int on = 1;
+        int fl = fcntl(fd, F_GETFL); if (fl >= 0) fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);   // timeouts, not EAGAIN (M1)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
@@ -805,6 +913,8 @@ static void *socket_thread(void *arg) {
           if (!strcmp(cmd, "STATUS")) len = status_text(out, sizeof out);
           else if (!strcmp(cmd, "STATE")) len = state_json(out, sizeof out);
           else if (!strncmp(cmd, "HINT ", 5) && (uid == 0 || (int)uid == cfg.allow_uid)) { take_hint(cmd + 5, NULL, 0, &have_peer, &peer, &plen); len = snprintf(out, sizeof out, "OK\n"); }
+          else if (!strcmp(cmd, "SIMSLEEP") && uid == 0) { power_sleep(); len = snprintf(out, sizeof out, "OK slept (FS!=0x%x)\n", fs_get()); }
+          else if (!strcmp(cmd, "SIMWAKE") && uid == 0) { power_wake(); len = snprintf(out, sizeof out, "OK woke\n"); }
           else len = snprintf(out, sizeof out, "ERR\n");
           if (len > 0) { ssize_t w = write(fd, out, (size_t)len); (void)w; }
         }
@@ -821,6 +931,44 @@ static void *socket_thread(void *arg) {
   return NULL;
 }
 
+// ============================================================================ sleep / wake
+// Before the system sleeps the SMC gets the fans back (FS! = 0) and the controller pauses; after
+// the wake it takes over again only with fresh sensor values. A hang during sleep/wake therefore
+// leaves the fans under SMC control, never forced.
+static io_connect_t pm_root;
+static void power_sleep(void) {
+  pthread_mutex_lock(&ctl_mx);
+  sleeping = 1;
+  int failed = smc_auto(); shm->forced = 0;
+  pthread_mutex_unlock(&ctl_mx);
+  logf_("system sleep: FS!=0%s", failed ? " FAILED" : "");
+}
+static void power_wake(void) {
+  pthread_mutex_lock(&ctl_mx);
+  woke_at = now_s(); sleeping = 0;
+  pthread_mutex_unlock(&ctl_mx);
+  logf_("system woke: waiting for fresh sensors");
+}
+static void power_cb(void *ref, io_service_t svc, natural_t type, void *arg) {
+  (void)ref; (void)svc;
+  switch (type) {
+    case kIOMessageCanSystemSleep: IOAllowPowerChange(pm_root, (long)arg); break;
+    case kIOMessageSystemWillSleep: power_sleep(); IOAllowPowerChange(pm_root, (long)arg); break;
+    case kIOMessageSystemWillPowerOn: break;
+    case kIOMessageSystemHasPoweredOn: power_wake(); break;
+    default: break;
+  }
+}
+static void *power_thread(void *arg) {
+  (void)arg;
+  IONotificationPortRef port = NULL; io_object_t notifier;
+  pm_root = IORegisterForSystemPower(NULL, &port, power_cb, &notifier);
+  if (!pm_root || !port) { logf_("IORegisterForSystemPower failed - sleep is not handled"); return NULL; }
+  CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(port), kCFRunLoopCommonModes);
+  CFRunLoopRun();
+  return NULL;
+}
+
 // ============================================================================ process glue
 static void ctl_crash(int sig) {
   // async-signal-safe enough: two IOConnectCallStructMethod calls (Mach messages), then _exit
@@ -831,8 +979,10 @@ static volatile sig_atomic_t ctl_stop;
 static void ctl_term(int sig) { (void)sig; ctl_stop = 1; }
 
 static void lock_memory(void) {
-  // Darwin has no mlockall: wire every loaded image's segments so no code page we run must
-  // come back from the (possibly vanished) boot disk.
+  // mlockall is declared on Darwin but not implemented (returns an error on 10.9); then wire every
+  // loaded image's segments so no code page we run must come back from the (possibly vanished)
+  // boot disk. Stacks: prefault_stack(); heap: small and hot, not wired.
+  if (mlockall(MCL_CURRENT | MCL_FUTURE) == 0) { st.locked_kb = (unsigned long)-1; return; }
   unsigned long kb = 0;
   for (uint32_t i = 0; i < _dyld_image_count(); i++) {
     const struct mach_header_64 *mh = (const struct mach_header_64 *)_dyld_get_image_header(i);
@@ -851,9 +1001,21 @@ static void lock_memory(void) {
 
 static void ctl_atexit(void) { smc_auto(); }
 
+static void prefault_stack(void) {
+  // touch and wire 256 KB of this thread's stack below the current frame (M2)
+  volatile char buf[256 * 1024];
+  for (size_t i = 0; i < sizeof buf; i += 4096) buf[i] = 0;
+  mlock((const void *)buf, sizeof buf);
+}
+
 static void controller(void) {
+  pid_t guard = getppid();
+  static char altstack[64 * 1024];
+  stack_t ss = { .ss_sp = altstack, .ss_size = sizeof altstack, .ss_flags = 0 };
+  sigaltstack(&ss, NULL);                                          // crash handler works on stack overflow (N9)
+  struct sigaction sa; memset(&sa, 0, sizeof sa); sa.sa_handler = ctl_crash; sa.sa_flags = SA_ONSTACK;
+  sigaction(SIGSEGV, &sa, NULL); sigaction(SIGBUS, &sa, NULL); sigaction(SIGILL, &sa, NULL); sigaction(SIGFPE, &sa, NULL); sigaction(SIGABRT, &sa, NULL);
   signal(SIGTERM, ctl_term); signal(SIGINT, ctl_term); signal(SIGHUP, SIG_IGN); signal(SIGPIPE, SIG_IGN);
-  signal(SIGSEGV, ctl_crash); signal(SIGBUS, ctl_crash); signal(SIGILL, ctl_crash); signal(SIGFPE, ctl_crash); signal(SIGABRT, ctl_crash);
   if (smc_open()) { syslog(LOG_ERR, "controller: AppleSMC not reachable"); _exit(1); }
   smc_auto();
   atexit(ctl_atexit);
@@ -863,17 +1025,24 @@ static void controller(void) {
   if (st.fan_count > MAX_FANS) st.fan_count = MAX_FANS;
   for (int n = 0; n < MAX_FANS; n++) { st.out[n] = 0; char k[5]; snprintf(k, sizeof k, "F%dAc", n); double a; if (n < st.fan_count && smc_fpe2(k, &a) == 0) st.out[n] = a; st.on_since[n] = st.started - 3600; st.off_since[n] = 0; }
   st.mode = M_SMC; snprintf(st.reason, sizeof st.reason, "start");
+  if (shm->trip_until > st.started) {                              // a trip outlives a controller restart (N2)
+    st.mode = M_TRIP; st.trip_until = shm->trip_until;
+    snprintf(st.reason, sizeof st.reason, shm->trip_max ? "limit (inherited), all fans max" : "fault (inherited)");
+  }
   if (!cfg.ok) { st.mode = M_DISABLED; snprintf(st.reason, sizeof st.reason, "config: %.80s", cfg.err); }
   pthread_t th;
   log_threaded = 1;
   if (pthread_create(&th, NULL, log_thread, NULL)) { log_threaded = 0; }
   if (pthread_create(&th, NULL, smart_thread, NULL)) { syslog(LOG_ERR, "no SMART thread"); }
   if (pthread_create(&th, NULL, socket_thread, NULL)) { syslog(LOG_ERR, "no socket thread"); }
+  if (pthread_create(&th, NULL, load_thread, NULL)) { syslog(LOG_ERR, "no load thread"); }
+  if (pthread_create(&th, NULL, power_thread, NULL)) { syslog(LOG_ERR, "no power thread"); }
   lock_memory();
-  cpu_load_raw(); gpu_load_raw();
+  prefault_stack();
   logf_("controller up (pid %d, %d fans, %lu KB wired)%s%s", getpid(), st.fan_count, st.locked_kb, cfg.ok ? "" : ", DISABLED: ", cfg.ok ? "" : cfg.err);
   double next = now_s();
   while (!ctl_stop) {
+    if (getppid() != guard) { logf_("guard gone - stopping, FS!=0"); break; }   // launchd starts a new guard (N1)
     double t = now_s();
     if (t >= next) { control_step(); shm->beat = now_s(); next = t + LOOP_S; }
     double wait = next - now_s();
@@ -934,17 +1103,17 @@ static int run_daemon(const char *conf) {
       int stv = 0; pid_t r = waitpid(child, &stv, WNOHANG);
       if (r == child || (r < 0 && errno == ECHILD)) {
         int failed = smc_auto();                         // controller gone: SMC first, then talk
-        syslog(LOG_ERR, "controller %d ended (%s %d), FS!=0%s", child, WIFSIGNALED(stv) ? "signal" : "exit",
+        guard_log("controller %d ended (%s %d), FS!=0%s", child, WIFSIGNALED(stv) ? "signal" : "exit",
                WIFSIGNALED(stv) ? WTERMSIG(stv) : WEXITSTATUS(stv), failed ? " FAILED" : "");
         break;
       }
       if (now_s() - shm->beat > GUARD_STALE) {
         smc_auto(); kill(child, SIGKILL); waitpid(child, &stv, 0); smc_auto();
-        syslog(LOG_ERR, "controller %d hung (no heartbeat %.0f s), killed, FS!=0", child, GUARD_STALE);
+        guard_log("controller %d hung (no heartbeat %.0f s), killed, FS!=0", child, GUARD_STALE);
         break;
       }
       // belt and braces: FS! set while the controller says it forces nothing
-      if (!dry && shm->forced == 0 && fs_get() > 0) { usleep(300000); if (shm->forced == 0 && fs_get() > 0) { smc_auto(); syslog(LOG_ERR, "FS! set without controller request, reset"); } }
+      if (!dry && shm->forced == 0 && fs_get() > 0) { usleep(300000); if (shm->forced == 0 && fs_get() > 0) { smc_auto(); guard_log("FS! set without controller request, reset"); } }
       usleep(500000);
     }
     if (guard_stop) {
@@ -954,7 +1123,7 @@ static int run_daemon(const char *conf) {
       break;
     }
     if (now_s() - window > 300) { window = now_s(); restarts = 0; }
-    if (++restarts > 5) { syslog(LOG_ERR, "controller keeps failing, pausing 60 s (fans: SMC)"); smc_auto(); for (int i = 0; i < 60 && !guard_stop; i++) sleep(1); restarts = 0; }
+    if (++restarts > 5) { guard_log("controller keeps failing, pausing 60 s (fans: SMC)"); smc_auto(); for (int i = 0; i < 60 && !guard_stop; i++) sleep(1); restarts = 0; }
     else sleep(2);
   }
   smc_auto();

@@ -248,9 +248,13 @@ int main(int argc, char **argv) {
     if (why && step) { reset(); livef("ABBRUCH: %s nach %ld s, zurück auf Automatik (FS!=0x%x)", why, (long)(time(0) - t0), fsval()); rc = 3; break; }
     if (hn < H) { for (int j = 0; j < 5; j++) hist[hn][j] = !strcmp(hk[j], "HDD") ? s.hdd : s.t[ti(hk[j])]; hn++; }
     // equilibrium: after MINEQ s, every main temp changed < 0.3 C over the last 5 min (HDD: < 1)
-    if (mineq && time(0) - t0 >= mineq && hn > 31) {
+    if (mineq && time(0) - t0 >= mineq && hn > 37) {
       int flat = 1;
-      for (int j = 0; j < 5; j++) { double d = fabs(hist[hn - 1][j] - hist[hn - 31][j]); if (d > (j == 4 ? 0.9 : 0.3)) flat = 0; }
+      // compare 1-min means (6 samples) 5 min apart: single samples are too noisy under load
+      for (int j = 0; j < 5; j++) {
+        double a = 0, b = 0; for (int q = 0; q < 6; q++) { a += hist[hn - 1 - q][j]; b += hist[hn - 31 - q][j]; }
+        if (fabs(a - b) / 6 > (j == 4 ? 0.9 : 0.4)) flat = 0;
+      }
       if (flat) { livef("Gleichgewicht nach %ld s", (long)(time(0) - t0)); break; }
     }
     sleep(10);

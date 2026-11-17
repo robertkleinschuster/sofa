@@ -10,7 +10,7 @@ It is its own program with its own Makefile. It is not linked into Sofa and Sofa
 not compile it. Sofa may send a context hint and reads the thermal level back over a Unix
 datagram socket. Without Sofa the daemon works the same with its default profile.
 
-Status: **v2, curves are a draft** until the overnight measurements of 2026-11-17 are
+Status: **v3, curves are a draft** until the overnight measurements of 2026-11-17 are
 evaluated (`~/Library/Logs/fan-tuning-2026-11-17/` on the iMac).
 
 ## Interface for Sofa (v1, agreed with the Sofa side)
@@ -31,7 +31,15 @@ socket 0666). One JSON object per datagram, at most 512 bytes:
 - Without a fresh hint the `default` profile applies. Broken JSON, `v` ≠ 1 or an unknown `ctx`
   is dropped silently. Unknown fields are ignored.
 - A hint only shifts the curves (profile). It never changes limits, floors, the
-  Apple-minimum guarantee or emergency behaviour.
+  Apple-minimum guarantee or emergency behaviour. The HDD fan ignores profiles
+  (`profile_weight 0`), so the loud fan stays sparing during playback too.
+- **Authentication:** datagrams carry no credentials. The daemon therefore accepts a hint only
+  from a sender bound directly inside `/Users/imac/Library/Caches/Sofa/`. That directory must
+  belong to uid 501 and be writable by nobody else, and the socket must be owned by 501. Only
+  501 or root can create such an address. Unbound or foreign senders are dropped (`status`
+  counts them). Context changes are logged at most once per 10 s.
+- **Strict JSON:** exactly one flat object, no duplicate keys, no nested values, nothing after
+  `}`; `v` must be the number 1.
 
 **State, daemon → Sofa:** sent as a reply datagram (`sendto`, nonblocking, errors ignored) to the
 hint's sender address after every hint, and pushed at once to the last valid address on every
@@ -46,9 +54,10 @@ level change:
   critical (within 2 °C of a trip, or tripped). Hysteresis 2 °C, handled by the daemon.
 - `mode`: `curve` (daemon regulates), `trip` (limit or fault), `smc` (SMC regulates: start or
   config error). A temperature of `-1` means unreadable.
-- The daemon only replies to a sender bound directly inside `/Users/imac/Library/Caches/Sofa/`.
-  The check (`lstat`) requires a socket owned by uid 501 in a directory owned by 501, with no
-  symlinks and no `..`. Sofa binds `~/Library/Caches/Sofa/fand.sock`.
+- Replies go only to an authenticated sender (see above). Sofa binds
+  `~/Library/Caches/Sofa/fand.sock`. The socket thread runs with uid 501's credentials
+  (`pthread_setugid_np`), so `lstat` and `sendto` are checked by the kernel with the user's
+  rights. A symlink swapped in after the check therefore cannot make root write elsewhere.
 - If Sofa hears nothing for 120 s, it assumes level 0.
 
 **Diagnosis:** `/var/run/sofa-fand/ctl.sock` (stream, one command line): `STATUS`, `STATE`, `HINT
@@ -73,9 +82,11 @@ Every 2 s, for each fan:
    smoothed (τ 20 s rising, 120 s falling), so a fan turns up before the temperature follows,
    comes back slowly and does not pump on short spikes.
 3. **Profile:** curves are read `shift` °C cooler (`+` = quieter, `−` = cooler):
-   `default 0`, `ruhe +2`, `idle +1`, `playback −1 − 2×vol`.
+   `default 0`, `ruhe +2`, `idle +1`, `playback −1 − 2×vol`, weighted per fan
+   (`profile_weight`, 0 for the HDD fan). Feed-forward is likewise weighted per fan
+   (`ff_weight`).
 4. **Floors** (independent of profile and feed-forward): `floor N KEY T RPM` keeps fan N at
-   ≥ RPM while KEY ≥ T. They are set to Apple's minimum well below Apple's own fan thresholds.
+   ≥ RPM while KEY ≥ T. They hold in every case: an active floor also overrides `minoff`. They are set to Apple's minimum well below Apple's own fan thresholds.
    Apple runs exactly its minimum below those thresholds, so the daemon never cools less than
    Apple where it matters.
 5. **Hysteresis, ramps, dead band:** falling demand is computed at T + `hyst`. Speeds rise at
@@ -113,9 +124,14 @@ Control targets: GPU `SGTg` 77, CPU `SCTg` 70, PECI `SCXC` 86, ODD `SOTg` 55.
 | guard SIGKILLed / both killed | launchd KeepAlive restarts it (< 1 s measured); the start resets first |
 | config missing or invalid | mode `disabled`: runs, SMC regulates, `status` names the error |
 | `FS!` set although the controller forces nothing | the guard resets it |
+| system sleep | `kIOMessageSystemWillSleep`: `FS!` = 0 before the sleep is acknowledged, controller pauses. After the wake: SMC until fresh sensor values arrive (monotonic time stood still, so hint and drive reading from before the sleep are dropped). A hang during sleep/wake leaves the fans under SMC control. Tested with `SIMSLEEP`/`SIMWAKE` on the ctl socket (root); the Mac itself is never put to sleep (known disk hang after standby) |
+| guard dies | the controller notices (`getppid`) and stops with `FS!` = 0; launchd starts a new guard |
+| trip and controller restart | trip state lives in the guard's shared page; a new controller inherits it |
 | Sofa crashes, hangs, sends garbage | hint expires (ttl) or is dropped; default profile |
 
-**Two processes.** launchd starts the guard. The guard resets `FS!`, reads the config once,
+**Two processes.** launchd starts the guard. Once the controller runs, the guard no longer
+calls `syslog` itself: it writes into a ring in the shared page, and the controller's log
+thread passes the lines on. The guard resets `FS!`, reads the config once,
 binds the sockets and forks the controller. The guard only watches it, through waitpid plus a
 heartbeat in an anonymous shared page.
 
@@ -127,13 +143,18 @@ log thread hands to syslog. If one of these threads blocks (vanished disk, stuck
 regulation goes on; a stale SMART value becomes a fault. Both processes wire their code
 (`mlock` of all loaded images, ~10 MB), because Darwin has no `mlockall`.
 
+**Floor 0 (the user's decision):** no fan has an unconditional minimum. When everything is
+cool, fans really stop. Floors (Apple minimum) only start at their thresholds.
+
 **What remains:** guard and controller SIGKILLed together *and* the boot disk gone at the same
-moment, so launchd cannot start the binary again. Then the last commanded speeds stay. If
+moment, so launchd cannot start the binary again. A kernel hang is the same case. Then the last commanded speeds stay. If
 that was 0 rpm and heavy load followed, the GPU would reach 75 °C after about 7 min (measured:
 all fans off, ffmpeg at 260 %); after that the GPU throttles itself and the SMC's own
-shutdown thresholds remain. A floor per fan in the config (`curve` with a non-zero first
-point) removes even this case at the cost of idle noise. See the report for the
-recommendation.
+shutdown thresholds remain. With a kernel hang there is no more load at all, so the machine
+converges to "idle with fans off". The overnight block A ("all fans off at idle") measures
+where GPU, PSU, drive and LCD settle in that state; the result is in `docs/fan-tuning.md`. A
+floor per fan (`curve` with a non-zero first point) would remove the case at the cost of idle
+noise. The user chose floor 0.
 
 ## Measurements
 
