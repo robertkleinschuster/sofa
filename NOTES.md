@@ -231,12 +231,6 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
   answers (2xx/403/451/wrong text; 5xx, refused HEAD, network errors teach nothing; outside valid
   6 h, inside 24 h), a topic an app leaves out keeps its old items (ORF on a failed request),
   showsSourceMark not copied (leaked into "Später ansehen"), badges stored. Regression: tools/test-home.
-- 2026-11-17: **No system sleep from Sofa any more** (user). The iMac sometimes hung waking from
-  sleep (suspected GPU/PSU; host diagnosis in ~/Library/Logs/crash-diagnose-2026-11-17/bericht.md),
-  and Sofa's "Energie -> Ruhezustand" (`pmset sleepnow`) was practically the only trigger
-  (pmset sleep 0). The entry and SFPower systemSleep are gone; switching off is the display only
-  ("Ausschalten", sleep timer). Also a test: if the Mac stays stable for 1-2 weeks, the cause is
-  confirmed. Revert this commit to bring the entry back.
 
 ## Backlog (user requests — queue, tick off when done)
 - [x] 2026-11-09 **libmpv with the CoreAudio hotplug fix in the bundle** (mpv rev 12, backport-toolkit 5acfe60; crash 2026-11-08 12:48 in hotplug_cb): full bundle built (make-release, firefox-x11 rev 5 verified and committed as 19c8eb1), test-release all ok, deployed 22:14 via sofa-deploy --bundle. The engine took over its running Firefox: rev 5 (Mavericks shm fix) runs from the browser's next restart - then compare `yt-engine: memory: browser` (rev 3 on 2026-11-09: ~1.6 GB idle).

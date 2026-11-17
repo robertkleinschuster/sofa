@@ -1,11 +1,10 @@
 // Power: Sofa is the smart-TV overlay of this iMac. Switching off ("Ausschalten", today the
-// display) and the sleep timer - never system sleep (2026-11-17: the iMac sometimes hung waking
-// from it). macOS timeouts (pmset displaysleep 5, sleep 0) remain the idle fallback; this is the
-// active control. Wake: any remote button
+// display), sleep, sleep timer. macOS timeouts (pmset displaysleep 5, sleep 0) remain the
+// idle fallback; this is the active control. Wake: any remote button
 // (SofaRemote: the first press only wakes and brings Sofa to the front).
 #import "SFCore.h"
 
-// Before display off: pause the player + save progress.
+// Before display off/sleep: pause the player + save progress.
 extern NSString *const SFPowerWillTurnOffNotification;
 
 @class SFNavigator;
@@ -15,7 +14,8 @@ extern NSString *const SFPowerWillTurnOffNotification;
 // decision - today the display goes off; smarter sleep/wake behaviour comes here later (user 2026-11-08)
 + (void)switchOff;
 + (void)displayOff;
++ (void)systemSleep;
 + (void)setSleepTimerMinutes:(NSInteger)minutes;   // 0 = off
-+ (void)showPowerMenuOn:(SFNavigator *)nav;       // "Energie" in the quick menu: sleep timer
++ (void)showPowerMenuOn:(SFNavigator *)nav;       // "Energie" in the quick menu: sleep timer, Ruhezustand
 + (void)setNavigator:(SFNavigator *)nav;          // for notices (sleep timer)
 @end
