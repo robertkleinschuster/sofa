@@ -188,6 +188,14 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
 - 2026-11-06: **Firefox becomes the YouTube client** (user; supersedes "no dependency on Firefox" of
   2026-11-04 - that was about the sign-in/cookie import, the account stays out): all YouTube traffic
   through a bundled headless Firefox for one real-browser identity. Goals: section "YouTube client goals".
+- 2026-11-17: **Less disk load on the SMR disk** (user approved review items 1-3; Build 23). The engine's
+  HTTP cache is RAM only (`browser.cache.disk.enable=false`, memory 64 MB, SFYTBrowser.m): on disk it
+  held ~1 GB, 986 MB of it SABR answers (POSTs, never served again; the media store keeps the bytes),
+  ~12.5 MB/min written while playing and its index rebuilt after every hard restart. Sofa.log rotates
+  at 4 MB while running too (SFCore.m). The picture disk cache is capped at 150 MB, least recently
+  read first (SFLayers.m). The `ytEngineDebug` diagnosis switch was switched off (94 % of the log).
+  Not done on purpose: `synchronous=OFF` (crash safety), fetch `cache: 'no-store'` (adds request
+  headers), turning off Alt-Svc/HTTP/3. Review: ~/Library/Logs/sofa-efficiency-review-2026-11-17.
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**

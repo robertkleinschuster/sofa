@@ -8,6 +8,7 @@
 #import "SFUserAgent.h"
 #import "SFWebP.h"
 #import "SFHostFetch.h"
+#include <sys/stat.h>
 
 #pragma mark - Image cache
 
@@ -47,11 +48,48 @@
         c.URLCache = nil;
         _session = [NSURLSession sessionWithConfiguration:c delegate:SFTrustAllSessionDelegate() delegateQueue:nil];
         _pending = [NSMutableDictionary new];
+        [self trimDiskAfter:60];
     }
     return self;
 }
 
 - (void)trim { [_mem removeAllObjects]; }
+
+// The pictures on disk had no limit (332 MB, 5149 files after two weeks, 2026-11-17): at most
+// 150 MB, the least recently read go first (atime - HFS+ sets it on every read; a picture decoded
+// in _mem does not read its file again). Shortly after launch, then daily, at background priority
+// (throttled disk access).
+static const long long kDiskCacheMaxBytes = 150LL * 1024 * 1024;
+
+- (void)trimDiskAfter:(NSTimeInterval)delay {
+    __weak SFImageCache *ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        SFImageCache *me = ws;
+        [me trimDiskNow];
+        [me trimDiskAfter:86400];
+    });
+}
+
+- (void)trimDiskNow {
+    NSMutableArray *files = [NSMutableArray new];   // @[atime, size, path]
+    long long total = 0;
+    for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:_diskDir error:nil]) {
+        NSString *p = [_diskDir stringByAppendingPathComponent:name];
+        struct stat st;
+        if (lstat(p.fileSystemRepresentation, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+        total += st.st_size;
+        [files addObject:@[@(st.st_atimespec.tv_sec), @(st.st_size), p]];
+    }
+    if (total <= kDiskCacheMaxBytes) return;
+    [files sortUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) { return [a[0] compare:b[0]]; }];
+    long long before = total;
+    NSUInteger removed = 0;
+    for (NSArray *f in files) {
+        if (total <= kDiskCacheMaxBytes) break;
+        if (unlink([f[2] fileSystemRepresentation]) == 0) { total -= [f[1] longLongValue]; removed++; }
+    }
+    SFLog(@"images: disk cache %.0f -> %.0f MB (%lu least recently read removed)", before / 1048576.0, total / 1048576.0, (unsigned long)removed);
+}
 
 static NSString *hashString(NSString *s) {
     unsigned char d[CC_SHA1_DIGEST_LENGTH];

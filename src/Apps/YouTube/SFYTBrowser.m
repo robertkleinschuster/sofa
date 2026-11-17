@@ -40,6 +40,12 @@ static NSDictionary *EnginePrefs(void) {
         @"network.dns.disableIPv6": @YES,
         // the engine never plays anything itself; a page that does stays silent
         @"media.volume_scale": @"0.0",
+        // HTTP cache in RAM only (64 MB): on disk it held ~1 GB, 986 MB of it SABR answers (POSTs,
+        // never served again; Sofa's media store keeps the bytes) - ~12.5 MB/min written during
+        // playback, and its index rebuilt after every hard restart (2533 reads/min). The requests
+        // stay the same (a fetch with cache: 'no-store' would add Pragma/Cache-Control). 2026-11-17
+        @"browser.cache.disk.enable": @NO, @"browser.cache.disk.smart_size.enabled": @NO,
+        @"browser.cache.memory.capacity": @65536,
     };
 }
 

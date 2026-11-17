@@ -12,33 +12,44 @@ static NSArray *KeyNames(void) {   // in SFKey order
 NSString *SFKeyName(SFKey key) { NSArray *n = KeyNames(); return key >= 0 && (NSUInteger)key < n.count ? n[key] : nil; }
 SFKey SFKeyFromName(NSString *name) { NSUInteger i = [KeyNames() indexOfObject:name.lowercaseString]; return i == NSNotFound ? -1 : (SFKey)i; }
 
+// The log is rotated past 4 MB (one previous file, .1) - while running too: Sofa runs for days,
+// and rotating only at launch let it grow past that (6.5 MB in ~28 h, 2026-11-17)
+static const unsigned long long kLogRotateBytes = 4 * 1024 * 1024;
+static NSFileHandle *SFLogOpen(NSString *p, unsigned long long *size) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([[fm attributesOfItemAtPath:p error:nil] fileSize] > kLogRotateBytes) {
+        NSString *old = [p stringByAppendingString:@".1"];
+        [fm removeItemAtPath:old error:nil];
+        [fm moveItemAtPath:p toPath:old error:nil];
+    }
+    if (![fm fileExistsAtPath:p]) [fm createFileAtPath:p contents:nil attributes:nil];
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:p];
+    *size = [fh seekToEndOfFile];
+    return fh;
+}
+
 void SFLog(NSString *fmt, ...) {
     va_list ap; va_start(ap, fmt);
     NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];
     va_end(ap);
     static NSFileHandle *fh; static dispatch_queue_t q;
+    static NSString *path; static unsigned long long size;   // both on q after the first call
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         q = dispatch_queue_create("sofa.log", DISPATCH_QUEUE_SERIAL);
         gLogQueue = q;
-        NSString *p = SFLogPath();
-        NSDictionary *a = [[NSFileManager defaultManager] attributesOfItemAtPath:p error:nil];
-        if ([a fileSize] > 4 * 1024 * 1024) {
-            NSString *old = [p stringByAppendingString:@".1"];
-            [[NSFileManager defaultManager] removeItemAtPath:old error:nil];
-            [[NSFileManager defaultManager] moveItemAtPath:p toPath:old error:nil];
-        }
-        if (![[NSFileManager defaultManager] fileExistsAtPath:p])
-            [[NSFileManager defaultManager] createFileAtPath:p contents:nil attributes:nil];
-        fh = [NSFileHandle fileHandleForWritingAtPath:p];
-        [fh seekToEndOfFile];
+        path = SFLogPath();
+        fh = SFLogOpen(path, &size);
     });
     NSDate *now = [NSDate date];
     dispatch_async(q, ^{
         static NSDateFormatter *df;
         if (!df) { df = [NSDateFormatter new]; df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS"; }
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", [df stringFromDate:now], s];
-        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        NSData *d = [line dataUsingEncoding:NSUTF8StringEncoding];
+        [fh writeData:d];
+        size += d.length;
+        if (size > kLogRotateBytes) { [fh closeFile]; fh = SFLogOpen(path, &size); }
     });
 #ifdef DEBUG
     fprintf(stderr, "%s\n", s.UTF8String);
