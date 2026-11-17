@@ -10,7 +10,7 @@ It is its own program with its own Makefile. It is not linked into Sofa and Sofa
 not compile it. Sofa may send a context hint and reads the thermal level back over a Unix
 datagram socket. Without Sofa the daemon works the same with its default profile.
 
-Status: **v3, curves are a draft** until the overnight measurements of 2026-11-17 are
+Status: **v3.1, curves are a draft** until the overnight measurements of 2026-11-17 are
 evaluated (`~/Library/Logs/fan-tuning-2026-11-17/` on the iMac).
 
 ## Interface for Sofa (v1, agreed with the Sofa side)
@@ -125,6 +125,8 @@ Control targets: GPU `SGTg` 77, CPU `SCTg` 70, PECI `SCXC` 86, ODD `SOTg` 55.
 | config missing or invalid | mode `disabled`: runs, SMC regulates, `status` names the error |
 | `FS!` set although the controller forces nothing | the guard resets it |
 | system sleep | `kIOMessageSystemWillSleep`: `FS!` = 0 before the sleep is acknowledged, controller pauses. After the wake: SMC until fresh sensor values arrive (monotonic time stood still, so hint and drive reading from before the sleep are dropped). A hang during sleep/wake leaves the fans under SMC control. Tested with `SIMSLEEP`/`SIMWAKE` on the ctl socket (root); the Mac itself is never put to sleep (known disk hang after standby) |
+| `FS!` cannot be cleared (3 tries) | every fan forced to its maximum instead: a stuck forced mode is loud, never quiet |
+| sleep notifications unavailable | the daemon stays in SMC mode (never forces without sleep handling) |
 | guard dies | the controller notices (`getppid`) and stops with `FS!` = 0; launchd starts a new guard |
 | trip and controller restart | trip state lives in the guard's shared page; a new controller inherits it |
 | Sofa crashes, hangs, sends garbage | hint expires (ttl) or is dropped; default profile |
@@ -150,9 +152,10 @@ cool, fans really stop. Floors (Apple minimum) only start at their thresholds.
 moment, so launchd cannot start the binary again. A kernel hang is the same case. Then the last commanded speeds stay. If
 that was 0 rpm and heavy load followed, the GPU would reach 75 °C after about 7 min (measured:
 all fans off, ffmpeg at 260 %); after that the GPU throttles itself and the SMC's own
-shutdown thresholds remain. With a kernel hang there is no more load at all, so the machine
-converges to "idle with fans off". The overnight block A ("all fans off at idle") measures
-where GPU, PSU, drive and LCD settle in that state; the result is in `docs/fan-tuning.md`. A
+shutdown thresholds remain. A kernel hang usually stops the load, but a spinning
+lock can keep one core at 100 %. Two measurements cover it, with the results in
+`docs/fan-tuning.md`: overnight block A, "all fans off at idle, display on", and test 38,
+"all fans off + one core at 100 % + display on", each until equilibrium or a limit. A
 floor per fan (`curve` with a non-zero first point) would remove the case at the cost of idle
 noise. The user chose floor 0.
 

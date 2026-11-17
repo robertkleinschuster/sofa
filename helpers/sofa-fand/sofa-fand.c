@@ -57,7 +57,7 @@ int pthread_setugid_np(uid_t uid, gid_t gid);   // Darwin: per-thread credential
 #define CTL_SOCK    RUN_DIR "/ctl.sock"
 #define CONF_PATH   "/usr/local/etc/sofa-fand.conf"
 #define MAX_FANS    3
-#define MAX_SENS    16
+#define MAX_SENS    24
 #define MAX_PTS     8
 #define MAX_CURVES  8
 #define MAX_FLOORS  8
@@ -158,9 +158,15 @@ static int tg_set(int fan, int rpm) {
   return smc_write(k, b, 2);
 }
 
-// Back to SMC control, verified. Used on every exit path.
+// Back to SMC control, verified. Used on every exit path. If FS! cannot be cleared, the SMC
+// still holds our forced speeds: then force every fan to its maximum instead, so a stuck forced
+// mode is a loud one, never a quiet one.
+static int fan_max_rpm[3] = { 2500, 5500, 2100 };   // overwritten from the config
+static int tg_set(int fan, int rpm);
 static int smc_auto(void) {
-  for (int i = 0; i < 3; i++) if (fs_set(0) == 0 && fs_get() == 0) return 0;
+  for (int i = 0; i < 3; i++) { if (fs_set(0) == 0 && fs_get() == 0) return 0; usleep(50000); }
+  for (int n = 0; n < 3; n++) tg_set(n, fan_max_rpm[n]);
+  fs_set(7);
   return -1;
 }
 
@@ -359,6 +365,7 @@ static int cfg_load(cfg_t *c, const char *path) {
     c->ok = 0; fclose(f); return -1;
   }
   fclose(f);
+  for (int n = 0; n < MAX_FANS; n++) if (c->fan[n].used) fan_max_rpm[n] = c->fan[n].max;
   if (c->hdd_interval < 5 || c->hdd_stale < 3 * c->hdd_interval || c->trip_hold < 30) { snprintf(c->err, sizeof c->err, "hdd_interval/hdd_stale/trip_hold invalid"); c->ok = 0; return -1; }
   for (int n = 0; n < MAX_FANS; n++) if (c->fan[n].used && !c->fan[n].ncurves) { snprintf(c->err, sizeof c->err, "fan %d has no curve", n); c->ok = 0; return -1; }
   if (!c->nsens) { snprintf(c->err, sizeof c->err, "no sensors"); c->ok = 0; return -1; }
@@ -490,7 +497,8 @@ static void *load_thread(void *arg) {
 typedef struct {
   volatile double beat; volatile int forced;          // controller -> guard
   volatile double trip_until; volatile int trip_max;  // survives a controller restart (N2)
-  volatile unsigned glog_head; char glog[GLOG_LINES][160];   // guard -> controller log thread
+  volatile int sleeping;                              // between WillSleep and HasPoweredOn (V3-2)
+  volatile unsigned glog_head, glog_printed; char glog[GLOG_LINES][160];   // guard -> controller log thread
 } shared_t;
 static shared_t *shm;
 static unsigned glog_seen;
@@ -498,7 +506,7 @@ static void drain_guard_log(void) {
   if (!shm) return;
   unsigned h = shm->glog_head;
   if (h - glog_seen > GLOG_LINES) glog_seen = h - GLOG_LINES;
-  for (; glog_seen != h; glog_seen++) { char l[160]; memcpy(l, shm->glog[glog_seen % GLOG_LINES], sizeof l); l[159] = 0; syslog(LOG_ERR, "guard: %s", l); }
+  for (; glog_seen != h; glog_seen++) { char l[160]; memcpy(l, shm->glog[glog_seen % GLOG_LINES], sizeof l); l[159] = 0; syslog(LOG_ERR, "guard: %s", l); shm->glog_printed = glog_seen + 1; }
 }
 
 static void guard_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -530,6 +538,7 @@ static const char *mode_name[] = { "curve", "smc", "trip", "disabled" };
 
 static pthread_mutex_t ctl_mx = PTHREAD_MUTEX_INITIALIZER;   // control step vs. power events
 static volatile int sleeping;                                // between WillSleep and HasPoweredOn
+static volatile int pm_failed;                               // no sleep notifications: never force fans (V3-1)
 static volatile double woke_at = -1;
 
 static struct {
@@ -637,6 +646,7 @@ static void control_step_locked(void) {
   update_level();
 
   if (st.mode == M_DISABLED) { if (fs_get() != 0) smc_auto(); publish(prof, shift); return; }
+  if (pm_failed) { if (st.mode != M_SMC || fs_get() != 0) { smc_auto(); shm->forced = 0; set_mode(M_SMC, "no sleep notifications - SMC regulates"); } publish(prof, shift); return; }
 
   // ---- after a wake: hint and drive reading are from before the sleep (monotonic time stood
   // still), so drop them and wait for fresh values under SMC control
@@ -905,7 +915,14 @@ static void *socket_thread(void *arg) {
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
         char cmd[HINT_MAX + 1]; ssize_t n = 0;
-        while (n < HINT_MAX) { ssize_t k = read(fd, cmd + n, (size_t)(HINT_MAX - n)); if (k <= 0) break; n += k; if (memchr(cmd, '\n', (size_t)n)) break; }
+        double deadline = now_s() + 0.5;                       // whole request within 500 ms (V3-3)
+        while (n < HINT_MAX) {
+          double left = deadline - now_s(); if (left <= 0) { n = 0; break; }
+          struct pollfd pf = { fd, POLLIN, 0 };
+          if (poll(&pf, 1, (int)(left * 1000) + 1) <= 0) { n = 0; break; }
+          ssize_t k = read(fd, cmd + n, (size_t)(HINT_MAX - n)); if (k <= 0) break;
+          n += k; if (memchr(cmd, '\n', (size_t)n)) break;
+        }
         if (n > 0) {
           cmd[n] = 0; char *nl = strchr(cmd, '\n'); if (nl) *nl = 0;
           static char out[8192]; int len = 0;
@@ -938,14 +955,14 @@ static void *socket_thread(void *arg) {
 static io_connect_t pm_root;
 static void power_sleep(void) {
   pthread_mutex_lock(&ctl_mx);
-  sleeping = 1;
+  sleeping = 1; shm->sleeping = 1;
   int failed = smc_auto(); shm->forced = 0;
   pthread_mutex_unlock(&ctl_mx);
   logf_("system sleep: FS!=0%s", failed ? " FAILED" : "");
 }
 static void power_wake(void) {
   pthread_mutex_lock(&ctl_mx);
-  woke_at = now_s(); sleeping = 0;
+  woke_at = now_s(); sleeping = 0; shm->sleeping = 0;
   pthread_mutex_unlock(&ctl_mx);
   logf_("system woke: waiting for fresh sensors");
 }
@@ -963,7 +980,7 @@ static void *power_thread(void *arg) {
   (void)arg;
   IONotificationPortRef port = NULL; io_object_t notifier;
   pm_root = IORegisterForSystemPower(NULL, &port, power_cb, &notifier);
-  if (!pm_root || !port) { logf_("IORegisterForSystemPower failed - sleep is not handled"); return NULL; }
+  if (!pm_root || !port) { pm_failed = 1; logf_("IORegisterForSystemPower failed - sleep cannot be handled, fans stay under SMC control"); return NULL; }
   CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(port), kCFRunLoopCommonModes);
   CFRunLoopRun();
   return NULL;
@@ -1008,6 +1025,19 @@ static void prefault_stack(void) {
   mlock((const void *)buf, sizeof buf);
 }
 
+static int spawn(void *(*fn)(void *)) {
+  // own stack, wired, so a vanished swap/boot disk cannot stall a helper thread on a page-in (V3-4)
+  size_t sz = 512 * 1024;
+  void *stk = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+  pthread_attr_t a; pthread_t th; int r;
+  if (stk == MAP_FAILED) return -1;
+  memset(stk, 0, sz); mlock(stk, sz);
+  pthread_attr_init(&a); pthread_attr_setstack(&a, stk, sz); pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
+  r = pthread_create(&th, &a, fn, NULL);
+  pthread_attr_destroy(&a);
+  return r;
+}
+
 static void controller(void) {
   pid_t guard = getppid();
   static char altstack[64 * 1024];
@@ -1025,18 +1055,19 @@ static void controller(void) {
   if (st.fan_count > MAX_FANS) st.fan_count = MAX_FANS;
   for (int n = 0; n < MAX_FANS; n++) { st.out[n] = 0; char k[5]; snprintf(k, sizeof k, "F%dAc", n); double a; if (n < st.fan_count && smc_fpe2(k, &a) == 0) st.out[n] = a; st.on_since[n] = st.started - 3600; st.off_since[n] = 0; }
   st.mode = M_SMC; snprintf(st.reason, sizeof st.reason, "start");
+  sleeping = shm->sleeping;                                        // restarted between WillSleep and wake (V3-2)
+  glog_seen = shm->glog_printed;                                   // only what no controller printed yet (V3-5)
   if (shm->trip_until > st.started) {                              // a trip outlives a controller restart (N2)
     st.mode = M_TRIP; st.trip_until = shm->trip_until;
     snprintf(st.reason, sizeof st.reason, shm->trip_max ? "limit (inherited), all fans max" : "fault (inherited)");
   }
   if (!cfg.ok) { st.mode = M_DISABLED; snprintf(st.reason, sizeof st.reason, "config: %.80s", cfg.err); }
-  pthread_t th;
   log_threaded = 1;
-  if (pthread_create(&th, NULL, log_thread, NULL)) { log_threaded = 0; }
-  if (pthread_create(&th, NULL, smart_thread, NULL)) { syslog(LOG_ERR, "no SMART thread"); }
-  if (pthread_create(&th, NULL, socket_thread, NULL)) { syslog(LOG_ERR, "no socket thread"); }
-  if (pthread_create(&th, NULL, load_thread, NULL)) { syslog(LOG_ERR, "no load thread"); }
-  if (pthread_create(&th, NULL, power_thread, NULL)) { syslog(LOG_ERR, "no power thread"); }
+  if (spawn(log_thread)) { log_threaded = 0; }
+  if (spawn(smart_thread)) { syslog(LOG_ERR, "no SMART thread"); }
+  if (spawn(socket_thread)) { syslog(LOG_ERR, "no socket thread"); }
+  if (spawn(load_thread)) { syslog(LOG_ERR, "no load thread"); }
+  if (spawn(power_thread)) { syslog(LOG_ERR, "no power thread"); }
   lock_memory();
   prefault_stack();
   logf_("controller up (pid %d, %d fans, %lu KB wired)%s%s", getpid(), st.fan_count, st.locked_kb, cfg.ok ? "" : ", DISABLED: ", cfg.ok ? "" : cfg.err);
@@ -1092,6 +1123,7 @@ static int run_daemon(const char *conf) {
   mlock(shm, 4096);
   signal(SIGTERM, guard_term); signal(SIGINT, guard_term); signal(SIGHUP, SIG_IGN); signal(SIGPIPE, SIG_IGN);
   lock_memory();
+  prefault_stack();
   syslog(LOG_NOTICE, "guard up (pid %d)%s", getpid(), dry ? " DRY RUN" : "");
   int restarts = 0; double window = now_s();
   while (!guard_stop) {
