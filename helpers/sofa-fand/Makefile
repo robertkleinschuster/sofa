@@ -1,25 +1,36 @@
-# sofa-fand - quiet fan control for Sofa's rest mode (own build, independent of Sofa's Makefile).
-#   make                 build
+# sofa-fand - always-on fan control (own build, independent of Sofa's Makefile).
+#   make                 build (warnings are errors) + config check
+#   make analyze         clang static analyzer
 #   sudo make install    binary + config + LaunchDaemon, (re)load it
 #   sudo make uninstall  unload, fans back to the SMC, remove files
+#   make tools           measurement tools in tools/ (smcfan, smcenum, smarttemp, fanlab)
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
-CFLAGS  := -mmacosx-version-min=10.9 -O2 -g -Wall -Wextra
+CFLAGS  := -mmacosx-version-min=10.9 -O2 -g -Wall -Wextra -Werror
 LDFLAGS := -mmacosx-version-min=10.9 -framework IOKit -framework CoreFoundation
 BIN     := sofa-fand
 LABEL   := de.sofa.fand
 SBIN    := /usr/local/sbin
 ETC     := /usr/local/etc
 PLIST   := /Library/LaunchDaemons/$(LABEL).plist
+TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab
 
-all: $(BIN)
+all: $(BIN) check
 
 $(BIN): sofa-fand.c Makefile
 	$(CC) $(CFLAGS) -o $@ sofa-fand.c $(LDFLAGS)
 
 check: $(BIN)
-	./$(BIN) check -c sofa-fand.conf
+	./$(BIN) check -c sofa-fand.conf >/dev/null
+
+analyze:
+	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fand.c
+
+tools: $(TOOLS)
+
+tools/%: tools/%.c Makefile
+	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $< $(LDFLAGS)
 
 install: $(BIN) check
 	-launchctl unload $(PLIST) 2>/dev/null
@@ -28,6 +39,7 @@ install: $(BIN) check
 	install -m 644 -o root -g wheel sofa-fand.conf $(ETC)/sofa-fand.conf
 	install -m 644 -o root -g wheel $(LABEL).plist $(PLIST)
 	launchctl load -w $(PLIST)
+	@echo "installed $$(shasum $(SBIN)/$(BIN) | cut -c1-12) from $$(git rev-parse --short HEAD 2>/dev/null)$$(git diff --quiet HEAD -- . 2>/dev/null || echo ' (+uncommitted changes)')"
 
 uninstall:
 	-launchctl unload $(PLIST)
@@ -35,6 +47,7 @@ uninstall:
 	rm -f $(PLIST) $(SBIN)/$(BIN) $(ETC)/sofa-fand.conf
 
 clean:
-	rm -rf $(BIN) $(BIN).dSYM
+	rm -f $(BIN) $(TOOLS)
+	rm -rf $(BIN).dSYM
 
-.PHONY: all check install uninstall clean
+.PHONY: all check analyze tools install uninstall clean
