@@ -97,3 +97,14 @@ Build 27:
 
 System-wide suggestions (not done): systemstatsd off, the netwatchdog script rarer or in RAM, fewer
 ssh logins, buffered tuning logs.
+
+## 6. Night measurement (Build 27, 2026-11-17/18)
+
+`fs_usage` from 23:01 to 09:35 (output over ssh, no disk I/O on the iMac). First 10 min at rest:
+1008 HDD writes, 762 of them Spotlight re-indexing after the reboot; Sofa and engine 5 (≈0.5/min,
+Build 26: ≈8/min). At rest 00:00-07:00 the HDD took ≈1390 writes/h - launchd (system logs, Tailscale
+log, journal) ≈824, Spotlight ≈225, kernel ≈147, identityservice ≈103 - and Sofa/engine ≈97/h (≈7 %):
+sofa.db WAL 14/h (follow batches), Sofa.log 9/h, the RAM->disk sync every 2.5 h, picture cache ≈4/h.
+The RAM disk itself took ≈570 writes/h. The Cache API store failed every sync (locked) - left in RAM
+from Build 28.
+

@@ -53,4 +53,5 @@ SFShowRefLookup SFShowRefLookupFor(NSString *source);   // the app's showRefForI
 // follows are loaded; done runs on the main thread
 - (void)latest:(NSInteger)n source:(NSString *)source done:(void (^)(NSArray *items))done;
 - (NSArray *)itemsOf:(NSString *)identifier;           // a follow's newest episodes (newest first) as last checked
+- (void)flushPending;   // quit: check times a rest batch still holds go to the database
 @end

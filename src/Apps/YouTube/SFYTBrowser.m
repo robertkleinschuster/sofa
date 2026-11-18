@@ -346,7 +346,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     _appliedBg = bg; _appliedN = n;
 }
 
-// RAM profile -> disk: every 30 min while Sofa is awake, every 2 h at most while it rests (only
+// RAM profile -> disk: every 30 min while Sofa is awake, every 4 h at most while it rests (only
 // changed files; a resting engine changes little), and when the browser ends
 - (void)scheduleSync {
     if (!_onRam || _syncTimer) return;
@@ -362,7 +362,7 @@ static NSData *ExtensionConfig(uint16_t port, NSString *token) {
     BOOL tight = free >= 0 && free < 64LL * 1048576;
     if (tight) SFLog(@"yt-ram: RAM disk nearly full - %.0f MB free (%@)", free / 1048576.0, [_ram consumers]);
     if (tight && free < 16LL * 1048576 && !_ramFull) { _ramFull = YES; SFLog(@"yt-ram: the next browser start runs on the disk profile"); }
-    if (!tight && [SFRest resting] && now - _lastSync < 7200) return;
+    if (!tight && [SFRest resting] && now - _lastSync < 4 * 3600) return;   // at rest every 4 h at most (each sync is a burst of writes)
     _lastSync = now;
     dispatch_async(_procQ, ^{ [self syncNow]; });
 }

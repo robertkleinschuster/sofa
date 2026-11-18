@@ -35,6 +35,9 @@ int main(void) {
         put(@"disk/cache2/entries/AAA", @"media");
         put(@"disk/startupCache/x", @"cache");
         put(@"disk/old.txt", @"to be removed");
+        put(@"disk/storage/default/site/cache/caches.sqlite", @"old cache db");
+        put(@"disk/storage/default/site/cache/caches.sqlite-wal", @"its wal");
+        put(@"disk/storage/default/site/cache/morgue/1/body.final", @"a body");
         sqlite3 *w;   // "Firefox": a database in WAL mode, open the whole time
         sqlite3_open(P(@"disk/cookies.sqlite").fileSystemRepresentation, &w);
         sqlite3_exec(w, "PRAGMA journal_mode=WAL; CREATE TABLE c(v); INSERT INTO c VALUES(1);", NULL, NULL, NULL);
@@ -46,6 +49,10 @@ int main(void) {
         expect([ram isEqualToString:P(@"ram/profile")] && [[r existing] isEqualToString:ram], @"attached");
         expect([get(@"ram/profile/prefs.js") isEqual:@"user_pref(1);"] && exists(@"ram/profile/storage/default/site/ls/data.json"), @"filled");
         expect(!exists(@"ram/profile/cache2") && !exists(@"ram/profile/startupCache"), @"caches stay out of RAM");
+        expect(!exists(@"ram/profile/storage/default/site/cache"), @"the Cache API store is not filled into RAM");
+        expect([r syncToDisk] == 1 && !exists(@"disk/storage/default/site/cache") && exists(@"disk/storage/default/site/ls/data.json"),
+               @"the stale Cache API store removed from the disk profile once (with its WAL), the rest kept");
+        [r syncToDisk];   // files from the same second as that sync: compared by content once (HFS+ seconds)
         expect([r syncToDisk] == 0, @"nothing changed: nothing written");
         sleep(2);   // HFS+ keeps whole seconds: the changes below fall after the sync's second
 
@@ -145,6 +152,13 @@ int main(void) {
         // a RAM profile without prefs.js (damaged, half filled): never mirrored
         [[NSFileManager defaultManager] removeItemAtPath:P(@"ram/profile/prefs.js") error:nil];
         expect([r syncToDisk] == 0 && exists(@"disk/prefs.js"), @"no prefs.js in RAM: the disk profile stays as it is");
+        expect(SFYTRamProfileSkips(@"storage/default/https+++www.youtube.com/cache/caches.sqlite")
+               && SFYTRamProfileSkips(@"storage/default/https+++www.youtube.com/cache/morgue/12/x.final")
+               && SFYTRamProfileSkips(@"storage/default/https+++www.youtube.com/cache")
+               && !SFYTRamProfileSkips(@"storage/default/https+++www.youtube.com/idb/a.sqlite")
+               && !SFYTRamProfileSkips(@"storage/default/https+++www.youtube.com/ls/data.sqlite"), @"a site's Cache API store stays out, its other storage not");
+        expect(SFYTRamProfileSkips(@"storage/permanent/chrome/cache/caches.sqlite") && SFYTRamProfileSkips(@"storage/temporary/x/cache/y")
+               && !SFYTRamProfileSkips(@"storage/permanent/chrome/idb/a.sqlite"), @"the same in the other storage classes");
         expect(SFYTRamProfileSkips(@"cache2/x") && SFYTRamProfileSkips(@".parentlock") && SFYTRamProfileSkips(@"a/b.tmp")
                && !SFYTRamProfileSkips(@"storage/default") && !SFYTRamProfileSkips(@"cookies.sqlite"), @"what stays out");
         [[NSFileManager defaultManager] removeItemAtPath:root error:nil];

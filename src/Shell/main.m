@@ -80,7 +80,8 @@ NSString *gInstance = @"view";
     [SFRest start];     // before the apps start: they see whether Sofa rests (autostart with the screen off)
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(restChanged:) name:SFRestDidChangeNotification object:nil];
     SFHitchMonitorSetPaused([SFRest resting]);
-    SFLogSetDelay([SFRest resting] ? 600 : 30);
+    SFLogSetDelay([SFRest resting] ? 3600 : 30);
+    SFImageDiskWritesPaused = [SFRest resting];   // launched with the screen off: no change will say so
     // No App Nap (10.9+): Sofa works while not visible - downloads, follow refreshes, the phone
     // remote, the update handover. Napping coalesced its timers so far that a 0.5 s sleep took
     // > 15 s (the helper had to force-quit on every update, 2026-11-05). Idle system sleep stays allowed.
@@ -197,7 +198,8 @@ static NSTimer *gCursorWatch;
     BOOL rest = [SFRest resting];
     SFHitchMonitorSetPaused(rest);
     SFReducedMotion = [SFRest backgroundDeferred];
-    SFLogSetDelay(rest ? 600 : 30);   // log lines wait in memory: at rest 10 min (failures go out at once)
+    SFImageDiskWritesPaused = rest;   // pictures loaded at rest stay in memory (no disk write while the screen is off)
+    SFLogSetDelay(rest ? 3600 : 30);   // log lines wait in memory: at rest an hour (failures go out at once; waking writes them)
     if (rest) { [gCursorWatch invalidate]; gCursorWatch = nil; }
     else if (!SFDevMode && [NSApp isActive]) [self hideCursor:YES];
 }
@@ -222,6 +224,7 @@ static NSTimer *gCursorWatch;
     [[SFDownloads shared] stopForExit];
     [SFAppRegistry stopRemotes];   // phone: "disconnected" (best effort, max 1.5 s). Not on update – we're back within 1 s then.
     [SFAppRegistry stopAll];       // processes the apps started (YouTube's browser)
+    [[SFFollows shared] flushPending];   // check times a rest batch still holds
     for (SFScreen *s in self.nav.stack.reverseObjectEnumerator) [s willDisappear];
     [[SFStore shared] flush];
     [self stopFifo];

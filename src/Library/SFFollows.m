@@ -33,6 +33,7 @@ static const NSInteger kPerShow = 12;              // keep this many newest epis
     NSDate *_lastCheck;              // of any follow: the gap before the next one
     NSDate *_batchAt;                // resting/warm: when the next batch of due follows starts
     BOOL _inBatch;                   // a batch runs: every follow due now, one after another
+    NSMutableDictionary *_checkedPending;   // batched: id -> checked time, written together when the batch ends
     // readiness: the follows and their items read (1581 items parsed on a cold disk took ~100 ms of
     // the launching main thread, 2026-11-08) - on a queue at init; every public method waits for it
     // once (at once afterwards), start plans after it; all other access stays on the main thread
@@ -386,8 +387,18 @@ static BOOL hasCounts(NSArray *dicts) {
     when = SFRefreshBatchStep(when, due, [NSDate date], [self batched], &inBatch, &batchAt, arc4random_uniform(1000) / 1000.0,
                               [SFRest resting] && [SFRest nightStopEnabled], nil);
     _inBatch = inBatch; _batchAt = batchAt;
+    if (!_inBatch) [self writeCheckedPending];   // the batch is over (or none runs): its times written
     NSString *fid = next.identifier;
     _timer = [NSTimer scheduledTimerWithTimeInterval:MAX(1, when.timeIntervalSinceNow) target:self selector:@selector(checkDue:) userInfo:fid repeats:NO];
+}
+
+- (void)flushPending { [self writeCheckedPending]; }
+- (void)writeCheckedPending {
+    if (!_checkedPending.count) return;
+    NSMutableArray *w = [NSMutableArray new];
+    for (NSString *fid in _checkedPending) [w addObject:@[@"UPDATE follows SET checked=? WHERE id=?", @[_checkedPending[fid], fid]]];
+    [_checkedPending removeAllObjects];
+    [[SFStore shared] runAll:w];
 }
 
 - (BOOL)batched { return [SFRest resting] || [SFRest backgroundDeferred]; }
@@ -417,7 +428,12 @@ static BOOL hasCounts(NSArray *dicts) {
     _lastCheck = [NSDate date];
     f.checked = _lastCheck.timeIntervalSince1970;
     [_jitter removeObjectForKey:f.identifier];   // a new variation for the next one
-    [[SFStore shared] run:@"UPDATE follows SET checked=? WHERE id=?" args:@[@(f.checked), f.identifier]];
+    // batched (resting/warm): the times go to the database together at the batch's end - one write
+    // instead of one per follow (losing them in a crash only brings a check forward)
+    if ([self batched]) {
+        if (!_checkedPending) _checkedPending = [NSMutableDictionary new];
+        _checkedPending[f.identifier] = @(f.checked);
+    } else [[SFStore shared] run:@"UPDATE follows SET checked=? WHERE id=?" args:@[@(f.checked), f.identifier]];
     __weak SFFollows *ws = self;
     [self refreshOne:f done:^{
         SFFollows *me = ws;

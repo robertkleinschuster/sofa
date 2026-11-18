@@ -19,8 +19,14 @@ BOOL SFYTRamProfileSkips(NSString *rel) {
     dispatch_once(&once, ^{ top = [NSSet setWithArray:@[@"cache2", @"startupCache", @"safebrowsing", @"shader-cache", @"crashes",
         @"minidumps", @"datareporting", @"saved-telemetry-pings", @"sessionstore-backups", @"sessionstore.jsonlz4", @"thumbnails",
         @"OfflineCache", @".parentlock", @"lock", @"Crash Reports"]]; });
-    NSString *first = rel.pathComponents.firstObject;
+    NSArray *parts = rel.pathComponents;
+    NSString *first = parts.firstObject;
     if (!first || [top containsObject:first]) return YES;
+    // a site's Cache API store (storage/<default|permanent|temporary>/<origin>/cache: caches.sqlite, its WAL, the bodies in
+    // morgue/): a cache, and its database stays locked exclusively even with shared locking (every
+    // sync failed on it, 2026-11-18) - it lives in RAM only; Firefox recreates it empty after a reboot
+    if (parts.count >= 4 && [first isEqualToString:@"storage"] && [@[@"default", @"permanent", @"temporary"] containsObject:parts[1]]
+        && [parts[3] isEqualToString:@"cache"]) return YES;   // (the same in the other storage classes)
     NSString *name = rel.lastPathComponent;
     return [name hasSuffix:@".tmp"] || [name hasPrefix:@".sofa-sync-"];
 }
@@ -108,6 +114,7 @@ static void Durable(NSArray *paths, NSString *anyDir) {
     NSString *_mount;
     NSUInteger _mb;
     NSInteger _testStopAfter;
+    BOOL _cachesRemoved;   // removeSkippedCaches has run
     double _lastSyncAt;   // when the last sync began: a file changed since may share its second with the copy
     NSMutableDictionary *_digests;   // rel -> digest of what the last sync copied (files of that second)
 }
@@ -355,6 +362,7 @@ NSArray *SFYTRamOrphans(NSString *before, NSString *after, NSUInteger sectors) {
         if (![gone hasSuffix:@"/"]) for (NSString *c in @[@"-wal", @"-shm", @"-journal"]) unlink([d stringByAppendingString:c].fileSystemRepresentation);
         if ([fm removeItemAtPath:d error:nil]) removed++;
     }
+    removed += [self removeSkippedCaches];
     if (removed) Durable(@[], _diskProfile);   // the removals committed
     [self writeManifest:now];
     _lastSyncAt = began;
@@ -362,6 +370,26 @@ NSArray *SFYTRamOrphans(NSString *before, NSString *after, NSUInteger sectors) {
         SFLog(@"yt-ram: synced to disk - %lu written, %lu removed%@ (%.1f s)", (unsigned long)written, (unsigned long)removed,
               failed ? [NSString stringWithFormat:@", %lu failed", (unsigned long)failed] : @"", -[t0 timeIntervalSinceNow]);
     return written + removed;
+}
+
+// Cache API stores the disk profile still has from before they were skipped (Build 27 copied their
+// bodies but never their locked database: a mismatched pair) - removed, so a disk-profile browser
+// (a rollback) starts them empty rather than inconsistent. Fills skip them anyway.
+- (NSUInteger)removeSkippedCaches {
+    if (_cachesRemoved) return 0;   // once per process: nothing puts them back on the disk
+    _cachesRemoved = YES;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSUInteger n = 0;
+    for (NSString *cls in @[@"default", @"permanent", @"temporary"]) {
+        NSString *origins = [[_diskProfile stringByAppendingPathComponent:@"storage"] stringByAppendingPathComponent:cls];
+        for (NSString *origin in [fm contentsOfDirectoryAtPath:origins error:nil]) {
+            NSString *cache = [[origins stringByAppendingPathComponent:origin] stringByAppendingPathComponent:@"cache"];
+            BOOL dir = NO;
+            if (![fm fileExistsAtPath:cache isDirectory:&dir] || !dir) continue;
+            if ([fm removeItemAtPath:cache error:nil]) { n++; SFLog(@"yt-ram: removed the stale Cache API store of %@ from the disk profile", origin); }
+        }
+    }
+    return n;
 }
 
 - (NSUInteger)syncForBrowserOn:(NSString *)profile {

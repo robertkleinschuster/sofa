@@ -13,6 +13,7 @@
 #pragma mark - Image cache
 
 static const long long kDiskCacheMaxBytes = 150LL * 1024 * 1024;
+BOOL SFImageDiskWritesPaused = NO;
 
 @implementation SFImageCache {
     NSCache *_mem;
@@ -175,7 +176,7 @@ static NSTimeInterval SFImageFetchLimit(void) {
             NSData *data = raw;
             if (looksLikeSVG(data)) {   // rasterize once, the PNG replaces the cache entry
                 data = rasterizeSVG(data);
-                if (data && [data writeToFile:disk atomically:YES]) [self->_lru noteUse:disk.lastPathComponent];
+                if (data && !SFImageDiskWritesPaused && [data writeToFile:disk atomically:YES]) [self->_lru noteUse:disk.lastPathComponent];
             }
             if (SFIsWebP(data)) { CGImageRef w = SFDecodeWebP(data, px); finish(w); if (w) CGImageRelease(w); return; }
             CGImageSourceRef s = data ? CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL) : NULL;
@@ -188,7 +189,7 @@ static NSTimeInterval SFImageFetchLimit(void) {
     NSURL *url = [NSURL URLWithString:src];
     SFHostFetcher own = url ? SFHostFetcherFor(url) : nil;
     void (^stored)(NSData *, NSInteger) = ^(NSData *data, NSInteger st) {
-        if (data.length && st < 400) { if ([data writeToFile:disk atomically:YES]) [self->_lru noteUse:disk.lastPathComponent]; decodeData(data); return; }
+        if (data.length && st < 400) { if (!SFImageDiskWritesPaused && [data writeToFile:disk atomically:YES]) [self->_lru noteUse:disk.lastPathComponent]; decodeData(data); return; }
         if (st == 404 || st == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
         finish(NULL);
     };

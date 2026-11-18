@@ -58,3 +58,7 @@ void SFLabelPrepare(void);
 @end
 
 CALayer *SFGradientBackground(NSColor *top, NSColor *bottom, CGRect frame);
+// Set by the shell while Sofa rests: new pictures are kept in memory only, not written to the disk cache
+// (the disk stays quiet with the screen off; one that drops out of memory and is loaded again awake is
+// stored then).
+extern BOOL SFImageDiskWritesPaused;

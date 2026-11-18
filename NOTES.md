@@ -106,7 +106,10 @@ Layered since 2026-11-05 – contract and rules in **docs/architecture.md**, how
   (+ Jay Foreman manually: the channel is now called "Map Men", UCbbQalJ4OaC0oQ0AqRaOJ9g).
   Old library without subscription binding (never deleted automatically), new subscription episodes 90 days.
   Rest (NFO + info.json, 10 GB) in the trash. ytdl-sub daemon `com.ytdlsub.run`
-  disabled via `launchctl unload -w`; `com.bgutil.potserver` stays (yt-dlp resolver).
+  disabled via `launchctl unload -w`. The bgutil PO-token server (yt-dlp's resolver) is gone too: yt-dlp
+  left on 2026-11-06, PO tokens come from the Firefox engine; the server was stopped on 2026-11-18
+  (`launchctl unload -w org.macports.bgutil-pot-server`). Its MacPorts port stays installed for now - the
+  installed port `sofa @0.1.1` still depends on it (the current Portfile, 0.3.11, does not).
 - Apple IR: AppleIRController, consumer page usages: 0x40 Menu, 0x41 Select,
   0x42 Up, 0x43 Down, 0x44 Left, 0x45 Right, 0xCD Play/Pause, 0xB5/0xB6 Next/Prev,
   0xE9/0xEA Vol; GenericDesktop 0x89..0x8D System-Menu*. The exclusive open fails
@@ -232,6 +235,16 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   once). The picture cache counts uses itself (SFImageDiskLRU) - noatime leaves st_atime at the
   creation time. Review leftovers: the fan socket is bound again when its path vanishes, a night
   re-stop happens at most once a night (SFYTNight), PIDs written under the lock.
+- 2026-11-18: **The site Cache API store stays in RAM** (user; Build 28): `storage/default/<origin>/cache`
+  (caches.sqlite + WAL + morgue bodies) is skipped by fill and sync - its database stays locked
+  exclusively despite shared locking, so every sync failed on it (night measurement 2026-11-17/18).
+  The stale disk copy (bodies copied by Build 27, database never) is removed once, so a browser on the
+  disk profile (rollback) starts it empty instead of mismatched. Firefox recreates it after a reboot.
+  And the rest of the rest-mode writes, from the night measurement (Sofa/engine ≈97 HDD writes/h of
+  ≈1390): the log waits up to an hour at rest (failures and waking write at once), pictures loaded at
+  rest stay in memory, the follow batch writes its check times in one transaction at its end, and
+  the RAM profile is synced at most every 4 h at rest (2 h before). Left: the sync bursts themselves,
+  sofa.db/cache.db in the follow batches, cfprefsd touching a firefox domain (~7/h).
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
