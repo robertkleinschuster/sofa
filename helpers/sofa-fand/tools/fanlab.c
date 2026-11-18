@@ -5,7 +5,7 @@
 //   fanlab burn THREADS PCT DUR          synthetic CPU load (duty cycle PCT %), nice it yourself
 //   fanlab watchdog HBFILE STALE DONEFILE  reset FS!=0 whenever HBFILE is older than STALE s
 // Env: CSV=file (append samples), LIVE=file (human log), TEST="Test x/N" (prefix), HB=file
-//      (touched every sample), LOADLBL=text, LIM_GPU/LIM_CPU/LIM_CORE/LIM_PECI/LIM_HDD/LIM_ODD/LIM_PSU/LIM_LCD (deg C).
+//      (touched every sample), STOP_TP2H/STOP_GPU (end a step early once both are below), LOADLBL=text, LIM_GPU/LIM_CPU/LIM_CORE/LIM_PECI/LIM_HDD/LIM_ODD/LIM_PSU/LIM_LCD (deg C).
 // Every exit path (end, limit, error, signal) writes FS! = 0 and verifies it.
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOCFPlugIn.h>
@@ -213,6 +213,7 @@ int main(int argc, char **argv) {
          L_HDD = envd("LIM_HDD", 50), L_ODD = envd("LIM_ODD", 55), L_PSU = envd("LIM_PSU", 85),
          L_PECI = envd("LIM_PECI", 90), L_LCD = envd("LIM_LCD", 58);
   int mineq = (int)envd("MINEQ", 0);
+  double stop_ps = envd("STOP_TP2H", 0), stop_gd = envd("STOP_GPU", 0);
   csv_head();
   pthread_t th; pthread_create(&th, 0, smart_thr, 0);
   for (int i = 0; i < 30 && hdd_t < 0; i++) usleep(100000);
@@ -249,6 +250,8 @@ int main(int argc, char **argv) {
     else if (s.t[ti("TL0P")] >= L_LCD) { snprintf(wb, sizeof wb, "LCD %.1f °C", s.t[ti("TL0P")]); why = wb; }
     if (step && s.fs != mask) why = "FS! von aussen veraendert";
     if (why && step) { reset(); livef("ABBRUCH: %s nach %ld s, zurück auf Automatik (FS!=0x%x)", why, (long)(time(0) - t0), fsval()); rc = 3; break; }
+    // cool-down target: stop as soon as Tp2H and GPU are below STOP_TP2H / STOP_GPU
+    if (stop_ps > 0 && ps < stop_ps && gd < stop_gd) { livef("Abkühlziel erreicht (Netzteil %.1f, GPU %.1f) nach %ld s", ps, gd, (long)(time(0) - t0)); break; }
     if (hn < H) { for (int j = 0; j < 5; j++) hist[hn][j] = !strcmp(hk[j], "HDD") ? s.hdd : s.t[ti(hk[j])]; hn++; }
     // equilibrium: after MINEQ s, every main temp changed < 0.3 C over the last 5 min (HDD: < 1)
     if (mineq && time(0) - t0 >= mineq && hn > 37) {

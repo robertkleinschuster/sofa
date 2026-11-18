@@ -37,6 +37,8 @@ trap 'log "ABBRUCH (Signal)"; finish; exit 1' INT TERM HUP
 rm -f $D/.done; touch $HB
 $L watchdog $HB 240 $D/.done >/dev/null 2>&1 &
 step() { touch $HB; TEST="$1" LOADLBL="$2" MINEQ=0 $L step "$3" "$4" "$5" "$6"; local rc=$?; $SMC force 0 >/dev/null; return $rc; }
+cool() { stop_burn; touch $HB; STOP_TP2H=55 STOP_GPU=45 TEST="$1" LOADLBL="ohne Last, alle Lüfter max" MINEQ=0 $L step 240 2500 5500 2100; $SMC force 0 >/dev/null; }
+hot() { local b; b=$($SMC read Tp2H | awk '{print $5}'); [ -z "$b" ] && return 0; [ $((16#$b)) -gt 70 ]; }   # Tp2H > 70 C (sp78 high byte)
 rec() { touch $HB; TEST="$1" LOADLBL="$2" MINEQ=0 $L rec "$3"; }
 
 log "=== Kurzserie Teil 2 (Commit $COMMIT): HDD-Max neu, SMART, sofa-fand ==="
@@ -44,20 +46,25 @@ log "=== Kurzserie Teil 2 (Commit $COMMIT): HDD-Max neu, SMART, sofa-fand ==="
 # limit under 2-core load at Apple minimum. Same load, but the baseline holds the CPU fan at
 # 1500 (it cools Tp2H), so the HDD step starts from a steady, cooler state. Part 1 was stopped
 # before its CPU-max step, so that step follows here (1500 -> 2100).
-display_on; burn 2
-log "Schritt 3b: HDD-Max neu: Abkühlen unter SMC 4 min, Basis (CPU 1500) 6 min, HDD max 6 min, Basis 4 min, CPU max 6 min, Basis 4 min, unter 2 Kernen Last"
-rec "M2-Abkühlen" "2 Kerne" 240
+display_on
+log "Schritt 3b: HDD-Max und CPU-Max neu, unter 2 Kernen Last mit CPU-Lüfter-Basis 1500; Abkühlen jeweils mit allen Lüftern auf Max ohne Last (bis Tp2H<55 und GPU<45, max 4 min)"
+cool "M2-Abkühlen"
+burn 2
 step "M2-Basis" "2 Kerne, CPU 1500" 360 1150 1100 1500
 step "M2-HDD-max" "2 Kerne, CPU 1500" 360 1150 5500 1500
 step "M2-Basis2" "2 Kerne, CPU 1500" 240 1150 1100 1500
+if hot; then cool "M2-Abkühlen2"; burn 2; step "M2-Basis2b" "2 Kerne, CPU 1500" 240 1150 1100 1500; fi
 step "M2-CPU-max" "2 Kerne" 360 1150 1100 2100
 step "M2-Basis3" "2 Kerne, CPU 1500" 240 1150 1100 1500
 stop_burn; display_off
 log "Schritt 3b: fertig"
-# 4 SMART short self-test result (started in part 1; start again if it did not run)
+# 4 SMART short self-test (part 1 never started it): start it unless one is running, read result
 log "Schritt 4/6: SMART-Kurztest auslesen"
 /opt/local/sbin/smartctl -l selftest disk0 > $D/smart-short.txt 2>&1
 if ! grep -q "^# 1  Short offline" $D/smart-short.txt; then
+  if /opt/local/sbin/smartctl -c disk0 | grep -A1 "Self-test execution status" | grep -q "in progress"; then
+    log "Schritt 4/6: es läuft bereits ein Selbsttest – warte"; fi
+  for i in $(seq 1 60); do /opt/local/sbin/smartctl -c disk0 | grep -A1 "Self-test execution status" | grep -q "in progress" || break; touch $HB; sleep 10; done
   /opt/local/sbin/smartctl -t short disk0 >> $D/smart-short.txt 2>&1
   for i in $(seq 1 18); do touch $HB; sleep 10; done
   /opt/local/sbin/smartctl -l selftest disk0 >> $D/smart-short.txt 2>&1
