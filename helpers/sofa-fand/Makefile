@@ -5,6 +5,8 @@
 #   sudo make install-files  same without loading
 #   sudo make uninstall  unload, fans back to the SMC, remove files
 #   make tools           measurement tools in tools/ (smcfan, smcenum, smarttemp, fanlab)
+#   sudo make install-learn    sofa-fanlearn (passive data collector, issue #2 stage 1) + LaunchDaemon
+#   sudo make uninstall-learn  unload and remove it (collected data stays in ~/Library/Logs/sofa-fanlearn)
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
@@ -16,9 +18,12 @@ LABEL   := de.sofa.fand
 SBIN    := /usr/local/sbin
 ETC     := /usr/local/etc
 PLIST   := /Library/LaunchDaemons/$(LABEL).plist
+LBIN    := sofa-fanlearn
+LLABEL  := de.sofa.fanlearn
+LPLIST  := /Library/LaunchDaemons/$(LLABEL).plist
 TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab
 
-all: $(BIN) check
+all: $(BIN) check $(LBIN)
 
 $(BIN): sofa-fand.c Makefile
 	$(CC) $(CFLAGS) -o $@ sofa-fand.c $(DLDFLAGS)
@@ -26,8 +31,12 @@ $(BIN): sofa-fand.c Makefile
 check: $(BIN)
 	./$(BIN) check -c sofa-fand.conf >/dev/null
 
+$(LBIN): sofa-fanlearn.c Makefile
+	$(CC) $(CFLAGS) -o $@ sofa-fanlearn.c $(LDFLAGS)
+
 analyze:
 	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fand.c
+	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fanlearn.c
 
 tools: $(TOOLS)
 
@@ -51,8 +60,20 @@ uninstall:
 	-$(SBIN)/$(BIN) reset
 	rm -f $(PLIST) $(SBIN)/$(BIN) $(ETC)/sofa-fand.conf
 
-clean:
-	rm -f $(BIN) $(TOOLS)
-	rm -rf $(BIN).dSYM
+install-learn: $(LBIN)
+	-launchctl unload $(LPLIST) 2>/dev/null
+	install -d /usr/local/bin
+	install -m 755 -o root -g wheel $(LBIN) /usr/local/bin/$(LBIN)
+	install -m 644 -o root -g wheel $(LLABEL).plist $(LPLIST)
+	sudo -u imac mkdir -p /Users/imac/Library/Logs/sofa-fanlearn
+	launchctl load -w $(LPLIST)
 
-.PHONY: all check analyze tools install install-files uninstall clean
+uninstall-learn:
+	-launchctl unload $(LPLIST)
+	rm -f $(LPLIST) /usr/local/bin/$(LBIN)
+
+clean:
+	rm -f $(BIN) $(LBIN) $(TOOLS)
+	rm -rf $(BIN).dSYM $(LBIN).dSYM
+
+.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn clean

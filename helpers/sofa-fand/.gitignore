@@ -6,3 +6,5 @@ tools/smarttemp
 tools/fanlab
 tools/fantest
 sofa-fand.plist
+sofa-fanlearn
+sofa-fanlearn.plist

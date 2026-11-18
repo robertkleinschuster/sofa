@@ -250,3 +250,30 @@ sudo make uninstall                          # remove everything
 
 To change curves or limits: edit `sofa-fand.conf`, commit, `sudo make install` (it checks the
 config and reloads the daemon).
+
+## Self-optimisation (issue #2), stage 1: data collection
+
+`sofa-fanlearn` is a passive collector next to the controller. It only reads: temperatures, fan
+actual/target speeds, `FS!` and the SMC power keys (`PDTR` total DC, `PCPT` CPU package, `PCTR`
+CPU rail, `PG0R` GPU rail, `PZ2G` GPU incl. VRAM; type `sp96` = int16 / 64 W) straight from the
+SMC, and mode, profile, shift, load and the drive temperature from `sofa-fand status`. The sensor
+list comes from the controller's config, so nothing is specific to this iMac.
+
+Why a collector first: a grey-box model (heat input vs. airflow-weighted cooling per sensor)
+fitted on the 2026-11-17/18 tests did not transfer between them: trained on the 4-core night
+series it missed the 0-2-core short series by 15-50 °C. The tests log CPU load in percent, but
+heat depends non-linearly on it (turbo, GPU, PSU losses). The SMC measures the power directly;
+the model is fitted on that, over days of normal use and later short identification steps in
+rest mode.
+
+Cost: one sample every 10 s (a fan runs or load > 10 %) or 20 s (calm), ~30 SMC reads each.
+Data stays in RAM and is appended to `~/Library/Logs/sofa-fanlearn/YYYY-MM-DD.csv` every 4 h,
+on SIGTERM/SIGINT and on SIGHUP (`kill -HUP $(pgrep -x sofa-fanlearn)`, it runs as imac). A header line
+starting with `#` is written whenever the column set changes. Files older than 60 days are
+removed.
+
+```
+make && sudo make install-learn        # /usr/local/bin/sofa-fanlearn + de.sofa.fanlearn (user imac)
+./sofa-fanlearn once                   # header + one sample
+sudo make uninstall-learn              # data stays
+```
