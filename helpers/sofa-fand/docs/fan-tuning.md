@@ -59,6 +59,21 @@ once.
 **SMART is exclusive:** while a process holds the SMART user client, `smartctl` fails. So it
 is opened, read and closed every time (daemon and `fanlab`).
 
+## Power keys (SMC, read only)
+
+Type `sp96`. Per the GPU research agent (2026-11-18), the scaling is **raw int16 / 64 = watts**;
+an earlier reading as /512 was wrong. Read with `tools/smcenum P`.
+
+| key | meaning | example (idle, display asleep, 2026-11-18 11:04) |
+|---|---|---|
+| PDTR / PD2R | total DC input | 0x0e7a → 57.9 W (gpu-research measured ≈ 30 W at another moment) |
+| PG0R (= PZ0G) | GPU rail | 0x00fd → 3.95 W |
+| PCPT | CPU package | (not in this sample) |
+| PC0C | CPU core | 0x0121 → 4.5 W |
+| PCPC | CPU package core | 0x010a → 4.2 W |
+
+The values fluctuate; this table only gives the mapping and the scaling.
+
 ## Apple's thresholds (SMC keys)
 
 Below these thresholds Apple runs every fan at its minimum. So "cooler than Apple" means more
@@ -242,6 +257,34 @@ cooling at most ~3.5 °C/min). Evaluation open.
 | playback (Tp2H 81-85) | minima, Tp2H up to 85 | CPU fan 2000-2100 from Tp2H 76-80 → Tp2H aims at ~70-75 |
 | 2 cores (Tp2H rising) | minima, Tp2H > 85 | CPU 1500 from Tp2H 70 (equilibrium ~72) |
 | above Apple's own fan thresholds | ramps from 96 (Tp2H), 58.4 (LCD), 77 (GPU) | already at max before that; trip → all max |
+
+## Wakeups (2026-11-18)
+
+**Cause:** `dtrace sched:::on-cpu` on the controller showed that practically every wakeup was in
+`IOConnectCallStructMethod` from `smc_read`/`tg_set`. Each SMC transaction makes AppleSMC wait in
+many small steps, about 25 kernel wakeups per transaction. The old version did about 55
+transactions every 2 s: 20 sensors × (key info + bytes), 3 fan speeds, `Tg` and `FS!` rewritten
+every step, plus an `FS!` verify.
+
+**Fix (`0f37119`, `47aa228`, `5971efa`):**
+- key-info cache, write cache, `FS!` read back every step;
+- adaptive steps of 2/5/10/20 s, only `fast` sensors every step, the rest every 120 s;
+- event-driven loops (pipe wakeups, kqueue `NOTE_EXIT`).
+
+Details and reaction times: README, "Adaptive sampling".
+
+| | before (09:55) | after (10:55) |
+|---|---|---|
+| controller wakeups/s (powermetrics, intr) | 862 | 34.4 (5 s step: GPU at the ODD curve start) |
+| controller CPU | 6.6 ms/s | 0.49 ms/s |
+| guard wakeups/s | 1.2 | 0.2 |
+| top POWER (controller) | 27 | 3.2 (dry run in the 10 s step: 1.1) |
+| package power | 6.96 W | 6.77 W |
+| package C-state residency | 95.6 % (C2 26 %, C6 69 %) | 97.8 % (C2 27.6 %, C6 70.2 %) |
+
+Expected per step: 10 s ≈ 20/s, 20 s ≈ 8/s. Below 2/s would need sampling intervals above 50 s,
+which is not safe under GPU load (up to ~16 °C/min). The remaining C2 share comes from the rest
+of the system.
 
 ## Open questions
 

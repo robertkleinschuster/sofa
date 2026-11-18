@@ -71,7 +71,7 @@ sofa-fand hint playback 0.4 60
 
 ## How it regulates
 
-Every 2 s, for each fan:
+Each control step, for each fan (step length: see "Adaptive sampling" below):
 
 1. **Inputs:** each fan has curves (temperature → rpm, linear between points) on the
    sensors it actually cools (coupling measured, see Measurements). The fan runs the
@@ -98,6 +98,50 @@ Every 2 s, for each fan:
 6. **Spin-up check:** a fan commanded to turn must reach half its target within 15 + 20 s.
    Otherwise it is a fault.
 
+### Adaptive sampling (few wakeups)
+
+**Cost:** every SMC transaction makes the AppleSMC driver wait for the SMC in many small steps,
+about 25 kernel wakeups per read or write (dtrace, 2026-11-18). Reading 20 sensors every 2 s
+cost 540 wakeups/s, so the daemon samples as rarely as is safe.
+
+**Fewer transactions:**
+- the key info (size, type) of each key is cached, so a read is one transaction;
+- `F<n>Tg` and `FS!` are written only on change. `FS!` is read back every step: if anything
+  outside changed it (SMC reset, a tool), every target is written again at once;
+- everything is written and verified on full cycles (every 120 s), on wake and after every fault.
+
+**What is read when:** sensors marked `fast 1` every step: GPU die and heatsink, CPU proximity,
+PECI, core 0, PSU heatsink. The other sensors (PSU 1/3, PCH, RAM, LCD, ODD, cores 1-3, TS0P,
+ambient) every 120 s. Speeds of stopped fans are read every 120 s.
+
+**Step length** (the most demanding fan or sensor wins):
+
+| step | when |
+|---|---|
+| 2 s | a fan moving or just started; a sensor ≥ warn−2; trip, fault, SMC, start or wake; 60 s after a Sofa context change or a CPU/GPU load jump (> 0.25) |
+| 5 s | a stopped fan within 2 °C of its curve start; a sensor ≥ warn−5 |
+| 10 s | otherwise (fans stable, everything far from thresholds) |
+| 20 s | only if all fans stand, every sensor is ≥ 8 °C below its warn point and below every curve start, and the context is not playback |
+
+**Reaction time:**
+- The fastest riser is the GPU under sudden load (measured 64 → 75 °C in 40 s with the ODD fan
+  at 500 rpm, ~16 °C/min).
+- In 20 s it climbs at most ~5.3 °C, so the 8 °C margin still leaves reserve. From then on the
+  daemon samples every 10/5/2 s. The GPU trip (80) is ≥ 14 °C above where the 20 s step is allowed.
+- The PSU heatsink rises at most ~1.2 °C/min (measured: all fans off, one core at 100 %).
+- The slow sensors rise ≤ 1.2 °C/min, so 120 s means ≤ 2.4 °C delay; their trips are far away.
+- The drive is read every 30 s (SMART), as before.
+
+**Event-driven threads:**
+- The control loop sleeps until its next step. A signal, a new Sofa hint or a wake wakes it
+  early (pipe).
+- The socket thread waits without a timeout.
+- The guard is woken by the kernel when the controller exits (kqueue `NOTE_EXIT`). Otherwise it
+  checks the heartbeat every 5 s. It treats the controller as hung when it misses its own
+  announced next step by 10 s (~17 s at 2 s steps, ~35 s at 20 s steps), at most 45 s.
+
+**Result (2026-11-18):** see `docs/fan-tuning.md`, "Wakeups".
+
 ### Apple's thresholds (read from the SMC)
 
 | sensor | fan start | warning | throttle | shutdown |
@@ -120,7 +164,7 @@ Control targets: GPU `SGTg` 77, CPU `SCTg` 70, PECI `SCXC` 86, ODD `SOTg` 55.
 | SIGTERM/SIGINT (`launchctl unload`) | controller and guard reset `FS!` = 0, then exit |
 | controller crash (SEGV/BUS/ABRT/ILL/FPE) | its handler resets; the guard resets again |
 | controller **SIGKILLed** | the guard sees it within 0.5 s (waitpid), resets, forks a new controller (no exec) |
-| controller hangs | no heartbeat for 15 s: the guard resets, kills it, forks a new one |
+| controller hangs | misses its own announced next step by 10 s (≤ 45 s): the guard resets, kills it, forks a new one |
 | guard SIGKILLed / both killed | launchd KeepAlive restarts it (< 1 s measured); the start resets first |
 | config missing or invalid | mode `disabled`: runs, SMC regulates, `status` names the error |
 | `FS!` set although the controller forces nothing | the guard resets it |
