@@ -53,9 +53,10 @@
 
 int pthread_setugid_np(uid_t uid, gid_t gid);   // Darwin: per-thread credentials (sys/pthread)
 
-#define RUN_DIR     "/var/run/sofa-fand"
-#define HINT_SOCK   RUN_DIR "/hint.sock"
-#define CTL_SOCK    RUN_DIR "/ctl.sock"
+// the dry run (-n) uses its own directory, so it never takes the installed daemon's sockets
+#define RUN_DIR     (dry ? "/var/run/sofa-fand-dry" : "/var/run/sofa-fand")
+#define HINT_SOCK   (dry ? "/var/run/sofa-fand-dry/hint.sock" : "/var/run/sofa-fand/hint.sock")
+#define CTL_SOCK    (dry ? "/var/run/sofa-fand-dry/ctl.sock" : "/var/run/sofa-fand/ctl.sock")
 #define CONF_PATH   "/usr/local/etc/sofa-fand.conf"
 #define MAX_FANS    3
 #define MAX_SENS    24
@@ -530,6 +531,7 @@ static void poke(int fd) { if (fd >= 0) { char c = 1; ssize_t w = write(fd, &c, 
 #define GLOG_LINES 16
 typedef struct {
   volatile double beat; volatile int forced;          // controller -> guard
+  volatile double beat_due;                           // controller: next beat expected by then
   volatile double trip_until; volatile int trip_max;  // survives a controller restart (N2)
   volatile int sleeping;                              // between WillSleep and HasPoweredOn (V3-2)
   volatile unsigned glog_head, glog_printed; char glog[GLOG_LINES][160];   // guard -> controller log thread
@@ -705,6 +707,7 @@ static void control_step_locked(void) {
   pthread_mutex_lock(&load_mx); if (now - load_when < 10) { c = load_cpu; g = load_gpu; } pthread_mutex_unlock(&load_mx);
   // feed-forward smoothing: rise with tau 20 s, fall with tau 120 s (no pumping on short spikes)
   if (!isnan(c) && c - st.cpu_ema > 0.25) st.fast_until = now + 60;   // CPU load jump (> 1 core)
+  if (!isnan(g) && g - st.gpu_ema > 0.25) st.fast_until = now + 60;   // GPU load jump
   if (!isnan(c)) { double tau = c > st.cpu_ema ? 20.0 : 120.0; st.cpu_ema += (c - st.cpu_ema) * (1 - exp(-dt / tau)); }
   if (!isnan(g)) { double tau = g > st.gpu_ema ? 20.0 : 120.0; st.gpu_ema += (g - st.gpu_ema) * (1 - exp(-dt / tau)); }
   double vol; int prof = profile_now(now, &vol);
@@ -1060,6 +1063,7 @@ static void power_wake(void) {
   pthread_mutex_lock(&ctl_mx);
   woke_at = now_s(); sleeping = 0; shm->sleeping = 0;
   st.dt = 0; st.last_step = 0;      // next step reads every sensor and writes everything again
+  poke(wake_pipe[1]);
   fs_sent = -1; tg_sent[0] = tg_sent[1] = tg_sent[2] = -1;
   pthread_mutex_unlock(&ctl_mx);
   logf_("system woke: waiting for fresh sensors");
@@ -1173,7 +1177,7 @@ static void controller(void) {
   while (!ctl_stop) {
     if (getppid() != guard) { logf_("guard gone - stopping, FS!=0"); break; }   // launchd starts a new guard (N1)
     double t = now_s();
-    if (t >= next) { control_step(); shm->beat = now_s(); next = t + (st.dt > 0 ? st.dt : DT_FAST); }
+    if (t >= next) { control_step(); shm->beat = now_s(); next = t + (st.dt > 0 ? st.dt : DT_FAST); shm->beat_due = next + 5; }
     double wait = next - now_s();
     if (wait > 0) {
       // one sleep until the next step; a signal or a new hint wakes it early (no polling)
@@ -1216,7 +1220,7 @@ static int run_daemon(const char *conf) {
   if (lstat(RUN_DIR, &sd) == 0 && (!S_ISDIR(sd.st_mode) || sd.st_uid != 0)) { syslog(LOG_ERR, "%s is not a root directory, refusing", RUN_DIR); return 1; }
   if (mkdir(RUN_DIR, 0755) && errno != EEXIST) { syslog(LOG_ERR, "mkdir %s: %m", RUN_DIR); return 1; }
   chmod(RUN_DIR, 0755);
-  unlink("/var/run/sofa-fand.sock");                                 // v1 leftover
+  if (!dry) unlink("/var/run/sofa-fand.sock");                       // v1 leftover
   lfd_hint = bind_sock(HINT_SOCK, SOCK_DGRAM, 0666);
   lfd_ctl = bind_sock(CTL_SOCK, SOCK_STREAM, 0666);
   if (lfd_hint < 0 || lfd_ctl < 0) syslog(LOG_ERR, "sockets unavailable: %m - no hints, no status (fans still regulated)");
@@ -1229,7 +1233,7 @@ static int run_daemon(const char *conf) {
   syslog(LOG_NOTICE, "guard up (pid %d)%s", getpid(), dry ? " DRY RUN" : "");
   int restarts = 0; double window = now_s();
   while (!guard_stop) {
-    shm->beat = now_s(); shm->forced = 0;
+    shm->beat = now_s(); shm->forced = 0; shm->beat_due = now_s() + 30;   // start-up grace
     pid_t child = fork();
     if (child == 0) controller();
     if (child < 0) { smc_auto(); sleep(5); continue; }
@@ -1246,7 +1250,9 @@ static int run_daemon(const char *conf) {
                WIFSIGNALED(stv) ? WTERMSIG(stv) : WEXITSTATUS(stv), failed ? " FAILED" : "");
         break;
       }
-      if (now_s() - shm->beat > GUARD_STALE) {
+      // hang: the controller missed its own announced next beat by 10 s (2 s step -> ~17 s, 20 s
+      // step -> ~35 s), or, as a hard cap, no beat at all for GUARD_STALE
+      if (now_s() > shm->beat_due + 10 || now_s() - shm->beat > GUARD_STALE) {
         smc_auto(); kill(child, SIGKILL); waitpid(child, &stv, 0); smc_auto();
         guard_log("controller %d hung (no heartbeat %.0f s), killed, FS!=0", child, GUARD_STALE);
         break;
@@ -1299,8 +1305,8 @@ int main(int argc, char **argv) {
     if (cfg_load(&cfg, conf)) { fprintf(stderr, "%s\n", cfg.err); return 1; }
     cfg_print(stdout, &cfg); return 0;
   }
-  if (argc == 2 && !strcmp(argv[1], "status")) return ctl_client("STATUS");
-  if (argc == 2 && !strcmp(argv[1], "state")) return ctl_client("STATE");
+  if (argc >= 2 && !strcmp(argv[1], "status")) return ctl_client("STATUS");   // -n: the dry run's socket
+  if (argc >= 2 && !strcmp(argv[1], "state")) return ctl_client("STATE");
   if (argc >= 3 && argc <= 5 && !strcmp(argv[1], "hint")) {
     char c[300];
     snprintf(c, sizeof c, "HINT {\"v\":1,\"ctx\":\"%.16s\",\"vol\":%s,\"ttl\":%d,\"pid\":%d}", argv[2], argc >= 4 ? argv[3] : "null", argc >= 5 ? atoi(argv[4]) : 90, getpid());
@@ -1310,6 +1316,6 @@ int main(int argc, char **argv) {
     if (smc_open() || smc_auto()) { fprintf(stderr, "FS! reset failed (root?)\n"); return 1; }
     printf("FS! = 0x%x (SMC regulates)\n", fs_get()); return 0;
   }
-  fprintf(stderr, "usage: sofa-fand run [-c CONF] [-n] | status | state | hint CTX [VOL] [TTL] | reset | check [-c CONF]\n");
+  fprintf(stderr, "usage: sofa-fand run [-c CONF] [-n] | status [-n] | state [-n] | hint CTX [VOL] [TTL] | reset | check [-c CONF]\n");
   return 2;
 }
