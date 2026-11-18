@@ -149,7 +149,7 @@ static void csv_head(void) {
 }
 static void csv_row(const sample_t *s, const char *mode, const int *want) {
   if (!csv) return;
-  fprintf(csv, "%ld,%s,%s,%s,%d,%d,%d,%d", (long)time(0), tst, lbl, mode, want[0], want[1], want[2], s->fs);
+  fprintf(csv, "%ld,\"%s\",\"%s\",%s,%d,%d,%d,%d", (long)time(0), tst, lbl, mode, want[0], want[1], want[2], s->fs);   // test/load quoted: labels may contain commas
   for (int f = 0; f < 3; f++) fprintf(csv, ",%.0f,%.0f", s->ac[f], s->tg[f]);
   for (int i = 0; i < NT; i++) fprintf(csv, ",%.2f", s->t[i]);
   fprintf(csv, ",%.0f,%.1f,%.0f\n", s->hdd, s->cpu, s->gpu); fflush(csv);
