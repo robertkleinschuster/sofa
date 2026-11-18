@@ -7,7 +7,7 @@ PL=/Library/LaunchDaemons/de.sofa.fand.plist; S=/usr/local/sbin/sofa-fand
 SMC=/Users/imac/src/smcfan/smcfan
 log() { echo "$(date +%T) Auto-Laden: $*" >> $LIVE; }
 fail() { log "FEHLER: $* → unload"; launchctl unload $PL 2>/dev/null; sleep 2; $S reset >/dev/null 2>&1 || $SMC force 0 >/dev/null; log "nach unload FS!=$($SMC read 'FS! ' | cut -d: -f2)"; exit 1; }
-until [ -e $D/.done2 ] && ! pgrep -f h1-extra.sh >/dev/null && ! pgrep -f night.sh >/dev/null; do sleep 60; done
+[ "${1:-}" = now ] || until [ -e $D/.done2 ] && ! pgrep -f h1-extra.sh >/dev/null && ! pgrep -f night.sh >/dev/null; do sleep 60; done
 pkill -f fand-dry-pause.sh; pkill -f "sofa-fand run -n"; sleep 2
 pgrep -f "sofa-fand run" >/dev/null && fail "noch ein sofa-fand-Prozess aktiv"
 fs=$($SMC read 'FS! ' | awk '{print $NF}'); [ "$fs" = "00" ] || { $SMC force 0 >/dev/null; log "FS! war nicht 0, zurückgesetzt"; }

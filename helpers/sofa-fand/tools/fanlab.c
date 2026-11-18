@@ -5,7 +5,7 @@
 //   fanlab burn THREADS PCT DUR          synthetic CPU load (duty cycle PCT %), nice it yourself
 //   fanlab watchdog HBFILE STALE DONEFILE  reset FS!=0 whenever HBFILE is older than STALE s
 // Env: CSV=file (append samples), LIVE=file (human log), TEST="Test x/N" (prefix), HB=file
-//      (touched every sample), LOADLBL=text, LIM_GPU/LIM_CPU/LIM_HDD/LIM_ODD/LIM_PSU (deg C).
+//      (touched every sample), LOADLBL=text, LIM_GPU/LIM_CPU/LIM_CORE/LIM_PECI/LIM_HDD/LIM_ODD/LIM_PSU/LIM_LCD (deg C).
 // Every exit path (end, limit, error, signal) writes FS! = 0 and verifies it.
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOCFPlugIn.h>
@@ -210,7 +210,8 @@ int main(int argc, char **argv) {
   if (getenv("LOADLBL")) lbl = getenv("LOADLBL");
   const char *hb = getenv("HB");
   double L_GPU = envd("LIM_GPU", 75), L_CPU = envd("LIM_CPU", 68), L_CORE = envd("LIM_CORE", 90),
-         L_HDD = envd("LIM_HDD", 50), L_ODD = envd("LIM_ODD", 55), L_PSU = envd("LIM_PSU", 85);
+         L_HDD = envd("LIM_HDD", 50), L_ODD = envd("LIM_ODD", 55), L_PSU = envd("LIM_PSU", 85),
+         L_PECI = envd("LIM_PECI", 90), L_LCD = envd("LIM_LCD", 58);
   int mineq = (int)envd("MINEQ", 0);
   csv_head();
   pthread_t th; pthread_create(&th, 0, smart_thr, 0);
@@ -244,6 +245,8 @@ int main(int argc, char **argv) {
     else if (s.hdd >= L_HDD) { snprintf(wb, sizeof wb, "Platte %.0f °C", s.hdd); why = wb; }
     else if (od >= L_ODD) { snprintf(wb, sizeof wb, "ODD %.1f °C", od); why = wb; }
     else if (ps >= L_PSU) { snprintf(wb, sizeof wb, "Netzteil %.1f °C", ps); why = wb; }
+    else if (s.t[ti("TCXc")] >= L_PECI) { snprintf(wb, sizeof wb, "CPU-PECI %.1f °C", s.t[ti("TCXc")]); why = wb; }
+    else if (s.t[ti("TL0P")] >= L_LCD) { snprintf(wb, sizeof wb, "LCD %.1f °C", s.t[ti("TL0P")]); why = wb; }
     if (step && s.fs != mask) why = "FS! von aussen veraendert";
     if (why && step) { reset(); livef("ABBRUCH: %s nach %ld s, zurück auf Automatik (FS!=0x%x)", why, (long)(time(0) - t0), fsval()); rc = 3; break; }
     if (hn < H) { for (int j = 0; j < 5; j++) hist[hn][j] = !strcmp(hk[j], "HDD") ? s.hdd : s.t[ti(hk[j])]; hn++; }
