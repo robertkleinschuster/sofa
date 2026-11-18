@@ -1,0 +1,9 @@
+make: 'sofa-fand' is up to date.
+./sofa-fand check -c sofa-fand.conf >/dev/null
+launchctl unload /Library/LaunchDaemons/de.sofa.fand.plist 2>/dev/null
+make: [Makefile:42: install-files] Error 1 (ignored)
+install -d /usr/local/sbin /usr/local/etc
+install -m 755 -o root -g wheel sofa-fand /usr/local/sbin/sofa-fand
+install -m 644 -o root -g wheel sofa-fand.conf /usr/local/etc/sofa-fand.conf
+install -m 644 -o root -g wheel de.sofa.fand.plist /Library/LaunchDaemons/de.sofa.fand.plist
+installed 9705b918a1a8 from 1d6ba08

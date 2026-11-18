@@ -1,0 +1,26 @@
+20:53:45 Ref 1: Aufzeichnung (SMC) , Last=Wiedergabe, max 1800 s
+20:55:06 Ref 1: Aufzeichnung (SMC) , Last=Wiedergabe, max 1800 s
+20:55:37 sofa-fand entladen (SMART-Schnittstelle ist exklusiv, Daemon hielt sie), Referenz Apple/Wiedergabe neu gestartet
+20:56:51 Ref 1: SMART-Lesen geändert (öffnen-lesen-schließen, smartctl geht parallel), Referenz neu gestartet
+20:56:52 Ref 1: Aufzeichnung (SMC) , Last=Wiedergabe, max 1800 s
+20:59:40 Ref 1 beendet (Wiedergabe lief nicht mehr, Last ~17 %)
+20:59:40 Messreihe startet: 37 Tests, Plan in plan.md, Wächter aktiv (180 s)
+20:59:40 Test 37/37: Aufzeichnung (SMC) , Last=CPU 4 Threads 100%, max 600 s
+21:00:07 ABBRUCH der Messreihe (Signal)
+21:00:07 Ende der Messreihe, FS!= 00 00
+21:00:08 Fehlstart (Skriptfehler: falsche Testparameter), abgebrochen, FS!=0; Neustart folgt
+21:00:15 Messreihe startet: 37 Tests, Plan in plan.md, Wächter aktiv (180 s)
+21:00:15 Test 1/37: Aufzeichnung (SMC) , Last=CPU 4 Threads 100%, max 900 s
+21:15:19 Test 1/37: Ergebnis: CPU 56.1→60.0, GPU 57.8→49.8, Netzteil 80.1→72.9, ODD 47.1→43.2, Platte 47→47 °C; Lüfter 1149/1287/938 U/min; Last CPU 400 %
+21:15:20 Test 2/37: Zwang F0=1150 F1=1100 F2=940, Last=CPU 4 Threads 100%, max 1500 s (Stopp bei Gleichgewicht)
+21:40:26 Test 2/37: Ergebnis: CPU 60.0→57.0, GPU 49.8→46.5, Netzteil 72.9→69.8, ODD 43.2→37.9, Platte 47→44 °C; Lüfter 1147/1285/940 U/min; Last CPU 400 %
+21:40:26 Test 2/37: zurück auf Automatik (FS!=0x0)
+21:40:26 Test 3/37: Zwang F0=1150 F1=1100 F2=1800, Last=CPU 4 Threads 100%, max 1200 s (Stopp bei Gleichgewicht)
+22:00:32 Test 3/37: Ergebnis: CPU 57.1→44.9, GPU 46.2→44.0, Netzteil 69.8→52.1, ODD 37.9→34.8, Platte 44→42 °C; Lüfter 1149/1345/1800 U/min; Last CPU 400 %
+22:00:32 Test 3/37: zurück auf Automatik (FS!=0x0)
+22:00:32 Test 4/37: Zwang F0=1150 F1=1100 F2=940, Last=CPU 4 Threads 100%, max 1200 s (Stopp bei Gleichgewicht)
+22:20:37 Test 4/37: Ergebnis: CPU 44.9→52.8, GPU 44.0→42.0, Netzteil 52.1→63.0, ODD 34.8→33.5, Platte 42→40 °C; Lüfter 1149/1278/939 U/min; Last CPU 400 %
+22:20:37 Test 4/37: zurück auf Automatik (FS!=0x0)
+22:20:38 Test 5/37: Zwang F0=2000 F1=1100 F2=940, Last=CPU 4 Threads 100%, max 1200 s (Stopp bei Gleichgewicht)
+22:30:23 ABBRUCH der Messreihe (Signal)
+22:30:23 Ende der Messreihe, FS!= 00 00

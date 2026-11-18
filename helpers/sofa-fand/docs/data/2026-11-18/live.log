@@ -1,0 +1,79 @@
+07:11:26 === Kurzserie startet (Commit f5332f6) ===
+07:11:26 Schritt 1/6: crashcheck Basis 3 min
+07:14:26 Schritt 1/6: sauber
+07:14:26 Bildschirm an (caffeinate -u)
+07:14:26 Schritt 2/6: H1a alle Lüfter aus, Leerlauf, Bildschirm an (max 15 min)
+07:14:26 H1a: Zwang F0=0 F1=0 F2=0, Last=Leerlauf, Bildschirm an, max 900 s
+07:29:30 H1a: Ergebnis: CPU 32.2→40.1, GPU 36.0→48.5, Netzteil 38.4→57.1, ODD 27.5→30.1, Platte 32→35 °C; Lüfter 0/0/0 U/min; Last CPU 4 %
+07:29:30 H1a: zurück auf Automatik (FS!=0x0)
+07:29:30 Schritt 2/6: H1b alle aus + 1 Kern 100 % (max 10 min)
+07:29:30 H1b: Zwang F0=0 F1=0 F2=0, Last=1 Kern 100 %, Bildschirm an, max 600 s
+07:39:32 H1b: Ergebnis: CPU 40.1→54.8, GPU 48.5→52.2, Netzteil 57.1→70.4, ODD 30.1→33.1, Platte 35→37 °C; Lüfter 0/0/0 U/min; Last CPU 106 %
+07:39:32 H1b: zurück auf Automatik (FS!=0x0)
+07:39:32 H1-Abkühlen: Aufzeichnung (SMC) , Last=Leerlauf, max 180 s
+07:42:33 H1-Abkühlen: Ergebnis: CPU 54.8→51.9, GPU 52.2→46.2, Netzteil 70.4→68.8, ODD 33.1→34.6, Platte 37→37 °C; Lüfter 1149/1272/940 U/min; Last CPU 5 %
+07:42:33 Schritt 2/6: fertig
+07:42:33 Schritt 3/6: Matrix unter 2 Kernen Last: Basis 5 min, dann je Lüfter allein auf Max 6 min + 4 min Basis
+07:42:33 M-Basis: Zwang F0=1150 F1=1100 F2=940, Last=2 Kerne, max 300 s
+07:47:34 M-Basis: Ergebnis: CPU 51.9→52.8, GPU 46.2→44.8, Netzteil 68.8→73.0, ODD 34.6→36.5, Platte 37→38 °C; Lüfter 1148/1271/939 U/min; Last CPU 208 %
+07:47:34 M-Basis: zurück auf Automatik (FS!=0x0)
+07:47:35 M-ODD-max: Zwang F0=2500 F1=1100 F2=940, Last=2 Kerne, max 360 s
+07:53:36 M-ODD-max: Ergebnis: CPU 52.8→53.5, GPU 44.8→42.0, Netzteil 73.0→78.6, ODD 36.5→37.0, Platte 38→38 °C; Lüfter 2499/1421/939 U/min; Last CPU 203 %
+07:53:36 M-ODD-max: zurück auf Automatik (FS!=0x0)
+07:53:36 M-Basis2: Zwang F0=1150 F1=1100 F2=940, Last=2 Kerne, max 240 s
+07:57:37 M-Basis2: Ergebnis: CPU 53.5→55.5, GPU 42.0→44.5, Netzteil 78.8→81.8, ODD 37.0→38.1, Platte 38→39 °C; Lüfter 1149/1278/939 U/min; Last CPU 220 %
+07:57:37 M-Basis2: zurück auf Automatik (FS!=0x0)
+07:57:37 M-HDD-max: Zwang F0=1150 F1=5500 F2=940, Last=2 Kerne, max 360 s
+08:02:59 M-HDD-max: ABBRUCH: Netzteil 85.1 °C nach 322 s, zurück auf Automatik (FS!=0x0)
+08:02:59 M-HDD-max: zurück auf Automatik (FS!=0x0)
+08:02:59 M-Basis3: Zwang F0=1150 F1=1100 F2=940, Last=2 Kerne, max 240 s
+08:03:09 M-Basis3: ABBRUCH: Netzteil 85.0 °C nach 10 s, zurück auf Automatik (FS!=0x0)
+08:03:09 M-Basis3: zurück auf Automatik (FS!=0x0)
+08:03:09 ABBRUCH (Signal)
+08:03:09 Bildschirm aus
+08:03:09 Ende: FS!=00 (SMC regelt)
+08:03:59 === Kurzserie Teil 2 (Commit d332539): HDD-Max neu, SMART, sofa-fand ===
+08:03:59 Bildschirm an (caffeinate -u)
+08:03:59 Schritt 3b: HDD-Max neu: Abkühlen unter SMC 4 min, Basis (CPU 1500) 6 min, HDD max 6 min, Basis 4 min, CPU max 6 min, Basis 4 min, unter 2 Kernen Last
+08:03:59 M2-Abkühlen: Aufzeichnung (SMC) , Last=2 Kerne, max 240 s
+08:05:43 ABBRUCH (Signal)
+08:05:43 Bildschirm aus
+08:05:43 Ende: FS!=00 (SMC regelt)
+08:06:30 === Kurzserie Teil 2 (Commit 1d6ba08): HDD-Max neu, SMART, sofa-fand ===
+08:06:30 Bildschirm an (caffeinate -u)
+08:06:30 Schritt 3b: HDD-Max und CPU-Max neu, unter 2 Kernen Last mit CPU-Lüfter-Basis 1500; Abkühlen jeweils mit allen Lüftern auf Max ohne Last (bis Tp2H<55 und GPU<45, max 4 min)
+08:06:30 M2-Abkühlen: Zwang F0=2500 F1=5500 F2=2100, Last=ohne Last, alle Lüfter max, max 240 s
+08:10:31 M2-Abkühlen: Ergebnis: CPU 54.6→43.1, GPU 45.0→41.2, Netzteil 77.8→64.0, ODD 39.4→37.8, Platte 37→35 °C; Lüfter 2498/4971/2097 U/min; Last CPU 5 %
+08:10:31 M2-Abkühlen: zurück auf Automatik (FS!=0x0)
+08:10:31 M2-Basis: Zwang F0=1150 F1=1100 F2=1500, Last=2 Kerne, CPU 1500, max 360 s
+08:16:33 M2-Basis: Ergebnis: CPU 43.1→46.9, GPU 41.2→45.0, Netzteil 64.0→68.8, ODD 37.8→39.1, Platte 35→37 °C; Lüfter 1147/1289/1500 U/min; Last CPU 204 %
+08:16:33 M2-Basis: zurück auf Automatik (FS!=0x0)
+08:16:33 M2-HDD-max: Zwang F0=1150 F1=5500 F2=1500, Last=2 Kerne, CPU 1500, max 360 s
+08:22:34 M2-HDD-max: Ergebnis: CPU 46.9→48.0, GPU 45.0→46.8, Netzteil 68.8→72.1, ODD 39.1→40.0, Platte 37→35 °C; Lüfter 1149/4896/1498 U/min; Last CPU 207 %
+08:22:34 M2-HDD-max: zurück auf Automatik (FS!=0x0)
+08:22:34 M2-Basis2: Zwang F0=1150 F1=1100 F2=1500, Last=2 Kerne, CPU 1500, max 240 s
+08:26:35 M2-Basis2: Ergebnis: CPU 48.0→49.9, GPU 47.0→46.8, Netzteil 72.5→71.5, ODD 40.0→40.8, Platte 35→36 °C; Lüfter 1148/1287/1500 U/min; Last CPU 207 %
+08:26:35 M2-Basis2: zurück auf Automatik (FS!=0x0)
+08:26:36 M2-Abkühlen2: Zwang F0=2500 F1=5500 F2=2100, Last=ohne Last, alle Lüfter max, max 240 s
+08:30:37 M2-Abkühlen2: Ergebnis: CPU 49.9→42.9, GPU 46.8→42.5, Netzteil 71.5→60.8, ODD 40.8→39.1, Platte 36→35 °C; Lüfter 2498/4971/2094 U/min; Last CPU 5 %
+08:30:37 M2-Abkühlen2: zurück auf Automatik (FS!=0x0)
+08:30:37 M2-Basis2b: Zwang F0=1150 F1=1100 F2=1500, Last=2 Kerne, CPU 1500, max 240 s
+08:34:38 M2-Basis2b: Ergebnis: CPU 42.9→46.5, GPU 42.5→45.5, Netzteil 60.8→66.0, ODD 39.1→40.2, Platte 35→36 °C; Lüfter 1149/1286/1500 U/min; Last CPU 205 %
+08:34:38 M2-Basis2b: zurück auf Automatik (FS!=0x0)
+08:34:38 M2-CPU-max: Zwang F0=1150 F1=1100 F2=2100, Last=2 Kerne, max 360 s
+08:40:40 M2-CPU-max: Ergebnis: CPU 46.5→47.0, GPU 45.5→47.8, Netzteil 66.0→62.6, ODD 40.2→41.2, Platte 36→39 °C; Lüfter 1146/1358/2102 U/min; Last CPU 204 %
+08:40:40 M2-CPU-max: zurück auf Automatik (FS!=0x0)
+08:40:40 M2-Basis3: Zwang F0=1150 F1=1100 F2=1500, Last=2 Kerne, CPU 1500, max 240 s
+08:44:41 M2-Basis3: Ergebnis: CPU 47.0→49.5, GPU 47.8→48.0, Netzteil 62.6→67.6, ODD 41.2→41.9, Platte 39→40 °C; Lüfter 1150/1293/1498 U/min; Last CPU 205 %
+08:44:41 M2-Basis3: zurück auf Automatik (FS!=0x0)
+08:44:41 Bildschirm aus
+08:44:41 Schritt 3b: fertig
+08:44:41 Schritt 4/6: SMART-Kurztest auslesen
+08:44:41 Schritt 4/6: # 1  Short offline       Completed without error       00%         0         -
+08:44:41 Schritt 5/6: sofa-fand Trockenlauf 10 min mit crashcheck
+08:54:49 Schritt 5/6: Trockenlauf sauber, installiere 1d6ba08
+08:54:49 Schritt 5/6: installed 9705b918a1a8 from 1d6ba08
+08:55:19 Schritt 5/6 nach 30 s: mode curve (curves); ODD 752/699  HDD 0/0  CPU 529/500  ; hints_received 1 dropped 0
+09:00:19 Schritt 5/6 nach 5 min: mode curve (curves); ODD 0/0  HDD 0/0  CPU 0/0  ; hints_received 11 dropped 0
+09:00:19 Schritt 5/6: sofa-fand installiert, geladen, sauber
+09:00:19 Ende: sofa-fand regelt
