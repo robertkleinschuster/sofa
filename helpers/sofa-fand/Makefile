@@ -21,7 +21,7 @@ PLIST   := /Library/LaunchDaemons/$(LABEL).plist
 LBIN    := sofa-fanlearn
 LLABEL  := de.sofa.fanlearn
 LPLIST  := /Library/LaunchDaemons/$(LLABEL).plist
-TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab
+TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab tools/bright
 
 all: $(BIN) check $(LBIN)
 
@@ -39,6 +39,9 @@ analyze:
 	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fanlearn.c
 
 tools: $(TOOLS)
+
+tools/bright: tools/bright.c Makefile
+	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-deprecated-declarations -o $@ $< $(LDFLAGS) -framework ApplicationServices
 
 tools/%: tools/%.c Makefile
 	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $< $(LDFLAGS)

@@ -83,7 +83,8 @@ static int smart_read(void) {
   IOObjectRelease(it);
   return r;
 }
-static void *smart_thr(void *x) { (void)x; for (;;) { int t = smart_read(); if (t > 5 && t < 90) { hdd_t = t; hdd_at = time(0); } sleep(20); } return 0; }
+// the SMART client is exclusive (sofa-fand, sofa-fanlearn read it too): retry fast until a value is there
+static void *smart_thr(void *x) { (void)x; for (;;) { int t = smart_read(); if (t > 5 && t < 90) { hdd_t = t; hdd_at = time(0); } sleep(hdd_t < 0 || t <= 5 || t >= 90 ? 2 : 20); } return 0; }
 
 // ---- load: CPU % (sum over cores, 0..400) and GPU PM4 command rate
 static double cpu_pct(void) {
@@ -216,7 +217,7 @@ int main(int argc, char **argv) {
   double stop_ps = envd("STOP_TP2H", 0), stop_gd = envd("STOP_GPU", 0);
   csv_head();
   pthread_t th; pthread_create(&th, 0, smart_thr, 0);
-  for (int i = 0; i < 30 && hdd_t < 0; i++) usleep(100000);
+  for (int i = 0; i < 150 && hdd_t < 0; i++) usleep(100000);   // up to 15 s (exclusive SMART client)
   cpu_pct(); gpu_rate();
   sample_t s0; sample(&s0);
   if (!step) reset();

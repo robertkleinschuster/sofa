@@ -19,6 +19,8 @@
 // Sampling: 10 s while a fan runs or the CPU is busy, 20 s when everything is calm (each SMC
 // transaction costs ~25 kernel wakeups on this machine, see sofa-fand.c).
 #include <IOKit/IOKitLib.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/storage/ata/ATASMARTLib.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach.h>
 #include <ifaddrs.h>
@@ -271,6 +273,40 @@ static double rate(int c, double v, double now) {
   return r;
 }
 
+// drive temperature (SMART attribute 194) when sofa-fand does not deliver it (unloaded for a test).
+// The SMART user client is exclusive: open, read, close; at most once per 60 s.
+static double smart_temp(void) {
+  static double last = NAN; static time_t at;
+  time_t now = time(NULL);
+  if (now - at < 60) return last;
+  at = now - 50; last = NAN;                         // failed read: try again in ~10 s
+  io_iterator_t it; io_object_t o; int done = 0;
+  if (IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IOBlockStorageDevice"), &it)) return last;
+  while ((o = IOIteratorNext(it))) {
+    CFTypeRef cap = IORegistryEntrySearchCFProperty(o, kIOServicePlane, CFSTR("SMART Capable"), kCFAllocatorDefault, 0);
+    if (cap && !done) {
+      IOCFPlugInInterface **pi = 0; SInt32 sc; IOATASMARTInterface **si = 0;
+      if (!IOCreatePlugInInterfaceForService(o, kIOATASMARTUserClientTypeID, kIOCFPlugInInterfaceID, &pi, &sc) && pi) {
+        (*pi)->QueryInterface(pi, CFUUIDGetUUIDBytes(kIOATASMARTInterfaceID), (LPVOID *)&si);
+        if (si) {
+          ATASMARTData d;
+          if (!(*si)->SMARTReadData(si, &d)) {
+            unsigned char *b = (unsigned char *)&d;
+            for (int i = 0; i < 30; i++) { unsigned char *a = b + 2 + i * 12; if (a[0] == 194) { if (a[5] > 5 && a[5] < 90) { last = a[5]; at = now; } break; } }
+          }
+          (*si)->Release(si);
+        }
+        IODestroyPlugInInterface(pi);
+        done = 1;
+      }
+    }
+    if (cap) CFRelease(cap);
+    IOObjectRelease(o);
+  }
+  IOObjectRelease(it);
+  return last;
+}
+
 // ------------------------------------------------------------------------- sofa-fand status
 typedef struct {
   int ok; char mode[12], profile[12]; double shift, vol, cpu, gpu, hdd;
@@ -407,7 +443,7 @@ static int sample(char *line, size_t cap, int *busy) {
   }
   for (int i = 0; i < 5; i++) NUM("%.2f", smc_watts(pk[i]));
   for (int i = 0; i < f.nsens; i++) NUM("%.2f", smc_temp(f.sens[i]));
-  NUM("%.0f", f.hdd);
+  NUM("%.0f", isnan(f.hdd) ? smart_temp() : f.hdd);   // own SMART read only while sofa-fand has none
   for (int i = 0; i < next_ext; i++) {                 // same filter as the header
     if (core_key(ext[i], f.sens, f.nsens)) continue;
     if (do_ext) NUM("%.3f", smc_num(ext[i])); else OUT(",");
