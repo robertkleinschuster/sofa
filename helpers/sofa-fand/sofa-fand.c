@@ -1254,7 +1254,7 @@ static int run_daemon(const char *conf) {
       // step -> ~35 s), or, as a hard cap, no beat at all for GUARD_STALE
       if (now_s() > shm->beat_due + 10 || now_s() - shm->beat > GUARD_STALE) {
         smc_auto(); kill(child, SIGKILL); waitpid(child, &stv, 0); smc_auto();
-        guard_log("controller %d hung (no heartbeat %.0f s), killed, FS!=0", child, GUARD_STALE);
+        guard_log("controller %d hung (last beat %.0f s ago, %.0f s past its announced next step), killed, FS!=0", child, now_s() - shm->beat, now_s() - shm->beat_due);
         break;
       }
       // belt and braces: FS! set while the controller says it forces nothing
@@ -1307,6 +1307,7 @@ int main(int argc, char **argv) {
   }
   if (argc >= 2 && !strcmp(argv[1], "status")) return ctl_client("STATUS");   // -n: the dry run's socket
   if (argc >= 2 && !strcmp(argv[1], "state")) return ctl_client("STATE");
+  if (argc >= 3 && !strcmp(argv[argc - 1], "-n")) argc--;              // hint ... -n: to the dry run
   if (argc >= 3 && argc <= 5 && !strcmp(argv[1], "hint")) {
     char c[300];
     snprintf(c, sizeof c, "HINT {\"v\":1,\"ctx\":\"%.16s\",\"vol\":%s,\"ttl\":%d,\"pid\":%d}", argv[2], argc >= 4 ? argv[3] : "null", argc >= 5 ? atoi(argv[4]) : 90, getpid());
