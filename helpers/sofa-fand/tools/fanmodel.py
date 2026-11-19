@@ -40,10 +40,11 @@ PROF_SHIFTS = {'ruhe': range(0, 9), 'idle': range(-6, -1), 'playback': range(-8,
 KEEP_COOL = {'idle', 'playback'}   # in use: no sensor warmer than with the current config (+0.5)
 SIM_H, SIM_DT = 4.0, 30.0  # simulated hours per operating point, step (s)
 PEN = 200.0                # cost per deg C over a target
-H_SLOW = {'HDD': 5}
+H_SLOW = {'HDD': 5}        # derivative half-window (min) per sensor: the drive reads whole deg C
 GATE_MIN = {'Ruhe': 300, 'Bildschirm an': 300, 'Wiedergabe': 300}    # minutes of data per mode
 GATE_RMSE, GATE_RMSE_OF = 2.5, {'TCXc': 3.5}                        # per-mode RMSE limit (deg C)
-STEP_CURVE, STEP_PROF = 2, 1                                         # largest step per night (deg C)        # derivative half-window (min) per sensor: the drive reads whole deg C
+STEP_CURVE, STEP_PROF = 2, 1                                         # largest step per night (deg C)
+GATE_VALID = 60                                                      # least validation points per sensor and mode
 
 # --------------------------------------------------------------------------------------- data
 def num(x):
@@ -306,7 +307,8 @@ def render(conf, offs):
 
 def check_conf(checker, path):
     if not checker: return None, 'nicht geprüft (kein --check)'
-    r = subprocess.run([checker, 'check', '-c', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+    try: r = subprocess.run([checker, 'check', '-c', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e: return False, 'sofa-fand check nicht ausführbar: %s' % e
     return r.returncode == 0, ('sofa-fand check: ok' if r.returncode == 0 else 'sofa-fand check FEHLGESCHLAGEN: ' + (r.stdout.strip().splitlines() or ['?'])[-1][:200])
 
 MODE = {'ruhe': 'Ruhe', 'idle': 'Bildschirm an', 'playback': 'Wiedergabe'}
@@ -325,6 +327,26 @@ def metrics(conf, ser, since):
         out[m] = {'min': len(ds), 'noise': sum(noise(d) for d in ds) / len(ds), 'hdd_on': hdd_on,
                   'Tp2H': p95('Tp2H'), 'TG0D': p95('TG0D'), 'TC0P': p95('TC0P'), 'HDD': p95('HDD')}
     return out
+
+def write_metrics(conf, ser, state, rep):
+    """measured yardstick, independent of the model: one row per mode for the 24 h before the last data"""
+    if not ser or time.time() - ser[-1]['t'] > 2 * 3600:
+        rep += ['', 'Messgrößen: keine aktuellen Daten (letzte vor mehr als 2 h) – nichts geschrieben.']; return
+    day = time.strftime('%Y-%m-%d', time.localtime(ser[-1]['t']))
+    mt = metrics(conf, ser, ser[-1]['t'] - 86400)
+    mp = os.path.join(state, 'metrics.csv')
+    old = [l for l in open(mp)] if os.path.exists(mp) else ['date,mode,minutes,noise,hdd_fan_on,Tp2H_p95,TG0D_p95,TC0P_p95,HDD_p95\n']
+    old = [l for l in old if not l.startswith(day + ',')]          # a re-run the same day replaces its rows
+    for m, v in mt.items():
+        old.append('%s,%s,%d,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f\n' % (day, m, v['min'], v['noise'], v['hdd_on'], v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
+    tmp = mp + '.tmp'; open(tmp, 'w').write(''.join(old)); os.replace(tmp, mp)
+    rep += ['', 'Gemessen in den 24 h bis %s (Lautstärke-Maß, Spitzen = 95 %%-Wert):' % time.strftime('%d.%m. %H:%M', time.localtime(ser[-1]['t'])), '',
+            '| Betriebsart | Minuten | Lautstärke | HDD-Lüfter an | Tp2H | TG0D | TC0P | HDD |', '|---|---|---|---|---|---|---|---|']
+    for m, v in mt.items():
+        rep.append('| %s | %d | %.2f | %d %% | %.1f | %.1f | %.1f | %.1f |' % (m, v['min'], v['noise'], round(100 * v['hdd_on']), v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
+
+def shadow_log(state, text):
+    open(os.path.join(state, 'shadow.log'), 'a').write('%s | %s | Schattenbetrieb: nichts angewendet\n' % (time.strftime('%Y-%m-%d %H:%M'), text))
 
 # --------------------------------------------------------------------------------------- main
 def main():
@@ -346,6 +368,9 @@ def main():
             v = line.strip().split(',')
             if len(v) >= 4: phases.append((int(v[0]), int(v[1]), v[2], v[3]))
     ser = bin60(load_logs(logdir))
+    if not ser: print('no data in', logdir); sys.exit(1)
+    def in_test(t): return any(p[0] <= t < p[1] for p in phases)
+    if state: os.makedirs(state, exist_ok=True)
     sensors = sorted({cv['key'] for f in conf['fans'].values() for cv in f['curves']})
     rep = ['# Lüftermodell und Kurvenvorschlag', '',
            'Erzeugt %s aus %d Minuten Daten (%s bis %s). Nichts wurde angewendet.' % (
@@ -388,7 +413,9 @@ def main():
         k0 = max(th[4], 1e-6)
         rep.append('| %s | %.2f | %.2f | %.2f | %.3f | %.3f | %.3f |' % (s, th[5] / k0, th[6] / k0, th[7] / k0, th[1], th[2], th[3]))
     scs = scenarios(ser, phases)
-    if not scs: print('no operating points found'); sys.exit(1)
+    if not scs:
+        if state: shadow_log(state, 'Freigabe: nein (keine Betriebspunkte in den Daten) | Schritt: keiner')
+        print('no operating points found'); sys.exit(1)
     base_rows = cost(conf, model, scs, {}, detail=True)[1]
     btemps = [r['peak'] for r in base_rows]
     base_cost = cost(conf, model, scs, {}, base=btemps)
@@ -441,52 +468,52 @@ def main():
     open(prop, 'w').write('\n'.join(lines))
     good, verdict = check_conf(checker, prop)
     if good is False: os.replace(prop, prop + '.rejected'); verdict += ', verworfen'
-    # ---- stage 3, shadow mode: gates, one small step, log what it would do
+    # ---- stage 3, shadow mode: gates, one small step, log what it would do (never applies anything)
     if state:
-        os.makedirs(state, exist_ok=True)
-        minutes = {m: sum(1 for d in ser if MODE.get(d.get('profile')) == m) for m in GATE_MIN}
-        why = ['%s: %d von %d min Daten' % (m, minutes[m], GATE_MIN[m]) for m in GATE_MIN if minutes[m] < GATE_MIN[m]]
-        for sn, per in sorted(bymode.items()):
-            for m in GATE_MIN:
-                e = per.get(m, [])
-                if e:
+        try:
+            gate = []
+            minutes = {m: sum(1 for d in ser if MODE.get(d.get('profile')) == m and ok(d, 'TA0P') and not in_test(d['t'])) for m in GATE_MIN}
+            gate += ['%s: %d von %d min Daten' % (m, minutes[m], GATE_MIN[m]) for m in GATE_MIN if minutes[m] < GATE_MIN[m]]
+            for sn in sorted(model):
+                for m in GATE_MIN:
+                    e = bymode.get(sn, {}).get(m, [])
+                    if len(e) < GATE_VALID: gate.append('%s %s: zu wenig Validierung (%d)' % (sn, m, len(e))); continue
                     r = math.sqrt(sum(x * x for x in e) / len(e))
-                    if r > GATE_RMSE_OF.get(sn, GATE_RMSE): why.append('%s %s: Modellfehler %.1f °C' % (sn, m, r))
-        if good is False: why.append('Vorschlag besteht sofa-fand check nicht')
-        step = {}
-        for key, o in offs.items():
-            if key[0] == 'prof':
-                cur = conf['prof'][key[1]][0]; step[key] = cur + max(-STEP_PROF, min(STEP_PROF, o - cur))
-            else: step[key] = max(-STEP_CURVE, min(STEP_CURVE, o))
-        step = {k: v for k, v in step.items() if (k[0] == 'prof' and v != conf['prof'][k[1]][0]) or (k[0] != 'prof' and v)}
-        if step and not feasible(step): why.append('Schritt verletzt die harte Regel an der Warngrenze'); step = {}
-        stxt = 'keiner'
-        if step:
-            sc_cost, sc_rows = cost(conf, model, scs, step, base=btemps, detail=True)
-            if sc_cost > base_cost + 1e-6: why.append('Schritt ist im Modell nicht besser (%.1f statt %.1f)' % (sc_cost, base_cost))
-            neww = sorted({'%s (%s)' % (k, r['sc']['name']) for r, b in zip(sc_rows, base_rows) for k in r['warn'] if k not in b['warn']})
-            if neww: why.append('Schritt erreicht im Modell eine neue Warngrenze: ' + ', '.join(neww[:3]))
-            slines, snotes = render(conf, step)
-            sp = os.path.join(outdir, 'sofa-fand.conf.step'); open(sp, 'w').write('\n'.join(slines))
-            sgood, sverd = check_conf(checker, sp)
-            if sgood is False: os.replace(sp, sp + '.rejected'); why.append('Schritt besteht sofa-fand check nicht')
-            stxt = ', '.join(('Profil %s %g→%g' % (k[1], conf['prof'][k[1]][0], v)) if k[0] == 'prof' else
-                             ('%s/%s %+d °C' % (conf['fans'][k[0]]['name'], conf['fans'][k[0]]['curves'][k[1]]['key'], v)) for k, v in sorted(step.items(), key=lambda kv: str(kv[0])))
-        released = not why and bool(step)
-        line = '%s | Freigabe: %s | Schritt: %s | Schattenbetrieb: nichts angewendet' % (
-            time.strftime('%Y-%m-%d %H:%M'), 'ja' if released else 'nein (' + '; '.join(why[:6]) + (' …' if len(why) > 6 else '') + ')', stxt)
-        open(os.path.join(state, 'shadow.log'), 'a').write(line + '\n')
-        mt = metrics(conf, ser, ser[-1]['t'] - 86400)
-        mp = os.path.join(state, 'metrics.csv'); new = not os.path.exists(mp)
-        with open(mp, 'a') as f:
-            if new: f.write('date,mode,minutes,noise,hdd_fan_on,Tp2H_p95,TG0D_p95,TC0P_p95,HDD_p95\n')
-            for m, v in mt.items():
-                f.write('%s,%s,%d,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f\n' % (time.strftime('%Y-%m-%d'), m, v['min'], v['noise'], v['hdd_on'], v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
-        rep += ['', '## Stufe 3 (Schattenbetrieb)', '', line.split(' | ', 1)[1].replace(' | ', '  \n'), '',
-                'Gemessen in den letzten 24 h (Lautstärke-Maß, Spitzen = 95 %-Wert):', '',
-                '| Betriebsart | Minuten | Lautstärke | HDD-Lüfter an | Tp2H | TG0D | TC0P | HDD |', '|---|---|---|---|---|---|---|---|']
-        for m, v in mt.items():
-            rep.append('| %s | %d | %.2f | %d %% | %.1f | %.1f | %.1f | %.1f |' % (m, v['min'], v['noise'], round(100 * v['hdd_on']), v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
+                    if r > GATE_RMSE_OF.get(sn, GATE_RMSE): gate.append('%s %s: Modellfehler %.1f °C' % (sn, m, r))
+            if good is not True: gate.append('Vorschlag: ' + verdict)
+            stepwhy = []; step = {}
+            for key, o in offs.items():
+                if key[0] == 'prof':
+                    cur = conf['prof'][key[1]][0]; step[key] = cur + max(-STEP_PROF, min(STEP_PROF, o - cur))
+                else: step[key] = max(-STEP_CURVE, min(STEP_CURVE, o))
+            step = {k: v for k, v in step.items() if (k[0] == 'prof' and v != conf['prof'][k[1]][0]) or (k[0] != 'prof' and v)}
+            stxt = 'keiner'
+            if not step: stepwhy.append('kein Schritt (Config im Modell optimal)')
+            else:
+                stxt = ', '.join(('Profil %s %g→%g' % (k[1], conf['prof'][k[1]][0], v)) if k[0] == 'prof' else
+                                 ('%s/%s %+d °C' % (conf['fans'][k[0]]['name'], conf['fans'][k[0]]['curves'][k[1]]['key'], v)) for k, v in sorted(step.items(), key=lambda kv: str(kv[0])))
+                if not feasible(step): stepwhy.append('Schritt verletzt die harte Regel an der Warngrenze')
+                sc_cost, sc_rows = cost(conf, model, scs, step, base=btemps, detail=True)
+                if sc_cost >= base_cost - 1e-6: stepwhy.append('Schritt ist im Modell nicht besser (%.1f, jetzt %.1f)' % (sc_cost, base_cost))
+                neww = sorted({'%s (%s)' % (k, r['sc']['name']) for r, b in zip(sc_rows, base_rows) for k in r['warn'] if k not in b['warn']})
+                if neww: stepwhy.append('Schritt erreicht im Modell eine neue Warngrenze: ' + ', '.join(neww[:3]))
+                slines, _ = render(conf, step)
+                sp = os.path.join(outdir, 'sofa-fand.conf.step.tmp'); open(sp, 'w').write('\n'.join(slines))
+                sgood, sverd = check_conf(checker, sp)
+                if sgood is not True: stepwhy.append('Schritt: ' + sverd)
+                # only a fully vetted step carries the plain name
+                os.replace(sp, os.path.join(outdir, 'sofa-fand.conf.step' + ('' if not stepwhy else '.rejected')))
+            why = stepwhy + gate
+            released = not why
+            text = 'Freigabe: %s | Schritt: %s' % ('ja' if released else 'nein (' + '; '.join(why[:8]) + (' … +%d' % (len(why) - 8) if len(why) > 8 else '') + ')', stxt)
+            shadow_log(state, text)
+            rep += ['', '## Stufe 3 (Schattenbetrieb)', '', text.replace(' | ', '  \n') + '  \nSchattenbetrieb: nichts angewendet.']
+        except Exception as e:
+            rep += ['', '## Stufe 3 (Schattenbetrieb)', '', 'Fehler: %r' % e]
+            try: shadow_log(state, 'Fehler: %r' % e)
+            except Exception: pass
+        try: write_metrics(conf, ser, state, rep)
+        except Exception as e: rep += ['', 'Messgrößen: Fehler %r' % e]
     rep += ['', 'Config-Prüfung: %s.' % verdict, '', '## Grenzen', '',
             '- Das Modell ist so gut wie seine Daten: Raumtemperaturen und Lasten außerhalb des Gesehenen sind Extrapolation (deshalb der Warm-Raum-Fall).',
             '- TA0P (ein Sensor im Gehäuse) dient als Umgebung und wird im Betriebspunkt festgehalten; bei leiseren Lüftern steigt er in Wirklichkeit leicht, die Simulation ist dort etwas optimistisch.',
