@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fanmodel.py - self-optimisation of sofa-fand, stage 2 (issue #2): learn, simulate, propose.
 
-    fanmodel.py LOGDIR CONF [--out DIR] [--phases CSV ...] [--check SOFA_FAND_BINARY]
+    fanmodel.py LOGDIR CONF [--out DIR] [--phases CSV ...] [--check SOFA_FAND_BINARY] [--state DIR]
 
 1. Learns a grey-box thermal model per sensor from sofa-fanlearn's CSVs (60 s means):
      dT/dt = a0 + b_cpu*PCPT + b_gpu*PG0R + b_rest*(PDTR-PCPT-PG0R)
@@ -17,6 +17,11 @@
    Hard rule: at its sensor's warn temperature no curve may ask for less than it does today.
 4. Writes report.md and sofa-fand.conf.proposal (checked with `sofa-fand check` if --check is
    given; a config that fails is written as .rejected). Nothing is applied.
+5. Stage 3 in shadow mode (--state DIR): release gates (enough data and a good model in every
+   mode), one small step towards the proposal (curves <= 2 deg C, profiles <= 1 deg C, simulated,
+   checked) written as sofa-fand.conf.step, and a line in DIR/shadow.log saying what it would do.
+   Daily measured metrics per mode (noise score, temperature peaks) go to DIR/metrics.csv - the
+   before/after yardstick for real steps later. Nothing is applied in shadow mode.
 Pure Python (runs on the iMac's MacPorts python3), no numpy.
 """
 import math, os, re, subprocess, sys, time
@@ -35,7 +40,10 @@ PROF_SHIFTS = {'ruhe': range(0, 9), 'idle': range(-6, -1), 'playback': range(-8,
 KEEP_COOL = {'idle', 'playback'}   # in use: no sensor warmer than with the current config (+0.5)
 SIM_H, SIM_DT = 4.0, 30.0  # simulated hours per operating point, step (s)
 PEN = 200.0                # cost per deg C over a target
-H_SLOW = {'HDD': 5}        # derivative half-window (min) per sensor: the drive reads whole deg C
+H_SLOW = {'HDD': 5}
+GATE_MIN = {'Ruhe': 300, 'Bildschirm an': 300, 'Wiedergabe': 300}    # minutes of data per mode
+GATE_RMSE, GATE_RMSE_OF = 2.5, {'TCXc': 3.5}                        # per-mode RMSE limit (deg C)
+STEP_CURVE, STEP_PROF = 2, 1                                         # largest step per night (deg C)        # derivative half-window (min) per sensor: the drive reads whole deg C
 
 # --------------------------------------------------------------------------------------- data
 def num(x):
@@ -284,16 +292,51 @@ def scenarios(ser, phases):
         out.append(w)
     return out
 
+def render(conf, offs):
+    lines = conf['lines'][:]; notes = []
+    for key, o in sorted(offs.items(), key=lambda kv: str(kv[0])):
+        if key[0] == 'prof':
+            pi = conf['prof'][key[1]][2]; old = lines[pi]; t = old.split('#')[0].split(); t[2] = '%g' % o
+            lines[pi] = ' '.join(t) + '   # fanmodel: was ' + old.split('#')[0].split()[2]
+            notes.append((key, old.split('#')[0].strip(), lines[pi].split('#')[0].strip())); continue
+        n, ci = key; cv = conf['fans'][n]['curves'][ci]; old = lines[cv['line']]
+        lines[cv['line']] = 'curve %d %-4s %s   # fanmodel: %+d °C' % (n, cv['key'], ' '.join('%g:%g' % (t + o, r) for t, r in cv['pts']), o)
+        notes.append((key, old.split('#')[0].strip(), lines[cv['line']].split('#')[0].strip()))
+    return lines, notes
+
+def check_conf(checker, path):
+    if not checker: return None, 'nicht geprüft (kein --check)'
+    r = subprocess.run([checker, 'check', '-c', path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+    return r.returncode == 0, ('sofa-fand check: ok' if r.returncode == 0 else 'sofa-fand check FEHLGESCHLAGEN: ' + (r.stdout.strip().splitlines() or ['?'])[-1][:200])
+
+MODE = {'ruhe': 'Ruhe', 'idle': 'Bildschirm an', 'playback': 'Wiedergabe'}
+def metrics(conf, ser, since):
+    """measured per mode over the bins since `since`: minutes, noise score, temperature peaks"""
+    out = {}
+    for m in MODE.values():
+        ds = [d for d in ser if d['t'] >= since and MODE.get(d.get('profile')) == m]
+        if not ds: continue
+        def noise(d):
+            return sum(LOUD.get(f['name'], 1) * ((d.get('F%dAc' % n) or 0) ** 2 / 1e6 + ON_COST * ((d.get('F%dAc' % n) or 0) > 100))
+                       for n, f in conf['fans'].items() if isinstance(d.get('F%dAc' % n), float))
+        def p95(k):
+            v = sorted(d[k] for d in ds if isinstance(d.get(k), float)); return v[int(len(v) * 0.95)] if v else float('nan')
+        hdd_on = sum(1 for d in ds if (d.get('F1Ac') or 0) > 100) / len(ds)
+        out[m] = {'min': len(ds), 'noise': sum(noise(d) for d in ds) / len(ds), 'hdd_on': hdd_on,
+                  'Tp2H': p95('Tp2H'), 'TG0D': p95('TG0D'), 'TC0P': p95('TC0P'), 'HDD': p95('HDD')}
+    return out
+
 # --------------------------------------------------------------------------------------- main
 def main():
     a = sys.argv[1:]
     if len(a) < 2: print(__doc__); sys.exit(2)
-    logdir, confp = a[0], a[1]; outdir = '.'; phfiles = []; checker = None
+    logdir, confp = a[0], a[1]; outdir = '.'; phfiles = []; checker = None; state = None
     i = 2
     while i < len(a):
         if a[i] == '--out': outdir = a[i + 1]; i += 2
         elif a[i] == '--phases': phfiles.append(a[i + 1]); i += 2
         elif a[i] == '--check': checker = a[i + 1]; i += 2
+        elif a[i] == '--state': state = a[i + 1]; i += 2
         else: print('unknown argument', a[i]); sys.exit(2)
     t0 = time.time()
     conf = parse_conf(confp)
@@ -387,27 +430,63 @@ def main():
             ', '.join('%s +%.1f' % kv for kv in sorted(r2['over'].items())) or '–'))
     rep += ['', 'Gesamtkosten (Lautstärke gewichtet + Strafe für Zielüberschreitung): jetzt %.1f, Vorschlag %.1f.' % (base_cost, new_cost), '',
             '## Vorgeschlagene Änderungen', '']
-    lines = conf['lines'][:]
     if not offs: rep.append('Keine: die jetzige Config ist im Modell schon optimal.')
-    for key, o in sorted(offs.items(), key=lambda kv: str(kv[0])):
-        if key[0] == 'prof':
-            pi = conf['prof'][key[1]][2]; old = lines[pi]; t = old.split('#')[0].split(); t[2] = '%g' % o
-            lines[pi] = ' '.join(t) + '   # fanmodel: was ' + old.split('#')[0].split()[2]
-            rep.append('- `%s` → `%s` (Profil %s%s)' % (old.split('#')[0].strip(), lines[pi].split('#')[0].strip(), key[1], ', am Suchrand' if key in bound else '')); continue
-        n, ci = key; cv = conf['fans'][n]['curves'][ci]
-        old = lines[cv['line']]
-        lines[cv['line']] = 'curve %d %-4s %s   # fanmodel: %+d °C' % (n, cv['key'], ' '.join('%g:%g' % (t + o, r) for t, r in cv['pts']), o)
-        rep.append('- `%s` → `%s` (%s %+d °C, %s%s)' % (old.split('#')[0].strip(), lines[cv['line']].split('#')[0].strip(), conf['fans'][n]['name'], o,
-                   'später/leiser' if o > 0 else 'früher/kühler', ', am Suchrand' if key in bound else ''))
+    lines, notes = render(conf, offs)
+    for key, old, new in notes:
+        o = offs[key]
+        if key[0] == 'prof': rep.append('- `%s` → `%s` (Profil %s%s)' % (old, new, key[1], ', am Suchrand' if key in bound else ''))
+        else: rep.append('- `%s` → `%s` (%s %+d °C, %s%s)' % (old, new, conf['fans'][key[0]]['name'], o, 'später/leiser' if o > 0 else 'früher/kühler', ', am Suchrand' if key in bound else ''))
     os.makedirs(outdir, exist_ok=True)
     prop = os.path.join(outdir, 'sofa-fand.conf.proposal')
     open(prop, 'w').write('\n'.join(lines))
-    verdict = 'nicht geprüft (kein --check)'
-    if checker:
-        r = subprocess.run([checker, 'check', '-c', prop], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        if r.returncode == 0: verdict = 'sofa-fand check: ok'
-        else:
-            os.replace(prop, prop + '.rejected'); verdict = 'sofa-fand check FEHLGESCHLAGEN, verworfen: ' + (r.stdout.strip().splitlines() or ['?'])[-1][:200]
+    good, verdict = check_conf(checker, prop)
+    if good is False: os.replace(prop, prop + '.rejected'); verdict += ', verworfen'
+    # ---- stage 3, shadow mode: gates, one small step, log what it would do
+    if state:
+        os.makedirs(state, exist_ok=True)
+        minutes = {m: sum(1 for d in ser if MODE.get(d.get('profile')) == m) for m in GATE_MIN}
+        why = ['%s: %d von %d min Daten' % (m, minutes[m], GATE_MIN[m]) for m in GATE_MIN if minutes[m] < GATE_MIN[m]]
+        for sn, per in sorted(bymode.items()):
+            for m in GATE_MIN:
+                e = per.get(m, [])
+                if e:
+                    r = math.sqrt(sum(x * x for x in e) / len(e))
+                    if r > GATE_RMSE_OF.get(sn, GATE_RMSE): why.append('%s %s: Modellfehler %.1f °C' % (sn, m, r))
+        if good is False: why.append('Vorschlag besteht sofa-fand check nicht')
+        step = {}
+        for key, o in offs.items():
+            if key[0] == 'prof':
+                cur = conf['prof'][key[1]][0]; step[key] = cur + max(-STEP_PROF, min(STEP_PROF, o - cur))
+            else: step[key] = max(-STEP_CURVE, min(STEP_CURVE, o))
+        step = {k: v for k, v in step.items() if (k[0] == 'prof' and v != conf['prof'][k[1]][0]) or (k[0] != 'prof' and v)}
+        if step and not feasible(step): why.append('Schritt verletzt die harte Regel an der Warngrenze'); step = {}
+        stxt = 'keiner'
+        if step:
+            sc_cost, sc_rows = cost(conf, model, scs, step, base=btemps, detail=True)
+            if sc_cost > base_cost + 1e-6: why.append('Schritt ist im Modell nicht besser (%.1f statt %.1f)' % (sc_cost, base_cost))
+            neww = sorted({'%s (%s)' % (k, r['sc']['name']) for r, b in zip(sc_rows, base_rows) for k in r['warn'] if k not in b['warn']})
+            if neww: why.append('Schritt erreicht im Modell eine neue Warngrenze: ' + ', '.join(neww[:3]))
+            slines, snotes = render(conf, step)
+            sp = os.path.join(outdir, 'sofa-fand.conf.step'); open(sp, 'w').write('\n'.join(slines))
+            sgood, sverd = check_conf(checker, sp)
+            if sgood is False: os.replace(sp, sp + '.rejected'); why.append('Schritt besteht sofa-fand check nicht')
+            stxt = ', '.join(('Profil %s %g→%g' % (k[1], conf['prof'][k[1]][0], v)) if k[0] == 'prof' else
+                             ('%s/%s %+d °C' % (conf['fans'][k[0]]['name'], conf['fans'][k[0]]['curves'][k[1]]['key'], v)) for k, v in sorted(step.items(), key=lambda kv: str(kv[0])))
+        released = not why and bool(step)
+        line = '%s | Freigabe: %s | Schritt: %s | Schattenbetrieb: nichts angewendet' % (
+            time.strftime('%Y-%m-%d %H:%M'), 'ja' if released else 'nein (' + '; '.join(why[:6]) + (' …' if len(why) > 6 else '') + ')', stxt)
+        open(os.path.join(state, 'shadow.log'), 'a').write(line + '\n')
+        mt = metrics(conf, ser, ser[-1]['t'] - 86400)
+        mp = os.path.join(state, 'metrics.csv'); new = not os.path.exists(mp)
+        with open(mp, 'a') as f:
+            if new: f.write('date,mode,minutes,noise,hdd_fan_on,Tp2H_p95,TG0D_p95,TC0P_p95,HDD_p95\n')
+            for m, v in mt.items():
+                f.write('%s,%s,%d,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f\n' % (time.strftime('%Y-%m-%d'), m, v['min'], v['noise'], v['hdd_on'], v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
+        rep += ['', '## Stufe 3 (Schattenbetrieb)', '', line.split(' | ', 1)[1].replace(' | ', '  \n'), '',
+                'Gemessen in den letzten 24 h (Lautstärke-Maß, Spitzen = 95 %-Wert):', '',
+                '| Betriebsart | Minuten | Lautstärke | HDD-Lüfter an | Tp2H | TG0D | TC0P | HDD |', '|---|---|---|---|---|---|---|---|']
+        for m, v in mt.items():
+            rep.append('| %s | %d | %.2f | %d %% | %.1f | %.1f | %.1f | %.1f |' % (m, v['min'], v['noise'], round(100 * v['hdd_on']), v['Tp2H'], v['TG0D'], v['TC0P'], v['HDD']))
     rep += ['', 'Config-Prüfung: %s.' % verdict, '', '## Grenzen', '',
             '- Das Modell ist so gut wie seine Daten: Raumtemperaturen und Lasten außerhalb des Gesehenen sind Extrapolation (deshalb der Warm-Raum-Fall).',
             '- TA0P (ein Sensor im Gehäuse) dient als Umgebung und wird im Betriebspunkt festgehalten; bei leiseren Lüftern steigt er in Wirklichkeit leicht, die Simulation ist dort etwas optimistisch.',

@@ -8,7 +8,7 @@ OUT=/Users/imac/Library/Logs/fanmodel/$(date +%Y-%m-%d)
 mkdir -p "$OUT"
 PH=(); for p in /Users/imac/Library/Logs/fan-ident-*/phases.csv; do [ -f "$p" ] && PH+=(--phases "$p"); done
 /opt/local/bin/python3 -I $T/fanmodel.py /Users/imac/Library/Logs/sofa-fanlearn /usr/local/etc/sofa-fand.conf \
-  --out "$OUT" --check /usr/local/sbin/sofa-fand ${PH[@]+"${PH[@]}"} > "$OUT/run.log" 2>&1
+  --out "$OUT" --state /Users/imac/Library/Logs/fanmodel --check /usr/local/sbin/sofa-fand ${PH[@]+"${PH[@]}"} > "$OUT/run.log" 2>&1
 echo "rc=$?" >> "$OUT/run.log"
 ln -sfn "$OUT" /Users/imac/Library/Logs/fanmodel/latest
 find /Users/imac/Library/Logs/fanmodel -mindepth 1 -maxdepth 1 -type d -name '20??-??-??' -mtime +30 -exec rm -rf {} +
