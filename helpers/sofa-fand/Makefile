@@ -9,6 +9,8 @@
 #   sudo make uninstall-learn  unload and remove it (collected data stays in ~/Library/Logs/sofa-fanlearn)
 #   sudo make install-model    nightly fanmodel report 04:00 (de.sofa.fanmodel, issue #2 stage 2, report only)
 #   sudo make uninstall-model  unload and remove it (reports stay in ~/Library/Logs/fanmodel)
+#   sudo make install-ident    one identification block per night 01:30 while Sofa rests (de.sofa.fanident)
+#   sudo make uninstall-ident  unload and remove it
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
@@ -83,6 +85,15 @@ uninstall-model:
 	-launchctl unload /Library/LaunchDaemons/de.sofa.fanmodel.plist
 	rm -f /Library/LaunchDaemons/de.sofa.fanmodel.plist
 
+install-ident:
+	-launchctl unload /Library/LaunchDaemons/de.sofa.fanident.plist 2>/dev/null
+	install -m 644 -o root -g wheel de.sofa.fanident.plist /Library/LaunchDaemons/de.sofa.fanident.plist
+	launchctl load -w /Library/LaunchDaemons/de.sofa.fanident.plist
+
+uninstall-ident:
+	-launchctl unload /Library/LaunchDaemons/de.sofa.fanident.plist
+	rm -f /Library/LaunchDaemons/de.sofa.fanident.plist
+
 uninstall-learn:
 	-launchctl unload $(LPLIST)
 	rm -f $(LPLIST) /usr/local/bin/$(LBIN)
@@ -91,4 +102,4 @@ clean:
 	rm -f $(BIN) $(LBIN) $(TOOLS)
 	rm -rf $(BIN).dSYM $(LBIN).dSYM
 
-.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn install-model uninstall-model clean
+.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn install-model uninstall-model install-ident uninstall-ident clean
