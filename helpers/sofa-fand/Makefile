@@ -7,6 +7,8 @@
 #   make tools           measurement tools in tools/ (smcfan, smcenum, smarttemp, fanlab)
 #   sudo make install-learn    sofa-fanlearn (passive data collector, issue #2 stage 1) + LaunchDaemon
 #   sudo make uninstall-learn  unload and remove it (collected data stays in ~/Library/Logs/sofa-fanlearn)
+#   sudo make install-model    nightly fanmodel report 04:00 (de.sofa.fanmodel, issue #2 stage 2, report only)
+#   sudo make uninstall-model  unload and remove it (reports stay in ~/Library/Logs/fanmodel)
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
@@ -71,6 +73,16 @@ install-learn: $(LBIN)
 	sudo -u imac mkdir -p /Users/imac/Library/Logs/sofa-fanlearn
 	launchctl load -w $(LPLIST)
 
+install-model:
+	-launchctl unload /Library/LaunchDaemons/de.sofa.fanmodel.plist 2>/dev/null
+	install -m 644 -o root -g wheel de.sofa.fanmodel.plist /Library/LaunchDaemons/de.sofa.fanmodel.plist
+	sudo -u imac mkdir -p /Users/imac/Library/Logs/fanmodel
+	launchctl load -w /Library/LaunchDaemons/de.sofa.fanmodel.plist
+
+uninstall-model:
+	-launchctl unload /Library/LaunchDaemons/de.sofa.fanmodel.plist
+	rm -f /Library/LaunchDaemons/de.sofa.fanmodel.plist
+
 uninstall-learn:
 	-launchctl unload $(LPLIST)
 	rm -f $(LPLIST) /usr/local/bin/$(LBIN)
@@ -79,4 +91,4 @@ clean:
 	rm -f $(BIN) $(LBIN) $(TOOLS)
 	rm -rf $(BIN).dSYM $(LBIN).dSYM
 
-.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn clean
+.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn install-model uninstall-model clean

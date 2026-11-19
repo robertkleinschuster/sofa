@@ -131,7 +131,7 @@ def freerun(seg, s, th):
         if not ok(d, s) or seg[i + 1]['t'] - d['t'] != 60: T = None; continue
         if T is None: T = d[s]
         T += sum(a * b for a, b in zip(th, regs(d, T)))
-        if isinstance(seg[i + 1].get(s), float): err.append(T - seg[i + 1][s])
+        if isinstance(seg[i + 1].get(s), float): err.append((T - seg[i + 1][s], seg[i + 1].get('profile')))
     return err
 
 def chunks(ser, sec=7200):
@@ -311,7 +311,7 @@ def main():
            '## Modellgüte', '',
            'Freier Simulationslauf über 2-h-Abschnitte, die beim Lernen ganz weggelassen wurden (°C).', '',
            '| Sensor | Lernpunkte | RMSE | 90 %-Fehler | max | Abschnitte |', '|---|---|---|---|---|---|']
-    model = {}; cs = chunks(ser)
+    model = {}; cs = chunks(ser); bymode = {}
     for s in sensors:
         th, n = fit(ser, s)
         if not th: rep.append('| %s | %d | – | – | – | zu wenig Daten |' % (s, n)); continue
@@ -320,9 +320,22 @@ def main():
             lo, hi = c[0]['t'], c[-1]['t']
             t2, _ = fit(ser, s, skip=lambda d: lo <= d['t'] <= hi)
             if t2: errs += freerun(c, s, t2)
+        for e, pr in errs:
+            m = {'ruhe': 'Ruhe', 'idle': 'Bildschirm an', 'playback': 'Wiedergabe'}.get(pr, 'Test/sonst')
+            bymode.setdefault(s, {}).setdefault(m, []).append(e)
+        errs = [e for e, _ in errs]
         if errs:
             ae = sorted(abs(e) for e in errs)
             rep.append('| %s | %d | %.1f | %.1f | %.1f | %d |' % (s, n, math.sqrt(sum(e * e for e in errs) / len(errs)), ae[int(len(ae) * 0.9)], ae[-1], len(cs)))
+    modes = ['Ruhe', 'Bildschirm an', 'Wiedergabe', 'Test/sonst']
+    rep += ['', 'Je Betriebsart (RMSE °C, in Klammern Minuten): erst wenn „Wiedergabe“ ähnlich gut ist wie der Rest, taugt ein Vorschlag für die Wiedergabe.', '',
+            '| Sensor | ' + ' | '.join(modes) + ' |', '|---' * (len(modes) + 1) + '|']
+    for s in sorted(bymode):
+        cells = []
+        for m in modes:
+            e = bymode[s].get(m, [])
+            cells.append('%.1f (%d)' % (math.sqrt(sum(x * x for x in e) / len(e)), len(e)) if e else '–')
+        rep.append('| %s | %s |' % (s, ' | '.join(cells)))
     missing = [s for s in sensors if s not in model]
     rep += ['', '## Wirkung der Lüfter (gelernt)', '',
             'Kühlwirkung je 1000 U/min relativ zur Eigenkühlung ohne Lüfter (k_Lüfter / k0): 1,0 = 1000 U/min verdoppeln die Wärmeabfuhr.',
