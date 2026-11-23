@@ -77,6 +77,9 @@
         [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
     } else if ([cmd isEqualToString:@"yttokenrefused"]) {   // as if stream protection refused the page's token (stale document)
         [[SFYTEngine shared] tokenRejected:arg ?: @"dev"];
+    } else if ([cmd isEqualToString:@"ytclosesession"]) {   // the visible player's session ends in the page (as after an idle timeout)
+        NSString *sid = [host topPlayer].playbackSource[@"sid"];
+        if (sid) [[SFYTEngine shared] closeSession:sid]; else SFLog(@"dev: no session stream playing");
     } else return NO;
     return YES;
 }

@@ -331,7 +331,8 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
   /** The open session `sid` (404 otherwise). */
   function session(sid: string): Session {
     const s = sessions.get(sid);
-    if (!s || s.closed) throw new EngineError(404, { error: 'no such session (expired?)' });
+    // `gone` names it: Sofa tells that session's player, whose URLs are dead (a 404 alone is ambiguous)
+    if (!s || s.closed) throw new EngineError(404, { error: 'no such session (expired?)', gone: sid });
     return s;
   }
 

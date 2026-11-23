@@ -96,7 +96,7 @@
 - (NSTimeInterval)failurePosition;
 - (BOOL)sessionSource;
 - (void)streamFailed:(NSString *)why;
-- (void)sessionServiceLost;
+- (void)sessionServiceLost:(NSNotification *)n;
 - (BOOL)reopenLostSessionOnPlay;
 - (void)engineStatusChanged;
 - (void)engineRateChanged;

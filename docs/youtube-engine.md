@@ -209,6 +209,14 @@ stream stalled at the 60 s it grants without one). Two layers now:
 Coverage: `unit-page-refresh.test.ts` (forced reload under a session and a pending request, once);
 live dev check with the `yttokenrefused` dev command (paused, playing, within the gap).
 
+## Expired sessions (2026-11-23)
+
+The engine closes a session after its idle timeout, also under a long-paused player. A call on
+it answers 404 with `gone: <sid>`; `SFYTEngine` posts `SFYTEngineSessionsLostNotification` with
+`userInfo @{sid}` (without it: every session, a page reload). `SFYouTubeApp playback:lostIn:`
+matches it to the open stream; the player reopens right away, or on play when paused. Before, mpv
+reconnected to 404s and finally took the failed read for the end of the video.
+
 ## Audio recovery (2026-11-20)
 
 `session.ts` measures advancing media separately for each track. The 20 s pump watchdog uses

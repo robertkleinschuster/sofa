@@ -175,6 +175,14 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   manual fallback until the user releases it.
 
 ## Decision log
+- 2026-11-23: **A player whose engine session is gone reopens instead of "ending"** (Build 32).
+  2026-11-22 19:38: a video paused for a day resumed; the engine had closed its session after
+  10 min idle, mpv met 404s and reconnects for 1.5 min, a seek failed, and the player took EOF for
+  the end ("end -> leaving"). The engine now names the session in that 404 (`gone`); Sofa posts
+  SessionsLost for that sid only (`SFApp playback:lostIn:` picks the affected stream); the player
+  reopens at once (playing) or on play (paused). Live dev check (`ytclosesession`): paused, close,
+  play -> reopened at 21 s, first frame 0.4 s; playing -> detected at once (the 60-s reopen guard
+  still ends a repeat right after a reopen, by design). All suites pass.
 - 2026-11-23: **Replace a refused YouTube document at once; a paused player no longer pins it**
   (Build 31). Videos stalled at 60 s for 11 minutes: stream protection refused the PO token
   (SPS 3) of a document open for two days. The 6-hour refresh had not run since 2026-11-21:

@@ -371,6 +371,11 @@ static NSUInteger BrowserIdleRestartMB(void) {
         if ([r[@"ok"] boolValue]) { done(nn(r[@"value"]), nil); return; }
         NSMutableDictionary *info = [dict(r[@"body"]) mutableCopy] ?: [NSMutableDictionary new];
         info[NSLocalizedDescriptionKey] = [str(info[@"error"]) ?: @"engine error" copy];
+        // a call on a session the page no longer has (closed while idle: 2026-11-22, a paused
+        // player resumed after a day, mpv reconnected to 404s for 1.5 min and took it for the end)
+        NSString *gone = str(info[@"gone"]);
+        if (gone.length) SFMain(^{ [[NSNotificationCenter defaultCenter] postNotificationName:SFYTEngineSessionsLostNotification
+                                                                                       object:self userInfo:@{@"sid": gone}]; });
         done(nil, [NSError errorWithDomain:@"SFYTEngine" code:[r[@"status"] integerValue] userInfo:info]);
     }];
 }

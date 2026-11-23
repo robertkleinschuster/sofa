@@ -7,6 +7,7 @@
 #import "SFCore.h"
 
 // The engine's page went away (browser exit, page reload): every session and its URLs are dead.
+// With userInfo @{@"sid": sid}: only that session is gone (closed while idle, e.g. a long pause).
 extern NSString *const SFYTEngineSessionsLostNotification;
 
 @interface SFYTEngine : NSObject

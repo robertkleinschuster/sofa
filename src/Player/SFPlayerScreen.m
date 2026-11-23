@@ -337,7 +337,7 @@ static const NSTimeInterval kFailedMoveOn = 5;
     if (_sabrObs) { [[NSNotificationCenter defaultCenter] removeObserver:_sabrObs]; _sabrObs = nil; }
     if (lost) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:lost object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
-            [wself sessionServiceLost];
+            [wself sessionServiceLost:n];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {   // switched off: ended (rest), else paused

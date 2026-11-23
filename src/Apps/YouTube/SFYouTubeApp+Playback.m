@@ -194,6 +194,11 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 // the engine's page went away: its local URLs are gone - the player reopens right away instead of waiting
 // for mpv's reconnects and the stall watchdog
 + (NSString *)playbackSessionLostNotification { return SFYTEngineSessionsLostNotification; }
+// without a sid every session is gone (page reload); with one, only that session
++ (BOOL)playback:(NSDictionary *)source lostIn:(NSNotification *)lost {
+    NSString *sid = lost.userInfo[@"sid"];
+    return !sid || [sid isEqual:source[@"sid"]];
+}
 
 // live via the engine: the end of the playlist is either the end of the broadcast (upstream
 // EXT-X-ENDLIST, reported in the session status) or a lost playlist - only the engine knows
