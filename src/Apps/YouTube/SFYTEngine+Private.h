@@ -28,7 +28,9 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
     NSTimer *_memoryTimer;        // the browser's memory, watched while it runs (checkMemory)
     NSUInteger _idleHeavyChecks;  // memory checks in a row: past the idle limit, no session
     BOOL _refreshPending;         // an intentional page reload: calls queued, lounge polls ended on ready
-    __weak SFPlayerScreen *_viewer;  // keep a long pause safe even after the engine's session idle timeout
+    __weak SFPlayerScreen *_viewer;  // an open player: no age refresh while it plays or was just paused
+    NSDate *_viewerPausedAt;      // when the open player last paused (nil: playing or none)
+    NSDate *_staleRefreshAt;      // the last refresh of a document whose token stream protection refused
 }
 @property (nonatomic, readonly) dispatch_queue_t queue;   // the loopback server's: channel + media
 @property (nonatomic, readonly) SFYTChannel *channel;
@@ -84,5 +86,6 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 
 @interface SFYTEngine (Refresh)
 - (void)refreshIdlePage;
+- (void)tokenRejected:(NSString *)videoId;
 - (void)refreshPlayerChanged:(NSNotification *)n;
 @end

@@ -5,6 +5,7 @@
 #import "SFYTFeeds.h"
 #import "SFYTParser.h"
 #import "SFYTBreaker.h"
+#import "SFYTEngine+Private.h"
 #import "SFPairScreen.h"
 #import "SFPlayerScreen.h"
 #import "SFBrowseScreen.h"
@@ -74,6 +75,8 @@
         [SFYTFeeds devFeed:arg];
     } else if ([cmd isEqualToString:@"ytblock"] && arg) {   // simulate a bot-check pause for <secs> (this instance only)
         [[SFYTBreaker shared] simulateBlockForTesting:arg.doubleValue];
+    } else if ([cmd isEqualToString:@"yttokenrefused"]) {   // as if stream protection refused the page's token (stale document)
+        [[SFYTEngine shared] tokenRejected:arg ?: @"dev"];
     } else return NO;
     return YES;
 }

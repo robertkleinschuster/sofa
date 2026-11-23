@@ -175,6 +175,18 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   manual fallback until the user releases it.
 
 ## Decision log
+- 2026-11-23: **Replace a refused YouTube document at once; a paused player no longer pins it**
+  (Build 31). Videos stalled at 60 s for 11 minutes: stream protection refused the PO token
+  (SPS 3) of a document open for two days. The 6-hour refresh had not run since 2026-11-21:
+  a player left paused with the screen off (2026-11-22 19:43) blocked it for 22 h. Every refusal
+  in the logs came from such a stale document, none from a fresh one, and the in-page minter
+  renewal never helped. Now (1) a refused token is reported to Sofa, which reloads the document
+  at once - also under a playing player, which reopens at its position - at most every 15 min;
+  (2) the age refresh waits only for a playing player or a pause under 30 min; (3) a player
+  paused while its session service goes away reopens on play instead of in the dark (repeated
+  dark reopens would have tripped the reopen guard). Validated: all suites, new forced-refresh
+  unit test, live dev instance (paused: reopen on play at 15 s; playing: reopen at 180 s/376 s,
+  first frame 0.2-0.4 s; second refusal within the gap: no reload). Dev command `yttokenrefused`.
 - 2026-11-20: **Recover missing audio independently of video** (Build 30). Production
   stalled at audio 20 s while the combined SABR run still delivered video (frontier 27 s,
   SPS 1, HTTP audio wait expired after 25 s). Per-track advancing-media clocks prevent one

@@ -249,6 +249,7 @@ static NSUInteger BrowserIdleRestartMB(void) {
     if ([type isEqualToString:@"block"]) { [[SFYTBreaker shared] recordState:dict(e[@"state"])]; return; }
     if ([type isEqualToString:@"consent"]) { [self acceptConsent:e]; return; }
     if ([type isEqualToString:@"lounge"]) { [self loungeEvent:e]; return; }
+    if ([type isEqualToString:@"tokenRejected"]) { [self tokenRejected:str(e[@"id"])]; return; }
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
         BOOL wasReady = _state == SFYTEngineReady || _refreshPending;

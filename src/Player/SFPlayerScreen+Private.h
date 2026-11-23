@@ -56,6 +56,7 @@
     NSTimeInterval _reopenedAt;  // position of the last reopen after a broken stream (-1 = none for this item)
     NSDictionary *_carryTracks;  // reopen: titles of the audio/subtitle tracks chosen before (type -> title)
     id _sabrObs;                 // app session service lost (SFApp playbackSessionLostNotification)
+    BOOL _sessionLostPaused;     // that service went away during a pause: the stream reopens on play
     SFItem *_upNext;             // YouTube "up next" (recommendation), fetched in the background
     BOOL _upNextAsked;
     BOOL _upNextPending;         // asked, no answer yet
@@ -95,6 +96,8 @@
 - (NSTimeInterval)failurePosition;
 - (BOOL)sessionSource;
 - (void)streamFailed:(NSString *)why;
+- (void)sessionServiceLost;
+- (BOOL)reopenLostSessionOnPlay;
 - (void)engineStatusChanged;
 - (void)engineRateChanged;
 - (void)engineBufferingChanged;

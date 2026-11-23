@@ -46,3 +46,34 @@ test('page reload waits for pending work and sessions; new work waits once reloa
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(reloads, 1);
 });
+
+// 2026-11-23: a two-day-old document had its token refused for 11 minutes while a session stayed
+// open (stalls at 60 s). A refused document is replaced even under sessions and calls in flight.
+test('forced page reload goes ahead under a session and in-flight work, once', async (t) => {
+  const info = fixtureInfo('OzCYsIrrRyw');
+  const values = new Map<string, string>([[`sofa-engine:players/${info.id}.json`, JSON.stringify(info)]]);
+  let reloads = 0;
+  const globals: Record<string, unknown> = {
+    location: { origin: 'https://www.youtube.com', reload: () => { reloads++; } },
+    ytcfg: { get: () => ({ client: { clientName: 'WEB' } }) },
+    localStorage: { get length() { return values.size; }, key: (i: number) => [...values.keys()][i] ?? null,
+      getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) },
+    fetch: () => new Promise<Response>(() => {}),   // a page request that never answers
+  };
+  for (const [key, value] of Object.entries(globals)) {
+    const old = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+    t.after(() => { if (old) Object.defineProperty(globalThis, key, old); else Reflect.deleteProperty(globalThis, key); });
+  }
+  t.after(() => sofaEngine.stop());
+  assert.equal(sofaEngine.refresh(true), false, 'not running');
+  assert.equal(sofaEngine.start({ base: 'http://127.0.0.1:9', block: null }).ok, true);
+  const opened = await sofaEngine.open({ v: info.id, prefetch: false });
+  assert.ok(opened.ok && 'sid' in opened.value);
+  void sofaEngine.image('https://i.ytimg.com/vi/test/default.jpg');
+  assert.equal(sofaEngine.refresh(), false, 'idle refresh still waits');
+  assert.equal(sofaEngine.refresh(true), true, 'stale document: replaced anyway');
+  assert.equal(sofaEngine.refresh(true), false, 'one reload only');
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(reloads, 1);
+});

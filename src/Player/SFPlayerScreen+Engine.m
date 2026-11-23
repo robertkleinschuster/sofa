@@ -56,6 +56,24 @@ static const NSTimeInterval kReopenMinPlay = 60;
     [self startItem];
 }
 
+// The service behind the app's session streams died (the engine's page reloaded): its local URLs
+// are gone. Not after the end (up-next card, end screen): the finished video must not restart.
+// Paused (perhaps for hours, screen off): no reopen in the dark - the reopen waits for play; each
+// reopen counts against the guard above, and a second one during the pause would end it in a failure.
+- (void)sessionServiceLost {
+    if (!_engine || _closing || _failed || _ended || ![self sessionSource]) return;
+    if ([self isPaused]) { _sessionLostPaused = YES; SFLog(@"player: session service gone while paused - reopening on play"); }
+    else [self streamFailed:@"service exited"];
+}
+
+// play after sessionServiceLost during the pause: the stream reopens (playing) instead
+- (BOOL)reopenLostSessionOnPlay {
+    if (!_sessionLostPaused) return NO;
+    _sessionLostPaused = NO;
+    [self streamFailed:@"service exited during the pause"];
+    return YES;
+}
+
 - (void)devBreakStream { if (_engine && !_failed && !_closing) [self streamFailed:@"dev: broken on request"]; }
 
 - (void)engineStatusChanged {

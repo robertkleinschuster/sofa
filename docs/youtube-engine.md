@@ -190,6 +190,25 @@ requires both audio and video beyond 100 s, no rejected token, refusal to refres
 stream, then a real idle reload and reconnection. The separately fetched `/att/get` challenge
 experiment failed stream protection and is not part of the fix; the page's own attestation stays.
 
+## Refused documents (2026-11-23)
+
+The age refresh alone did not hold: a player left paused with the screen off blocked it for 22 h,
+the document reached two days, and stream protection refused its token for 11 minutes (every
+stream stalled at the 60 s it grants without one). Two layers now:
+
+- **Signal, not age.** `sabrpump.ts` reports SPS 3 through `sabrPumps({ onTokenRejected })`; the
+  page sends a `tokenRejected` event; `SFYTEngine+Refresh.m` reloads the document with
+  `refresh(true)`, which skips the idle checks. The reload goes through the normal path (calls
+  failed, `SessionsLost` posted); a playing player reopens at its position in the new document.
+  At most one such reload per 15 min (each document is a new attestation); a refusal of a fresh
+  document is logged and counted (`yt-engine.token-refused-fresh`) instead of looping.
+- **A pause does not pin the document.** The age refresh waits for a playing player or a pause
+  under 30 min only. A paused player whose session service goes away marks it and reopens on
+  play (`SFPlayerScreen+Engine.m`, `sessionServiceLost`), so no reopen happens in the dark.
+
+Coverage: `unit-page-refresh.test.ts` (forced reload under a session and a pending request, once);
+live dev check with the `yttokenrefused` dev command (paused, playing, within the gap).
+
 ## Audio recovery (2026-11-20)
 
 `session.ts` measures advancing media separately for each track. The 20 s pump watchdog uses

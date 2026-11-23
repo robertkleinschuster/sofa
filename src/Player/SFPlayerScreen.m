@@ -234,7 +234,7 @@ static const NSTimeInterval kResolveLimit = 45;
 }
 
 - (void)startItem {
-    _ended = NO; _failed = NO;
+    _ended = NO; _failed = NO; _sessionLostPaused = NO;   // a new stream: a new session
     [self esReset];
     if (_item != _lastStartedItem) {
         _reopenedAt = -1; _carryTracks = nil; _subsApplied = NO;
@@ -337,9 +337,7 @@ static const NSTimeInterval kFailedMoveOn = 5;
     if (_sabrObs) { [[NSNotificationCenter defaultCenter] removeObserver:_sabrObs]; _sabrObs = nil; }
     if (lost) _sabrObs = [[NSNotificationCenter defaultCenter] addObserverForName:lost object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
-            SFPlayerScreen *s = wself;
-            // not after the end (up-next card, end screen): the finished video must not restart
-            if (s && s->_engine && !s->_closing && !s->_failed && !s->_ended && [s sessionSource]) [s streamFailed:@"service exited"];
+            [wself sessionServiceLost];
         }];
     if (!_powerObs) _powerObs = [[NSNotificationCenter defaultCenter] addObserverForName:SFPowerWillTurnOffNotification object:nil
         queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {   // switched off: ended (rest), else paused
@@ -479,6 +477,7 @@ static const NSTimeInterval kFailedMoveOn = 5;
     self.startPaused = NO; _holdPaused = NO;
     if (_engine.playing) { [_engine pause]; [self saveProgress]; }
     else {
+        if ([self reopenLostSessionOnPlay]) return;
         if (_ended) { [self leaveEnd]; [_engine seekTo:0 exact:NO]; }
         [_engine play];
         [self showOSD:YES autoHide:YES];

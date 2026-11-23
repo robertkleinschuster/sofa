@@ -13,7 +13,12 @@ import type { YouTube } from './youtube.ts';
 const TOKEN_REUSE_MS = 30 * 60 * 1000;
 const TOKEN_CACHE_MAX = 32;
 
-export function sabrPumps({ youtube, po }: { youtube: Pick<YouTube, 'reload' | 'cached'>; po: Pick<PoTokenProvider, 'mintString' | 'mintBytes' | 'renew'> }): EngineStartPump {
+export function sabrPumps({ youtube, po, onTokenRejected }: {
+  youtube: Pick<YouTube, 'reload' | 'cached'>;
+  po: Pick<PoTokenProvider, 'mintString' | 'mintBytes' | 'renew'>;
+  /** Stream protection refused this document's token: the host decides whether the document is stale. */
+  onTokenRejected?: (videoId: string) => void;
+}): EngineStartPump {
   async function preMint(videoId: string): Promise<string | undefined> {
     const t0 = Date.now();
     try {
@@ -35,7 +40,7 @@ export function sabrPumps({ youtube, po }: { youtube: Pick<YouTube, 'reload' | '
           ...opts, info, formats, poToken,
           mintPoToken: () => po.mintBytes(info.id),
           // a rejected token must not start the next run again; a fresh attestation for new ones
-          onTokenRejected: () => { tokenCache.delete(info.id); po.renew(); },
+          onTokenRejected: () => { tokenCache.delete(info.id); po.renew(); onTokenRejected?.(info.id); },
           reload: async (ctx?: ReloadPlaybackContext) => {
             const r = await youtube.reload(info.id, ctx, { bg: !!opts.bg });
             // the session keeps the info object: point it at the fresh URL for future runs

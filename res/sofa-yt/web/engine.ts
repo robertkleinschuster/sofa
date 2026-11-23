@@ -51,6 +51,8 @@ export type EngineEvent =
   // document was loaded (navigate, reload, back_forward) - both for the log of an unexpected new page
   | { type: 'ready'; userAgent: string; url: string; late: boolean; navigation: string }
   | { type: 'log'; line: string }
+  // stream protection refused this document's PO token (seen only in stale documents, 2026-11-20/23)
+  | { type: 'tokenRejected'; id: string }
   | { type: 'block'; state: BlockState }
   | ({ type: 'consent' } & ConsentTarget)   // the consent dialog's accept button, for Sofa to click (consent.ts)
   | LoungeEvent;   // a lounge poll's bytes and end (lib/lounge.ts)
@@ -71,7 +73,8 @@ export interface MediaChunk {
 export interface SofaEngine {
   health(): { libraries: boolean; userAgent: string; origin: string; onYouTube: boolean; pageAgeS: number; engine: EngineHealth | null };
   /** Reload an idle document. Refused while a session or an asynchronous engine call exists. */
-  refresh(): boolean;
+  /** Reload the document; `force` (a stale document, its streams already refused) skips the idle checks. */
+  refresh(force?: boolean): boolean;
   /** The page script (or a test's preload script) hands over the channel: `send` posts one event. */
   connect(send: (e: EngineEvent) => void): void;
   start(cfg: EngineConfig): Reply<{ userAgent: string }>;
@@ -146,8 +149,9 @@ export const sofaEngine: SofaEngine = {
     engine: core?.health() ?? null,
   }),
 
-  refresh() {
-    if (!core || refreshing || pendingCalls || core.health().sessions) return false;
+  refresh(force = false) {
+    if (!core || refreshing) return false;
+    if (!force && (pendingCalls || core.health().sessions)) return false;
     refreshing = true;
     // Return the answer over the extension before leaving the document.
     setTimeout(() => location.reload(), 100);
@@ -183,7 +187,7 @@ export const sofaEngine: SofaEngine = {
       if (cfg.aheadLowS) sessionCfg.LOW_MS = cfg.aheadLowS * 1000;
       if (cfg.aheadHighS) sessionCfg.HIGH_MS = cfg.aheadHighS * 1000;
       const base = cfg.base.replace(/\/+$/, '');
-      core = createEngine({ youtube, po, breaker, startPump: sabrPumps({ youtube, po }), sessionCfg, base: () => base, reporting: pageReporting() });
+      core = createEngine({ youtube, po, breaker, startPump: sabrPumps({ youtube, po, onTokenRejected: (id) => send({ type: 'tokenRejected', id }) }), sessionCfg, base: () => base, reporting: pageReporting() });
       log(`engine started on ${location.origin} (${navigator.userAgent})`);
       return { ok: true, value: { userAgent: navigator.userAgent } };
     } catch (e) {
@@ -225,6 +229,7 @@ export const sofaEngine: SofaEngine = {
     core?.shutdown();
     core = null;
     blocks = null;
+    refreshing = false;   // the stopped engine's reload, if any, is no longer pending
   },
 };
 
