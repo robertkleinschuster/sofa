@@ -1,6 +1,7 @@
-# sofa-fand: fan control for the iMac12,2
+# sofa-fand: fan control that learns
 
-An always-on root daemon for the iMac12,2 (27", Mid 2011, OS X 10.9.5, SMC 1.72f2). It
+An always-on root daemon for Intel Macs whose SMC takes forced fan targets, built and tuned on the
+iMac12,2 (27", Mid 2011, OS X 10.9.5, SMC 1.72f2). It
 behaves as if Apple's fan minimum were 0: **quiet when idle, cool under load.** When things
 are cool, the fans go down to 0 rpm. When warm, they run faster than Apple's SMC would (the SMC
 keeps every fan at its minimum until a sensor reaches Apple's own fan threshold, see below).
@@ -10,8 +11,10 @@ It is its own program with its own Makefile. It is not linked into Sofa and Sofa
 not compile it. Sofa may send a context hint and reads the thermal level back over a Unix
 datagram socket. Without Sofa the daemon works the same with its default profile.
 
-Status: **v3.1, curves are a draft** until the overnight measurements of 2026-11-17 are
-evaluated (`~/Library/Logs/fan-tuning-2026-11-17/` on the iMac).
+Status: **v4** (2026-11-23): the hand-made reference curves (measured, `docs/fan-tuning.md`), a
+learned layer on top of them, a recorder inside the daemon and a nightly learner that models the
+machine from its own data and improves the layer one checked step at a time (issue #2). One
+binary; everything machine-specific comes from the SMC or the reference file.
 
 ## Interface for Sofa (v1, agreed with the Sofa side)
 
@@ -61,7 +64,9 @@ level change:
 - If Sofa hears nothing for 120 s, it assumes level 0.
 
 **Diagnosis:** `/var/run/sofa-fand/ctl.sock` (stream, one command line): `STATUS`, `STATE`, `HINT
-<json>` (root/uid 501 only). Sofa does not need it. CLI:
+<json>` (root/uid 501 only); root only: `IDENT SECS TAG RPM...` (identification step, see
+"Learner"), `IDENTSTOP`, `FLUSH` (recorder to disk within ~20 s), `SIMSLEEP`/`SIMWAKE`. Sofa does
+not need it. CLI:
 
 ```
 sofa-fand status              # mode, level, profile, fans, temperatures, last 15 log lines
@@ -82,11 +87,15 @@ Each control step, for each fan (step length: see "Adaptive sampling" below):
    smoothed (τ 20 s rising, 120 s falling), so a fan turns up before the temperature follows,
    comes back slowly and does not pump on short spikes.
 3. **Profile:** curves are read `shift` °C cooler (`+` = quieter, `−` = cooler):
-   `default 0`, `ruhe +2`, `idle +1`, `playback −1 − 2×vol`, weighted per fan
+   `default 0`, `ruhe +2`, `idle −2`, `playback −4 − 2×vol` (reference; the learned layer may move
+   them, `idle` and `playback` only cooler), weighted per fan
    (`profile_weight`, 0 for the HDD fan). Feed-forward is likewise weighted per fan
    (`ff_weight`).
 4. **Floors** (independent of profile and feed-forward): `floor N KEY T RPM` keeps fan N at
-   ≥ RPM while KEY ≥ T. They hold in every case: an active floor also overrides `minoff`. They are set to Apple's minimum well below Apple's own fan thresholds.
+   ≥ RPM while KEY ≥ T. They hold in every case: an active floor also overrides `minoff`. The reference sets them to
+   Apple's minimum well below Apple's own fan thresholds; on top, the daemon adds a machine floor
+   from the SMC for every sensor with an Apple fan-start threshold (`S<ab>F`): there every fan runs
+   at least Apple's minimum, whatever the reference or the learned layer say.
    Apple runs exactly its minimum below those thresholds, so the daemon never cools less than
    Apple where it matters.
 5. **Hysteresis, ramps, dead band:** falling demand is computed at T + `hyst`. Speeds rise at
@@ -208,18 +217,14 @@ noise. The user chose floor 0.
 
 ## Measurements
 
-The raw data stays on the iMac under `~/Library/Logs/fan-tuning-2026-11-17/` (`live.log`,
-`plan.md`, `night.csv`, `ref-apple-playback.csv`). The tools are in `tools/`:
+The reference curves come from the 2026-11-17/18 measurement series (fan × sensor matrix, τ63,
+Apple reference), documented in `docs/fan-tuning.md`; the raw data stays on the iMac under
+`~/Library/Logs/fan-tuning-2026-11-17/`. The measurement tools of that time (`smcfan`, `smcenum`,
+`smarttemp`, `fanlab`, the night scripts) and the first learner stages (`sofa-fanlearn`,
+`fanmodel.py`, `ident.sh`) are replaced by the daemon itself (`hw`, `status`, recorder, `ident`)
+and `sofa-fand learn`; they remain in the git history up to commit 881f2da.
 
-- `smcenum [PREFIX]`: list all SMC keys with values (`#KEY` + READ_INDEX)
-- `smcfan`: status/read/force (first manual tool)
-- `smarttemp`: SMART attribute 194 in-process
-- `fanlab`: supervised steps (`rec`, `step DUR F0 F1 F2`, `burn N PCT DUR`, `watchdog`) with
-  limits, CSV, live log, equilibrium detection, `FS!` = 0 on every exit
-- `night.sh`: the overnight series (37 steps: CPU full load, playback-like load, idle,
-  disk load with a SMART long test) with an independent watchdog
-
-First results (2026-11-17, before the overnight series):
+First results (2026-11-17):
 
 - The **HDD fan** ignores targets below ≈1280 rpm (lowest duty) and only stops at 0.
 - The **ODD fan** cools the GPU: under playback the GPU goes 64 → 68 °C at 900 rpm, still
@@ -228,52 +233,133 @@ First results (2026-11-17, before the overnight series):
   Tp2H stays at 81-83 °C. Under Apple control during playback Tp2H reaches 85 °C.
 - **All fans off** at idle: GPU +3 °C in 100 s.
 
-The fan × sensor matrix (ΔT per 100 rpm, τ63) and the tuned curves follow from the overnight
-series.
+## Configuration: reference + learned layer
+
+Two files, read at start and on `sofa-fand reload` (SIGHUP to the guard: the new configuration
+reaches the running controller through a shared page, the fans never fall back to the SMC):
+
+- **Reference** `/usr/local/etc/sofa-fand.conf` (root, hand-made, this repository): sensors with
+  `trip`/`warn` (default: from Apple's SMC limits) and `target` (what the learner keeps them
+  below, default warn − 6), fans (`name`/`max` default to the SMC's; `loud` = how much the
+  learner counts its noise), curves, floors, profiles (`learn cooler` = the learned layer may
+  only make it cooler; `noise` = how much quiet matters there). The syntax is in the file's header.
+- **Learned layer** `/var/db/sofa-fand/learned.conf` (root-only, installed only by
+  `sofa-fand apply`, normally by the learner): `shift N KEY DEG` (read fan N's curve on KEY DEG
+  °C cooler: + later/quieter, − earlier), `profile NAME BASE [VOL]`, `curve N KEY T:RPM...` (an
+  additional curve, only ever adds demand).
+
+The layer is **all or nothing**: a line that is unknown, out of bounds or breaks a rule refuses
+the whole layer, the reference applies alone and `status` names the reason. The rules
+(`learned_check`, the same function the daemon, `apply` and the learner use):
+
+- |shift| ≤ 8 °C, |profile| ≤ 8 °C; a `learn cooler` profile never gets quieter than the reference;
+- at a sensor's warn temperature no reference curve asks for less than the reference does, in the
+  worst case over every profile and volume;
+- limits, floors (including the machine floors), fan dynamics and the sensor set are out of reach.
+
+`sofa-fand apply FILE` validates, keeps the previous layer as `.prev`, installs and reloads;
+`sofa-fand rollback` restores it. `make test` runs the validator cases (`tools/test-config.sh`).
+
+## Recorder
+
+A thread in the daemon writes what the learner learns from: every 20 s (10 s while a fan runs,
+under load or during an identification step) one row with time, mode, profile, volume, load,
+identification tag, every fan's actual and commanded speed, the machine's power keys (W; total,
+CPU package, GPU - picked from the SMC per model) and every configured sensor. Rows wait in RAM
+and go to `/var/db/sofa-fand/data/YYYY-MM-DD.csv` every hour, on reload, on `FLUSH` and on exit;
+the control loop never touches the disk. A `#` line names the columns before every flush, so the
+column set may change at any time. Files older than 180 days are removed. Dry runs (`-n`) record
+nothing. `sofa-fand migrate` moved the old collector's data (2026-11-18..23) and its
+identification intervals (`tests.csv`) into this directory.
+
+## Learner
+
+`sofa-fand learn`, nightly at 01:30 (LaunchDaemon `de.sofa.fanlearn`, root, nice 10). Report:
+`/var/db/sofa-fand/report.md`; decisions: `history.log` next to it; job output: `learn.log`.
+
+1. **Trial.** If a step is on trial, it is judged on measured data, never on the model: after ≥ 2
+   days and ≥ 10 h of use minutes (at the latest after 10 days), against the 7 days before, per
+   mode. Rolled back on more warn minutes per hour, on a sensor whose 95 % temperature over
+   ambient rose by > 1 °C to above its target, and - for a quieter or mixed step - when the
+   measured fan noise did not drop by 2 %. A rolled-back step's directions are not tried again for
+   14 days. No new step while one is on trial.
+2. **Model.** Per sensor, on the last 30 days of one-minute bins:
+   `dT/dt = a0 + h_cpu·Pcpu/10 + h_gpu·Pgpu/10 + h_rest·Prest/10 − (k0 + Σ k_f·rpm_f/1000)·(T − Tamb)`
+   (non-negative least squares: power heats, fans cool). Validated by free runs over every held-out
+   2 h chunk (the model integrates its own temperature from the measured inputs), per mode (rest,
+   in use, playback, identification). First fit on the migrated data (2026-11-23): free-run RMSE
+   0.4-1.8 °C over all modes, the old `fanmodel.py`'s range.
+3. **Scenarios** per use mode with ≥ 2 h of data: mean inputs, high load (top 10 %), warm room
+   (+5 °C). Each runs 6 h through `policy_fan` - the controller's own decision function, so what
+   is simulated is what runs - from a cold and a hot start.
+4. **Cost** = noise (Σ profile noise × loud × (rpm/1000)², starts counted) + temperature penalty
+   (5 × (peak − target)² outside the warm room; 200 + 100/°C at warn). Only sensors whose model
+   is validated in that mode count: an unreliable model never drives the fans.
+5. **Search.** Greedy, the single best move per round, at most 3 parameters (curve shifts,
+   profile shifts), curves ±2 °C and profiles ±1 °C per night, inside the layer's rules. Quieter
+   moves need every steering sensor validated in every use mode (free-run error ≤ 2 °C, 3 °C for
+   load-driven sensors, ≥ 2 h each). A step is applied only if it lowers the cost by ≥ 2 % and the
+   gain comes from its own part (a cooler step lowers the penalty, a quieter or mixed one the
+   noise) - gains from hysteresis paths in the simulation are not a reason to touch the fans.
+   Applied through `apply` and put on trial.
+6. **Identification** (afterwards, ~75 min): while Sofa rests, the daemon runs one block of steps
+   through its own `IDENT` command - base, each fan alone at 1.6 × Apple's minimum, all fans at
+   their lowest stable speed, 15 min each - with every safety rule of the controller (limits,
+   floors, ramps; ends at once when Sofa leaves rest, a sensor nears warn or anything faults). No
+   artificial load. The recorder tags those rows.
+
+`sofa-fand learn -n [-d DATADIR] [-c CONF]` writes the report to stdout and changes nothing
+(any user). `make test` also checks the learner against data from a known law
+(`tools/test-learn.sh`: the right fan per sensor group, free-run error < 0.3 °C).
+
+## Another Mac
+
+`sofa-fand hw` shows what the SMC offers (fans with Apple's min/max, every temperature key with
+Apple's fan-start, warning, throttle, shutdown and target values, the power and ambient keys).
+`sofa-fand init` writes an Apple-equivalent reference from that alone: every fan at Apple's
+minimum, ramping to its maximum between fan start (or target) and warn on every sensor family
+(`init -o FILE`, checked by the parser). Install it as the reference; the recorder and the
+learner run as here. Once the model is validated in every use mode, the learner replaces an
+`init` reference with quiet curves of its own (each fan answers the sensors it measurably cools:
+off below target − 4, minimum at target − 2, maximum at warn), on trial like every step and rolled
+back to the `init` reference if it does worse.
+
+## Architecture
+
+One binary (`src/`), no dependencies beyond IOKit and CoreFoundation:
+
+| module | role |
+|---|---|
+| `smc.c` | SMC transport: key read/write, temperatures, `FS!`/`F<n>Tg`, return to SMC control |
+| `machine.c` | what this Mac has, discovered from the SMC: fans, temperature keys, Apple's limits, power keys |
+| `cfg.c` | reference + learned layer, parsed and validated (`learned_check`) |
+| `policy.c` | the fan decision as a pure function - used by the controller and the learner's simulator |
+| `control.c` | the control step: sensors, trips, faults, identification steps, published state |
+| `sock.c`, `sysmon.c`, `log.c`, `record.c` | Sofa's sockets + ctl; SMART, load, sleep/wake; RAM log ring; recorder |
+| `daemon.c` | guard + controller processes, reload, CLI |
+| `learn*.c` | the learner: data, model, simulation, search, trial, identification, `init` (`learn.h`) |
 
 ## Operation
 
 ```
-make && make analyze           # build with -Werror, static analyzer
-sudo make install              # /usr/local/sbin/sofa-fand, /usr/local/etc/sofa-fand.conf,
-                               # /Library/LaunchDaemons/de.sofa.fand.plist (KeepAlive);
-                               # prints the binary hash and the commit it came from
+make && make analyze && make test   # build with -Werror, static analyzer, validator + learner tests
+sudo make install                   # /usr/local/sbin/sofa-fand, /usr/local/etc/sofa-fand.conf,
+                                    # de.sofa.fand (KeepAlive) + de.sofa.fanlearn (01:30);
+                                    # prints the binary hash and the commit it came from
 sudo ./sofa-fand run -n -c sofa-fand.conf   # dry run: computes, reports, never writes the SMC
-sofa-fand status
+sofa-fand status                    # mode, profile, learned layer, identification, fans, temperatures, log
+sofa-fand learn -n                  # what the learner would do now (report to stdout)
+cat /var/db/sofa-fand/report.md /var/db/sofa-fand/history.log
+sudo sofa-fand rollback             # back to the previous learned layer
+sudo sofa-fand ident 900 id-x 1840 -1 -1    # one identification step by hand (Sofa resting)
 syslog -k Sender sofa-fand | tail
 
 # switch off
+sudo launchctl unload -w /Library/LaunchDaemons/de.sofa.fanlearn.plist
 sudo launchctl unload -w /Library/LaunchDaemons/de.sofa.fand.plist
-sudo /usr/local/sbin/sofa-fand reset        # or: tools/smcfan force 0
-sudo make uninstall                          # remove everything
+sudo /usr/local/sbin/sofa-fand reset        # FS! = 0 directly through the SMC
+sudo make uninstall                          # remove everything (data and learned state stay)
 ```
 
 To change curves or limits: edit `sofa-fand.conf`, commit, `sudo make install` (it checks the
-config and reloads the daemon).
-
-## Self-optimisation (issue #2), stage 1: data collection
-
-`sofa-fanlearn` is a passive collector next to the controller. It only reads: temperatures, fan
-actual/target speeds, `FS!` and the SMC power keys (`PDTR` total DC, `PCPT` CPU package, `PCTR`
-CPU rail, `PG0R` GPU rail, `PZ2G` GPU incl. VRAM; type `sp96` = int16 / 64 W) straight from the
-SMC, and mode, profile, shift, load and the drive temperature from `sofa-fand status`. The sensor
-list comes from the controller's config, so nothing is specific to this iMac.
-
-Why a collector first: a grey-box model (heat input vs. airflow-weighted cooling per sensor)
-fitted on the 2026-11-17/18 tests did not transfer between them: trained on the 4-core night
-series it missed the 0-2-core short series by 15-50 °C. The tests log CPU load in percent, but
-heat depends non-linearly on it (turbo, GPU, PSU losses). The SMC measures the power directly;
-the model is fitted on that, over days of normal use and later short identification steps in
-rest mode.
-
-Cost: one sample every 10 s (a fan runs or load > 10 %) or 20 s (calm), ~30 SMC reads each.
-Data stays in RAM and is appended to `~/Library/Logs/sofa-fanlearn/YYYY-MM-DD.csv` every 4 h,
-on SIGTERM/SIGINT and on SIGHUP (`kill -HUP $(pgrep -x sofa-fanlearn)`, it runs as imac). A header line
-starting with `#` is written whenever the column set changes. Files older than 60 days are
-removed.
-
-```
-make && sudo make install-learn        # /usr/local/bin/sofa-fanlearn + de.sofa.fanlearn (user imac)
-./sofa-fanlearn once                   # header + one sample
-sudo make uninstall-learn              # data stays
-```
+config) or install the file and `sudo sofa-fand reload`.

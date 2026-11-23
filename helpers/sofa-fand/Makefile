@@ -1,105 +1,65 @@
-# sofa-fand - always-on fan control (own build, independent of Sofa's Makefile).
+# sofa-fand - always-on fan control with a nightly learner (own build, independent of Sofa's Makefile).
 #   make                 build (warnings are errors) + config check
-#   make analyze         clang static analyzer
-#   sudo make install    binary + config + LaunchDaemon, (re)load it
+#   make analyze         clang static analyzer, every source file
+#   make test            the learned layer's validator + the learner against data from a known law
+#   sudo make install    binary + reference config + both LaunchDaemons (daemon, nightly learner), (re)load
 #   sudo make install-files  same without loading
-#   sudo make uninstall  unload, fans back to the SMC, remove files
-#   make tools           measurement tools in tools/ (smcfan, smcenum, smarttemp, fanlab)
-#   sudo make install-learn    sofa-fanlearn (passive data collector, issue #2 stage 1) + LaunchDaemon
-#   sudo make uninstall-learn  unload and remove it (collected data stays in ~/Library/Logs/sofa-fanlearn)
-#   sudo make install-model    nightly fanmodel report 04:00 (de.sofa.fanmodel, issue #2 stage 2, report only)
-#   sudo make uninstall-model  unload and remove it (reports stay in ~/Library/Logs/fanmodel)
-#   sudo make install-ident    one identification block per night 01:30 while Sofa rests (de.sofa.fanident)
-#   sudo make uninstall-ident  unload and remove it
+#   sudo make uninstall  unload, fans back to the SMC, remove files (data and learned state stay in /var/db/sofa-fand)
 # Never put comments after values: make would keep the spaces before them.
 MP      ?= /opt/local
 CC      := $(MP)/bin/clang
 CFLAGS  := -mmacosx-version-min=10.9 -O2 -g -Wall -Wextra -Werror
-LDFLAGS := -mmacosx-version-min=10.9 -framework IOKit -framework CoreFoundation
-DLDFLAGS := $(LDFLAGS) -Wl,-bind_at_load
+LDFLAGS := -mmacosx-version-min=10.9 -framework IOKit -framework CoreFoundation -Wl,-bind_at_load
 BIN     := sofa-fand
-LABEL   := de.sofa.fand
 SBIN    := /usr/local/sbin
 ETC     := /usr/local/etc
+DB      := /var/db/sofa-fand
+LABEL   := de.sofa.fand
 PLIST   := /Library/LaunchDaemons/$(LABEL).plist
-LBIN    := sofa-fanlearn
 LLABEL  := de.sofa.fanlearn
 LPLIST  := /Library/LaunchDaemons/$(LLABEL).plist
-TOOLS   := tools/smcfan tools/smcenum tools/smarttemp tools/fanlab tools/bright
 
-all: $(BIN) check $(LBIN)
+all: $(BIN) check
 
-$(BIN): sofa-fand.c Makefile
-	$(CC) $(CFLAGS) -o $@ sofa-fand.c $(DLDFLAGS)
+SRC     := $(wildcard src/*.c)
+HDR     := $(wildcard src/*.h)
+$(BIN): $(SRC) $(HDR) Makefile
+	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS)
 
 check: $(BIN)
-	./$(BIN) check -c sofa-fand.conf >/dev/null
+	./$(BIN) check -c sofa-fand.conf -l /nonexistent >/dev/null
 
-$(LBIN): sofa-fanlearn.c Makefile
-	$(CC) $(CFLAGS) -o $@ sofa-fanlearn.c $(LDFLAGS)
+test: $(BIN)
+	tools/test-config.sh
+	tools/test-learn.sh
 
 analyze:
-	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fand.c
-	$(CC) --analyze -mmacosx-version-min=10.9 sofa-fanlearn.c
-
-tools: $(TOOLS)
-
-tools/bright: tools/bright.c Makefile
-	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-deprecated-declarations -o $@ $< $(LDFLAGS) -framework ApplicationServices
-
-tools/%: tools/%.c Makefile
-	$(CC) -mmacosx-version-min=10.9 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $< $(LDFLAGS)
+	for f in $(SRC); do $(CC) --analyze -Xanalyzer -analyzer-output=text -mmacosx-version-min=10.9 $$f -o /dev/null || exit 1; done
 
 install: install-files
 	launchctl load -w $(PLIST)
+	launchctl load -w $(LPLIST)
 
-# files only, daemon stays unloaded (e.g. while fan measurements run)
+# files only, jobs stay unloaded
 install-files: $(BIN) check
+	-launchctl unload $(LPLIST) 2>/dev/null
 	-launchctl unload $(PLIST) 2>/dev/null
 	install -d $(SBIN) $(ETC)
+	install -d -m 755 -o root -g wheel $(DB) $(DB)/data
 	install -m 755 -o root -g wheel $(BIN) $(SBIN)/$(BIN)
 	install -m 644 -o root -g wheel sofa-fand.conf $(ETC)/sofa-fand.conf
 	install -m 644 -o root -g wheel $(LABEL).plist $(PLIST)
+	install -m 644 -o root -g wheel $(LLABEL).plist $(LPLIST)
 	@echo "installed $$(shasum $(SBIN)/$(BIN) | cut -c1-12) from $$(git rev-parse --short HEAD 2>/dev/null)$$(git diff --quiet HEAD -- . 2>/dev/null || echo ' (+uncommitted changes)')"
 
 uninstall:
+	-launchctl unload $(LPLIST)
 	-launchctl unload $(PLIST)
 	-$(SBIN)/$(BIN) reset
-	rm -f $(PLIST) $(SBIN)/$(BIN) $(ETC)/sofa-fand.conf
-
-install-learn: $(LBIN)
-	-launchctl unload $(LPLIST) 2>/dev/null
-	install -d /usr/local/bin
-	install -m 755 -o root -g wheel $(LBIN) /usr/local/bin/$(LBIN)
-	install -m 644 -o root -g wheel $(LLABEL).plist $(LPLIST)
-	sudo -u imac mkdir -p /Users/imac/Library/Logs/sofa-fanlearn
-	launchctl load -w $(LPLIST)
-
-install-model:
-	-launchctl unload /Library/LaunchDaemons/de.sofa.fanmodel.plist 2>/dev/null
-	install -m 644 -o root -g wheel de.sofa.fanmodel.plist /Library/LaunchDaemons/de.sofa.fanmodel.plist
-	sudo -u imac mkdir -p /Users/imac/Library/Logs/fanmodel
-	launchctl load -w /Library/LaunchDaemons/de.sofa.fanmodel.plist
-
-uninstall-model:
-	-launchctl unload /Library/LaunchDaemons/de.sofa.fanmodel.plist
-	rm -f /Library/LaunchDaemons/de.sofa.fanmodel.plist
-
-install-ident:
-	-launchctl unload /Library/LaunchDaemons/de.sofa.fanident.plist 2>/dev/null
-	install -m 644 -o root -g wheel de.sofa.fanident.plist /Library/LaunchDaemons/de.sofa.fanident.plist
-	launchctl load -w /Library/LaunchDaemons/de.sofa.fanident.plist
-
-uninstall-ident:
-	-launchctl unload /Library/LaunchDaemons/de.sofa.fanident.plist
-	rm -f /Library/LaunchDaemons/de.sofa.fanident.plist
-
-uninstall-learn:
-	-launchctl unload $(LPLIST)
-	rm -f $(LPLIST) /usr/local/bin/$(LBIN)
+	rm -f $(LPLIST) $(PLIST) $(SBIN)/$(BIN) $(ETC)/sofa-fand.conf
 
 clean:
-	rm -f $(BIN) $(LBIN) $(TOOLS)
-	rm -rf $(BIN).dSYM $(LBIN).dSYM
+	rm -f $(BIN)
+	rm -rf $(BIN).dSYM
 
-.PHONY: all check analyze tools install install-files uninstall install-learn uninstall-learn install-model uninstall-model install-ident uninstall-ident clean
+.PHONY: all check test analyze install install-files uninstall clean

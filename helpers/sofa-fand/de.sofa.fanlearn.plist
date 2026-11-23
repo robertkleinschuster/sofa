@@ -6,31 +6,23 @@
 	<string>de.sofa.fanlearn</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/bin/sofa-fanlearn</string>
-		<string>log</string>
+		<string>/usr/local/sbin/sofa-fand</string>
+		<string>learn</string>
 	</array>
-	<key>UserName</key>
-	<string>imac</string>
-	<key>EnvironmentVariables</key>
+	<key>StartCalendarInterval</key>
 	<dict>
-		<key>HOME</key>
-		<string>/Users/imac</string>
+		<key>Hour</key>
+		<integer>1</integer>
+		<key>Minute</key>
+		<integer>30</integer>
 	</dict>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>KeepAlive</key>
-	<true/>
-	<key>ThrottleInterval</key>
-	<integer>60</integer>
-	<key>ProcessType</key>
-	<string>Background</string>
 	<key>LowPriorityIO</key>
 	<true/>
 	<key>Nice</key>
 	<integer>10</integer>
-	<key>ExitTimeOut</key>
-	<integer>20</integer>
+	<key>StandardOutPath</key>
+	<string>/var/db/sofa-fand/learn.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/imac/Library/Logs/sofa-fanlearn/stderr.log</string>
+	<string>/var/db/sofa-fand/learn.log</string>
 </dict>
 </plist>

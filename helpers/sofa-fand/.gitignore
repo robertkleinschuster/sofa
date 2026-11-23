@@ -1,11 +1,4 @@
 sofa-fand
 *.dSYM/
-tools/smcfan
-tools/smcenum
-tools/smarttemp
-tools/fanlab
-tools/fantest
+# clang --analyze leftovers
 sofa-fand.plist
-sofa-fanlearn
-sofa-fanlearn.plist
-tools/bright
