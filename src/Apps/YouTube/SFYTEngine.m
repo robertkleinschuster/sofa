@@ -7,6 +7,7 @@
 #import "SFLocalHTTP.h"
 #import "SFJSON.h"
 #import "SFRest.h"
+#import "SFPlayerScreen.h"
 
 NSString *const SFYTEngineSessionsLostNotification = @"SFYTEngineSessionsLost";
 
@@ -35,34 +36,16 @@ static const NSTimeInterval kAliveTimeout = 30;
 // at most one restart for an unresponsive page in this time: every restart is a new page and a new
 // BotGuard attestation for YouTube (2026-11-07: three within minutes -> bot check)
 static const NSTimeInterval kUnresponsiveRestartGap = 15 * 60;
+// Refresh the whole page context while idle, before several generations of challenges/player.js
+// accumulate in one document. A browser restart is unnecessary; cookies and its identity stay.
+static const NSTimeInterval kPageMaxAge = 6 * 3600;
 // how long the browser waits for the next Sofa after an update's or a crash's end (the update
 // handover takes ~1 s, launchd restarts a crashed Sofa at once); a real quit ends it at once
 static const int kHandoverGrace = 180;
 // the consent dialog is read for a moment before it is answered (seconds, uniform)
 static const double kConsentReadMin = 2.5, kConsentReadMax = 5.5;
 
-typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting, SFYTEngineReady };
-
-@implementation SFYTEngine {
-    SFLocalHTTP *_server;
-    NSString *_channelFile;       // the channel's port and token, kept across starts (startServer)
-    NSDictionary *_savedChannel;  // {port, token} as in the file
-    SFYTBrowser *_browser;
-    SFYTEngineState _state;
-    NSUInteger _run;              // browser runs; stale callbacks of an earlier run are ignored
-    NSUInteger _page;             // engine pages seen (a reload is a new page)
-    NSDate *_launchedAt;
-    NSInteger _failures;          // consecutive short runs
-    NSTimeInterval _nextStartAt;  // restart backoff (epoch)
-    BOOL _startPending;           // a start waits for the backoff to end
-    NSMutableArray *_waiting;     // ^(BOOL ready) blocks
-    NSMutableArray *_preloads;    // times of recent focus preloads
-    BOOL _consentPending;         // a consent click is scheduled or in progress
-    BOOL _aliveCheck;             // a liveness check after a timed-out call is running
-    NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
-    NSTimer *_memoryTimer;        // the browser's memory, watched while it runs (checkMemory)
-    NSUInteger _idleHeavyChecks;  // memory checks in a row: past the idle limit, no session
-}
+@implementation SFYTEngine
 
 // Every change of _state goes through here: `ready` mirrors it for calls from other queues.
 - (void)setState:(SFYTEngineState)state {
@@ -102,6 +85,8 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
         // the engine page outlives a Sofa update or crash (its next start takes it over: no new
         // document, no new attestation); dev instances and tests keep theirs tied to them
         _browser.handoverGrace = SFDevMode ? 0 : kHandoverGrace;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshPlayerChanged:)
+                                                    name:SFPlayerStateNotification object:nil];
     }
     return self;
 }
@@ -167,10 +152,11 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 // Quit: the browser ends now. An update's or a crash's end does not come here - the browser waits
 // out the hand-over grace for the next Sofa (SFYTBrowser).
 // night rest: ended without blocking (its processes end on the browser's queue), any use starts it again
-- (void)restStop { [_memoryTimer invalidate]; _memoryTimer = nil; [self setState:SFYTEngineIdle]; _run++; _nextStartAt = 0; [_browser stopInBackground]; }
+- (void)restStop { [_memoryTimer invalidate]; _memoryTimer = nil; _refreshPending = NO; [self setState:SFYTEngineIdle]; _run++; _nextStartAt = 0; [_browser stopInBackground]; }
 - (void)setBrowserBackground:(BOOL)bg { _browser.wantBackground = bg; }
 - (void)stop {
     [_memoryTimer invalidate]; _memoryTimer = nil;
+    _refreshPending = NO;
     [self setState:SFYTEngineIdle];
     _run++;
     _nextStartAt = DBL_MAX;   // no restart
@@ -210,6 +196,7 @@ static NSUInteger BrowserIdleRestartMB(void) {
     SFYTBrowser *browser = _browser;
     [self request:@"health" args:@[] timeout:10 done:^(id h, NSError *e) {
         NSDictionary *health = dict(dict(h)[@"engine"]);   // the page's health carries the engine's under "engine"
+        double pageAge = [num(dict(h)[@"pageAgeS"]) doubleValue];   // survives taking over a running browser
         SFBackground(^{
             NSUInteger mb = [browser memoryMB];   // ps: off the main thread
             [browser applyPriority];   // processes started since (content processes come and go)
@@ -225,7 +212,11 @@ static NSUInteger BrowserIdleRestartMB(void) {
                         [self runFailed:[NSString stringWithFormat:@"browser uses %lu MB while idle (idle limit %lu) - restarting it",
                                                                    (unsigned long)mb, (unsigned long)BrowserIdleRestartMB()]];
                     }
-                } else self->_idleHeavyChecks = 0;
+                } else {
+                    self->_idleHeavyChecks = 0;
+                    if (pageAge >= SFDevSeconds(@"SOFA_ENGINE_PAGE_MAX_AGE", kPageMaxAge)
+                        && health[@"sessions"] && [health[@"sessions"] integerValue] == 0) [self refreshIdlePage];
+                }
             });
         });
     }];
@@ -236,6 +227,7 @@ static NSUInteger BrowserIdleRestartMB(void) {
     if (_state == SFYTEngineIdle) return;
     SFLog(@"yt-engine: %@", why);
     BOOL wasReady = _state == SFYTEngineReady;
+    _refreshPending = NO;
     [self setState:SFYTEngineIdle];
     _run++;
     [_browser stopInBackground];   // (the next launch waits for it)
@@ -259,7 +251,8 @@ static NSUInteger BrowserIdleRestartMB(void) {
     if ([type isEqualToString:@"lounge"]) { [self loungeEvent:e]; return; }
     // ready: once per document the extension runs in; the engine's page is the youtube.com one
     if ([type isEqualToString:@"ready"] && [str(e[@"url"]) hasPrefix:@"https://www.youtube.com/"] && _state != SFYTEngineIdle) {
-        BOOL wasReady = _state == SFYTEngineReady;
+        BOOL wasReady = _state == SFYTEngineReady || _refreshPending;
+        _refreshPending = NO;
         // a new extension build: this first document is replaced a moment later - no player is sent
         // to it (the resume after an update failed on it: "the page reloaded", 2026-11-08). The
         // second start is the signal; if Firefox ever skipped it, this one counts after 15 s.

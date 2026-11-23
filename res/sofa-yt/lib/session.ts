@@ -36,6 +36,7 @@ export interface SessionConfig {
   COVER_SLACK_MS: number;
   GRACE_MS: number;
   STALL_MS: number;
+  AUDIO_STALL_MS: number;
   LINGER_MS: number;
   HINT_TTL_MS: number;
   PROBE_GRACE_MS: number;
@@ -80,6 +81,7 @@ export interface Demand {
   off: number | null;
   ms: number;
   linger?: boolean;
+  movedAt?: number; // the live reader's last progress (new reads/seeks get a fresh grace)
 }
 
 /** How much is buffered from a demand on (Infinity: init region / end of file). */
@@ -127,6 +129,7 @@ export const DEFAULTS: SessionConfig = {
   COVER_SLACK_MS: 20000,     // a pump this close behind a demand will reach it -> wait for it
   GRACE_MS: 1000,            // abort pumps nobody needed for this long (SABR answers in bursts: keep short)
   STALL_MS: 20000,           // a needed run that delivered nothing for this long is restarted
+  AUDIO_STALL_MS: 8000,     // rescue missing audio before the 25 s HTTP deadline
   LINGER_MS: 20000,          // a closed response stays a demand this long (reconnects)
   HINT_TTL_MS: 60000,        // an unconsumed /open start hint expires
   PROBE_GRACE_MS: 1000,      // a header parse parked after the known first Cluster ID starts no run before this
@@ -183,7 +186,7 @@ class Track {
       const probeEnd = this.probeEnd;
       if (this.hint && this.hint.ms > 0 && probeEnd !== null && r.pos >= this.initEnd && r.pos <= probeEnd
           && now - (r.movedAt ?? 0) < this.session.cfg.PROBE_GRACE_MS) continue;
-      out.push({ off: r.pos, ms: this.file.timeAt(r.pos) });
+      out.push({ off: r.pos, ms: this.file.timeAt(r.pos), movedAt: r.movedAt ?? r.since ?? now });
     }
     if (!live && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
       // between two requests (seek, reconnect): only protects the buffer from eviction
@@ -253,6 +256,7 @@ class Pump {
   delivered: number;
   first: Map<Track, number>;
   frontier: Map<Track, number>;
+  progressAt: Map<Track, number>; // advancing media per track; the other track cannot mask a stall
   handle: PumpHandle | null;
 
   constructor({ video, audio, startMs, now }: { video: Track | null; audio: Track; startMs: number; now: number }) {
@@ -266,6 +270,7 @@ class Pump {
     this.delivered = 0;
     this.first = new Map();    // track -> first segment startMs
     this.frontier = new Map(); // track -> end ms of the newest segment
+    this.progressAt = new Map();
     this.handle = null;
   }
 
@@ -445,7 +450,12 @@ export class PlaybackSession {
         const target = sat ? sat.endMs : d.ms;
         // the run still coming to `target` (missing media, or where the buffer ends): one that passed it
         // already left a hole there and delivers it never again
-        const p = [...this.pumps].find((x) => x.willDeliver(t, target, cfg.COVER_SLACK_MS));
+        const feeders = [...this.pumps].filter((x) => x.willDeliver(t, target, cfg.COVER_SLACK_MS));
+        // Prefer a dedicated audio run once started: the combined run must not displace it on
+        // the next tick. Only a live, missing media read can trigger rescue (no hints/linger/init).
+        const p = feeders.find((x) => x.driver === t) || feeders.find((x) =>
+          !(t.kind === 'audio' && !sat && d.off !== null && d.movedAt !== undefined
+            && now - Math.max(d.movedAt, x.progressAt.get(t) ?? x.startedAt) >= cfg.AUDIO_STALL_MS));
         const enough = sat && (sat.aheadMs >= cfg.HIGH_MS || sat.aheadBytes >= cfg.HIGH_BYTES[t.kind]);
         if (p) {
           // video pumps are kept alive by video demands only (audio is read in sync anyway)
@@ -456,14 +466,18 @@ export class PlaybackSession {
         if (sat && (sat.aheadMs >= cfg.LOW_MS || sat.aheadBytes >= cfg.HIGH_BYTES[t.kind] / 2)) continue;
         if (this.failed) continue;
         const np = this.startPump(t, target, now);
-        if (np) useful.add(np);
+        if (np) {
+          useful.add(np);
+          if (t.kind === 'audio' && feeders.length) log(`${this.tag}: ${t.key}: audio stalled at ${(target / 1000).toFixed(1)}s - starting audio-only recovery`);
+        }
       }
     }
     for (const p of [...this.pumps]) {
       if (this.ranAhead(p, now)) { this.stopPump(p, 'ran ahead of every reader'); continue; }
-      if (useful.has(p) && now - p.lastDataAt > cfg.STALL_MS) {
+      const idle = now - (p.progressAt.get(p.driver) ?? p.startedAt);
+      if (useful.has(p) && idle > cfg.STALL_MS) {
         // googlevideo would only give up after 30 s request timeouts x retries
-        this.stopPump(p, `stalled: no data for ${Math.round((now - p.lastDataAt) / 1000)} s`);
+        this.stopPump(p, `stalled: no ${p.driver.key} progress for ${Math.round(idle / 1000)} s`);
         if (!p.delivered) this.noteFailure(new Error('SABR stalled'));
       } else if (useful.has(p)) p.lastUseful = now;
       else if (paced.has(p)) this.stopPump(p, 'paced: enough buffered ahead');
@@ -536,6 +550,7 @@ export class PlaybackSession {
     if (!seg.init) { this.fetched[t.kind].ms += seg.durationMs; this.fetched[t.kind].bytes += seg.buf.length; }
     if (r === 'overlap') log(`${this.tag}: ${t.key}: dropped inconsistent segment at ${seg.start} (+${seg.buf.length})`);
     if (!seg.init) {
+      if (r === 'added' && seg.startMs + seg.durationMs > (p.frontier.get(t) ?? -1)) p.progressAt.set(t, Date.now());
       p.delivered++;
       if (!p.first.has(t)) p.first.set(t, seg.startMs);
       p.frontier.set(t, Math.max(p.frontier.get(t) ?? 0, seg.startMs + seg.durationMs));
@@ -593,7 +608,8 @@ export class PlaybackSession {
     const pumps = [...this.pumps].map((p) => {
       const fr = [...p.frontier].map(([tr, ms]) => `${tr.key}@${sec(ms)}`).join('/') || '-';
       const said = p.handle?.diag?.();
-      return `@${sec(p.startMs)} ${p.video ? 'video+' : ''}${p.audio.key} seg=${p.delivered} to=${fr} idle=${sec(now - p.lastDataAt)}s${said ? ` ${said}` : ''}`;
+      const trackIdle = sec(now - (p.progressAt.get(t) ?? p.startedAt));
+      return `@${sec(p.startMs)} ${p.video ? 'video+' : ''}${p.audio.key} seg=${p.delivered} to=${fr} idle=${sec(now - p.lastDataAt)}s ${t.key}-idle=${trackIdle}s${said ? ` ${said}` : ''}`;
     });
     const demands = t.demands(now).map((d) => {
       const sat = t.satisfied(d);

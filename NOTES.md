@@ -175,6 +175,33 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   manual fallback until the user releases it.
 
 ## Decision log
+- 2026-11-20: **Recover missing audio independently of video** (Build 30). Production
+  stalled at audio 20 s while the combined SABR run still delivered video (frontier 27 s,
+  SPS 1, HTTP audio wait expired after 25 s). Per-track advancing-media clocks prevent one
+  track from masking the other's stall. After 8 s without audio progress for a live missing
+  media read, start an audio-only run at the missing position; prefer and retain that run on
+  later ticks. New reads/seeks get fresh grace, buffered reads/hints/linger do not rescue.
+  Existing pump/start/backoff limits apply; unneeded recovery stops normally. No buffer or
+  browser-pref changes. Backup/evidence: ~/Library/Logs/sofa-audio-fix-20261120-200114.
+  Validated: 116 engine tests incl. typecheck, native playback regressions and architecture
+  check passed. Six of seven new regression tests fail against the saved old scheduler; all
+  seven pass with the fix. Live affected title delivered 105 s video / 110 s audio with SPS 1;
+  idle page refresh/reconnect passed. Installed 20:07:45 via tools/sofa-deploy while idle.
+  Installed executable/extension match the tested build; DB quick_check OK (1 download,
+  346 progress entries, 135 follows). Engine and Lounge ready again. Build 29 is .prev and
+  independently backed up. Long-term behavior still needs observation.
+- 2026-11-20: **Bound the YouTube document's lifetime** (Build 29). A production page open for nearly
+  three days stalled two videos at 60 s (SPS 3); minter renewal did not help. A fresh document with
+  the installed engine and production prefs accepted the same video past 100 s. Refresh after
+  six hours when idle, using document age across Sofa handovers; queue callers while reloading,
+  recheck sessions/pending calls in the page, protect an open/paused native player. Normal page
+  readiness and Lounge reconnect handle the replacement; no browser restart or identity reset.
+  Installed 19:04:57 via tools/sofa-deploy. 109 engine tests, player regressions, live checks
+  with a private copy of the production identity and native idle refresh passed; installed files
+  match the tested build, DB quick_check OK, no rejection/stall in the first ~6 min afterward.
+  Backup/evidence: ~/Library/Logs/sofa-youtube-fix-20261120-184606; .prev is Build 28.
+  Exact server-side rejection criterion remains unknown. The `/att/get` challenge experiment was
+  rejected in a controlled live check and removed. Details: docs/youtube-engine.md, "Document lifetime".
 - 2026-11-03: Objective-C/AppKit/CA/AVFoundation chosen (native, no runtime ballast,
   hardware decoding; Kodi renders constantly via GL → CPU/GPU load). Name "Sofa".
 - 2026-11-03: yt-dlp only for YouTube; everything else our own.

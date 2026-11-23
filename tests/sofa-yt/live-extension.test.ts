@@ -43,11 +43,16 @@ test('live: the engine through the extension (no remote control) passes stream p
   const host = await startEngineHost({ onEvent: (e) => { if (e.type === 'log') fs.appendFileSync(logFile, `${String(e.line)}\n`); } });
   const screen = await startXvfb();
   writeProfile(PROFILE, { 'intl.accept_languages': 'de-AT, de, en-US, en', ...DISPLAY_PREFS, ...EXTENSION_PREFS });
+  // Controlled incident checks can use the installed browser's exact prefs, without touching it.
+  if (process.env.SOFA_YT_LIVE_USER_JS) fs.copyFileSync(process.env.SOFA_YT_LIVE_USER_JS, path.join(PROFILE, 'user.js'));
   installExtension(PROFILE, EXTENSION, host);
   const ff = await launchFirefox(PROFILE, { display: screen.display, remote: false, url: 'https://www.youtube.com/' });
   try {
     const isPage = (m: { type: string; url?: unknown }): boolean => m.type === 'ready' && /^https:\/\/www\.youtube\.com\//.test(String(m.url));
     assert.ok(await until(() => host.events.some(isPage), 60000, 200), `engine ready over the extension (events: ${JSON.stringify(host.events).slice(0, 300)})`);
+    // Firefox re-injects an updated unpacked extension once. Match Sofa's startup grace before
+    // issuing the open: a replaced page cannot answer an in-flight media read.
+    await new Promise((r) => setTimeout(r, 15000));
     assert.ok(await until(async () => (await host.callWithin<{ onYouTube: boolean }>(5000, 'health')).onYouTube, 20000, 500), 'page with ytcfg');
     report('environment', await host.call('health'));
 
@@ -75,10 +80,18 @@ test('live: the engine through the extension (no remote control) passes stream p
     assert.deepEqual(logs.filter((l) => /csp:/.test(l)), [], 'no CSP violation');
     assert.ok(status, 'read at least once');
     assert.equal(status.failed, null, 'session did not fail');
+    assert.ok((status.fetched.video?.ms ?? 0) >= MEDIA_MS, 'video passed the 60 s stream-protection window');
+    assert.ok((status.fetched.audio?.ms ?? 0) >= MEDIA_MS, 'audio passed the 60 s stream-protection window');
+    assert.deepEqual(logs.filter((l) => /stream protection rejected/.test(l)), [], 'no rejected token during the run');
     assert.doesNotMatch(status.pumps.map((p) => p.diag ?? '').join(' '), /sps=3/, 'stream protection rejected the PO token');
     assert.ok(off > 4 << 20, 'media arrived');
+    assert.equal(await host.call('refresh'), false, 'active streaming session blocks a page refresh');
     await host.call('close', o.sid);
-    await host.call('stop');
+    const pages = host.events.filter(isPage).length;
+    assert.equal(await host.call('refresh'), true, 'idle page accepts refresh');
+    assert.ok(await until(() => host.events.filter(isPage).length > pages, 30000, 200), 'fresh document reconnects over the same channel');
+    assert.ok(await until(async () => (await host.callWithin<{ onYouTube: boolean }>(5000, 'health')).onYouTube, 20000, 500), 'refreshed page has its context');
+    report('refresh', await host.call('health'));
   } finally {
     await ff.stop();
     await screen.stop();

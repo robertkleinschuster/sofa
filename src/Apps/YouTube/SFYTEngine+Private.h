@@ -4,9 +4,37 @@
 #import "SFYTEngine.h"
 #import "SFYTChannel.h"
 
-@interface SFYTEngine ()
+@class SFLocalHTTP, SFYTBrowser, SFPlayerScreen;
+
+typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting, SFYTEngineReady };
+
+@interface SFYTEngine () {
+    SFLocalHTTP *_server;
+    NSString *_channelFile;       // the channel's port and token, kept across starts (startServer)
+    NSDictionary *_savedChannel;  // {port, token} as in the file
+    SFYTBrowser *_browser;
+    SFYTEngineState _state;
+    NSUInteger _run;              // browser runs; stale callbacks of an earlier run are ignored
+    NSUInteger _page;             // engine pages seen (a reload is a new page)
+    NSDate *_launchedAt;
+    NSInteger _failures;          // consecutive short runs
+    NSTimeInterval _nextStartAt;  // restart backoff (epoch)
+    BOOL _startPending;           // a start waits for the backoff to end
+    NSMutableArray *_waiting;     // ^(BOOL ready) blocks
+    NSMutableArray *_preloads;    // times of recent focus preloads
+    BOOL _consentPending;         // a consent click is scheduled or in progress
+    BOOL _aliveCheck;             // a liveness check after a timed-out call is running
+    NSDate *_unresponsiveRestartAt;   // the last restart for an unresponsive page
+    NSTimer *_memoryTimer;        // the browser's memory, watched while it runs (checkMemory)
+    NSUInteger _idleHeavyChecks;  // memory checks in a row: past the idle limit, no session
+    BOOL _refreshPending;         // an intentional page reload: calls queued, lounge polls ended on ready
+    __weak SFPlayerScreen *_viewer;  // keep a long pause safe even after the engine's session idle timeout
+}
 @property (nonatomic, readonly) dispatch_queue_t queue;   // the loopback server's: channel + media
 @property (nonatomic, readonly) SFYTChannel *channel;
+- (void)setState:(SFYTEngineState)state;
+- (void)tellWaiting:(BOOL)ready;
+- (void)runFailed:(NSString *)why;
 // One engine call with its Reply unwrapped, on the engine queue: done(value, nil), or (nil, error)
 // with code = the status the engine answered (504: no answer) and userInfo = its failure body
 // (error, bot, ...; "unanswered" when the page did not answer).
@@ -52,4 +80,9 @@
 - (NSDictionary *)storedAnswer:(NSString *)vid;     // a stored session when the item is complete; nil otherwise (main queue)
 - (BOOL)openStored:(NSString *)vid done:(void (^)(NSDictionary *r, NSError *e))done;   // answered from the store: YES
 - (void)subtitles:(NSString *)key session:(NSString *)sid done:(void (^)(NSString *vtt, NSError *e))done;
+@end
+
+@interface SFYTEngine (Refresh)
+- (void)refreshIdlePage;
+- (void)refreshPlayerChanged:(NSNotification *)n;
 @end

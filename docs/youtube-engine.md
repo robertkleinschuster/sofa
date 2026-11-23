@@ -169,6 +169,43 @@ the design: **the engine is not driven over WebDriver BiDi/Marionette** but thro
 `sps=1` - stream protection accepts the engine's token; 110 s of 1080p VP9 + Opus in one SABR run,
 14 MB in 12 s, no CSP violation.
 
+## Document lifetime (2026-11-20)
+
+The engine's page must not stay open indefinitely. On 2026-11-20, a nearly three-day-old
+production document repeatedly reached SPS 3 and stalled at 60 s on two videos, even after
+renewing its BotGuard minter. A fresh document with the installed engine and the production
+browser preferences accepted the same video (SPS 1, video 103 s / audio 100 s). The stale
+page state is implicated; the exact server-side rejection criterion is not observable.
+
+Sofa now refreshes the document after six hours at the next idle memory check. `health.pageAgeS`
+comes from the document's performance clock, so a Sofa update taking over Firefox does not reset
+its age. `refresh()` checks sessions and pending engine calls again in the page. Sofa queues new
+callers during the refresh, protects an open player (including a long pause), and handles the new
+document through its normal readiness and Lounge reconnect paths. Cookies, browser and display
+remain alive. A missing replacement page has the existing 90 s readiness deadline.
+
+Regression coverage: `unit-page-refresh.test.ts` checks an open in flight, a paused/session owner,
+a pending image request and rejection of work in a departing page. `live-extension.test.ts`
+requires both audio and video beyond 100 s, no rejected token, refusal to refresh an active
+stream, then a real idle reload and reconnection. The separately fetched `/att/get` challenge
+experiment failed stream protection and is not part of the fix; the page's own attestation stays.
+
+## Audio recovery (2026-11-20)
+
+`session.ts` measures advancing media separately for each track. The 20 s pump watchdog uses
+the driver's progress; audio arrivals cannot hide a stuck video driver, and duplicate/init
+segments do not count as progress. A live audio reader missing media for 8 s without audio
+progress may start a dedicated audio-only pump instead of waiting on its combined video/audio
+pump until the HTTP response's 25 s deadline. The grace starts no earlier than the reader's
+last progress and the pump's last audio progress (or start), so a new seek gets its own grace.
+Buffered readers, prefetch hints, lingering closed requests and init reads do not trigger rescue.
+
+Dedicated audio pumps take precedence on later scheduling passes, avoiding repeated replacements
+by the older combined run. The existing concurrency cap, start throttle, error backoff and
+unneeded-pump cleanup apply. A recovery start is logged; HTTP timeout diagnostics include the
+requested track's idle time alongside the pump's overall idle time. Buffer sizes are unchanged.
+Offline regressions: `tests/sofa-yt/unit-audio-recovery.test.ts` (including delivery to `serve()`).
+
 ## Playback reporting
 
 A view of Sofa's player reports itself as youtube.com's player does (`lib/report.ts`, page side

@@ -69,7 +69,9 @@ export interface MediaChunk {
 
 /** What Sofa can ask the engine (docs/youtube-engine.md "Engine API"). */
 export interface SofaEngine {
-  health(): { libraries: boolean; userAgent: string; origin: string; onYouTube: boolean; engine: EngineHealth | null };
+  health(): { libraries: boolean; userAgent: string; origin: string; onYouTube: boolean; pageAgeS: number; engine: EngineHealth | null };
+  /** Reload an idle document. Refused while a session or an asynchronous engine call exists. */
+  refresh(): boolean;
   /** The page script (or a test's preload script) hands over the channel: `send` posts one event. */
   connect(send: (e: EngineEvent) => void): void;
   start(cfg: EngineConfig): Reply<{ userAgent: string }>;
@@ -103,12 +105,14 @@ const STORE_PREFIX = 'sofa-engine:';
 let core: Engine | null = null;
 let blocks: MemoryBlocks | null = null;
 let channel: ((e: EngineEvent) => void) | null = null;
+let pendingCalls = 0;
+let refreshing = false;
 const send = (e: EngineEvent): void => { channel?.(e); };
 const lounge = createLounge({ fetch: (input, init) => fetch(input, init), emit: send });
 
 function reply<T>(f: () => T): Reply<T> {
   try {
-    if (!core) throw new EngineError(503, { error: 'engine not started' });
+    if (!core || refreshing) throw new EngineError(503, { error: 'engine not started' });
     return { ok: true, value: f() };
   } catch (e) {
     return failure(e);
@@ -116,8 +120,10 @@ function reply<T>(f: () => T): Reply<T> {
 }
 async function replyAsync<T>(f: () => Promise<T>): Promise<Reply<T>> {
   try {
-    if (!core) throw new EngineError(503, { error: 'engine not started' });
-    return { ok: true, value: await f() };
+    if (!core || refreshing) throw new EngineError(503, { error: 'engine not started' });
+    pendingCalls++;
+    try { return { ok: true, value: await f() }; }
+    finally { pendingCalls--; }
   } catch (e) {
     return failure(e);
   }
@@ -136,8 +142,17 @@ export const sofaEngine: SofaEngine = {
     userAgent: navigator.userAgent,
     origin: location.origin,
     onYouTube: onYouTubePage(),
+    pageAgeS: Math.max(0, performance.now() / 1000),
     engine: core?.health() ?? null,
   }),
+
+  refresh() {
+    if (!core || refreshing || pendingCalls || core.health().sessions) return false;
+    refreshing = true;
+    // Return the answer over the extension before leaving the document.
+    setTimeout(() => location.reload(), 100);
+    return true;
+  },
 
   connect(post) {
     channel = post;
