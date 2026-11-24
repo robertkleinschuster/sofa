@@ -4,6 +4,23 @@ Was sich für Nutzer ändert. Der Abschnitt einer Version ist zugleich der Text 
 GitHub-Releases (`tools/publish-release`) und erscheint in Sofa unter
 Einstellungen → „Update installieren“.
 
+## 0.3.13
+
+- **Ruhemodus.** „Ausschalten“ und der Schlaftimer beenden die Wiedergabe und schalten den
+  Bildschirm aus; Sofa ruht dann leise im Hintergrund – auch wenn macOS den Bildschirm abschaltet,
+  aber nie während ein Video läuft. Eine Taste weckt Sofa sofort. Neu unter Energie:
+  „Nachts ganz ruhen“ (standardmäßig aus). „Energie → Ruhezustand“ entfällt: Nach dem
+  Ruhezustand des Macs kam die Festplatte nicht zuverlässig zurück.
+- **YouTube läuft stabiler.** Ein lange pausiertes Video setzt beim Fortsetzen wieder ein,
+  statt zu enden. Videos bleiben nicht mehr nach einer Minute minutenlang hängen, wenn YouTube
+  die Sitzung ablehnt – Sofa erneuert sie sofort und spielt an derselben Stelle weiter. Stockt
+  nur der Ton, holt Sofa ihn eigenständig nach.
+- **Die Fernbedienung bleibt bei Sofa.** Nach dem Aufwachen des Macs öffnete die Apple
+  Remote mit Lauter/Leiser wieder die Lautstärkeanzeige von macOS.
+- **Leiser und sparsamer.** Der eingebaute Browser für YouTube schreibt kaum noch auf die
+  Festplatte und startet sich im Leerlauf früher neu, bevor er zu viel Speicher belegt. Im
+  Ruhemodus bleibt die Festplatte weitgehend still.
+
 ## 0.3.12
 
 - **Kanalbilder auf den Kacheln.** Vor dem Kanalnamen steht jetzt ein rundes Kanalbild – bei
