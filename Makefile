@@ -20,7 +20,7 @@ HBIN    := $(APP)/Contents/MacOS/SofaRemote
 SRCDIRS := $(filter-out src/Apps/,$(wildcard src/*/)) $(wildcard src/Apps/*/)
 CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wno-deprecated-declarations \
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
-# linked libraries and their MacPorts ports (declared in the port's depends_lib):
+# linked libraries (MacPorts on the build machine; make-release bundles them):
 #   mpv (+libmpv) -lmpv, sqlite3 -lsqlite3, curl -lcurl, webp -lwebp (WebP thumbnails, SFWebP)
 # -headerpad_max_install_names: deploy/make-release rewrite every library path to the bundle's own
 # copies (relink.py, longer paths); without room in the header that failed once the binary grew

@@ -3,13 +3,8 @@
 # within ~3 s: Sofa saves its state (area + running video + position), swap,
 # restart, playback continues at the same spot. Rollback: <App>.prev.
 #
-# Target = the Sofa.app the running helper comes from (else the MacPorts copy, else the /Applications copy).
-#  - app folder writable (/Applications): bundle as <App>.staged next to it, the helper swaps.
-#  - not writable (MacPorts port: /Applications/MacPorts belongs to root): bundle into
-#    ~/Library/Application Support/Sofa/update/Sofa.app, the helper quits Sofa and signals
-#    "ready", this script swaps via sudo. sudo non-interactively: set SUDO_PW.
-# On a port installation this is a development state; `port -n upgrade --force sofa`
-# restores the port state.
+# Target = the Sofa.app the running helper comes from (else /Applications/Sofa.app): the bundle
+# goes next to it as <App>.staged, the helper swaps it in (as for an update from GitHub).
 #
 # Usage: tools/sofa-deploy                 the current build, with the installed app's runtime
 #        tools/sofa-deploy --bundle <App>  a complete bundle (tools/make-release), e.g.
@@ -27,13 +22,9 @@ LOG="$HOME/Library/Logs/SofaRemote.log"
 
 APP="$(ps -axo command | sed -n 's|^\(/.*/Sofa\.app\)/Contents/MacOS/SofaRemote.*|\1|p' | head -1)"
 if [ -z "$APP" ]; then
-  if [ -d /Applications/MacPorts/Sofa.app ]; then APP=/Applications/MacPorts/Sofa.app; else APP=/Applications/Sofa.app; fi
+  APP=/Applications/Sofa.app
   echo "WARNING: no SofaRemote running - target $APP, takeover only at the next helper start"
 fi
-
-as_root() {
-  if [ -n "${SUDO_PW:-}" ]; then echo "$SUDO_PW" | sudo -S -k -p '' "$@"; else sudo "$@"; fi
-}
 
 echo "target: $APP"
 
@@ -67,30 +58,13 @@ else
   NEW="$SRC/build/Sofa.app"
 fi
 
-if [ -w "$(dirname "$APP")" ]; then
-  rm -rf "$APP.staged.tmp"
-  cp -R "$NEW" "$APP.staged.tmp"
-  rm -rf "$APP.staged"                     # never nest into an old .staged
-  mv "$APP.staged.tmp" "$APP.staged"       # becomes visible atomically
-  echo "staged; waiting for SofaRemote to take over ..."
-  for i in $(seq 1 60); do [ -e "$APP.staged" ] || break; sleep 0.5; done
-  [ -e "$APP.staged" ] && { echo "WARNING: not taken over (is SofaRemote running with the update logic?)"; exit 1; }
-else
-  U="$HOME/Library/Application Support/Sofa/update"
-  mkdir -p "$U"
-  rm -rf "$U/Sofa.app" "$U/Sofa.app.tmp" "$U/ready"
-  cp -R "$NEW" "$U/Sofa.app.tmp"
-  mv "$U/Sofa.app.tmp" "$U/Sofa.app"
-  echo "staged (external); waiting until SofaRemote has quit Sofa ..."
-  for i in $(seq 1 60); do [ -e "$U/ready" ] && break; sleep 0.5; done
-  [ -e "$U/ready" ] || { rm -rf "$U/Sofa.app"; echo "WARNING: SofaRemote did not respond (old helper without external swap?)"; exit 1; }
-  # swap as root; the new bundle gets the same ownership as the old one
-  OWNER="$(stat -f '%Su:%Sg' "$APP")"
-  as_root rm -rf "$APP.prev"
-  as_root mv "$APP" "$APP.prev"
-  as_root mv "$U/Sofa.app" "$APP"
-  as_root chown -R "$OWNER" "$APP"
-  for i in $(seq 1 40); do [ -e "$U/ready" ] || break; sleep 0.5; done
-fi
+[ -w "$(dirname "$APP")" ] || { echo "ERROR: $(dirname "$APP") is not writable"; exit 1; }
+rm -rf "$APP.staged.tmp"
+cp -R "$NEW" "$APP.staged.tmp"
+rm -rf "$APP.staged"                     # never nest into an old .staged
+mv "$APP.staged.tmp" "$APP.staged"       # becomes visible atomically
+echo "staged; waiting for SofaRemote to take over ..."
+for i in $(seq 1 60); do [ -e "$APP.staged" ] || break; sleep 0.5; done
+[ -e "$APP.staged" ] && { echo "WARNING: not taken over (is SofaRemote running with the update logic?)"; exit 1; }
 sleep 1
 tail -4 "$LOG"

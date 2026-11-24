@@ -12,7 +12,7 @@ NSString *SFRuntimePath(NSString *rel);    // Runtime/<rel> or /opt/local/<rel> 
 NSString *SFCABundle(void);                // CA certificates for libcurl (nil = libcurl default)
 // Release bundle: set up ~/Library/LaunchAgents/de.sofa.{remote,app}.plist for this bundle
 // (load the remote helper right away, autostart from the next login).
-// Not if the MacPorts port installed its agents. Only call from the real app.
+// Only call from the real app.
 void SFInstallAgents(void);
 // Release bundle not running from /Applications or ~/Applications (e.g. straight from the DMG):
 // then don't set up agents, but ask the user to drag Sofa into /Applications.

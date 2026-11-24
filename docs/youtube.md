@@ -16,8 +16,6 @@ identity, and every request to YouTube is counted and justified.**
 | Breaker (`SFYTBreaker`, shared file `Caches/Sofa/youtube-block.json`) | a bot check pauses background work (follow checks, preloads, downloads) 1 h → 8 h; user playback waits 3 min right after the check | the sidecar writes it, every instance reads it |
 | Counters (`SFStats`, table `stats`) | `yt.play.<outcome>`, `yt.live.*`, `yt.download.*`, `player.<fallback step>` per day | dev command `stats [days]` |
 
-Retired 2026-11-05: the bgutil PO token server (separate node process, ~125 MB, native `canvas`)
-and its yt-dlp plugin – the sidecar mints the same tokens with the same BotGuard library.
 Retired 2026-11-06 (user: "brauchen wir yt-dlp überhaupt noch?", then "entscheide du"): **the yt-dlp
 fallback** (`ytresolver.py`, `SFYTResolver`, Sofa's PO token plugin, `/pot`, the bundled Python). The
 rule "fallbacks stay as long as the counters show they are needed" decided it: 11-05..06 it was used
@@ -56,47 +54,8 @@ the sidecar got no answer. Fixed causes:
 Everything ships in the app bundle (user requirement): node and the sidecar's node_modules -
 nothing to install.
 
-The sections below are the original research (2026-11-03) and the yt-dlp resolver's history
-(retired 2026-11-06); yt-dlp and bgutil details there are historical.
-
-Original status: researched and **live-tested on 2026-11-03** on the iMac itself (macOS 10.9.5,
-yt-dlp 2026.10.21, QuickJS 2026-06-04, bgutil POT server 1.3.1 on 127.0.0.1:4416).
-All numbers below are measurements from this machine.
-
----
-
-## 0. TL;DR / recommended architecture
-
-```
- Sofa.app (ObjC, NSURLSession)                     sofa-ytresolver (own process, long-lived)
- ───────────────────────────────                   ─────────────────────────────────────────
- YTClient  ── POST youtubei/v1/{search,browse,     python3 + yt-dlp zipapp as library,
-              next,guide,player}  (WEB client)       one YoutubeDL instance, JSON lines on
- YTAuth    ── Firefox cookies.sqlite (copy) →        stdin/stdout:  {"id":"…"} → {"url":…,
-              Cookie + SAPISIDHASH header            "kind":"hls|progressive","height":…,
- YTParser  ── lockupViewModel + legacy renderers     "expires":…,"live":…}
- Player    ── AVPlayer(AVURLAsset(HLS media          (QuickJS for JS challenges, bgutil HTTP
-              playlist itag 95/96))                   PO-token provider, cookies file)
-```
-
-* **Browsing: 100 % native InnerTube, `WEB` client**, no API key, ~0.25–1.0 s per request.
-  Authenticated feeds work with the Firefox cookies + `Authorization: SAPISIDHASH …`.
-* **Playback: HLS, not progressive, not DASH.** yt-dlp with `player_client=web_embedded`
-  returns muxed H.264+AAC HLS variants 144p…**1080p** (itags 91–96) for VOD *and* live.
-  AVFoundation 10.9 plays the **per-variant media playlist** (itag 95 = 720p, 96 = 1080p)
-  with real decoded frames (verified with `AVPlayerItemVideoOutput`). Seeking works.
-* **DASH via AVMutableComposition does NOT work** on 10.9 (clock runs, 0 frames). fMP4
-  DASH as a single asset fails (-12842). Not needed anyway thanks to HLS.
-* **Format 22 no longer exists.** Format 18 (360p progressive) still exists and plays.
-* **Speed:** one-shot `yt-dlp -j` = **~23–27 s** (QuickJS spends ~19 s preprocessing the
-  2.5 MB player JS on every run). Fixes: (1) enable yt-dlp's built-in *preprocessed player
-  cache* → **5.5–7 s** per one-shot call; (2) long-lived resolver process → **2.5–3.3 s**
-  per video (first call after a YouTube player rollout ~20–25 s → warm up in background).
-* **Blockers:** none hard. Soft issues: AVFoundation HLS open fails intermittently
-  (~30–50 %, instant `-12643`/errorLog `-12939`) → retry 2–3× (cheap, fails in 0.1 s);
-  the master playlist's BANDWIDTH values are bogus → don't hand AVPlayer the master.
-  Watch history is **disabled on this account**, so Home (`FEwhat_to_watch`) and History
-  are empty (not an API problem).
+The sections below are the original InnerTube browsing research, **live-tested on 2026-11-03**
+on the target machine itself (macOS 10.9.5); all numbers are measurements from it.
 
 ---
 
@@ -180,10 +139,6 @@ and is 2× bigger. The 10-ft look is a UI concern; use WEB and build your own mo
   __Secure-1PAPISID, __Secure-3PAPISID, …`) as one `Cookie:` header.
   Tested: minimal subsets (`SID,HSID,SSID,APISID,SAPISID` ± `__Secure-*PSID`) →
   `logged_in=0`. Send the full set like a browser.
-* For yt-dlp write a Netscape `cookies.txt` (mode 0600) from the same rows
-  (format: `host \t TRUE|FALSE(host starts with '.') \t path \t TRUE|FALSE(secure) \t
-  expiry \t name \t value`). Must include `LOGIN_INFO` (yt-dlp's `--cookies-from-browser`
-  drops it).
 * Firefox rotates `__Secure-*PSIDTS`/`SIDCC`: re-read cookies at app start and e.g.
   every few hours / on 401 or `logged_in=0`.
 
@@ -415,7 +370,8 @@ viewCount,isLiveContent,thumbnail.thumbnails[]}`, `microformat.playerMicroformat
 `playabilityStatus.status` is `UNPLAYABLE` ("Video nicht verfügbar") and **no
 `streamingData`** for WEB without PO-token/JS-challenge handling. Tested natively for
 IOS, ANDROID_VR, WEB_EMBEDDED_PLAYER, MWEB, TVHTML5, WEB (with/without cookies): only IOS
-returned formats, and those are SABR-only (unusable). → **Streams only via yt-dlp.**
+returned formats, and those are SABR-only. → **Streams come from the YouTube engine** (the web
+player with a PO token, [youtube-engine.md](youtube-engine.md)), never from a native `player` call.
 Use `player` for: duration, isLiveContent, description when you don't need `next`.
 
 ### 3.6 Home / recommended
@@ -481,8 +437,7 @@ the entry (checked 2026-11-05). Exact sources, in Sofa's order of use:
   `VLUULF<channel id without UC>` (relative dates only), one per follow on its own schedule
   (`SFRefreshPlan`).
 - **Player response**: `microformat.playerMicroformatRenderer.publishDate` / `uploadDate`
-  ("2019-01-09T06:03:03-08:00"); the sidecar returns it as `published` (epoch s) from `/open`,
-  yt-dlp as `timestamp`. Downloads store this exact time (SFDownloadURLDone info).
+  ("2019-01-09T06:03:03-08:00"); the engine returns it as `published` (epoch s) from `/open`. Downloads store this exact time (SFDownloadURLDone info).
 - **Watch page** (`next`): `dateText` "02.11.2026" (day; request is hl=de/gl=AT) – info panel.
 `relativeDate()` in SFYTParser is the fallback for list entries only (approximate).
 
@@ -530,170 +485,17 @@ size (JPEG). Responses sometimes give protocol-relative `//yt3.ggpht.com/…` �
 
 ---
 
-## 5. Stream resolution with yt-dlp
-
-### 5.1 Measurements (VOD `OzCYsIrrRyw`, 35 min; all with QuickJS)
-
-| invocation | time | result |
-|---|---|---|
-| default clients (`web_embedded`+`tv`… auto), cookies, `-F` | 27 s | HLS 91–96 + DASH + 18 |
-| `player_client=web_embedded`, cookies, `-j` | 23–33 s | **HLS 91–96 (144p–1080p muxed avc1+mp4a)**, 18, DASH |
-| `player_client=mweb`, cookies | 23–27 s | 18 + DASH, **no HLS** |
-| `player_client=tv_simply`, no cookies | 22 s | 18 + DASH, no HLS (skips cookies) |
-| `player_client=android_vr`, no cookies | **2.4 s** | **only 18** (360p); DASH needs GVS PO token |
-| `ios`, `web_safari`, `web`, `tv` | 2–4 s | fail ("only images" / SABR / "page needs to be reloaded") |
-| web_embedded + **preprocessed-player cache** (one-shot) | **5.5–7 s** (first run per player version 24 s) | HLS 91–96 |
-| web_embedded + cache, `player_skip=webpage` | ~5 s | HLS 91–96 |
-| **long-lived resolver** (yt_dlp lib, 1 YoutubeDL instance, cache on) | **2.5–3.3 s/video** (init 4.4 s) | format 96 1080p HLS, live too |
-| live `mZRsKuHQWuU`: web_embedded+cache / android_vr / tv_simply | 7 s / **2 s** / 4 s | HLS 91–96 (`is_live`) in all three |
-
-Where the time goes (one-shot, no cache): python start 0.7 s, webpage 1.5 s, player JS
-0.3 s, **QuickJS 19 s** (EJS solver preprocesses the 2.5 MB `base.js` with a JS parser —
-this CPU + QuickJS is slow), m3u8 0.4 s, `-g`/`-f` with an "Untested" HLS format adds
-another ~2 s for yt-dlp's format test download (avoid with `-j` or `check_formats=False`).
-
-**Format 22 is gone** (not offered by any client). **Format 18** (avc1.42001E + AAC,
-640x360, progressive MP4) still exists everywhere.
-
-### 5.2 Gotchas found
-
-* **bgutil script provider stall:** without config the plugin probes
-  `node ~/bgutil-ytdlp-pot-provider/server/build/generate_once.js --version` (15 s
-  timeout; node is broken on this CPU) → either error or +15 s. Disable it:
-  `--extractor-args "youtubepot-bgutilscript:script_path=/nonexistent/generate_once.js"`.
-  The HTTP provider (127.0.0.1:4416) stays active and supplies the GVS PO token.
-* yt-dlp's EJS **preprocessed player cache** is disabled by default in yt-dlp
-  (`EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = False`, "files are large and we do not
-  support rotation"). Enabling it is a one-line, *in-process* switch (no file patch):
-  ```python
-  from yt_dlp.extractor.youtube.jsc._builtin import ejs
-  ejs.EJSBaseJCP._ENABLE_PREPROCESSED_PLAYER_CACHE = True
-  ```
-  Cache = `<cachedir>/challenge-solver/` (~4 MB per player version). Since it has no
-  rotation, the resolver should delete entries older than ~14 days. It is an internal
-  flag → re-verify after yt-dlp updates (fallback: still works, just ~20 s slower).
-* Use a **private `cachedir`** for Sofa (don't share `~/.cache/yt-dlp` with ytdl-sub).
-* With `cookies` set, `ios`/`android_vr`/`tv_simply` are skipped ("does not support
-  cookies") — so pass cookies only to the web_embedded call.
-* Run yt-dlp with `DYLD_INSERT_LIBRARIES` unset (libavxemu leak of the Claude shell; the
-  app's resolver process itself is spawned by Sofa, so irrelevant in production).
-
-### 5.3 Recommended resolver
-
-Long-lived child process, started by Sofa at launch and warmed up with one known video
-(absorbs the 20–25 s first-solve after YouTube player rollouts), protocol JSON lines.
-Core options (tested, `docs/probes/resolver_test.py`, args: cookies.txt cachedir videoId…):
-
-```python
-opts = {
-  "quiet": True, "no_warnings": True, "skip_download": True, "check_formats": False,
-  "cachedir": "~/Library/Caches/Sofa/yt-dlp",
-  "cookiefile": "~/Library/Application Support/Sofa/youtube-cookies.txt",   # 0600
-  "js_runtimes": {"quickjs": {"path": "/opt/local/bin/qjs"}},
-  "extractor_args": {
-     "youtube": {"player_client": ["web_embedded"], "player_skip": ["webpage"]},
-     "youtubepot-bgutilscript": {"script_path": ["/nonexistent/generate_once.js"]},
-  },
-  "format": "best[height<=1080][vcodec^=avc1][acodec!=none][protocol^=m3u8]"
-            "/best[height<=720][vcodec^=avc1][acodec!=none]/18",
-}
-info = ydl.extract_info("https://www.youtube.com/watch?v=" + vid, download=False)
-# → info["url"] (variant media playlist), info["format_id"], info["height"], info["is_live"]
-#   also return the itag-95 URL from info["formats"] as 720p fallback, and itag 18 url
-```
-Result: VOD and live → itag **96** (1080p) HLS; very old videos → highest available
-(e.g. 93/240p for `jNQXAC9IVRw`). The old ytdl-sub selector
-`best[height<=720][vcodec^=avc1][acodec!=none]` also lands on HLS 95 with web_embedded.
-
-Fallback chain if web_embedded fails: `android_vr` without cookies (2 s, format 18 /
-live HLS) → `mweb` with cookies (format 18).
-
-One-shot CLI equivalent (if a daemon is not wanted; needs the 4-line wrapper for the cache):
-```
-yt-dlp --no-config --cache-dir <dir> --js-runtimes quickjs:/opt/local/bin/qjs \
-  --cookies <cookies.txt> \
-  --extractor-args "youtubepot-bgutilscript:script_path=/nonexistent/generate_once.js" \
-  --extractor-args "youtube:player_client=web_embedded;player_skip=webpage" \
-  --no-check-formats -j https://www.youtube.com/watch?v=<id>
-```
-
-### 5.4 URLs: headers, expiry
-
-* **No headers / cookies needed for playback.** HLS master, media playlists, TS segments
-  and progressive URLs return 200/206 with any UA (tested AppleCoreMedia UA, curl
-  default, system curl; IPv4 and IPv6). yt-dlp's `http_headers` (Chrome UA etc.) are not
-  required.
-* **Expiry: 6 h** (`expire` = now + 21 540 s; path segment `/expire/<unix>/` in HLS URLs,
-  query `expire=` in progressive). URLs are bound to the public IP (`ip/185.53.112.125`).
-  Cache resolved URLs ≤ 5 h; re-resolve on resume after that and for lives running > 6 h.
-* Progressive (18) and DASH URLs answer with **302** to another googlevideo host
-  (AVFoundation follows; with curl use `-L`).
-
----
-
-## 6. AVFoundation on 10.9 — playback tests
-
-*Historical (2026-11-03): Sofa no longer uses AVFoundation; mpv plays YouTube DASH/HLS.*
-
-Probe program `docs/probes/avtest.m` (usage: `avtest single <file-with-url>` | `avtest comp <video-url-file> <audio-url-file>`)
-(built with `clang -fobjc-arc -c` + link without ARC flag, frameworks Foundation,
-AVFoundation, CoreMedia, CoreVideo, QuartzCore). Frames counted with
-`AVPlayerItemVideoOutput` (`hasNewPixelBufferForItemTime`), so "works" means real decoded
-frames, not just a running clock.
-
-| source | result |
-|---|---|
-| format 18 progressive (360p) | ready 0.4 s, 25 fps frames 640 px, seek to 120 s in 2.1 s ✔ |
-| **HLS media playlist itag 95 (720p)** | ready 0.2 s, 25 fps frames 1280 px, seek ✔ |
-| **HLS media playlist itag 96 (1080p, avc1.640028)** | frames 1920 px, seek ✔ (hardware decoder "Intel plugin, offline Gen6") |
-| HLS **master** (`manifest_url`, hls_variant) | plays, but ABR stays at **240p/426p** — YouTube's `BANDWIDTH=` values are far too low (720p variant says 350 kbit/s, real ~2.4 Mbit/s), errorLog `-12318 "Segment exceeds specified bandwidth for variant"` ✘ for quality |
-| live HLS itag 95 media playlist | frames 1280 px, live edge ✔ (`duration` = NaN/0) |
-| live HLS master | plays, quality random (240p…1080p) |
-| local `file://` master referencing remote variants | always `-12643` ✘ |
-| DASH fMP4 (137 video-only) as single asset | `-12842` ✘ |
-| **AVMutableComposition** of two remote AVURLAssets (137 + 140, also 18 + 18) | tracks load (1920x1080), insert OK, `playable=1`, item ready, clock advances, **0 frames**, `AVAssetImageGenerator` → `-11801` ✘ — compositions of HTTP-streamed assets don't render on 10.9 |
-
-**Intermittent open failure:** about 30–50 % of fresh `AVPlayerItem`s for googlevideo
-HLS fail *instantly* (≤0.1 s) with `AVFoundationErrorDomain -11800 / OSStatus -12643`,
-errorLog `CoreMediaErrorDomain -12939` on the playlist URI, while the same URL works in
-the next attempt and curl always gets 200 with identical content. Independent of
-`AVURLAssetHTTPHeaderFieldsKey`, IP family, variant. → **Player must retry**: on
-`AVPlayerItemStatusFailed` within the first 2 s, create a new `AVURLAsset`/`AVPlayerItem`
-(same URL) up to 3×, then fall back 96 → 95 → 18 → re-resolve.
-
-**Update 2026-11-04 — two distinct failure modes** (probe + dev A/B, see NOTES.md backlog):
-1. `-11800 / -12643`, errorLog `-12939` on the **playlist** URI after 0.1 s: CoreMedia's own
-   fetch of `manifest.googlevideo.com` fails (curl: always 200, IPv4 and IPv6). The *same*
-   playlist served from 127.0.0.1 failed 0/25 (direct: 4/25). → Sofa serves YouTube playlists
-   through its local proxy (`SFStreamProxy`, VOD playlists cached 10 min, warmed right after
-   resolution); segments stay direct.
-2. `NSURLErrorDomain -1102 / -12660` = **HTTP 403 on segments** (rr*.googlevideo.com). Hits
-   mpv's DASH URLs too, comes in bursts (heavy testing: dozens of resolutions in minutes),
-   curl on the same URLs mostly 200. Server-side; retry / re-resolve is the only remedy.
-
-**Player recipe:** `AVURLAsset` of the **variant media playlist URL** (`info["url"]` of
-itag 96, or 95 when user setting = 720p / weak network), `AVPlayerItem`, `AVPlayer`,
-`AVPlayerLayer` in the layer-hosting view. Don't pass the master. For quality switching,
-swap the item and `seekToTime:` the old position.
-
----
-
-## 7. Live streams
+## 5. Live streams
 
 * InnerTube: live items carry badge `THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE` / text "LIVE"
   (lockup) or `badges[].metadataBadgeRenderer.label == "LIVE"` (videoRenderer); upcoming
   = "Anstehend" + "Geplant für: 03.11.26, 20:00". Search filter `EgJAAQ%3D%3D` = live now;
   channel tab "Live" (`EgdzdHJlYW1z8gYECgJ6AA%3D%3D`).
-* yt-dlp: all of web_embedded / android_vr / tv_simply return HLS 91–96 for lives
-  (android_vr in **2 s**, no cookies, no JS) → for `is_live` items Sofa can use
-  `player_client=android_vr` first. `live_status: is_live`.
-* Live media playlist: `#EXT-X-TARGETDURATION:5`, sliding window of 6 segments,
-  `#EXT-X-PROGRAM-DATE-TIME`, no ENDLIST. No DVR window via HLS (live edge only).
-* Expiry 6 h also for live → re-resolve before `expire` on long sessions.
+* Playback of lives (live edge and DVR) is the engine's job, see [youtube-engine.md](youtube-engine.md).
 
 ---
 
-## 8. Pitfalls checklist
+## 6. Pitfalls checklist
 
 1. Silent auth failure (HTTP 200, empty) → check `logged_in` flag.
 2. Two header schemas for playlists (`pageHeaderViewModel` vs `playlistHeaderRenderer`);
@@ -708,9 +510,5 @@ swap the item and `seekToTime:` the old position.
    shelves) → filter for the TV UI.
 9. Firefox cookie DB locked → copy sqlite + `-wal`; never write to Firefox's DB.
 10. Home/History empty because account watch history is off (not a bug).
-11. yt-dlp: disable bgutil script provider (15 s node stall), private cachedir,
-    preprocessed-player cache, `check_formats=False`, cookies only for web_embedded.
-12. AVFoundation: use variant playlists (96/95), retry `-12643` opens, no DASH, no
-    master playlist.
-13. URLs expire after 6 h and are IP-bound.
-14. Never log or persist cookie values outside the 0600 cookie file.
+11. Stream URLs (googlevideo) expire after 6 h and are IP-bound.
+12. Never log or persist cookie values outside the 0600 cookie file.

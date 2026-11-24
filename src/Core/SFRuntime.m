@@ -94,18 +94,6 @@ BOOL SFRuntimeMisplaced(void) {
 void SFInstallAgents(void) {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray *labels = @[@"de.sofa.remote", @"de.sofa.app"];
-    // MacPorts port installed (same labels in /Library/LaunchAgents): the port wins, our own
-    // user agents go -- otherwise the load order would decide which Sofa runs.
-    if ([fm fileExistsAtPath:@"/Library/LaunchAgents/org.macports.sofa-remote.plist"]) {
-        for (NSString *l in labels) {
-            NSString *p = SFAgentPath(l);
-            if (![fm fileExistsAtPath:p]) continue;
-            SFLaunchctl(@[@"unload", p]);
-            [fm removeItemAtPath:p error:nil];
-            NSLog(@"Sofa: user agent %@ removed (MacPorts port active)", l);
-        }
-        return;
-    }
     if (!SFRuntimeDir() || SFRuntimeMisplaced()) return;
     NSString *app = [[NSBundle mainBundle] bundlePath];
     if (SFWriteAgent(@"de.sofa.remote", [app stringByAppendingPathComponent:@"Contents/MacOS/SofaRemote"], YES)) {

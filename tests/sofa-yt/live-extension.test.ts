@@ -16,7 +16,7 @@ import type { SessionStatus } from '../../res/sofa-yt/lib/session.ts';
 
 const EXTENSION = process.env.SOFA_YT_EXTENSION || '';
 const VID = process.env.SOFA_YT_LIVE_VIDEO || 'OzCYsIrrRyw';
-const PROFILE = process.env.SOFA_YT_LIVE_PROFILE || path.resolve(DIR, '..', 'sofa-yt-live-firefox');
+const PROFILE = process.env.SOFA_YT_LIVE_PROFILE || path.resolve(DIR, '..', '..', 'build', 'sofa-yt-live-firefox');
 const SOFA_BLOCK = path.join(os.homedir(), 'Library', 'Caches', 'Sofa', 'youtube-block.json');   // read only
 const MEDIA_MS = 100000;
 
@@ -34,7 +34,7 @@ test('live: the engine through the extension (no remote control) passes stream p
   timeout: 300000,
 }, async () => {
   // progress as it happens (the test runner shows output only at the end): build/live-extension.log
-  const logFile = path.resolve(DIR, '..', 'live-extension.log');
+  const logFile = path.resolve(DIR, '..', '..', 'build', 'live-extension.log');   // DIR = res/sofa-yt
   fs.writeFileSync(logFile, '');
   const report = (k: string, v: unknown): void => {
     const line = `LIVE-EXT ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}\n`;

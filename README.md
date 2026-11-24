@@ -69,8 +69,7 @@ Programme again.
 
 **Trust model:** Sofa does not check TLS certificates (an ageing CA list on a frozen macOS
 must never break it). Code is verified by signatures instead: Sofa updates must carry a valid
-signature of the Sofa release key (`res/sofa-release-public.pem`, file `Sofa-<version>.dmg.sig`),
-yt-dlp updates the yt-dlp maintainers' GPG signature over `SHA2-256SUMS`.
+signature of the Sofa release key (`res/sofa-release-public.pem`, file `Sofa-<version>.dmg.sig`).
 
 **Uninstall:**
 
@@ -78,14 +77,6 @@ yt-dlp updates the yt-dlp maintainers' GPG signature over `SHA2-256SUMS`.
 launchctl unload ~/Library/LaunchAgents/de.sofa.remote.plist ~/Library/LaunchAgents/de.sofa.app.plist
 rm ~/Library/LaunchAgents/de.sofa.remote.plist ~/Library/LaunchAgents/de.sofa.app.plist
 rm -rf /Applications/Sofa.app ~/Library/Application\ Support/Sofa ~/Library/Caches/Sofa
-```
-
-Alternatively, with [MacPorts](https://www.macports.org) and the
-[backport-toolkit](https://github.com/mac-backport/backport-toolkit) overlay:
-
-```sh
-sudo port -n install sofa   # Sofa.app + dependencies as MacPorts ports
-sudo port load sofa         # Apple Remote helper + start Sofa at login (run in Terminal on the Mac)
 ```
 
 ## Build from source

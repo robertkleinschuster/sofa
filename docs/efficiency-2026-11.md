@@ -1,8 +1,7 @@
 # Efficiency work, November 2026 (Builds 23–27)
 
-Findings and decisions of the efficiency review of 2026-11-17, kept in the repository so they
-survive the iMac's disk. Raw measurements: `~/Library/Logs/sofa-efficiency-review-2026-11-17/` on
-the iMac (backed up hourly by the raspi). Decision log entries: NOTES.md, 2026-11-17.
+Findings and decisions of the efficiency review of 2026-11-17. Decision log entries: NOTES.md,
+2026-11-17.
 
 Host: iMac12,2, 10.9.5, 16 GB, one WD20EFAX (SMR, 5400 rpm) - small random writes and fsyncs are
 the expensive thing; `noatime` on `/` since 2026-11-17.
