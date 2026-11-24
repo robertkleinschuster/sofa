@@ -65,7 +65,7 @@ NSString *gInstance = @"view";
     // reopening Sofa as well started a second one (2026-11-07, see SFAcquireInstanceLock).
     if (!SFDevMode) [NSApp disableRelaunchOnLogin];
     SFRegisterApps();   // first: themes and apps are looked up from here on
-    // SIGTERM (kill, launchd, switch-to-kodi's pkill): end as at a quit - the engine's RAM profile
+    // SIGTERM (kill, launchd, pkill): end as at a quit - the engine's RAM profile
     // synced back, the log written. Handled off the main thread: the 15-s fallback is armed first, so
     // a hung main thread (the very case pkill is for) still ends - with the log written directly.
     static dispatch_source_t term;

@@ -4,7 +4,7 @@
 // aluminium remote (7 buttons), and
 //   * forwards buttons to Sofa via Mach port (Sofa in the foreground),
 //   * launches Sofa with MENU when it isn't running (Front Row principle),
-//   * translates buttons into keyboard events when another app (e.g. Kodi) is in front,
+//   * brings Sofa to the front when another app is (the first press is swallowed),
 //   * swallows the first press while the display sleeps (only wakes it),
 //   * relaunches Sofa after a crash (SRSupervisor).
 // Unknown HID usages are logged (calibration).

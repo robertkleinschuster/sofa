@@ -1,6 +1,6 @@
 #!/bin/bash
 # sofa-dev — closed development loop for Sofa, without disturbing the real screen
-# (Kodi user): invisible instance (--dev), control via FIFO, screenshots
+# (the TV keeps running): invisible instance (--dev), control via FIFO, screenshots
 # from the offscreen window, log/crash check.
 #
 #   sofa-dev build                 make (error -> exit 1)

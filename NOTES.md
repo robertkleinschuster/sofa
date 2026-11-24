@@ -364,7 +364,6 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
       4. ~~"Platz schaffen" availability (oEmbed over libcurl)~~ through the engine (2026-11-07,
          `availability`; unit-tested, not yet live).
 - [~] ZDF / ARD / ORF natively per `docs/mediathek-apis.md` (mark geo/DRM restrictions). ARD+ZDF done (geo check before start), ORF done 2026-11-03 (TLS bridge, highlights `_embedded.video_item._embedded.item`, QXA streams only; individual qualities → 403). Maybe 3sat/ARTE later.
-- [ ] License for Sofa (user decides). Distribution itself is done: self-contained release DMG with auto-update.
 - [~] **Design system + TV UI framework** – APP ARCHITECTURE DONE 2026-11-05 (branch arch/apps,
       merged): SFApp protocol + registry, all five apps converted, player hooks, generic end cards,
       theme tokens instead of identifier checks, remote service + SFPlayerHost, src/Browse layer,
@@ -432,7 +431,7 @@ In the player: Up/Down (+/-) = system volume (CoreAudio VirtualMasterVolume,
 - [ ] **UX + robustness sweep of the whole app** (user 2026-11-07): look everywhere for what does not feel smooth or finished yet and for unhandled cases (interrupted transitions, late data, errors, empty states, remote presses during animations); robustness absolutely important (see the rule below). Findings go here as items, each fixed with a regression check.
 - [ ] Robustness (User 2026-11-04, standing rule): no ordering assumptions between async subsystems, readiness signal + timeout, watchdog/self-healing for long-lived state, one regression check per incident (`tools/test-playback`, `tools/test-resolver`).
 
-## Display sleep/wake (from the Kodi experience, see ~/kodi-setup-NOTES.md "Sleep/Wake-Modell")
+## Display sleep/wake
 - macOS manages the timeouts (pmset displaysleep 5, sleep 0); Sofa has NO power
   management of its own.
 - SofaRemote: EVERY IR press → `IOPMAssertionDeclareUserActivity` (IR is grabbed
@@ -453,9 +452,8 @@ position −2 s. Tested 2026-11-03: ~1 s interruption.
 Rollback: rename /Applications/Sofa.app.prev back.
 Details: the app exits with `_exit(0)` (exit() hung in framework handlers). de.sofa.app has
 KeepAlive{SuccessfulExit=false} (crash → restart). The helper checks process exit via kill(pid,0),
-only restarts Sofa if it was in FRONT (otherwise it would e.g. cover Kodi), verifies the
+relaunches Sofa if it was running, verifies the
 start (up to 6 attempts), ignores keys during the swap.
-Way back from Kodi: Sofa in the background + another app in front → MENU twice quickly (<0.7 s) brings Sofa back.
 Remote-shell note: launchctl/open from the Tailscale SSH session (background session) have no
 effect in Aqua → `sudo launchctl bsexec <loginwindow-pid> sudo -u imac launchctl ...`.
 
