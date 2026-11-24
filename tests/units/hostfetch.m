@@ -19,6 +19,6 @@ int main(void) { @autoreleasepool {
     expect(at(@"https://evilytimg.com/x.jpg") == nil, "look-alike host stays native");
     expect(at(@"https://img.example.org/p.png") == other, "each source its own client");
     expect(at(@"https://www.ardmediathek.de/x") == nil, "other hosts native");
-    expect(at(@"/Users/x/pic.jpg") == nil, "a file path is no host");
+    expect(at(@"/tmp/pic.jpg") == nil, "a file path is no host");
     return bad ? 1 : 0;
 } }

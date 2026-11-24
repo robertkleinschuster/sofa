@@ -37,9 +37,9 @@ socket 0666). One JSON object per datagram, at most 512 bytes:
   Apple-minimum guarantee or emergency behaviour. The HDD fan ignores profiles
   (`profile_weight 0`), so the loud fan stays sparing during playback too.
 - **Authentication:** datagrams carry no credentials. The daemon therefore accepts a hint only
-  from a sender bound directly inside `/Users/imac/Library/Caches/Sofa/`. That directory must
-  belong to uid 501 and be writable by nobody else, and the socket must be owned by 501. Only
-  501 or root can create such an address. Unbound or foreign senders are dropped (`status`
+  from a sender bound directly inside `<home>/Library/Caches/Sofa/` of the `allow_uid` user. That directory must
+  belong to that uid and be writable by nobody else, and the socket must be owned by it. Only
+  that uid or root can create such an address. Unbound or foreign senders are dropped (`status`
   counts them). Context changes are logged at most once per 10 s.
 - **Strict JSON:** exactly one flat object, no duplicate keys, no nested values, nothing after
   `}`; `v` must be the number 1.
