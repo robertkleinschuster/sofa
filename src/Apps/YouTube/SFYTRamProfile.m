@@ -311,7 +311,10 @@ NSArray *SFYTRamOrphans(NSString *before, NSString *after, NSUInteger sectors) {
         if (!S_ISREG(st->st_mode)) return;
         [now addObject:rel];
         off_t ramSize = st->st_size, diskSize = -1;
-        double v = MAX(st->st_mtimespec.tv_sec + st->st_mtimespec.tv_nsec / 1e9, MTime([s stringByAppendingString:@"-wal"], NULL));   // a database changes in its WAL
+        // a database changes in its WAL - one with content: an empty WAL is what a reader (our own read-only
+        // backup below) leaves behind, its time says nothing about the data
+        off_t walSize = 0; double walTime = MTime([s stringByAppendingString:@"-wal"], &walSize);
+        double v = MAX(st->st_mtimespec.tv_sec + st->st_mtimespec.tv_nsec / 1e9, walSize > 0 ? walTime : -1);
         double dv = MTime(d, &diskSize);
         BOOL sqlite = IsSQLite(s);
         // unchanged: same time and size - and when the time shares a second with the last sync (HFS+ keeps
