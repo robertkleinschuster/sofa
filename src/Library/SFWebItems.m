@@ -114,6 +114,7 @@ static NSString *ActionKind(SFItem *i, NSString **arg) {
     if (i.plot) d[@"plot"] = i.plot;
     if (i.channel) d[@"channel"] = i.channel;
     if (i.source) d[@"source"] = i.source;
+    if (i.station) d[@"station"] = i.station;
     if (i.themeName) d[@"theme"] = i.themeName;
     if (i.badge) d[@"badge"] = i.badge;
     if (i.drm) d[@"drm"] = @YES;

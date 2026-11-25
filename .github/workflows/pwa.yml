@@ -1,0 +1,48 @@
+name: pwa
+# Sofa im Browser (docs/pwa.md): checks, builds and publishes pwa/ on GitHub Pages.
+on:
+  push:
+    branches: [master]
+    paths: ['pwa/**', 'res/logos/**', 'res/icon/**', '.github/workflows/pwa.yml']
+  pull_request:
+    paths: ['pwa/**', 'res/logos/**', 'res/icon/**', '.github/workflows/pwa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pwa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: pwa/dist
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

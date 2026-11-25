@@ -1,0 +1,91 @@
+#!/bin/bash
+# test-pwa -- Sofa im Browser end to end: the built PWA (pwa/dist) in a headless Firefox (Marionette)
+# against an invisible dev instance (Example app, local media, a throwaway certificate on loopback;
+# the browser takes the certificate per session, the test names resolve to loopback). Muted.
+#   1  connect: the short name goes through the plain-HTTP connect route and comes back with the
+#      full name; the pairing screen takes the TV's code (dev: open web)
+#   2  Home and an app page render Sofa's tiles in the app's theme
+#   3  a DASH pair (H.264 + AAC, as YouTube's engine serves a browser) as HLS through hls.js: the
+#      playlists and both tracks' bytes come through Sofa (and it plays where the browser decodes
+#      H.264 - this Mac's Firefox build has no H.264 decoder); then, with the instance restarted on
+#      a VP9 file, a playback: the position lands in the TV's database, closing ends it
+#   4  the tile's sheet marks Später ansehen in the TV's database
+#   5  phone and desktop layouts (screenshots into $PWA_SHOTS when set: Firefox then renders into an
+#      invisible Xvfb display - this headless build takes none)
+#   0  the PWA's strict type check and unit tests (pwa/test), its build
+# Exit code 0 = all ok.
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
+FIREFOX=${SOFA_TEST_FIREFOX:-/opt/local/bin/firefox}
+NODE=${SOFA_TEST_NODE:-/opt/local/bin/node}
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-pwatest.XXXXXX")"
+INST=pwatest
+export SOFA_AUDIO_OUT=null
+[ -x "$FIREFOX" ] || { echo "test-pwa: no Firefox at $FIREFOX - skipped"; exit 0; }
+make -C "$SRC" >/dev/null || exit 1
+# the PWA's own checks (strict types, its unit tests) and its build; packages from npm's cache (no network)
+cd "$SRC/pwa" || exit 1
+[ -d node_modules ] || npm ci --offline --no-audit --no-fund >/dev/null 2>&1 || { echo "  FAIL  pwa: npm ci --offline (run npm ci in pwa/ once)"; exit 1; }
+npm run --silent check >"$T/check.log" 2>&1 && echo "  ok    pwa: strict type check" || { echo "  FAIL  pwa: type check"; sed 's/^/        /' "$T/check.log"; exit 1; }
+npm test >"$T/units.log" 2>&1 && echo "  ok    pwa: unit tests ($(grep -o 'pass [0-9]*' "$T/units.log" | tail -1))" || { echo "  FAIL  pwa: unit tests"; grep -E 'not ok|Error' "$T/units.log" | head -10 | sed 's/^/        /'; exit 1; }
+npm run --silent build >"$T/build.log" 2>&1 || { echo "  FAIL  pwa: build"; sed 's/^/        /' "$T/build.log"; exit 1; }
+cd "$SRC" || exit 1
+SRV=; WEB=; XVFB=; DISP=
+cleanup() {
+  for p in $SRV $WEB $XVFB; do kill "$p" 2>/dev/null; done
+  { defaults delete de.sofa.dev.$INST; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST.plist"; } >/dev/null 2>&1
+  rm -rf "$T"
+}
+trap cleanup EXIT
+
+NAME=sofa-test.invalid
+/opt/local/bin/openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$T/k.pem" -out "$T/c.pem" \
+  -days 2 -subj "/CN=$NAME" -addext "subjectAltName=DNS:$NAME" 2>/dev/null || { echo "openssl failed"; exit 1; }
+mkdir -p "$T/media"
+cp "$SRC/tests/fixtures/web/video.mp4" "$SRC/tests/fixtures/web/audio.mp4" "$T/media/"
+/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=25 -t 8 -c:v libx264 -pix_fmt yuv420p -an \
+  -movflags +faststart "$T/media/vonly.mp4" || { echo "ffmpeg failed"; exit 1; }
+/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=25 -t 40 -c:v libvpx-vp9 -b:v 200k -an "$T/media/vonly.webm" \
+  || { echo "ffmpeg failed"; exit 1; }
+# the media: a plain Range server; the PWA: a static server (its own origin)
+cat > "$T/srv.py" <<'PY'
+import http.server, functools, sys, os
+class H(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def send_head(self):
+        r = self.headers.get("Range", "")
+        F = self.translate_path(self.path)
+        if not r.startswith("bytes=") or not os.path.isfile(F): return super().send_head()
+        size = os.path.getsize(F); a, _, z = r[6:].partition("-"); start = int(a or 0); end = min(size, int(z) + 1) if z else size
+        self.send_response(206); self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, size))
+        self.send_header("Content-Length", str(end - start)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
+        f = open(F, "rb"); f.seek(start); self.wfile.write(f.read(end - start)); f.close(); return None
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(H, directory=sys.argv[1]))
+with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
+os.rename(sys.argv[2] + ".tmp", sys.argv[2])
+s.serve_forever()
+PY
+/opt/local/bin/python3.14 -I "$T/srv.py" "$T/media" "$T/media.port" & SRV=$!
+/opt/local/bin/python3.14 -I "$T/srv.py" "$SRC/pwa/dist" "$T/web.port" & WEB=$!
+for i in $(seq 1 150); do [ -s "$T/media.port" ] && [ -s "$T/web.port" ] && break; sleep 0.1; done
+MP=$(cat "$T/media.port"); WP=$(cat "$T/web.port")
+freeport() { /opt/local/bin/python3.14 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
+PORT=$(freeport); MPORT=$(freeport)
+D="$T/data"; mkdir -p "$D"
+
+if [ -n "${PWA_SHOTS:-}" ] && [ -x /opt/local/bin/Xvfb ]; then
+  DISP=:$(( 70 + RANDOM % 20 ))
+  /opt/local/bin/Xvfb $DISP -screen 0 1400x1000x24 -nolisten tcp >/dev/null 2>&1 & XVFB=$!
+  sleep 1
+fi
+
+# the browser half starts and restarts the instance itself (tools/lib/test-pwa.mjs)
+env PWA_URL="http://127.0.0.1:$WP/" SOFA_BIN="$BIN" SOFA_INSTANCE=$INST SOFA_DATA="$D" SOFA_PORT=$PORT SOFA_NAME=$NAME \
+    SOFA_CERT="$T/c.pem" SOFA_KEY="$T/k.pem" PWA_ORIGIN="http://127.0.0.1:$WP" \
+    MEDIA_DASH_V="http://127.0.0.1:$MP/video.mp4" MEDIA_DASH_A="http://127.0.0.1:$MP/audio.mp4" MEDIA_FILE="http://127.0.0.1:$MP/vonly.webm" MEDIA_H264="http://127.0.0.1:$MP/vonly.mp4" \
+    FIREFOX="$FIREFOX" MARIONETTE_PORT=$MPORT PROFILE="$T/profile" PWA_SHOTS="${PWA_SHOTS:-}" PWA_DISPLAY="$DISP" "$NODE" "$SRC/tools/lib/test-pwa.mjs"
+fail=$?
+[ $fail = 0 ] && echo "==> test-pwa ok" || { echo "==> test-pwa FAILED"; tail -20 "$D/sofa.log" | sed 's/^/    /'; }
+exit $fail

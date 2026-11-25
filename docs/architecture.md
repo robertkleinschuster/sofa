@@ -55,6 +55,21 @@ Dependency rules, enforced by `tools/check-arch` (part of `tools/test-all`):
 - No app identifiers or ref namespaces as string literals (`@"youtube"`, `@"yt:…"`) outside
   `src/Apps`.
 
+## Sofa im Browser (docs/pwa.md)
+
+A second UI - the PWA in `pwa/` (TypeScript, GitHub Pages) - on the same backend, served by
+`SFWebServer` (Shell, port 7443, TLS on the tailnet addresses only):
+- Core: `SFLocalHTTP` (+ `SFHTTPSecurity`: TLS by `SFTLS`, all addresses with an accept filter),
+  `SFTailnet` (read-only `tailscale status`/`cert`), `SFLoopbackClient` (relays Sofa's own local
+  routes).
+- Library: `SFWebDevices` (pairing, token hashes, table `web_devices`), `SFWebItems` (pages and
+  items as JSON, page handles), `SFWebImages` (signed picture paths), `SFWebHLS` (a DASH pair's
+  init as HLS playlists), `SFWebStreams` (+Serve: the browser's playbacks through the media proxy,
+  the engines and downloads; capability paths).
+- Apps reach it only through the `SFApp` contract: `resolveForBrowser:done:` (a format browsers
+  decode - YouTube: the engine's H.264/AAC session) and `playback:reports:`.
+- Shell: `SFWebServer` (+API: the routes), `SFWebPairScreen` (Einstellungen → Sofa im Browser).
+
 ## The app contract: `SFApp`
 
 One class per app conforming to `SFApp` (`src/Core/SFApp.h`, class methods: apps are

@@ -124,7 +124,7 @@ periodic position report, so the TV's Home does not rebuild every 10 s.
 
 ### 5. Look
 
-The PWA takes Sofa's design tokens from the server (`/api/themes`: every registered theme's colors,
+The PWA takes Sofa's design tokens from the server (`/api/info`: every registered theme's colors,
 fonts as PostScript names, corner radius, header mark) and maps them to CSS custom properties per
 page - home, YouTube, ZDF, ARD, ORF, CCC look as on the TV. Fonts: the same faces where the device
 has them (`local()` by PostScript name: Avenir Next, Helvetica Neue, Gill Sans on Apple devices),
@@ -141,22 +141,52 @@ rails and a hero).
 | `GET /api/hello` (no auth) | `{name: "Sofa", version, paired: bool}` - reachability and token check |
 | `POST /api/pair {code, name}` (no auth) | `{token, device}`; 403 wrong code, 429 too many tries |
 | `DELETE /api/pair` | this device unpairs itself |
-| `GET /api/themes` | design tokens of every theme |
+| `GET /api/info` | the apps (name, search), design tokens of every theme, this device's name |
 | `GET /api/home` | Home's sections as a page |
 | `GET /api/app/<id>` | an app's start page (framed as on the TV) |
 | `GET /api/page/<handle>` | a folder's page (handles name page loaders of earlier answers) |
 | `GET /api/more/<handle>` | the next portion of a shelf with `more` |
 | `GET /api/show?ref=&title=` | a show/channel page by ref |
-| `GET /api/search?app=&q=` | an app's search page |
-| `POST /api/play {item, online?}` | `{stream, kind: hls\|file, url, start, duration}` |
+| `GET /api/search?app=&q=` | an app's search page (without `q`: the household's recent searches) |
+| `GET /api/suggest?app=&q=` | the app's search suggestions |
+| `POST /api/play {item}` | `{stream, kind: hls\|file, url, start, duration}` |
 | `POST /api/stream/<id> {state, position, duration}` | player state; `closed` ends it |
-| `POST /api/state {item, watched?, later?, follow?, position?}` | marks; answers the item's new state |
+| `POST /api/state {item, watched?, later?, follow?, forget?}` | marks (`forget`: out of Weiterschauen); answers the item's new state - with no mark, just its state |
 | `GET /m/<stream>/…` (capability) | the stream's media (Range) |
 | `GET /img/<sig>?u=&w=` (signed) | a picture through Sofa's image path (JPEG/PNG, sized) |
 
 Items carry their stored dictionary (`d`) - the PWA echoes it back in `play`/`state`, like the
 store keeps it - plus display fields (`kind`, `title`, `sub`, `img`, `progress`, `watched`,
 `later`, `following`, `page` handle, `theme`).
+
+## The PWA (`pwa/`)
+
+Strict TypeScript without a framework (`pwa/src`), bundled by esbuild (the wasm build: the same on
+CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a video plays.
+
+- `connection.ts` host name, connect redirect, token (localStorage); `api.ts` the calls above;
+  `router.ts` hash routes (GitHub Pages serves one page); `main.ts` the controller: routes,
+  header (the page's wordmark or logo and header mark, the apps, search, settings), a view per
+  history entry kept so Back returns to it as it was left.
+- `pages.ts` shelves (rails scroll sideways with arrows for a mouse, grids wrap; `more` appends at
+  the end), `tiles.ts` the TV's tiles (SFTile.m: badge, duration, chip, progress, watched, avatar);
+  a mark or a playback updates every tile of the item in place. A tap plays (as OK on the remote),
+  ⋯ opens the sheet (`sheet.ts`: play / from the start, Später ansehen, gesehen, aus Weiterschauen,
+  zur Sendung, folgen).
+- `player.ts` native HLS on Apple's browsers, hls.js elsewhere, files in `<video>`; reports
+  every 10 s and on pause, seek, end and close (a beacon on the capability path when the page goes
+  away); a broken stream is opened again (twice), a format the browser can't decode says so.
+- `theme.ts` tokens to CSS variables, fonts by PostScript name through `local()`; `logos.ts` the
+  logos (copied from `res/logos` at build time) recoloured as `SFLogo.m` does.
+- `sw.ts` the service worker caches the shell only - never Sofa's data or media.
+
+Published by `.github/workflows/pwa.yml` (check, unit tests, build, Pages) on every push to master
+that touches it. Tests: `pwa/test` (pure parts, `npm test`), `tools/test-pwa` (in test-all): the
+built PWA in a headless Firefox (Marionette) against a dev instance - connect via the short name,
+pairing with the dev code, pages, a playback with its reports, marks, phone and desktop widths;
+`PWA_SHOTS=<dir>` saves screenshots (Firefox then renders into an invisible Xvfb). This Mac's
+Firefox build decodes no H.264, so there the DASH pair is checked up to hls.js reading its master
+playlist; the byte relay is test-web's, and a VP9 file plays end to end.
 
 ## Open questions (for the user)
 

@@ -92,6 +92,8 @@ Layered since 2026-11-05 – contract and rules in **docs/architecture.md**, how
   CCC; Example = dev template with `SOFA_EXAMPLE_APP=1`).
 - `src/Shell` AppDelegate (player host, dev FIFO, update handover), app registration
   (SFApps.m), home composition + settings (SFHome), migration.
+- `pwa/` Sofa im Browser: the PWA on GitHub Pages, talking to Sofa's `SFWebServer` over the tailnet
+  (docs/pwa.md).
 - `helper/` SofaRemote (LaunchAgent): holds Apple IR exclusively, Menu starts Sofa,
   forwards keys to the app via Mach port.
 - Data: `~/Library/Application Support/Sofa/sofa.db` (schema + rules: docs/architecture.md
@@ -292,6 +294,16 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   rest stay in memory, the follow batch writes its check times in one transaction at its end, and
   the RAM profile is synced at most every 4 h at rest (2 h before). Left: the sync bursts themselves,
   sofa.db/cache.db in the follow batches, cfprefsd touching a firefox domain (~7/h).
+
+- 2026-11-25: **Sofa im Browser** (user: a PWA as a second, independent UI on the same backend;
+  docs/pwa.md). Sofa serves TLS itself on port 7443 with the tailnet's own certificate (`tailscale
+  cert`, read-only - no `tailscale serve`, nothing changed on the only way into the Mac), accepting
+  only connections to its tailnet addresses; the short name "imac" is learned through a plain-HTTP
+  connect redirect on the same port. Pairing with a code on the TV (Einstellungen → Sofa im Browser),
+  tokens stored as hashes. Every stream goes through Sofa: YouTube as a second session of the same
+  engine page in H.264/AAC (a required codec, `onlyCodecs`) turned into HLS byte ranges, mediatheks
+  through the media proxy. Progress, marks and follows go through the TV's own modules. PWA in
+  `pwa/` (strict TypeScript, esbuild, hls.js), published by `.github/workflows/pwa.yml`.
 
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**

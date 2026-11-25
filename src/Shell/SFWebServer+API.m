@@ -29,8 +29,8 @@ static NSDictionary *ThemeJSON(SFTheme *t) {
                              @"surface": t.surface ?: [NSNull null], @"text": t.text ?: [NSNull null], @"textDim": t.textDim ?: [NSNull null],
                              @"accent": t.accent ?: [NSNull null], @"accentText": t.accentText ?: [NSNull null], @"focus": t.focus ?: [NSNull null],
                              @"focusText": t.focusText ?: [NSNull null], @"progress": t.progressColor ?: [NSNull null],
-                             @"seekBar": t.seekBarColor ?: [NSNull null], @"wordmark": t.wordmarkColor ?: [NSNull null],
-                             @"headerMark": t.headerMarkColor ?: [NSNull null]};
+                             @"seekBar": t.seekBarColor ?: [NSNull null], @"wordmarkColor": t.wordmarkColor ?: [NSNull null],
+                             @"headerMarkColor": t.headerMarkColor ?: [NSNull null]};
     [colors enumerateKeysAndObjectsUsingBlock:^(NSString *k, id c, BOOL *stop) { NSString *s = c == [NSNull null] ? nil : CSSColor(c); if (s) d[k] = s; }];
     d[@"fonts"] = @{@"regular": t.fontRegular ?: @"", @"medium": t.fontMedium ?: @"", @"bold": t.fontBold ?: @"", @"wordmark": t.fontWordmark ?: t.fontBold ?: @""};
     d[@"corner"] = @(t.corner);

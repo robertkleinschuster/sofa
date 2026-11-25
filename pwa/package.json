@@ -1,0 +1,23 @@
+{
+  "name": "sofa-pwa",
+  "version": "1.0.0",
+  "description": "Sofa im Browser (docs/pwa.md): the PWA on GitHub Pages that talks to Sofa over the tailnet",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc -p . --noEmit && tsc -p tsconfig.sw.json --noEmit",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "hls.js": "1.7.4"
+  },
+  "devDependencies": {
+    "esbuild-wasm": "0.25.12",
+    "typescript": "6.0.3"
+  }
+}

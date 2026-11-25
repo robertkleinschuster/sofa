@@ -1,0 +1,17 @@
+{
+  "name": "Sofa im Browser",
+  "short_name": "Sofa",
+  "description": "Sofa – die Mediathek vom Fernseher, auf dem Handy und am Computer.",
+  "lang": "de",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101114",
+  "theme_color": "#1c1f26",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
