@@ -1,4 +1,5 @@
 #import "SFYTFeeds.h"
+#import "SFYTOriginalTitles.h"
 #import "SFApp.h"
 #import "SFYTInnerTube.h"
 #import "SFYTParser.h"
@@ -32,6 +33,7 @@ static NSMutableSet *gAvatarTried;     // channels asked for their avatar since 
     SFYTCallBackground(@"browse", @{@"browseId": [@"VLUULF" stringByAppendingString:[cid substringFromIndex:2]]}, 0, ^(id j, NSError *e) {
         NSArray *items = j ? [self videosInUploads:j] : nil;
         for (SFItem *i in items) i.title = [[SFStore shared] originalTitleFor:i.identifier] ?: i.title;   // as SFYTPages shows them
+        [SFYTOriginalTitles wantItems:items];   // a new episode gets its own title before long
         SFMain(^{ done(items, items ? nil : e); });
     });
 }

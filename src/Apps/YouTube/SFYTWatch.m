@@ -4,14 +4,17 @@
 #import "SFYTParser.h"
 #import "SFYTPages.h"
 #import "SFStore.h"
+#import "SFYTOriginalTitles.h"
 
 @implementation SFYTWatch
 
-// The watch page's details - and its title is the uploader's own (the lists carry YouTube's
-// localized one, docs/youtube.md "Titles"): remembered for every place the video shows up
+// The watch page's details. Its title is translated like the lists' (2026-11-25) - the uploader's
+// own comes from oEmbed (SFYTOriginalTitles, docs/youtube.md "Titles")
 + (NSDictionary *)detailsIn:(id)next video:(NSString *)vid {
     NSDictionary *d = [SFYTParser watchDetailsIn:next];
-    [[SFStore shared] setOriginalTitle:d[@"title"] forID:[@"yt:" stringByAppendingString:vid]];
+    [SFYTOriginalTitles want:vid];
+    NSString *own = [[SFStore shared] originalTitleFor:[@"yt:" stringByAppendingString:vid]];
+    if (own && d[@"title"]) { NSMutableDictionary *m = [d mutableCopy]; m[@"title"] = own; return m; }
     return d;
 }
 

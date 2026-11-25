@@ -13,6 +13,7 @@
 #import "SFDownloads.h"
 #import "SFFollows.h"
 #import "SFStore.h"
+#import "SFYTOriginalTitles.h"
 
 @implementation SFYTPages
 
@@ -25,7 +26,9 @@
         else if ([p isEqualToString:@"ytchannel"]) i.pageLoader = [self channelLoader:SFRefID(i.identifier) title:i.title];
         return i;
     }
-    i.title = [[SFStore shared] originalTitleFor:i.identifier] ?: i.title;   // the uploader's, once its watch page was seen
+    NSString *own = [[SFStore shared] originalTitleFor:i.identifier];   // the uploader's (oEmbed), lists are translated
+    if (own) i.title = own;
+    else if ([p isEqualToString:@"yt"]) [SFYTOriginalTitles want:SFRefID(i.identifier)];
     // already downloaded: the local file (quality, offline, shared progress)
     SFItem *local = [p isEqualToString:@"yt"] ? [[SFDownloads shared] itemFor:i.identifier] : nil;
     if (!local) return i;

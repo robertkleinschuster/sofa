@@ -423,6 +423,17 @@ static NSString *sharedJSON(SFItem *item, NSString *originalTitle) {
                    @[@"UPDATE items SET json = json_set(json, '$.title', ?) WHERE id = ?", @[title, i]]]];
 }
 
+- (NSArray *)itemIDsWithoutOriginalTitle:(NSString *)prefix {
+    if (!prefix.length) return @[];
+    // what shows first goes first: progress and follows' newest, then the rest
+    NSArray *rows = [self rowsNow:@"SELECT i.id AS id FROM items i LEFT JOIN progress p ON p.id = i.id LEFT JOIN follow_items f ON f.id = i.id "
+                     "WHERE i.id LIKE ? || '%' AND i.id NOT IN (SELECT id FROM original_titles) "
+                     "GROUP BY i.id ORDER BY MAX(COALESCE(p.updated, 0)) DESC, MIN(COALESCE(f.pos, 1000000))" args:@[prefix]];
+    NSMutableArray *out = [NSMutableArray arrayWithCapacity:rows.count];
+    for (NSDictionary *r in rows) if ([r[@"id"] isKindOfClass:[NSString class]]) [out addObject:r[@"id"]];
+    return out;
+}
+
 // items nothing references any more (left a follow's list, removed from the history, ...)
 - (void)pruneItemsNow {
     [self runNow:@"DELETE FROM items WHERE id NOT IN (SELECT id FROM progress UNION ALL SELECT id FROM downloads "

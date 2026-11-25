@@ -4,6 +4,7 @@
 #import "SFYTPages.h"
 #import "SFYTWatch.h"
 #import "SFYTFeeds.h"
+#import "SFYTOriginalTitles.h"
 #import "SFYTParser.h"
 #import "SFStore.h"
 #import "SFYTEngine.h"
@@ -53,6 +54,7 @@
     [[SFFollows shared] lendPicturesToItemsOf:[self appIdentifier]];   // a followed channel's picture is its videos' avatar
     if (!SFDevMode) [[SFYTEngine shared] start];   // browser, page and BotGuard warm before the first click
     [[SFYTEngine shared] watchRest];
+    if (!SFDevMode) [SFYTOriginalTitles start];   // the stored videos' own titles, slowly (one client: the real app's)
 }
 
 + (void)stop { [[SFYTEngine shared] stop]; }

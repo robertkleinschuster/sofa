@@ -11,6 +11,7 @@ import type { DescribedFormat, SubtitleKind } from './formats.ts';
 import type { MediaIndex } from './mediaindex.ts';
 import { fetchVtt } from './subs.ts';
 import { errorMessage, toError } from './errors.ts';
+import { isRecord } from './json.ts';
 import { log } from './log.ts';
 import { background } from './timers.ts';
 import { ViewReporter } from './report.ts';
@@ -218,6 +219,13 @@ export interface Engine {
    * unlisted, 400/404 gone, anything else unknown (401/403 also covers private videos).
    */
   availability(v: string): Promise<number>;
+  /**
+   * A video's oEmbed answer (the same request as availability): its status and, when 200, the
+   * uploader's own title and channel name - YouTube translates titles in every list and on the watch
+   * page into the viewer's language (2026-11-25), oEmbed keeps the original. Not paused by the
+   * breaker either; Sofa paces these calls (SFYTOriginalTitles).
+   */
+  oembed(v: string): Promise<{ status: number; title?: string; author?: string }>;
   /**
    * A YouTube picture (thumbnail, avatar, banner) as the page loads it: the page's own fetch -
    * Firefox's connection, cache and Referer, CORS as youtube.com (both picture hosts allow it).
@@ -616,14 +624,27 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     try { return (await r.json()) as object; } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
   }
 
-  async function availability(v: string): Promise<number> {
+  function oembedRequest(v: string): Promise<Response> {
     if (!/^[\w-]{11}$/.test(v)) throw new EngineError(400, { error: 'not a video id' });
     const u = new URL('https://www.youtube.com/oembed');
     u.searchParams.set('format', 'json');
     u.searchParams.set('url', `https://www.youtube.com/watch?v=${v}`);
-    try {
-      return (await pageFetch(u, { signal: AbortSignal.timeout(10000) })).status;
-    } catch (e) { throw new EngineError(502, { error: errorMessage(e) }); }
+    return pageFetch(u, { signal: AbortSignal.timeout(10000) }).catch((e: unknown) => { throw new EngineError(502, { error: errorMessage(e) }); });
+  }
+
+  async function availability(v: string): Promise<number> {
+    return (await oembedRequest(v)).status;
+  }
+
+  async function oembed(v: string): Promise<{ status: number; title?: string; author?: string }> {
+    const r = await oembedRequest(v);
+    if (r.status !== 200) return { status: r.status };
+    let j: unknown;
+    try { j = await r.json(); } catch (e) { throw new EngineError(502, { error: `oembed: ${errorMessage(e)}` }); }
+    const o = isRecord(j) ? j : {};
+    const title = typeof o['title'] === 'string' && o['title'].trim() ? o['title'] : undefined;
+    const author = typeof o['author_name'] === 'string' ? o['author_name'] : undefined;
+    return { status: 200, ...(title ? { title } : {}), ...(author ? { author } : {}) };
   }
 
   async function image(url: string): Promise<{ mimeType: string; bytes: Uint8Array }> {
@@ -670,6 +691,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     innertube,
     suggest,
     availability,
+    oembed,
     image,
     health: () => ({
       ok: true, session: youtube.sessionState, poToken: po.state, sessions: sessions.size,

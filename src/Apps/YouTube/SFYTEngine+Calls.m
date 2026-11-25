@@ -26,6 +26,16 @@ static const NSTimeInterval kCallTimeout = 30;   // as SFYTEngine.m's
     });
 }
 
+- (void)oembed:(NSString *)vid done:(void (^)(NSInteger, NSString *))done {
+    SFMain(^{
+        [self call:@"oembed" args:@[vid ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
+            NSDictionary *d = dict(v);
+            NSInteger st = [nn(d[@"status"]) integerValue];
+            done(st, st == 200 ? str(d[@"title"]) : nil);
+        }];
+    });
+}
+
 - (void)availability:(NSString *)vid done:(void (^)(NSInteger))done {
     [self call:@"availability" args:@[vid ?: @""] timeout:kCallTimeout done:^(id v, NSError *e) {
         NSInteger st = [v isKindOfClass:[NSNumber class]] ? [v integerValue] : 0;

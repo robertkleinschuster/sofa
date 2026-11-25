@@ -9,7 +9,7 @@ import { METHODS, isCommand, unknownCommand, dispatch, encodeUpload, decodeUploa
 import type { SofaEngine } from '../../res/sofa-yt/web/engine.ts';
 
 test('the calls Sofa makes pass the page\'s command check', () => {
-  for (const m of ['image', 'loungeRequest', 'loungePoll', 'open', 'innertube', 'availability']) {
+  for (const m of ['image', 'loungeRequest', 'loungePoll', 'open', 'innertube', 'availability', 'oembed']) {
     assert.ok(isCommand({ id: 1, method: m, args: [] }), m);
     assert.equal(unknownCommand({ id: 1, method: m, args: [] }), null, `${m} is not unknown`);
   }

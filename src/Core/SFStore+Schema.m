@@ -252,6 +252,12 @@
             NSArray *left = [self rowsNow:@"PRAGMA foreign_key_check" args:nil];
             if (left.count) [self failStep:[NSString stringWithFormat:@"schema step 19: %lu rows break a reference (%@)", (unsigned long)left.count, left.firstObject]];
         },
+        // 20: the remembered "original" titles came from the watch page - which YouTube translates
+        // into the viewer's language as well (2026-11-25: an English channel's video stored with a
+        // German title). They go; the originals come from oEmbed now and overwrite the items' titles.
+        ^{
+            [self exec:@"DELETE FROM original_titles"];
+        },
     ];
 }
 

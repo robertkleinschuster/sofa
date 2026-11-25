@@ -95,6 +95,7 @@ export interface SofaEngine {
   innertube(endpoint: string, body: unknown, opts: { bg: boolean }): Promise<Reply<object>>;
   suggest(q: string): Promise<Reply<object>>;
   availability(v: string): Promise<Reply<number>>;
+  oembed(v: string): Promise<Reply<{ status: number; title?: string; author?: string }>>;
   image(url: string): Promise<Reply<{ mimeType: string; data: Uint8Array }>>;
   /** The lounge's requests from this page (lib/lounge.ts): status + body. */
   loungeRequest(method: string, url: string, body: string | null): Promise<Reply<{ status: number; data: Uint8Array }>>;
@@ -216,6 +217,7 @@ export const sofaEngine: SofaEngine = {
   innertube: (endpoint, body, opts) => replyAsync(() => core!.innertube(endpoint, body, opts)),
   suggest: (q) => replyAsync(() => core!.suggest(q)),
   availability: (v) => replyAsync(() => core!.availability(v)),
+  oembed: (v) => replyAsync(() => core!.oembed(v)),
   image: (url) => replyAsync(async () => {
     const r = await core!.image(url);
     return { mimeType: r.mimeType, data: r.bytes };

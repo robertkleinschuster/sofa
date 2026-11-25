@@ -52,6 +52,9 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 // Still online? The video's oEmbed answer, asked by the page (no player request): 1 online (public or
 // unlisted), 0 gone (deleted, bad id), -1 unknown (401/403 also covers private videos; no answer).
 - (void)availability:(NSString *)videoID done:(void (^)(NSInteger online))done;
+// The same oEmbed answer with the uploader's own title (lists and watch page are translated).
+// status: oEmbed's HTTP status, 0 without an answer (engine not ready, network); title only with 200. Any queue.
+- (void)oembed:(NSString *)videoID done:(void (^)(NSInteger status, NSString *title))done;
 // A YouTube picture (i.ytimg.com, yt3.ggpht.com, yt3.googleusercontent.com) loaded by the page as
 // youtube.com loads it. status: the host's (404 = no such picture), 0 without an answer. Any queue.
 - (void)image:(NSURL *)url done:(void (^)(NSData *data, NSInteger status))done;

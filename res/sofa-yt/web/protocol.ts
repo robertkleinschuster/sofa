@@ -6,7 +6,7 @@ import type { EngineEvent, SofaEngine } from './engine.ts';
 
 /** The engine calls Sofa may make (everything of SofaEngine except connect). */
 export const METHODS = ['health', 'refresh', 'start', 'block', 'open', 'read', 'playlist', 'segment', 'subtitles', 'status', 'report', 'startsAt', 'index', 'close', 'innertube', 'suggest',
-  'availability', 'image', 'loungeRequest', 'loungePoll', 'stop'] as const;
+  'availability', 'oembed', 'image', 'loungeRequest', 'loungePoll', 'stop'] as const;
 export type Method = typeof METHODS[number];
 // Every engine call must be listed - the compiler names a missing one here. (image and the lounge
 // calls were missing on 2026-11-07: the page dropped them unanswered, Sofa waited out its timeouts.)

@@ -595,6 +595,24 @@ test('image: YouTube pictures through the page fetch, only their hosts, no playe
   } finally { await app.close(); }
 });
 
+test('oembed: the uploader\'s own title and channel (lists and watch page are translated), nothing else on errors', async () => {
+  const pageFetch = (async (u: URL | string) => {
+    const s = String(u);
+    if (s.includes('gone0000000')) return new Response('Not Found', { status: 404 });
+    if (s.includes('garbled0000')) return new Response('<html>', { status: 200 });
+    return new Response(JSON.stringify({ title: 'Why does a loose gas cap turn on the check engine light?', author_name: 'Technology Connections', type: 'video' }), { status: 200 });
+  }) as typeof fetch;
+  const { app, youtube } = await setup({ appOpts: { pageFetch } });
+  try {
+    assert.deepEqual(await app.engine.oembed(ID), { status: 200, title: 'Why does a loose gas cap turn on the check engine light?', author: 'Technology Connections' });
+    assert.deepEqual(await app.engine.oembed('gone0000000'), { status: 404 });
+    const status = (p: Promise<unknown>) => p.then(() => 0, (e: { status?: number }) => e.status ?? -1);
+    assert.equal(await status(app.engine.oembed('garbled0000')), 502, 'an unreadable answer is an error, not a title');
+    assert.equal(await status(app.engine.oembed('../x')), 400);
+    assert.equal(youtube.requests, 0, 'never a player request');
+  } finally { await app.close(); }
+});
+
 test('availability: the oEmbed status through the page fetch, no player request', async () => {
   const asked: string[] = [];
   const pageFetch = (async (u: URL | string) => {

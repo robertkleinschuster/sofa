@@ -36,6 +36,7 @@
 // their lists show. Loaded at launch.
 - (NSString *)originalTitleFor:(NSString *)identifier;
 - (void)setOriginalTitle:(NSString *)title forID:(NSString *)identifier;
+- (NSArray *)itemIDsWithoutOriginalTitle:(NSString *)prefix;   // stored items "<prefix>…" not yet known, newest references first
 // Re-key progress/history to a new ID (migration local:… -> yt:…); only if the target is free
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // migration: replace id + item
 @end
