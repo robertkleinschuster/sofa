@@ -14,6 +14,34 @@ static NSString *const kPlayer = @"android_native_6";
 
 @implementation SFZDFApp
 
+#pragma mark Launch
+
+// Stored episodes without a picture (the Kodi import of 2026-11-03 kept none; ZDF adds a picture
+// after an episode's first listing): their current one from ZDF, once per launch, one at a time.
++ (void)start {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        NSArray *ids = [[SFStore shared] itemIDsWithoutImage:@"zdf:"];
+        if (ids.count) SFLog(@"zdf: %lu stored episodes without a picture - asking ZDF", (unsigned long)ids.count);
+        [self repairImages:ids at:0 fixed:0];
+    });
+}
+
++ (void)repairImages:(NSArray *)ids at:(NSUInteger)k fixed:(NSUInteger)fixed {
+    if (k >= ids.count) { if (ids.count) SFLog(@"zdf: pictures found for %lu of %lu", (unsigned long)fixed, (unsigned long)ids.count); return; }
+    NSString *ref = ids[k];
+    NSString *q = [NSString stringWithFormat:@"query V($canonical: String!) { videoByCanonical(canonical: $canonical) { %@ smartCollection { %@ } } }", SFZDF_IMG_F, SFZDF_IMG_F];
+    [self gql:q vars:@{@"canonical": SFRefID(ref)} cache:0 done:^(id d, NSError *e) {
+        NSDictionary *v = dict(dict(d)[@"videoByCanonical"]);
+        NSDictionary *teaser = dict(v[@"teaser"]), *show = dict(dict(v[@"smartCollection"])[@"teaser"]);
+        NSString *img = [SFZDFParser image:teaser big:NO] ?: [SFZDFParser image:show big:NO];   // the show's when the episode has none
+        NSString *big = [SFZDFParser image:teaser big:YES] ?: [SFZDFParser image:show big:YES];
+        if (img) [[SFStore shared] setImage:img backdrop:big forItem:ref];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+            [self repairImages:ids at:k + 1 fixed:fixed + (img ? 1 : 0)];
+        });
+    }];
+}
+
 #pragma mark Token + GraphQL
 
 + (void)token:(void (^)(NSString *tok))done {

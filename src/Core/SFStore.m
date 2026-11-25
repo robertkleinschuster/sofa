@@ -434,6 +434,21 @@ static NSString *sharedJSON(SFItem *item, NSString *originalTitle) {
     return out;
 }
 
+- (NSArray *)itemIDsWithoutImage:(NSString *)prefix {
+    if (!prefix.length) return @[];
+    NSMutableArray *out = [NSMutableArray new];
+    for (NSDictionary *r in [self rowsNow:@"SELECT id FROM items WHERE id LIKE ? || '%' AND COALESCE(json_extract(json, '$.image'), '') = ''" args:@[prefix]])
+        if ([r[@"id"] isKindOfClass:[NSString class]]) [out addObject:r[@"id"]];
+    return out;
+}
+
+- (void)setImage:(NSString *)image backdrop:(NSString *)backdrop forItem:(NSString *)i {
+    if (!i.length || (!image.length && !backdrop.length)) return;
+    NSString *sql = @"UPDATE items SET json = json_set(json, '$.image', COALESCE(?, json_extract(json, '$.image')), "
+                     "'$.backdrop', COALESCE(?, json_extract(json, '$.backdrop'))) WHERE id = ?";
+    [self runAll:@[@[sql, @[image.length ? image : [NSNull null], backdrop.length ? backdrop : [NSNull null], i]]]];
+}
+
 // items nothing references any more (left a follow's list, removed from the history, ...)
 - (void)pruneItemsNow {
     [self runNow:@"DELETE FROM items WHERE id NOT IN (SELECT id FROM progress UNION ALL SELECT id FROM downloads "

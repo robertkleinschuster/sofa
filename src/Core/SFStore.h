@@ -36,7 +36,9 @@
 // their lists show. Loaded at launch.
 - (NSString *)originalTitleFor:(NSString *)identifier;
 - (void)setOriginalTitle:(NSString *)title forID:(NSString *)identifier;
-- (NSArray *)itemIDsWithoutOriginalTitle:(NSString *)prefix;   // stored items "<prefix>…" not yet known, newest references first
+- (NSArray *)itemIDsWithoutOriginalTitle:(NSString *)prefix;
+- (NSArray *)itemIDsWithoutImage:(NSString *)prefix;            // stored items "<prefix>…" with no picture URL
+- (void)setImage:(NSString *)image backdrop:(NSString *)backdrop forItem:(NSString *)identifier;   // a stored item's pictures (nil keeps one)   // stored items "<prefix>…" not yet known, newest references first
 // Re-key progress/history to a new ID (migration local:… -> yt:…); only if the target is free
 - (BOOL)moveProgress:(NSString *)from toItem:(SFItem *)item;   // migration: replace id + item
 @end
