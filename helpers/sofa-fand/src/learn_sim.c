@@ -87,7 +87,7 @@ void simulate(const cfg_t *c, const model_t *m, const scen_t *sc, int hot, simre
       if (t >= from && st.started) r->starts[n]++;
     }
     for (int s = 0; s < c->nsens; s++)
-      if (live[s]) T[s] += model_rate(&m->s[s], m->nfans, T[s], sc->amb, sc->pc, sc->pg, sc->pr, rpm) * dt / 60;
+      if (live[s]) T[s] += model_rate(&m->s[s], m->nfans, T[s] - model_offset(&m->s[s], sc->pc, sc->pg), sc->amb, sc->pc, sc->pg, sc->pr, rpm) * dt / 60;   // power is constant: the sensor moves with its node
     if (t >= from) {
       for (int s = 0; s < c->nsens; s++) if (T[s] > r->peak[s]) r->peak[s] = T[s];
       for (int n = 0; n < m->nfans; n++) { r->rpm[n] += rpm[n] * dt / span; if (rpm[n] > 0) r->on[n] += dt / span; }

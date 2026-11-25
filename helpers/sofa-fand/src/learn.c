@@ -54,10 +54,10 @@ static int is_init_ref(const char *conf) {
 }
 
 static void report_model(FILE *rep, const model_t *m, const cfg_t *c) {
-  fprintf(rep, "\n## Model\n\nFree-run error (C, held-out 2 h chunks) per mode; fan effect = share of the heat flow out that a fan at full speed carries.\n\n| sensor | minutes | ruhe | idle | playback | test | all: RMSE / 90 %% | gate | fan effect |\n|---|---|---|---|---|---|---|---|---|\n");
+  fprintf(rep, "\n## Model\n\nFree-run error (C, held-out 2 h chunks) per mode; fan effect = share of the heat flow out that a fan at full speed carries; instant = how much the sensor follows its chip's power at once (C/W, chosen by the validation).\n\n| sensor | minutes | ruhe | idle | playback | test | all: RMSE / 90 %% | gate | fan effect | instant C/W |\n|---|---|---|---|---|---|---|---|---|---|\n");
   for (int s = 0; s < c->nsens; s++) {
     const smodel_t *sm = &m->s[s];
-    if (sm->fixed) { fprintf(rep, "| %s | - | ambient (reference) |||||||\n", c->sens[s].key); continue; }
+    if (sm->fixed) { fprintf(rep, "| %s | - | ambient (reference) ||||||||\n", c->sens[s].key); continue; }
     fprintf(rep, "| %s | %d |", c->sens[s].key, sm->npts);
     for (int md = 0; md < MODE_N; md++) { if (isnan(sm->rmse[md]) || sm->vmin[md] < 1) fprintf(rep, " - |"); else fprintf(rep, " %.2f (%.0f) |", sm->rmse[md], sm->vmin[md]); }
     if (sm->ok) fprintf(rep, " %.2f / %.1f | %.1f |", sm->rmse_all, sm->err90, gate_rmse(c, s));
@@ -69,8 +69,9 @@ static void report_model(FILE *rep, const model_t *m, const cfg_t *c) {
         int w = snprintf(buf + o, sizeof buf - o, "%s%s %.0f %%", o ? ", " : "", c->fan[n].name, 100 * sm->th[5 + n] * c->fan[n].max / 1000 / k);
         if (w > 0 && (size_t)w < sizeof buf - o) o += (size_t)w;
       }
-      fprintf(rep, " %s |\n", o ? buf : "-");
-    } else fprintf(rep, " |\n");
+      fprintf(rep, " %s |", o ? buf : "-");
+      if (sm->rg > 0 || sm->rc > 0) fprintf(rep, " GPU %.2f, CPU %.2f |\n", sm->rg, sm->rc); else fprintf(rep, " - |\n");
+    } else fprintf(rep, " | |\n");
   }
   for (int s = 0; s < c->nsens; s++) if (m->s[s].ok && !m->s[s].fixed && m->s[s].err90 > 0) { fprintf(rep, "\nLargest free-run error:"); break; }
   for (int s = 0; s < c->nsens; s++) if (m->s[s].ok && !m->s[s].fixed) fprintf(rep, " %s %.1f", c->sens[s].key, m->s[s].errmax);

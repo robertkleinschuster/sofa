@@ -1,10 +1,16 @@
 // Grey-box thermal model per sensor, fitted on one-minute bins:
 //
-//   dT/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(T - Tamb)
+//   T = N + r_gpu*Pg + r_cpu*Pc
+//   dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
 //
-// Heat in from the measured power (CPU package, GPU, the rest of the machine), heat out through the
-// case (k0) and through every fan's air flow (k_f, proportional to its speed). Non-negative least
-// squares (a0 free), so the physics keeps its signs: power heats, fans cool.
+// N is the slow node (heat sink, board): heat in from the measured power (CPU package, GPU, the rest of
+// the machine), heat out through the case (k0) and through every fan's air flow (k_f, proportional to
+// its speed). Non-negative least squares (a0 free), so the physics keeps its signs: power heats, fans
+// cool. A sensor on a die also follows its chip's power at once (die to heat sink, seconds - well
+// inside a minute): the instant offset r*P. Without it a die sensor's fast drop when playback ends
+// (GPU 15 -> 5 W: TG0D 9 C in 5 min, the heat sink 4 C) cannot be followed (2026-11-25: TG0D free-run
+// error in idle 2.9 C -> 1.9 C). Board sensors get worse with it - so r is chosen per sensor, from a
+// grid, by the same held-out validation; 0 is a valid answer.
 //
 // Validation is what the simulator does: a free run (the model integrates its own temperature from
 // a measured start, driven only by the measured inputs) over every held-out 2 h chunk, with the model
@@ -19,16 +25,18 @@
 
 static int npar(int nfans) { return 5 + nfans; }
 
-static void features(const bin_t *b, double T, int nfans, double *x) {
-  double dT = T - b->amb;
+static void features(const bin_t *b, double N, int nfans, double *x) {
+  double dT = N - b->amb;
   x[0] = 1; x[1] = b->pc / 10; x[2] = b->pg / 10; x[3] = b->pr / 10; x[4] = -dT;
   for (int f = 0; f < nfans; f++) x[5 + f] = -(isnan(b->fan[f]) ? 0 : b->fan[f] / 1000) * dT;
 }
 
-double model_rate(const smodel_t *s, int nfans, double T, double amb, double pc, double pg, double pr, const double *rpm) {
+double model_offset(const smodel_t *s, double pc, double pg) { return s->rg * pg + s->rc * pc; }
+
+double model_rate(const smodel_t *s, int nfans, double N, double amb, double pc, double pg, double pr, const double *rpm) {
   double k = s->th[4];
   for (int f = 0; f < nfans; f++) k += s->th[5 + f] * rpm[f] / 1000;
-  return s->th[0] + s->th[1] * pc / 10 + s->th[2] * pg / 10 + s->th[3] * pr / 10 - k * (T - amb);
+  return s->th[0] + s->th[1] * pc / 10 + s->th[2] * pg / 10 + s->th[3] * pr / 10 - k * (N - amb);
 }
 
 // min 0.5 th'G th - b'th, th[j] >= 0 for j >= 1 (projected coordinate descent, small ridge)
@@ -55,79 +63,116 @@ static int ambient_index(const cfg_t *c, const machine_t *mc) {
   return mc && mc->ambient[0] ? sens_index(c, mc->ambient) : -1;
 }
 
+// workspace of one sensor's fit: the normal equations per 2 h chunk
+typedef struct { int nch, np, nf; double t0; double *Gc, *bc; int *nc; double *errs; } fitws_t;
+
+// fit and validate sensor s with the instant offsets sm->rg / sm->rc; the score the offsets are chosen
+// by: the mean of the use modes' squared free-run errors (each mode must be right on its own - the
+// gate checks them one by one), INFINITY if it cannot be validated
+static double fit_sensor(smodel_t *sm, int s, const series_t *d, const cfg_t *c, fitws_t *w) {
+  int np = w->np, nf = w->nf, nch = w->nch;
+  memset(w->Gc, 0, (size_t)nch * np * np * sizeof *w->Gc); memset(w->bc, 0, (size_t)nch * np * sizeof *w->bc); memset(w->nc, 0, (size_t)nch * sizeof *w->nc);
+  memset(sm->th, 0, sizeof sm->th); memset(sm->rmse, 0, sizeof sm->rmse); memset(sm->vmin, 0, sizeof sm->vmin);
+  sm->npts = 0; sm->ok = 0; sm->rmse_all = sm->err90 = sm->errmax = 0;
+  double G[NPAR * NPAR] = { 0 }, b[NPAR] = { 0 }, x[NPAR];
+  #define NODE(bin) ((bin)->temp[s] - model_offset(sm, (bin)->pc, (bin)->pg))
+  for (int i = 0; i < d->n; i++) {
+    const bin_t *bi = &d->b[i];
+    if (isnan(bi->temp[s]) || !bin_inputs(bi, c)) continue;
+    if (!bin_next(d, i) || isnan(d->b[i + 1].temp[s]) || !bin_inputs(&d->b[i + 1], c)) continue;
+    double y = NODE(&d->b[i + 1]) - NODE(bi);
+    features(bi, NODE(bi), nf, x);
+    int ch = (int)((bi->t - w->t0) / CHUNK);
+    for (int j = 0; j < np; j++) {
+      w->bc[ch * np + j] += x[j] * y;
+      for (int k = 0; k < np; k++) w->Gc[(ch * np + j) * np + k] += x[j] * x[k];
+    }
+    w->nc[ch]++; sm->npts++;
+  }
+  if (sm->npts < 600) return INFINITY;                         // < 10 h of usable minutes
+  for (int ch = 0; ch < nch; ch++) for (int j = 0; j < np; j++) { b[j] += w->bc[ch * np + j]; for (int k = 0; k < np; k++) G[j * np + k] += w->Gc[(ch * np + j) * np + k]; }
+  solve(G, b, np, sm->th);
+  // free-run validation, chunk by chunk: the node runs free, the sensor is node + offset
+  double se[MODE_N] = { 0 }, sall = 0; int nerr = 0;
+  int i = 0;
+  for (int ch = 0; ch < nch; ch++) {
+    while (i < d->n && (int)((d->b[i].t - w->t0) / CHUNK) < ch) i++;
+    if (w->nc[ch] < 60) continue;
+    double Gh[NPAR * NPAR], bh[NPAR]; smodel_t held = *sm;
+    for (int j = 0; j < np; j++) { bh[j] = b[j] - w->bc[ch * np + j]; for (int k = 0; k < np; k++) Gh[j * np + k] = G[j * np + k] - w->Gc[(ch * np + j) * np + k]; }
+    solve(Gh, bh, np, held.th);
+    int run = 0; double N = 0;
+    for (int k = i; k < d->n && (int)((d->b[k].t - w->t0) / CHUNK) == ch; k++) {
+      const bin_t *bk = &d->b[k];
+      if (!bin_inputs(bk, c)) { run = 0; continue; }
+      if (!isnan(bk->temp[s])) {
+        if (!run) { N = NODE(bk); run = 1; }
+        else {
+          double e = N + model_offset(sm, bk->pc, bk->pg) - bk->temp[s]; int md = bin_mode(bk);
+          if (md >= 0) { se[md] += e * e; sm->vmin[md]++; }
+          sall += e * e; w->errs[nerr++] = fabs(e);
+        }
+      }
+      if (!run) continue;
+      if (!bin_next(d, k)) { run = 0; continue; }
+      N += model_rate(&held, nf, N, bk->amb, bk->pc, bk->pg, bk->pr, bk->fan);
+      if (N < -20 || N > 150) run = 0;                         // diverged: counts via the errors so far
+    }
+  }
+  #undef NODE
+  for (int md = 0; md < MODE_N; md++) sm->rmse[md] = sm->vmin[md] > 0 ? sqrt(se[md] / sm->vmin[md]) : NAN;
+  if (nerr < 240) return INFINITY;
+  sm->rmse_all = sqrt(sall / nerr);
+  qsort(w->errs, (size_t)nerr, sizeof *w->errs, cmpd);
+  sm->err90 = w->errs[(nerr * 9) / 10]; sm->errmax = w->errs[nerr - 1];
+  sm->ok = isfinite(sm->rmse_all);
+  if (!sm->ok) return INFINITY;
+  static const int use[] = { MD_RUHE, MD_IDLE, MD_PLAY };
+  double score = 0; int nm = 0;
+  for (int u = 0; u < 3; u++) if (sm->vmin[use[u]] >= 30) { score += sm->rmse[use[u]] * sm->rmse[use[u]]; nm++; }
+  return nm ? score / nm : sm->rmse_all * sm->rmse_all;
+}
+
 void model_fit(model_t *m, const series_t *d, const cfg_t *c, const machine_t *mc) {
   memset(m, 0, sizeof *m);
   int nf = 0; for (int f = 0; f < MAX_FANS; f++) if (c->fan[f].used) nf = f + 1;
   m->nfans = nf;
-  int np = npar(nf);
   if (d->n < 2) return;
-  double t0 = d->b[0].t;
-  int nch = (int)((d->b[d->n - 1].t - t0) / CHUNK) + 1;
-  double *Gc = calloc((size_t)nch * np * np, sizeof *Gc), *bc = calloc((size_t)nch * np, sizeof *bc);
-  int *nc = calloc((size_t)nch, sizeof *nc);
-  double *errs = malloc((size_t)d->n * sizeof *errs), *lev = malloc((size_t)d->n * sizeof *lev);
-  if (!Gc || !bc || !nc || !errs || !lev) goto out;
+  fitws_t w = { .np = npar(nf), .nf = nf, .t0 = d->b[0].t };
+  w.nch = (int)((d->b[d->n - 1].t - w.t0) / CHUNK) + 1;
+  int np = w.np, nch = w.nch;
+  w.Gc = calloc((size_t)nch * np * np, sizeof *w.Gc); w.bc = calloc((size_t)nch * np, sizeof *w.bc);
+  w.nc = calloc((size_t)nch, sizeof *w.nc); w.errs = malloc((size_t)d->n * sizeof *w.errs);
+  double *lev = malloc((size_t)d->n * sizeof *lev);
+  if (!w.Gc || !w.bc || !w.nc || !w.errs || !lev) goto out;
   int amb_si = ambient_index(c, mc);
   for (int s = 0; s < c->nsens; s++) {
     smodel_t *sm = &m->s[s];
     if (s == amb_si) { sm->ok = sm->fixed = 1; continue; }
-    memset(Gc, 0, (size_t)nch * np * np * sizeof *Gc); memset(bc, 0, (size_t)nch * np * sizeof *bc); memset(nc, 0, (size_t)nch * sizeof *nc);
-    double G[NPAR * NPAR] = { 0 }, b[NPAR] = { 0 }, x[NPAR];
     int nlev = 0;
     for (int i = 0; i < d->n; i++) {
       const bin_t *bi = &d->b[i];
-      if (isnan(bi->temp[s]) || !bin_inputs(bi, c)) continue;
-      if (bi->curve && !bi->test) lev[nlev++] = bi->temp[s] - bi->amb;
-      if (!bin_next(d, i) || isnan(d->b[i + 1].temp[s])) continue;
-      double y = d->b[i + 1].temp[s] - bi->temp[s];
-      features(bi, bi->temp[s], nf, x);
-      int ch = (int)((bi->t - t0) / CHUNK);
-      for (int j = 0; j < np; j++) {
-        bc[ch * np + j] += x[j] * y;
-        for (int k = 0; k < np; k++) Gc[(ch * np + j) * np + k] += x[j] * x[k];
-      }
-      nc[ch]++; sm->npts++;
+      if (!isnan(bi->temp[s]) && bin_inputs(bi, c) && bi->curve && !bi->test) lev[nlev++] = bi->temp[s] - bi->amb;
     }
+    // the instant offsets: a coarse grid, then its neighbourhood (C/W)
+    double best = INFINITY, brg = 0, brc = 0;
+    for (int pass = 0; pass < 2; pass++) {
+      double step = pass ? R_STEP / 2 : R_STEP, cg = brg, cc = brc;
+      int lo = pass ? -1 : 0, hi = pass ? 1 : (int)(R_MAX / R_STEP + 0.5);
+      for (int ig = lo; ig <= hi; ig++) for (int ic = lo; ic <= hi; ic++) {
+        double rg = pass ? cg + ig * step : ig * step, rc = pass ? cc + ic * step : ic * step;
+        if (rg < 0 || rc < 0 || rg > R_MAX || rc > R_MAX || (pass && !ig && !ic)) continue;
+        sm->rg = rg; sm->rc = rc;
+        double sc = fit_sensor(sm, s, d, c, &w);
+        if (sc < best - 1e-9) { best = sc; brg = rg; brc = rc; }
+      }
+    }
+    sm->rg = brg; sm->rc = brc;
+    fit_sensor(sm, s, d, c, &w);
     if (nlev > 10) { qsort(lev, (size_t)nlev, sizeof *lev, cmpd); sm->steady_lo = lev[nlev / 10]; sm->steady_hi = lev[(nlev * 95) / 100]; }
-    if (sm->npts < 600) continue;                              // < 10 h of usable minutes
-    for (int ch = 0; ch < nch; ch++) for (int j = 0; j < np; j++) { b[j] += bc[ch * np + j]; for (int k = 0; k < np; k++) G[j * np + k] += Gc[(ch * np + j) * np + k]; }
-    solve(G, b, np, sm->th);
-    // free-run validation, chunk by chunk
-    double se[MODE_N] = { 0 }, sall = 0; int nerr = 0;
-    int i = 0;
-    for (int ch = 0; ch < nch; ch++) {
-      while (i < d->n && (int)((d->b[i].t - t0) / CHUNK) < ch) i++;
-      if (nc[ch] < 60) continue;
-      double Gh[NPAR * NPAR], bh[NPAR]; smodel_t held = *sm;
-      for (int j = 0; j < np; j++) { bh[j] = b[j] - bc[ch * np + j]; for (int k = 0; k < np; k++) Gh[j * np + k] = G[j * np + k] - Gc[(ch * np + j) * np + k]; }
-      solve(Gh, bh, np, held.th);
-      int run = 0; double T = 0;
-      for (int k = i; k < d->n && (int)((d->b[k].t - t0) / CHUNK) == ch; k++) {
-        const bin_t *bk = &d->b[k];
-        if (!bin_inputs(bk, c)) { run = 0; continue; }
-        if (!isnan(bk->temp[s])) {
-          if (!run) { T = bk->temp[s]; run = 1; }
-          else {
-            double e = T - bk->temp[s]; int md = bin_mode(bk);
-            if (md >= 0) { se[md] += e * e; sm->vmin[md]++; }
-            sall += e * e; errs[nerr++] = fabs(e);
-          }
-        }
-        if (!run) continue;
-        if (!bin_next(d, k)) { run = 0; continue; }
-        T += model_rate(&held, nf, T, bk->amb, bk->pc, bk->pg, bk->pr, bk->fan);
-        if (T < -20 || T > 150) run = 0;                       // diverged: counts via the errors so far
-      }
-    }
-    for (int md = 0; md < MODE_N; md++) sm->rmse[md] = sm->vmin[md] > 0 ? sqrt(se[md] / sm->vmin[md]) : NAN;
-    if (nerr < 240) continue;
-    sm->rmse_all = sqrt(sall / nerr);
-    qsort(errs, (size_t)nerr, sizeof *errs, cmpd);
-    sm->err90 = errs[(nerr * 9) / 10]; sm->errmax = errs[nerr - 1];
-    sm->ok = isfinite(sm->rmse_all);
   }
 out:
-  free(Gc); free(bc); free(nc); free(errs); free(lev);
+  free(w.Gc); free(w.bc); free(w.nc); free(w.errs); free(lev);
 }
 
 double gate_rmse(const cfg_t *c, int si) {

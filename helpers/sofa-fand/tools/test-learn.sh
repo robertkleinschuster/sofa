@@ -1,6 +1,7 @@
 #!/bin/bash
 # The learner against data from a known law (make test): every sensor group is cooled by exactly one
-# fan, heated by one power input. The fitted model must name that fan as the one that matters, its
+# fan, heated by one power input; two die sensors also follow their chip's power at once (TG0D 0.3 C/W
+# of the GPU, TCXc 0.2 C/W of the CPU), which the learner must find - and give no board sensor. The fitted model must name that fan as the one that matters, its
 # free-run error must stay small, `init` must produce a reference that parses, and a dry run must
 # change nothing. Needs the SMC (power/ambient key names, sensor existence), no root.
 set -u
@@ -34,7 +35,8 @@ awk -v t0=$(( $(date +%s) / 60 * 60 - 4 * 86400 )) 'BEGIN {
       if (g == 9) { T[i] = amb; printf ",%.2f", amb; continue }
       h = g == 0 ? pg : g == 2 ? pc : pr; rpm = g == 0 ? f0 : g == 2 ? f2 : f1
       T[i] += 0.08 * h / 10 - (0.01 + 0.03 * rpm / 1000) * (T[i] - amb)
-      printf ",%.2f", T[i] + (rand() - 0.5) * 0.1
+      off = S[i] == "TG0D" ? 0.3 * pg : S[i] == "TCXc" ? 0.2 * pc : 0
+      printf ",%.2f", T[i] + off + (rand() - 0.5) * 0.1
     }
     printf "\n"
   }
@@ -47,6 +49,12 @@ for s in TG0D TPCD TL0P; do [ "$(dominant $s)" = ODD ] && ok "$s: ODD fan found"
 for s in TCXc Tp2H Tp1P; do [ "$(dominant $s)" = CPU ] && ok "$s: CPU fan found" || fail "$s: dominant fan $(dominant $s), want CPU"; done
 for s in HDD TS0P;       do [ "$(dominant $s)" = HDD ] && ok "$s: HDD fan found" || fail "$s: dominant fan $(dominant $s), want HDD"; done
 for s in TG0D TCXc HDD; do r=$(rmse $s); awk -v r="$r" 'BEGIN { exit !(r > 0 && r < 0.3) }' && ok "$s: free-run error $r C" || fail "$s: free-run error '$r' (want < 0.3)"; done
+# the instant offsets, from the report's "instant C/W" column ("GPU 0.30, CPU 0.00" or "-")
+instant()  { grep "^| $1 |" "$T/report.md" | awk -F'|' '{ g = 0; c = 0; if (match($11, /GPU [0-9.]+/)) g = substr($11, RSTART + 4, RLENGTH - 4) + 0; if (match($11, /CPU [0-9.]+/)) c = substr($11, RSTART + 4, RLENGTH - 4) + 0; print g, c }'; }
+near()     { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a - b < 0.051 && b - a < 0.051) }'; }
+set -- $(instant TG0D); near "$1" 0.3 && near "$2" 0 && ok "TG0D: instant offset GPU $1 found" || fail "TG0D: instant offset GPU $1 CPU $2, want 0.3 / 0"
+set -- $(instant TCXc); near "$1" 0 && near "$2" 0.2 && ok "TCXc: instant offset CPU $2 found" || fail "TCXc: instant offset GPU $1 CPU $2, want 0 / 0.2"
+for s in TPCD HDD TS0P; do set -- $(instant $s); near "$1" 0 && near "$2" 0 && ok "$s: no instant offset" || fail "$s: instant offset GPU $1 CPU $2, want none"; done
 grep -q "quieter moves allowed" "$T/report.md" && ok "validated model allows quieter moves" || fail "quieter moves not allowed: $(grep 'quieter moves' "$T/report.md")"
 grep -q "^## Step" "$T/report.md" && ok "search reports a step decision" || fail "no step section"
 [ $fails = 0 ] && echo "==> all ok" || { echo "==> $fails failed"; exit 1; }

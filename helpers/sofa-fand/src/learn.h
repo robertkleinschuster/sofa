@@ -51,19 +51,23 @@ void measure(metric_t out[MODE_N], const series_t *d, const cfg_t *c, double fro
 double fan_noise(const cfg_t *c, const double *rpm);
 
 // ------------------------------------------------------------------------------ model
-// dT/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(T - Tamb)
+// T = N + rg*Pg + rc*Pc; dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
 #define NPAR (5 + MAX_FANS)
+#define R_MAX  0.6             // instant offsets searched: 0 .. R_MAX C/W in R_STEP, then R_STEP/2 around the best
+#define R_STEP 0.1
 typedef struct {
   int ok, fixed;               // fitted and validated / held at ambient (the ambient sensor itself)
   int npts;
   double th[NPAR];
+  double rg, rc;               // instant offset of the sensor over its node, C/W of GPU / CPU power
   double rmse[MODE_N]; double vmin[MODE_N];   // free-run validation on held-out 2 h chunks (minutes)
   double rmse_all, err90, errmax;
   double steady_lo, steady_hi; // measured T - ambient, 10 % / 95 % (start points for the simulation)
 } smodel_t;
 typedef struct { smodel_t s[MAX_SENS]; int nfans; } model_t;
 void   model_fit(model_t *m, const series_t *d, const cfg_t *c, const machine_t *mc);
-double model_rate(const smodel_t *s, int nfans, double T, double amb, double pc, double pg, double pr, const double *rpm);
+double model_rate(const smodel_t *s, int nfans, double N, double amb, double pc, double pg, double pr, const double *rpm);   // dN/dt per minute
+double model_offset(const smodel_t *s, double pc, double pg);   // sensor = node + this
 double gate_rmse(const cfg_t *c, int si);   // the validation error a sensor's model may have
 int    sensor_steers(const cfg_t *c, int si);   // a curve or floor reads this sensor
 // may the learner make anything quieter? (every steering sensor validated in every use mode)

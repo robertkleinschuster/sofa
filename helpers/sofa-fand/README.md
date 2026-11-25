@@ -284,11 +284,17 @@ identification intervals (`tests.csv`) into this directory.
    measured fan noise did not drop by 2 %. A rolled-back step's directions are not tried again for
    14 days. No new step while one is on trial.
 2. **Model.** Per sensor, on the last 30 days of one-minute bins:
-   `dT/dt = a0 + h_cpu·Pcpu/10 + h_gpu·Pgpu/10 + h_rest·Prest/10 − (k0 + Σ k_f·rpm_f/1000)·(T − Tamb)`
-   (non-negative least squares: power heats, fans cool). Validated by free runs over every held-out
-   2 h chunk (the model integrates its own temperature from the measured inputs), per mode (rest,
-   in use, playback, identification). First fit on the migrated data (2026-11-23): free-run RMSE
-   0.4-1.8 °C over all modes, the old `fanmodel.py`'s range.
+   `T = N + r_gpu·Pgpu + r_cpu·Pcpu`,
+   `dN/dt = a0 + h_cpu·Pcpu/10 + h_gpu·Pgpu/10 + h_rest·Prest/10 − (k0 + Σ k_f·rpm_f/1000)·(N − Tamb)`
+   (non-negative least squares: power heats, fans cool). N is the slow node (heat sink, board); a
+   sensor on a die also follows its chip's power at once (r, °C/W). r is chosen per sensor from a
+   grid (0-0.6, refined to 0.05) by the validation itself - board sensors keep 0. Validated by free
+   runs over every held-out 2 h chunk (the model integrates its own temperature from the measured
+   inputs), per mode (rest, in use, playback, identification). First fit on the migrated data
+   (2026-11-23): free-run RMSE 0.4-1.8 °C over all modes, the old `fanmodel.py`'s range. Without r
+   the GPU die (TG0D) missed its fast drop when playback ends (15 -> 5 W: 9 °C in 5 min, the model
+   4 °C) - 2.9 °C error in idle, which kept every quieter move blocked; with r (0.25 °C/W) 1.9 °C
+   (2026-11-25).
 3. **Scenarios** per use mode with ≥ 2 h of data: mean inputs, high load (top 10 %), warm room
    (+5 °C). Each runs 6 h through `policy_fan` - the controller's own decision function, so what
    is simulated is what runs - from a cold and a hot start.
@@ -310,7 +316,8 @@ identification intervals (`tests.csv`) into this directory.
 
 `sofa-fand learn -n [-d DATADIR] [-c CONF]` writes the report to stdout and changes nothing
 (any user). `make test` also checks the learner against data from a known law
-(`tools/test-learn.sh`: the right fan per sensor group, free-run error < 0.3 °C).
+(`tools/test-learn.sh`: the right fan per sensor group, free-run error < 0.3 °C, the die sensors'
+instant offsets found and none given to a board sensor).
 
 ## Another Mac
 
