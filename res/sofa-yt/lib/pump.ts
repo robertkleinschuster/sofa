@@ -4,7 +4,7 @@
 import type { ReloadPlaybackContext } from 'googlevideo/protos';
 import { errorMessage, toError } from './errors.ts';
 import { log } from './log.ts';
-import { startSabrPump } from './sabrpump.ts';
+import { SabrContinuity, startSabrPump } from './sabrpump.ts';
 import type { PumpHandle } from './session.ts';
 import type { EngineStartPump } from './engine.ts';
 import type { PoTokenProvider } from './webpo.ts';
@@ -29,6 +29,7 @@ export function sabrPumps({ youtube, po, onTokenRejected }: {
     }
   }
   const tokenCache = new Map<string, { token: string; at: number }>(); // videoId -> one pre-minted token per video, reused for restarts
+  const continuity = new SabrContinuity();   // per playback: the SABR client state its runs carry on
   return (info, formats, opts) => {
     let handle: PumpHandle | null = null;
     let aborted = false;
@@ -37,7 +38,7 @@ export function sabrPumps({ youtube, po, onTokenRejected }: {
       if (aborted) return;
       try {
         handle = startSabrPump({
-          ...opts, info, formats, poToken,
+          ...opts, info, formats, poToken, continuity,
           mintPoToken: () => po.mintBytes(info.id),
           // a rejected token must not start the next run again; a fresh attestation for new ones
           onTokenRejected: () => { tokenCache.delete(info.id); po.renew(); onTokenRejected?.(info.id); },

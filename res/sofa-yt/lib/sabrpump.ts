@@ -10,7 +10,7 @@
 // tail only, so the FIFO head stays aligned.
 import { SabrStream } from 'googlevideo/sabr-stream';
 import { EnabledTrackTypes, Logger, LogLevel } from 'googlevideo/utils';
-import type { ReloadPlaybackContext } from 'googlevideo/protos';
+import type { ReloadPlaybackContext, SabrContextUpdate } from 'googlevideo/protos';
 import type { ReloadResponse, SegmentInfo } from 'googlevideo/sabr-stream';
 import type { Track, TrackCollection } from 'googlevideo/utils';
 import { toError } from './errors.ts';
@@ -35,6 +35,77 @@ export interface SabrPumpOptions extends PumpRequest {
   /** YouTube rejected this run's PO token (stream protection status 3): the token must not be reused. */
   onTokenRejected?: () => void;
   reload: (ctx?: ReloadPlaybackContext) => Promise<ReloadResponse>;
+  /** The playback's SABR client state across its runs (pump.ts: one per engine). */
+  continuity?: SabrContinuity | undefined;
+}
+
+/**
+ * One playback, one SABR client. youtube.com's player keeps ONE stream per playback and carries its
+ * state into every request, seeks included: the SABR contexts the server handed out, its playback
+ * cookie and the request number. Every run here is a fresh SabrStream, so every run - every start,
+ * seek, audio recovery - began as a new client: the server's first answer then holds a CONTENT_ADS
+ * context with a 4000 ms backoff (n=2352 runs to 2026-11-25, median 4150 ms to the first segment),
+ * which the web player pays once per playback. A run takes over what the previous run of the same
+ * playback (cpn) on the same SABR URL ended with; a reload (new URL) starts clean, as googlevideo does.
+ * The state lives in SabrStream's private fields (googlevideo 5.0.1, pinned) - checked on use.
+ */
+interface ClientState {
+  url: string;
+  at: number;
+  contexts: Map<number, SabrContextUpdate>;
+  active: Set<number>;
+  cookie: Uint8Array | undefined;
+  requestNumber: number;
+}
+
+const CONTINUITY_MS = 30 * 60 * 1000;   // a playback's state ages out with its PO token (pump.ts)
+const CONTINUITY_MAX = 16;
+
+// SabrStream's private client state (bracket access: TypeScript's typed escape hatch for privates)
+interface SabrInternals {
+  sabrContextUpdates: Map<number, SabrContextUpdate>;
+  activeSabrContextTypes: Set<number>;
+  nextRequestPolicy?: { playbackCookie?: Uint8Array; backoffTimeMs?: number } | undefined;
+  runtime: { requestNumber: number };
+}
+function internals(sabr: SabrStream): SabrInternals {
+  const x = sabr as unknown as SabrInternals;
+  if (!(x.sabrContextUpdates instanceof Map) || !(x.activeSabrContextTypes instanceof Set) || typeof x.runtime?.requestNumber !== 'number') {
+    throw new Error('googlevideo internals changed (SabrStream client state) - check the pinned version');
+  }
+  return x;
+}
+
+export class SabrContinuity {
+  private states = new Map<string, ClientState>();
+
+  /** What the run ends with (before googlevideo's dispose clears it); nothing if no answer came. */
+  save(sabr: SabrStream, cpn: string, url: string): void {
+    const x = internals(sabr);
+    if (x.runtime.requestNumber === 0 && x.sabrContextUpdates.size === 0) return;
+    const was = this.states.get(cpn);
+    this.states.delete(cpn);
+    if (this.states.size >= CONTINUITY_MAX) this.states.delete(this.states.keys().next().value!);
+    this.states.set(cpn, {
+      url, at: Date.now(),
+      contexts: new Map(x.sabrContextUpdates), active: new Set(x.activeSabrContextTypes),
+      cookie: x.nextRequestPolicy?.playbackCookie,
+      // runs of one playback can overlap (an audio-only recovery): the request number never goes back
+      requestNumber: Math.max(x.runtime.requestNumber, was?.url === url ? was.requestNumber : 0),
+    });
+  }
+
+  /** A new run of the playback continues its client: contexts, cookie (no backoff), request number. */
+  seed(sabr: SabrStream, cpn: string, url: string): boolean {
+    const st = this.states.get(cpn);
+    if (!st || st.url !== url || Date.now() - st.at > CONTINUITY_MS) return false;
+    const x = internals(sabr);
+    for (const [k, v] of st.contexts) x.sabrContextUpdates.set(k, v);
+    for (const k of st.active) x.activeSabrContextTypes.add(k);
+    if (st.cookie?.length) x.nextRequestPolicy = { playbackCookie: st.cookie };
+    x.runtime.requestNumber = st.requestNumber;
+    return true;
+  }
 }
 
 /** Placement of one completed segment, recorded when googlevideo finalizes it. */
@@ -127,6 +198,17 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
     },
   });
 
+  // continue the playback's client; keep what this run ends with for the next one
+  const runUrl = o.info.sabrUrl;
+  const continued = o.continuity?.seed(sabr, o.cpn, runUrl) ?? false;
+  if (o.continuity) {
+    const dispose = (sabr as unknown as { dispose: () => void }).dispose.bind(sabr);
+    (sabr as unknown as { dispose: () => void }).dispose = () => {
+      try { if (o.info.sabrUrl === runUrl) o.continuity!.save(sabr, o.cpn, runUrl); } catch (e) { log(`${tag}: client state not kept: ${toError(e).message}`); }
+      dispose();
+    };
+  }
+
   const fifo: Record<TrackKind, SegmentHeader[]> = { video: [], audio: [] };
   // private in googlevideo's types; bracket access is TypeScript's typed escape hatch for it
   const tracks: TrackCollection | undefined = sabr['trackCollection'];
@@ -199,7 +281,7 @@ export function startSabrPump(o: SabrPumpOptions): PumpHandle & { id: number } {
         if (!h || (h.length && h.length !== buf.length) || !Number.isFinite(h.start)) {
           throw new Error(`segment bookkeeping mismatch on ${kind}: header=${JSON.stringify(h)} bytes=${buf.length}`);
         }
-        if (!firstLogged) { firstLogged = true; log(`${tag}: first segment after ${Date.now() - t0} ms`); }
+        if (!firstLogged) { firstLogged = true; log(`${tag}: first segment after ${Date.now() - t0} ms${continued ? ' (continued client)' : ''}`); }
         o.onSegment(kind, { start: h.start, buf, startMs: h.startMs, durationMs: h.durationMs, init: h.init });
       }
     } finally {

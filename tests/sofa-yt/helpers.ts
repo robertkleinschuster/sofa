@@ -35,7 +35,12 @@ interface Encoder<T> { encode(m: T): { finish(): Uint8Array } }
 interface SabrPartCodecs {
   NextRequestPolicy: Encoder<{ backoffTimeMs?: number; targetVideoReadaheadMs?: number; playbackCookie?: Uint8Array }>;
   StreamProtectionStatus: Encoder<{ status?: number }>;
-  SabrContextUpdate: Encoder<{ type?: number; value?: Uint8Array }>;
+  SabrContextUpdate: Encoder<{ type?: number; scope?: number; value?: Uint8Array; sendByDefault?: boolean; writePolicy?: number }>;
+  VideoPlaybackAbrRequest: { decode(b: Uint8Array): AbrRequestView };
+}
+/** What a SABR request carries of the client's state (unit-continuity). */
+export interface AbrRequestView {
+  streamerContext?: { playbackCookie?: Uint8Array; sabrContexts: { type?: number; value?: Uint8Array }[]; unsentSabrContexts: number[] };
 }
 /** googlevideo's UMP writer, to build answers by hand. */
 interface UmpCodec {
