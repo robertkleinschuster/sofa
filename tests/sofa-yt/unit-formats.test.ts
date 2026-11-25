@@ -24,6 +24,17 @@ test('video: 1080p, VP9 before AV1 before H.264 at equal resolution', () => {
   assert.equal(F.pickVideo(avcOnly)?.itag, 137, 'H.264 last');
 });
 
+test('a required codec (a web browser): only H.264 + AAC, else nothing', () => {
+  const f = F.describeFormats(oz.adaptiveFormats);
+  const v = F.pickVideo(f, 1080, 'avc1', true);
+  assert.equal(v?.codec, 'avc1');
+  assert.equal(v?.height, 1080);
+  assert.equal(F.pickAudio(f, 'mp4a', true)?.codec, 'mp4a');
+  const noAvc = F.describeFormats(oz.adaptiveFormats.filter((x) => !x.mimeType?.includes('avc1')));
+  assert.equal(F.pickVideo(noAvc, 1080, 'avc1', true), null, 'no H.264: no choice instead of another codec');
+  assert.equal(F.pickVideo(noAvc, 1080, 'avc1')?.codec, 'vp9', 'a preference still falls back');
+});
+
 test('video: small videos work (no strict quality filter), fps cap', () => {
   const v = F.pickVideo(F.describeFormats(jnq.adaptiveFormats));
   assert.equal(v?.itag, 242);

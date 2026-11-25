@@ -1,0 +1,193 @@
+#!/bin/bash
+# test-web -- Sofa im Browser's server (docs/pwa.md) end to end in invisible dev instances: TLS with
+# a throwaway certificate on loopback (SOFA_WEB_LOOPBACK; the real app listens on tailnet addresses
+# only), only the Example app, its media from a local server. No network, no real data.
+#   1  hello without a token; every other API route 401 without one
+#   2  CORS: a preflight from the PWA's origin gets the methods, headers and Private Network Access;
+#      another origin gets nothing
+#   3  plain HTTP on the same port: only the connect redirect (to the allowed origin, with the full
+#      name); a foreign return address is refused; anything else is sent to https
+#   4  pairing: no code open -> 410; the TV's code (dev: open web) -> a token; a wrong code -> 403
+#      and the third replaces the code
+#   5  pages: info (apps, themes), Home, an app's start page with items and their stored dictionary
+#   6  marks: Später ansehen and watched written to the TV's database
+#   7  a DASH pair (H.264 + AAC fMP4, as YouTube's engine serves it for a browser) plays as HLS: master
+#      with codecs, media playlists with byte ranges, track bytes with Range through the relay
+#   8  player reports save the position (the store's rule) - also on the stream's capability path
+#      (sendBeacon) - "closed" ends the stream
+#   9  a source's file goes through the media proxy (the store) and is served with Range
+#  10  a signed picture path only: an unsigned one is refused
+#  11  unpairing: the token stops working
+# Exit code 0 = all ok.
+set -u
+unset DYLD_INSERT_LIBRARIES
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$SRC/build/SofaDev.app/Contents/MacOS/Sofa"
+T="$(mktemp -d "${TMPDIR:-/tmp}/sofa-webtest.XXXXXX")"
+INST=webtest
+fail=0; ok() { echo "  ok    $*"; }; bad() { echo "  FAIL  $*"; fail=1; }
+check() { [ "$2" = "$3" ] && ok "$1" || bad "$1: got '$2', want '$3'"; }
+has() { case "$2" in *"$3"*) ok "$1";; *) bad "$1: '$3' not in: $(printf '%s' "$2" | head -c 300)";; esac; }
+. "$SRC/tools/lib/dev-instance.sh"
+make -C "$SRC" >/dev/null || exit 1
+APPS=(); SRV=
+cleanup() {
+  for p in ${APPS[@]+"${APPS[@]}"}; do kill "$p" 2>/dev/null; done
+  [ -n "$SRV" ] && kill "$SRV" 2>/dev/null
+  for i in a b; do { defaults delete de.sofa.dev.$INST$i; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST$i.plist"; } >/dev/null 2>&1; done
+  [ $fail = 0 ] || [ -z "${WEBTEST_KEEP:-}" ] && rm -rf "$T" || echo "kept: $T"
+}
+trap cleanup EXIT
+
+# --- fixtures: a certificate, the media, a Range-capable local source
+NAME=sofa-test.invalid
+/opt/local/bin/openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$T/k.pem" -out "$T/c.pem" \
+  -days 2 -subj "/CN=$NAME" -addext "subjectAltName=DNS:$NAME" 2>/dev/null || { echo "openssl failed"; exit 1; }
+mkdir -p "$T/media/x"
+cp "$SRC/tests/fixtures/web/video.mp4" "$SRC/tests/fixtures/web/audio.mp4" "$T/media/x/"
+/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=96x54:rate=25 -f lavfi -i sine=d=4 -t 4 -c:v libx264 -pix_fmt yuv420p \
+  -c:a aac -movflags +faststart "$T/media/x/file.mp4" || { echo "ffmpeg failed"; exit 1; }
+cat > "$T/srv.py" <<'PY'
+import http.server, sys, os
+ROOT = sys.argv[1]
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        F = os.path.join(ROOT, self.path.lstrip("/"))
+        if not os.path.isfile(F): self.send_response(404); self.end_headers(); return
+        size = os.path.getsize(F); start, end = 0, size
+        r = self.headers.get("Range", "")
+        if r.startswith("bytes=") and "," not in r:
+            a, _, z = r[6:].partition("-"); start = int(a or 0); end = min(size, int(z) + 1) if z else size
+            self.send_response(206); self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, size))
+        else: self.send_response(200)
+        self.send_header("Content-Length", str(end - start)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
+        with open(F, "rb") as f: f.seek(start); self.wfile.write(f.read(end - start))
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+with open(sys.argv[2] + ".tmp", "w") as f: f.write(str(s.server_address[1]))
+os.rename(sys.argv[2] + ".tmp", sys.argv[2])
+s.serve_forever()
+PY
+/opt/local/bin/python3.14 -I "$T/srv.py" "$T" "$T/media.port" & SRV=$!
+for i in $(seq 1 150); do [ -s "$T/media.port" ] && break; sleep 0.1; done
+MP=$(cat "$T/media.port")
+freeport() { /opt/local/bin/python3.14 -I -c 'import socket; s=socket.socket(socket.AF_INET6); s.bind(("::",0)); print(s.getsockname()[1])'; }
+
+# start INSTANCE-SUFFIX MEDIA [AUDIO]: a dev instance with the web server; sets PORT, LOG, FIFO, DB
+start() {
+  local d="$T/data-$1"; mkdir -p "$d"
+  PORT=$(freeport); LOG="$d/sofa.log"; FIFO="$d/dev.fifo"; DB="$d/sofa.db"
+  env SOFA_DATA_DIR="$d" SOFA_ONLY_APPS=example SOFA_WEB_PORT=$PORT SOFA_WEB_CERT="$T/c.pem" SOFA_WEB_KEY="$T/k.pem" \
+      SOFA_WEB_LOOPBACK=1 SOFA_WEB_ORIGINS=https://pwa.test SOFA_WEB_APP_URL=https://pwa.test/app/ SOFA_PROXY_LOOPBACK=1 \
+      SOFA_EXAMPLE_MEDIA="$2" ${3:+SOFA_EXAMPLE_AUDIO="$3"} "$BIN" --dev --instance $INST$1 >/dev/null 2>&1 & APPS+=($!); APP=$!
+  dev_wait_ready $APP "$LOG"
+  dev_wait_log $APP "$LOG" 'web: listening on port'
+}
+C() { /opt/local/bin/curl -s --max-time 20 --resolve "$NAME:$PORT:127.0.0.1" --cacert "$T/c.pem" "$@"; }
+U="https://$NAME"
+json() { /opt/local/bin/python3.14 -I -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1"; }
+
+echo "==> instance a: DASH pair"
+start a "http://127.0.0.1:$MP/media/x/video.mp4" "http://127.0.0.1:$MP/media/x/audio.mp4"
+U="https://$NAME:$PORT"
+
+check "1: hello without a token" "$(C "$U/api/hello" | json 'd["paired"]')" False
+check "1: info without a token: 401" "$(C -o /dev/null -w '%{http_code}' "$U/api/info")" 401
+check "1: a stranger's token: 401" "$(C -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(printf '%064d' 0)" "$U/api/home")" 401
+
+PRE=$(C -i -X OPTIONS -H 'Origin: https://pwa.test' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Private-Network: true' "$U/api/play")
+has "2: preflight 204" "$PRE" "HTTP/1.1 204"
+has "2: allowed origin echoed" "$PRE" "Access-Control-Allow-Origin: https://pwa.test"
+has "2: Private Network Access" "$PRE" "Access-Control-Allow-Private-Network: true"
+has "2: Authorization allowed" "$PRE" "Authorization, Content-Type, Range"
+check "2: another origin: no CORS" "$(C -o /dev/null -w '%{http_code}' -X OPTIONS -H 'Origin: https://evil.test' "$U/api/play")" 403
+
+RED=$(/opt/local/bin/curl -s -i --max-time 10 "http://127.0.0.1:$PORT/connect?return=https%3A%2F%2Fpwa.test%2Fapp%2F")
+has "3: connect redirect" "$RED" "HTTP/1.1 303"
+has "3: to the PWA with the full name" "$RED" "Location: https://pwa.test/app/#host=$NAME:$PORT"
+check "3: foreign return address refused" "$(/opt/local/bin/curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/connect?return=https%3A%2F%2Fevil.test%2F")" 400
+has "3: anything else goes to https" "$(/opt/local/bin/curl -s -i "http://127.0.0.1:$PORT/api/home")" "Location: https://$NAME:$PORT/api/home"
+
+check "4: no code open: 410" "$(C -o /dev/null -w '%{http_code}' -d '{"code":"123456","name":"Test"}' "$U/api/pair")" 410
+echo "open web" > "$FIFO"
+dev_wait_log $APP "$LOG" 'dev: web pairing code [0-9]{6}'
+CODE=$(grep -o 'dev: web pairing code [0-9]*' "$LOG" | tail -1 | awk '{print $5}')
+WRONG=$(printf '%06d' $(( (10#$CODE + 1) % 1000000 )))
+check "4: a wrong code: 403" "$(C -o /dev/null -w '%{http_code}' -d "{\"code\":\"$WRONG\",\"name\":\"Test\"}" "$U/api/pair")" 403
+TOKEN=$(C -d "{\"code\":\"${CODE:0:3} ${CODE:3}\",\"name\":\"Testgerät\"}" "$U/api/pair" | json 'd["token"]')
+check "4: the TV's code pairs (token)" "${#TOKEN}" 64
+check "4: the code pairs once" "$(C -o /dev/null -w '%{http_code}' -d "{\"code\":\"$CODE\",\"name\":\"Again\"}" "$U/api/pair")" 403
+check "4: stored as a hash" "$(/opt/local/bin/sqlite3 "$DB" "select name || ' ' || length(token) || ' ' || (token <> '$TOKEN') from web_devices")" "Testgerät 64 1"
+A=(-H "Authorization: Bearer $TOKEN")
+
+INFO=$(C "${A[@]}" "$U/api/info")
+check "5: info: the apps" "$(echo "$INFO" | json '[a["id"] for a in d["apps"]]')" "['example']"
+check "5: info: themes with tokens" "$(echo "$INFO" | json 'sorted(d["themes"]["home"]["fonts"].keys())')" "['bold', 'medium', 'regular', 'wordmark']"
+check "5: info: this device" "$(echo "$INFO" | json 'd["device"]')" "Testgerät"
+HOME_=$(C "${A[@]}" "$U/api/home")
+has "5: Home has the app tiles" "$(echo "$HOME_" | json '[(i.get("open"), i.get("arg")) for s in d["shelves"] for i in s["items"] if i.get("open")]')" "('app', 'example')"
+APPPAGE=$(C "${A[@]}" "$U/api/app/example")
+ITEM=$(echo "$APPPAGE" | json 'json.dumps(next(i for s in d["shelves"] for i in s["items"] if i.get("id")=="example:1")["d"])')
+has "5: an app page item carries its stored dictionary" "$ITEM" '"id": "example:1"'
+has "5: no settings action leaks into the browser" "$(echo "$HOME_" | json '[i.get("id") for s in d["shelves"] for i in s["items"]]')" "history:"
+case "$HOME_" in *'"settings:"'*) bad "5: the settings tile is a TV action";; *) ok "5: the settings tile is left out";; esac
+
+ST=$(C "${A[@]}" -d "{\"item\":$ITEM,\"later\":true}" "$U/api/state")
+check "6: Später ansehen" "$(echo "$ST" | json 'd["item"]["later"]')" True
+sleep 1
+check "6: in the TV's database" "$(/opt/local/bin/sqlite3 "$DB" "select count(*) from watch_later where id='example:1'")" 1
+C "${A[@]}" -d "{\"item\":$ITEM,\"later\":false}" "$U/api/state" >/dev/null
+
+PLAY=$(C "${A[@]}" -d "{\"item\":$ITEM}" "$U/api/play")
+check "7: plays as HLS" "$(echo "$PLAY" | json 'd.get("kind")')" hls
+[ "$(echo "$PLAY" | json 'd.get("kind")')" = hls ] || echo "        play answered: $PLAY"
+SURL=$(echo "$PLAY" | json 'd["url"]'); SID=$(echo "$PLAY" | json 'd["stream"]')
+MASTER=$(C "$U$SURL")
+has "7: master names the codecs" "$MASTER" 'CODECS="avc1.64000a,mp4a.40.2"'
+has "7: the audio rendition" "$MASTER" 'URI="a.m3u8"'
+VPL=$(C "$U/m/$SID/v.m3u8")
+has "7: video playlist: init map" "$VPL" '#EXT-X-MAP:URI="t/v",BYTERANGE="742@0"'
+has "7: video playlist: byte ranges" "$VPL" '@830'
+GOT=$(C -r 830-845 "$U/m/$SID/t/v" | od -An -tx1 | tr -d ' \n')
+WANT=$(dd if="$T/media/x/video.mp4" bs=1 skip=830 count=16 2>/dev/null | od -An -tx1 | tr -d ' \n')
+check "7: track bytes through the relay (Range)" "$GOT" "$WANT"
+check "7: 206 with Content-Range" "$(C -r 0-9 -o /dev/null -w '%{http_code}' "$U/m/$SID/t/a")" 206
+check "7: another stream id: 410" "$(C -o /dev/null -w '%{http_code}' "$U/m/0123456789abcdef0123456789abcdef/index.m3u8")" 410
+
+check "8: a report" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d '{"state":"paused","position":2,"duration":4}' "$U/api/stream/$SID")" 200
+sleep 1
+check "8: the position is in the TV's history" "$(/opt/local/bin/sqlite3 "$DB" "select count(*) from progress where id='example:1'")" 1
+check "8: the capability path (sendBeacon) reports too" "$(C -o /dev/null -w '%{http_code}' -H 'Content-Type: text/plain' -d '{"state":"ended","position":4,"duration":4}' "$U/m/$SID/state")" 200
+sleep 1
+check "8: ended = watched (the store's rule)" "$(/opt/local/bin/sqlite3 "$DB" "select watched from progress where id='example:1'")" 1
+C "${A[@]}" -d '{"state":"closed"}' "$U/api/stream/$SID" >/dev/null
+check "8: closed ends the stream" "$(C -o /dev/null -w '%{http_code}' "$U$SURL")" 410
+ST=$(C "${A[@]}" -d "{\"item\":$ITEM,\"watched\":false}" "$U/api/state")
+check "6: watched can be taken back" "$(echo "$ST" | json 'd["item"].get("watched", False)')" False
+
+check "10: an unsigned picture path is refused" "$(C -o /dev/null -w '%{http_code}' "$U/img/00000000000000000000000000000000?u=%2Fetc%2Fpasswd")" 403
+
+check "11: unpair" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$U/api/pair")" 200
+check "11: the token stops working" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' "$U/api/home")" 401
+echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
+
+echo "==> instance b: a source's file through the media proxy"
+start b "http://127.0.0.1:$MP/media/x/file.mp4"
+U="https://$NAME:$PORT"
+echo "open web" > "$FIFO"
+dev_wait_log $APP "$LOG" 'dev: web pairing code [0-9]{6}'
+CODE=$(grep -o 'dev: web pairing code [0-9]*' "$LOG" | tail -1 | awk '{print $5}')
+TOKEN=$(C -d "{\"code\":\"$CODE\",\"name\":\"B\"}" "$U/api/pair" | json 'd["token"]')
+A=(-H "Authorization: Bearer $TOKEN")
+ITEM=$(C "${A[@]}" "$U/api/app/example" | json 'json.dumps(next(i for s in d["shelves"] for i in s["items"] if i.get("id")=="example:2")["d"])')
+PLAY=$(C "${A[@]}" -d "{\"item\":$ITEM}" "$U/api/play")
+check "9: a file" "$(echo "$PLAY" | json 'd["kind"]')" file
+SURL=$(echo "$PLAY" | json 'd["url"]')
+GOT=$(C -r 100-131 "$U$SURL" | od -An -tx1 | tr -d ' \n')
+WANT=$(dd if="$T/media/x/file.mp4" bs=1 skip=100 count=32 2>/dev/null | od -An -tx1 | tr -d ' \n')
+check "9: its bytes with Range (media proxy -> relay)" "$GOT" "$WANT"
+echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
+grep -q "media-proxy: example:2 is file:example:2" "$LOG" && ok "9: through the media store (a track of the item)" || bad "9: the media proxy did not take the file"
+
+[ $fail = 0 ] && echo "==> test-web ok" || echo "==> test-web FAILED"
+exit $fail

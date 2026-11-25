@@ -87,6 +87,8 @@ export interface OpenRequest {
   isolated?: boolean;
   vcodec?: string;
   acodec?: string;
+  /** vcodec/acodec are requirements, not preferences: a web browser (Sofa im Browser) decodes only these */
+  onlyCodecs?: boolean;
 }
 
 /** A subtitle track of an open answer. */
@@ -460,6 +462,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     // codec preferences (downloads ask for avc1 + mp4a: an MP4 without re-encoding)
     const vcodec = ['avc1', 'vp9', 'av01'].includes(q.vcodec ?? '') ? q.vcodec! : null;
     const acodec = ['mp4a', 'opus'].includes(q.acodec ?? '') ? q.acodec! : null;
+    const onlyCodecs = !!q.onlyCodecs && !!vcodec && !!acodec;
     const prefetch = q.prefetch ?? !bg;
     let info; let cached;
     try {
@@ -481,15 +484,15 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     // an existing healthy session for the same choice keeps its buffered media
     for (const s of sessions.values()) {
       if (s.kind !== 'hls' && s.isolated === !!q.isolated && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
-          && s.vcodec === vcodec && s.acodec === acodec) {
+          && s.vcodec === vcodec && s.acodec === acodec && !!s.onlyCodecs === onlyCodecs) {
         s.lastActivity = Date.now();
         if (prefetch && startSec) s.hint(startSec * 1000);
         return describeSession(s, { cached: true, reused: true, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() });
       }
     }
     const formats = describeFormats(info.formats);
-    const video = pickVideo(formats, maxHeight, vcodec);
-    const audio = pickAudio(formats, acodec);
+    const video = pickVideo(formats, maxHeight, vcodec, onlyCodecs);
+    const audio = pickAudio(formats, acodec, onlyCodecs);
     if (!video || !audio) return { id: vid, error: 'no usable video/audio format', bot: false, blocked_until: breaker.blockedUntil() };
     const list = audioTracks(formats);
     makeRoom();
@@ -506,7 +509,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     s.audioList = list;
     s.maxHeight = maxHeight;
     s.lang = lang;
-    s.vcodec = vcodec; s.acodec = acodec;
+    s.vcodec = vcodec; s.acodec = acodec; s.onlyCodecs = onlyCodecs;
     sessions.set(s.sid, s);
     if (prefetch) s.hint(startSec * 1000);
     log(`open ${vid}${bg ? ' (bg)' : ''}: ${video.itag} ${video.codec} ${video.height}p${video.fps} + ${audio.key} ${audio.codec} ${audio.lang || '?'}`

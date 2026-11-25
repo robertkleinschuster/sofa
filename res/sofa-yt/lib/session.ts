@@ -353,6 +353,7 @@ export class PlaybackSession {
   lang?: string;
   vcodec?: string | null;
   acodec?: string | null;
+  onlyCodecs?: boolean;
 
   constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }: PlaybackSessionOptions) {
     this.kind = 'sabr';

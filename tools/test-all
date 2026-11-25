@@ -11,10 +11,11 @@
 #   tools/test-home       mixed Home rows: only what plays here (drm, region), stored rows
 #   tools/test-schema     database migrations from a 0.3.8 database, integrity, nothing lost
 #   tools/test-startup    one instance per data directory
+#   tools/test-web        Sofa im Browser: TLS, CORS/PNA, connect redirect, pairing, pages, marks, HLS of a DASH pair, reports
 #   tools/test-sofa-yt    YouTube engine: index/virtual files/pacing/eviction, mpv via fake SABR, bundle in Firefox (offline)
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
-SUITES="check-arch test-units test-parse test-playback test-downloads test-home test-schema test-startup test-sofa-yt"
+SUITES="check-arch test-units test-parse test-playback test-downloads test-home test-schema test-startup test-web test-sofa-yt"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/sofa-testall.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 # what a failed suite leaves for diagnosis (its instance's log, screenshots) survives the run here;

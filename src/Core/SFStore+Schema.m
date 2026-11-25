@@ -258,6 +258,12 @@
         ^{
             [self exec:@"DELETE FROM original_titles"];
         },
+        // 21: Sofa im Browser (docs/pwa.md) - the paired devices: a device's token only as its SHA-256
+        // (hex), its name as it gave it, when it was paired and last seen
+        ^{
+            [self exec:@"CREATE TABLE web_devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, token TEXT NOT NULL UNIQUE "
+                        "CHECK (length(token) = 64), paired REAL NOT NULL, seen REAL)"];
+        },
     ];
 }
 

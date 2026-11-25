@@ -62,6 +62,14 @@ typedef void (^SFAvailabilityDone)(NSInteger online);
 + (void)storedRangesOf:(NSDictionary *)source done:(void (^)(NSArray *ranges))done;   // what of a session's video is on disk, @[@[start s, end s]] exact (nil: not known); done on main
 + (BOOL)playbackLiveEnded:(NSDictionary *)source done:(void (^)(BOOL ended))done;   // session live playlist ended: broadcast over or lost? NO = not a live session stream (done not called)
 + (void)upNextForItem:(SFItem *)item done:(void (^)(SFItem *next))done;   // autoplay recommendation (from half time)
+// --- playback in a web browser (Sofa im Browser, docs/pwa.md): the same resolver, in formats every
+//     browser decodes - done(url, nil) with the stream description attached (SFMPVSourceFor): a
+//     `video` + `audio` pair of fragmented MP4 tracks (H.264 + AAC), or url itself a file or an HLS
+//     playlist. Absent: resolve: (a source whose files and HLS play in a browser as they are). ---
++ (void)resolveForBrowser:(NSString *)ref done:(SFURLDone)done;
+// A player outside Sofa (the browser) reports the state of a session stream: {state: playing|paused|
+// buffering|ended|closed, position, lactMs} - as Sofa's own player does for its view reporting.
++ (void)playback:(NSDictionary *)source reports:(NSDictionary *)state;
 // info panel: description/channel and related videos (done on main; related empty + details nil =
 // failed). details keys: title (the source's own name of the video), description, channel, showRef,
 // avatar, date (NSDate) - only when found.

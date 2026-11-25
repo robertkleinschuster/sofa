@@ -5,6 +5,8 @@
 #import "SFSettings.h"
 #import "SFUpdater.h"
 #import "SFRuntime.h"
+#import "SFWebPairScreen.h"
+#import "SFWebDevices.h"
 
 @implementation SFHome (Settings)
 
@@ -15,7 +17,7 @@
     i.kind = SFItemAction;
     i.identifier = @"settings:";
     i.title = @"Einstellungen";
-    i.subtitle = @"Start, Fernbedienung, Untertitel, Updates";
+    i.subtitle = @"Start, Fernbedienung, Untertitel, Browser, Updates";
     i.plot = @"Festlegen, ob Sofa beim Anmelden startet, ob die Apple Remote Sofa öffnet und wann Untertitel mitlaufen. Nach Updates suchen und sehen, was neu ist.";
     i.themeName = @"home";
     i.style = SFTileStyleApp; i.tint = SFHex(0x566573);
@@ -94,6 +96,12 @@ static __weak SFMenuScreen *gSettingsMenu;
     } else if (SFRuntimeDir()) {
         subtitle = [subtitle stringByAppendingString:@" · Updates erst, wenn Sofa in „Programme“ liegt"];
     }
+    SFMenuOption *web = [SFMenuOption option:@"Sofa im Browser" action:^{
+        dispatch_async(dispatch_get_main_queue(), ^{ [nav push:[[SFWebPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"home"]]]; });
+    }];
+    NSUInteger paired = [[SFWebDevices shared] devices].count;
+    web.detail = paired ? [NSString stringWithFormat:@"%lu %@", (unsigned long)paired, paired == 1 ? @"Gerät" : @"Geräte"] : @"Handy, Computer";
+    [opts addObject:web];
     NSString *installed = up.installedVersion;
     if (SFBundledNotes(installed)) [opts addObject:[SFMenuOption option:[NSString stringWithFormat:@"Neu in Version %@", installed]
                                                                  action:^{ [nav push:[SFHome installedNotesMenu:installed nav:nav]]; }]];

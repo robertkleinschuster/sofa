@@ -40,6 +40,13 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 - (BOOL)preloadOnFocus:(NSString *)videoID;
 @end
 
+@interface SFYTEngine (Browser)   // SFYTEngine+Browser.m
+// A session for a web browser (Sofa im Browser, docs/pwa.md): the same page, identity and pacing as
+// the TV's sessions, in the formats every browser decodes - H.264 + AAC (fragmented MP4) up to 1080p.
+// Its tracks are buffer in the media store; the item's own format (downloads) stays the TV's.
+- (void)openForBrowser:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
+@end
+
 @interface SFYTEngine (Rest)   // SFYTEngine+Rest.m
 - (void)watchRest;   // the real app, at start: quiet while Sofa rests (SFRest), night end if chosen
 @end

@@ -146,8 +146,9 @@ const VIDEO_CODEC_RANK: Record<string, number> = { vp9: 2, av01: 1, avc1: 0 };
  * VP9 > AV1 > H.264 (mpv decodes in software; VP9 is the cheapest, see docs/codecs-research.md).
  * HDR and super-resolution variants only if nothing else is left.
  */
-export function pickVideo(formats: DescribedFormat[], maxHeight = DEFAULT_MAX_HEIGHT, preferCodec: string | null = null): DescribedFormat | null {
-  const vids = formats.filter((f) => !f.isAudio && f.codec in VIDEO_CODEC_RANK && f.height > 0);
+export function pickVideo(formats: DescribedFormat[], maxHeight = DEFAULT_MAX_HEIGHT, preferCodec: string | null = null, onlyPreferred = false): DescribedFormat | null {
+  // onlyPreferred: the codec is a requirement (a web browser's player decodes nothing else)
+  const vids = formats.filter((f) => !f.isAudio && f.codec in VIDEO_CODEC_RANK && f.height > 0 && (!onlyPreferred || f.codec === preferCodec));
   const ok = (f: DescribedFormat): boolean => f.height <= maxHeight && (f.fps || 30) <= MAX_FPS;
   const plain = vids.filter((f) => ok(f) && !f.hdr && !f.sr);
   const pool = plain.length ? plain : vids.filter(ok).length ? vids.filter(ok) : vids;
@@ -159,8 +160,8 @@ export function pickVideo(formats: DescribedFormat[], maxHeight = DEFAULT_MAX_HE
 }
 
 /** Best audio format overall (original language first, never auto-dubbed when anything else exists). */
-export function pickAudio(formats: DescribedFormat[], preferCodec: string | null = null): DescribedFormat | null {
-  const auds = formats.filter((f) => f.isAudio && (f.codec === 'opus' || f.codec === 'mp4a'));
+export function pickAudio(formats: DescribedFormat[], preferCodec: string | null = null, onlyPreferred = false): DescribedFormat | null {
+  const auds = formats.filter((f) => f.isAudio && (f.codec === 'opus' || f.codec === 'mp4a') && (!onlyPreferred || f.codec === preferCodec));
   if (!auds.length) return null;
   // preferCodec (downloads: mp4a) replaces the opus preference; the original track still wins first
   const rank = (f: DescribedFormat): number[] => {

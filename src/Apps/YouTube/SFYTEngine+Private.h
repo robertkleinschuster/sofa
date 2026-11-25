@@ -51,6 +51,8 @@ typedef NS_ENUM(NSInteger, SFYTEngineState) { SFYTEngineIdle, SFYTEngineStarting
 @property (atomic) BOOL ready;
 // http://127.0.0.1:<port> of the loopback server (started if it was not); nil when it can't run
 @property (nonatomic, readonly) NSString *mediaBase;
+// The engine's open with its request as sent (SFYTEngine.m); done on main.
+- (void)open:(NSString *)vid request:(NSDictionary *)req done:(void (^)(NSDictionary *r, NSError *e))done;
 @end
 
 @interface SFYTEngine (LoungeEvents)   // implemented in SFYTEngine+Lounge.m

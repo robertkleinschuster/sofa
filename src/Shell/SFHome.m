@@ -85,8 +85,8 @@ static NSArray *marked(NSArray *items) {
     return r;
 }
 
-+ (SFScreen *)homeScreen {
-    SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:^(SFPageDone done) {
++ (SFPageLoader)homeLoader {
+    return ^(SFPageDone done) {
         // one build with everything Home shows at once: the library, the follows and the stored
         // feature rows - waited for, not read while still loading (that held the launching main
         // thread 260-330 ms in SFFollows latest:, hitch monitor 2026-11-09)
@@ -99,7 +99,11 @@ static NSArray *marked(NSArray *items) {
                 }];
             }];
         }];
-    } theme:[SFTheme themeNamed:@"home"]];
+    };
+}
+
++ (SFScreen *)homeScreen {
+    SFBrowseScreen *s = [[SFBrowseScreen alloc] initWithLoader:[self homeLoader] theme:[SFTheme themeNamed:@"home"]];
     s.showsHero = YES;
     __weak SFBrowseScreen *ws = s;
     s.onSelect = ^(SFItem *item, NSArray *items, NSUInteger idx) {
@@ -117,15 +121,20 @@ static NSArray *marked(NSArray *items) {
 // An app's start page: the app's own shelves (SFApp homeLoader) framed by the shell – followed
 // shows/new episodes (unless the app shows them itself), "Später ansehen", the "Suche" tile and
 // the header search button.
-+ (SFScreen *)appScreen:(NSString *)source {
++ (SFPageLoader)appLoader:(NSString *)source {
     Class<SFApp> app = [SFAppRegistry appNamed:source];
-    if (!app) return [self homeScreen];   // unknown/removed app (stale restore key, dev command)
-    SFTheme *t = [SFTheme themeNamed:source];
+    if (!app) return nil;
     SFPageLoader online = [app homeLoader];
     if (!([app respondsToSelector:@selector(homeIncludesFollows)] && [app homeIncludesFollows]))
         online = [SFLibraryPages withLocalShows:online source:source];
     online = SFWithWatchLater(online, source);   // shelf "Später ansehen" (own watch list)
-    online = SFWithSearchTile(online, source);   // tile "Suche"
+    return SFWithSearchTile(online, source);     // tile "Suche"
+}
+
++ (SFScreen *)appScreen:(NSString *)source {
+    SFPageLoader online = [self appLoader:source];
+    if (!online) return [self homeScreen];   // unknown/removed app (stale restore key, dev command)
+    SFTheme *t = [SFTheme themeNamed:source];
     SFBrowseScreen *c = [[SFBrowseScreen alloc] initWithLoader:online theme:t];
     c.showsHero = YES;
     if (SFHasSearch(source)) c.searchSource = source;   // button "Suche" in the header

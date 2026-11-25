@@ -34,6 +34,8 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     return YES;
 }
 
+static const NSUInteger kTLSRecordStart = 0x16;   // a TLS handshake record: the first byte a TLS client sends
+
 #pragma mark - Request
 
 @interface SFHTTPRequest ()
@@ -42,6 +44,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 @property (nonatomic) NSDictionary *query;
 @property (nonatomic) NSData *body;
 @property (nonatomic) NSDictionary *headers;   // lower-case names
+@property (nonatomic) BOOL secure;
 @end
 
 @implementation SFHTTPRequest
@@ -91,12 +94,33 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 // by the watch when the reader hung up, then reused by the next accepted connection - the pending
 // answer and the second close hit that one: test-units websocket flake 2026-11-08.) `handedOver`:
 // the WebSocket owns the fd now.
+// With TLS (`session` of `security`) every byte goes through it; the fd stays the transport.
 @interface SFHTTPSocket : NSObject
 @property (nonatomic) int fd;
 @property (nonatomic) BOOL handedOver;
+@property (nonatomic) void *session;
+@property (nonatomic, strong) id<SFHTTPSecurity> security;
 @end
 @implementation SFHTTPSocket
-- (void)close { if (_fd >= 0 && !_handedOver) close(_fd); _fd = -1; }
+- (ssize_t)read:(void *)buf max:(size_t)n {
+    if (_fd < 0) return -1;
+    return _session ? [_security read:_session into:buf max:n] : recv(_fd, buf, n, 0);
+}
+- (BOOL)writeAll:(const uint8_t *)p length:(size_t)len {
+    if (_fd < 0) return NO;
+    if (!_session) return writeAll(_fd, p, len);
+    while (len > 0) {
+        ssize_t w = [_security write:_session from:p length:len];
+        if (w <= 0) return NO;
+        p += w; len -= (size_t)w;
+    }
+    return YES;
+}
+- (void)close {
+    if (_session) { [_security end:_session]; _session = NULL; }
+    if (_fd >= 0 && !_handedOver) close(_fd);
+    _fd = -1;
+}
 @end
 
 // State lives on the server's queue (`_queue`); the socket is only touched on the connection's own
@@ -109,21 +133,22 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     BOOL _begun, _finished;
 }
 
-- (instancetype)initWithFD:(int)fd request:(SFHTTPRequest *)r queue:(dispatch_queue_t)queue io:(dispatch_queue_t)io {
-    if ((self = [super init])) { _fd = fd; _request = r; _queue = queue; _io = io; _sock = [SFHTTPSocket new]; _sock.fd = fd; }
+- (dispatch_queue_t)queue { return _queue; }
+
+- (instancetype)initWithSocket:(SFHTTPSocket *)sock request:(SFHTTPRequest *)r queue:(dispatch_queue_t)queue io:(dispatch_queue_t)io {
+    if ((self = [super init])) { _fd = sock.fd; _request = r; _queue = queue; _io = io; _sock = sock; }
     return self;
 }
 
 // Runs on _io once the request is read: notices a reader that goes away before the answer is done.
 - (void)watch {
     _watch = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)_fd, 0, _io);
-    int fd = _fd;
     SFHTTPSocket *sock = _sock;
     __weak SFHTTPExchange *ws = self;
     dispatch_source_set_event_handler(_watch, ^{
         char buf[512];
-        ssize_t n = recv(fd, buf, sizeof buf, 0);   // more bytes after a request are dropped
-        if (n > 0 || (n < 0 && errno == EINTR)) return;
+        ssize_t n = [sock read:buf max:sizeof buf];   // more bytes after a request are dropped
+        if (n > 0 || (n < 0 && (errno == EINTR || errno == EAGAIN))) return;   // (TLS: a record that was no data)
         SFHTTPExchange *x = ws;
         if (!x) return;
         dispatch_source_cancel(x->_watch);
@@ -146,7 +171,9 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     _begun = YES;
     NSMutableString *h = [NSMutableString stringWithFormat:@"HTTP/1.1 %ld %@\r\n", (long)status, reason(status)];
     [headers enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSString *v, BOOL *stop) { [h appendFormat:@"%@: %@\r\n", k, v]; }];
-    [h appendString:@"Cache-Control: no-store\r\nConnection: close\r\n\r\n"];
+    [_extraHeaders enumerateKeysAndObjectsUsingBlock:^(NSString *k, NSString *v, BOOL *stop) { if (!headers[k]) [h appendFormat:@"%@: %@\r\n", k, v]; }];
+    if (!headers[@"Cache-Control"] && !_extraHeaders[@"Cache-Control"]) [h appendString:@"Cache-Control: no-store\r\n"];
+    [h appendString:@"Connection: close\r\n\r\n"];
     [self send:[h dataUsingEncoding:NSISOLatin1StringEncoding] done:nil];
 }
 
@@ -167,7 +194,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     dispatch_queue_t q = _queue;
     __weak SFHTTPExchange *ws = self;
     dispatch_async(_io, ^{
-        BOOL ok = sock.fd >= 0 && writeAll(sock.fd, d.bytes, d.length);
+        BOOL ok = [sock writeAll:d.bytes length:d.length];
         dispatch_async(q, ^{
             if (!ok) [ws readerGone];
             if (done) done(ok);
@@ -206,7 +233,7 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     BOOL upgrade = [r.method isEqualToString:@"GET"] && [[r header:@"upgrade"] caseInsensitiveCompare:@"websocket"] == NSOrderedSame
         && [[[r header:@"connection"] lowercaseString] rangeOfString:@"upgrade"].location != NSNotFound
         && [[r header:@"sec-websocket-version"] isEqualToString:@"13"] && key.length;
-    if (!upgrade || _begun) { [self respond:400 type:nil body:nil]; return nil; }
+    if (!upgrade || _begun || _sock.session) { [self respond:400 type:nil body:nil]; return nil; }   // (no WebSocket over TLS)
     _begun = _finished = YES;   // no HTTP answer after this
     self.onClose = nil;
     SFWebSocket *ws = [[SFWebSocket alloc] initWithFD:_fd queue:_queue io:_io maxMessage:max];
@@ -239,6 +266,8 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     NSUInteger _maxBody;
     SFHTTPHandler _handler;
     dispatch_source_t _accept;
+    id<SFHTTPSecurity> _security;
+    BOOL (^_acceptFilter)(const struct sockaddr *, const struct sockaddr *);
 }
 
 - (instancetype)initWithName:(NSString *)name queue:(dispatch_queue_t)queue maxBody:(NSUInteger)maxBody handler:(SFHTTPHandler)handler {
@@ -272,6 +301,35 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     socklen_t len = sizeof sa;
     getsockname(fd, (struct sockaddr *)&sa, &len);
     _port = ntohs(sa.sin_port);
+    [self acceptOn:fd];
+    return YES;
+}
+
+- (BOOL)startOnAllAddresses:(uint16_t)port security:(id<SFHTTPSecurity>)security
+                     accept:(BOOL (^)(const struct sockaddr *, const struct sockaddr *))filter {
+    if (_accept) return YES;
+    int fd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd < 0) return NO;
+    int one = 1, zero = 0;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof zero);   // IPv4 too, as mapped addresses
+    struct sockaddr_in6 sa = {0};
+    sa.sin6_len = sizeof sa; sa.sin6_family = AF_INET6; sa.sin6_port = htons(port); sa.sin6_addr = in6addr_any;
+    if (bind(fd, (struct sockaddr *)&sa, sizeof sa) != 0 || listen(fd, 64) != 0) {
+        SFLog(@"%@: cannot listen on port %u (%s)", _name, port, strerror(errno));
+        close(fd);
+        return NO;
+    }
+    socklen_t len = sizeof sa;
+    getsockname(fd, (struct sockaddr *)&sa, &len);
+    _port = ntohs(sa.sin6_port);
+    _security = security;
+    _acceptFilter = [filter copy];
+    [self acceptOn:fd];
+    return YES;
+}
+
+- (void)acceptOn:(int)fd {
     _accept = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
     __weak SFLocalHTTP *ws = self;
     dispatch_source_set_event_handler(_accept, ^{
@@ -283,7 +341,6 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     });
     dispatch_source_set_cancel_handler(_accept, ^{ close(fd); });
     dispatch_resume(_accept);
-    return YES;
 }
 
 - (void)stop {
@@ -296,26 +353,48 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 
 // Reads one request on the connection's own queue, then hands it to the handler.
 - (void)serve:(int)fd {
+    if (_acceptFilter) {
+        struct sockaddr_storage local = {0}, peer = {0};
+        socklen_t ll = sizeof local, pl = sizeof peer;
+        if (getsockname(fd, (struct sockaddr *)&local, &ll) != 0 || getpeername(fd, (struct sockaddr *)&peer, &pl) != 0
+            || !_acceptFilter((struct sockaddr *)&local, (struct sockaddr *)&peer)) { close(fd); return; }
+    }
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
     struct timeval tv = {kReadTimeoutS, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);   // (a TLS handshake also writes)
     dispatch_queue_t io = dispatch_queue_create("sofa.http.conn", DISPATCH_QUEUE_SERIAL);
+    id<SFHTTPSecurity> security = _security;
     dispatch_async(io, ^{
+        SFHTTPSocket *sock = [SFHTTPSocket new];
+        sock.fd = fd;
+        if (security) {   // the first byte decides: a TLS handshake, or a plain request (secure NO)
+            uint8_t first = 0;
+            ssize_t n = recv(fd, &first, 1, MSG_PEEK);
+            if (n != 1) { close(fd); return; }
+            if (first == kTLSRecordStart) {
+                void *session = [security acceptOn:fd];
+                if (!session) { close(fd); return; }
+                sock.security = security; sock.session = session;
+            }
+        }
+        struct timeval none = {0, 0};
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &none, sizeof none);
         NSInteger refusal = 0;
-        SFHTTPRequest *r = [self readRequest:fd refusal:&refusal];
+        SFHTTPRequest *r = [self readRequest:sock refusal:&refusal];
         if (!r) {
             if (refusal) {
                 NSString *h = [NSString stringWithFormat:@"HTTP/1.1 %ld %@\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", (long)refusal, reason(refusal)];
                 NSData *d = [h dataUsingEncoding:NSISOLatin1StringEncoding];
-                writeAll(fd, d.bytes, d.length);
+                [sock writeAll:d.bytes length:d.length];
             }
-            close(fd);
+            [sock close];
             return;
         }
-        struct timeval none = {0, 0};
+        r.secure = sock.session != NULL;
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &none, sizeof none);
-        SFHTTPExchange *x = [[SFHTTPExchange alloc] initWithFD:fd request:r queue:self->_queue io:io];
+        SFHTTPExchange *x = [[SFHTTPExchange alloc] initWithSocket:sock request:r queue:self->_queue io:io];
         [x watch];
         SFHTTPHandler h = self->_handler;
         dispatch_async(self->_queue, ^{
@@ -327,15 +406,15 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
 }
 
 // nil: nothing usable (refusal = the status to answer, 0 = just drop the connection)
-- (SFHTTPRequest *)readRequest:(int)fd refusal:(NSInteger *)refusal {
+- (SFHTTPRequest *)readRequest:(SFHTTPSocket *)sock refusal:(NSInteger *)refusal {
     NSMutableData *buf = [NSMutableData new];
     uint8_t chunk[16384];
     NSRange end = {NSNotFound, 0};
     NSData *sep = [NSData dataWithBytes:"\r\n\r\n" length:4];
     while (end.location == NSNotFound) {
         if (buf.length > kMaxHead) { *refusal = 400; return nil; }
-        ssize_t n = recv(fd, chunk, sizeof chunk, 0);
-        if (n < 0 && errno == EINTR) continue;
+        ssize_t n = [sock read:chunk max:sizeof chunk];
+        if (n < 0 && errno == EINTR && !sock.session) continue;
         if (n <= 0) return nil;
         [buf appendBytes:chunk length:(NSUInteger)n];
         end = [buf rangeOfData:sep options:0 range:NSMakeRange(0, buf.length)];
@@ -346,8 +425,8 @@ static BOOL writeAll(int fd, const uint8_t *p, size_t len) {
     if (want > _maxBody) { *refusal = 413; return nil; }
     NSMutableData *body = [[buf subdataWithRange:NSMakeRange(NSMaxRange(end), buf.length - NSMaxRange(end))] mutableCopy];
     while (body.length < want) {
-        ssize_t n = recv(fd, chunk, MIN(sizeof chunk, want - body.length), 0);
-        if (n < 0 && errno == EINTR) continue;
+        ssize_t n = [sock read:chunk max:MIN(sizeof chunk, want - body.length)];
+        if (n < 0 && errno == EINTR && !sock.session) continue;
         if (n <= 0) return nil;
         [body appendBytes:chunk length:(NSUInteger)n];
     }

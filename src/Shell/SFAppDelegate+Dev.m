@@ -28,6 +28,8 @@
 #import "SFAppDelegate.h"
 #import "SFFrameMeter.h"
 #import "SFApp.h"
+#import "SFWebPairScreen.h"
+#import "SFWebDevices.h"
 #import <ImageIO/ImageIO.h>
 
 @implementation SFAppDelegate (Dev)
@@ -185,6 +187,9 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
         [self.nav push:[SFHome appScreen:[arg substringFromIndex:4]]];
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"settings"]) {
         [SFHome showSettingsOn:self.nav];
+    } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"web"]) {   // "Sofa im Browser"; the code goes to the dev log
+        [self.nav push:[[SFWebPairScreen alloc] initWithTheme:[SFTheme themeNamed:@"home"]]];
+        SFLog(@"dev: web pairing code %@", [SFWebDevices shared].pairingCode);
     } else if ([cmd isEqualToString:@"open"] && [arg isEqualToString:@"welcome"]) {   // first-run setup from the welcome screen
         setenv("SOFA_WELCOME", "1", 1); [self welcomeIfFirstRun];
     } else if ([cmd isEqualToString:@"hang"] && arg) {      // Dev: block the main thread for <seconds> (the SIGTERM fallback, test)

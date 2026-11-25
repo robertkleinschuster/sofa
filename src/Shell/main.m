@@ -24,6 +24,7 @@
 #import "SFApps.h"
 #import "SFPower.h"
 #import "SFDownloads.h"
+#import "SFWebServer.h"
 #import "SFPlayerScreen.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
 #import "SFPlayerScreen.h"
@@ -129,6 +130,7 @@ NSString *gInstance = @"view";
     [[SFHomeFeatures shared] start];   // live + highlights rows of Home (after the apps)
     [SFLibraryPages watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
+    [[SFWebServer shared] start];   // Sofa im Browser (docs/pwa.md): after the store, apps and library
     // remote control services (phone pairing): real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
         [SFAppRegistry startRemotesWithHost:self];

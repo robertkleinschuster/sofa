@@ -149,6 +149,32 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
     else [self resolve:ref done:done];
 }
 
+// Sofa im Browser (docs/pwa.md): a session of the same engine page in H.264 + AAC; lives as on the TV
+// (the engine's HLS). Like a play here: the watch page follows a few seconds in, as a browser's would.
++ (void)resolveForBrowser:(NSString *)ref done:(SFURLDone)done {
+    NSString *p = SFRefPrefix(ref), *vid = SFRefID(ref);
+    if ([p isEqualToString:@"ytlive"]) { playLive(vid, done); return; }
+    if (![p isEqualToString:@"yt"]) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
+    SFYTEngine *engine = [SFYTEngine shared];
+    if (!engine.available) { SFCount(@"yt.browser.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
+    [engine openForBrowser:vid done:^(NSDictionary *r, NSError *e) {
+        if (!r) {
+            SFCount([@"yt.browser." stringByAppendingString:outcome(e)]);
+            done(nil, SFError(sabrMessage(e))); return;
+        }
+        SFCount(r[@"hls"] ? @"yt.browser.sabr-hls" : @"yt.browser.sabr");
+        sabrPlay(vid, r, done);
+        watchPageSoon(vid);
+    }];
+}
+
+// the browser's player state -> the engine's view reporting (SFYTViewReport does it for Sofa's player)
++ (void)playback:(NSDictionary *)source reports:(NSDictionary *)state {
+    NSString *sid = [source[@"sid"] isKindOfClass:[NSString class]] ? source[@"sid"] : nil;
+    if (![source[@"sabr"] boolValue] || [source[@"hls"] boolValue] || !sid) return;   // lives report nothing (as on the TV)
+    [[SFYTEngine shared] report:sid state:state];
+}
+
 + (void)prepareItem:(SFItem *)item position:(double)position done:(void (^)(NSURL *, dispatch_block_t))done {
     NSString *ref = item.resolverRef ?: item.identifier;
     if (![ref hasPrefix:@"yt:"]) { done(nil,nil); return; }

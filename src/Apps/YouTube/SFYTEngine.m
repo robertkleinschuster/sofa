@@ -453,7 +453,10 @@ static id Clean(id v) {
                              j[@"height"], j[@"fps"], -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
         else SFLog(@"yt-engine: opened %@ -> %@p%@ %@/%@ audio %@ in %.1fs%@", vid, j[@"height"], j[@"fps"], j[@"vcodec"], j[@"acodec"],
                    str(j[@"alang"]) ?: @"?", -[t0 timeIntervalSinceNow], [j[@"cached"] boolValue] ? @" (cached)" : @"");
-        [self noteOpened:j];
+        // a format asked for (the browser's H.264 + AAC): the session's tracks are buffer of the item,
+        // not its format - the manifest (what a download or an offline play means) stays the TV's
+        if (req[@"vcodec"]) [self noteSession:str(j[@"sid"]) video:str(j[@"id"]) stored:NO tracks:dict(j[@"tracks"])];
+        else [self noteOpened:j];
         done(Clean(j), nil);
     }];
 }
