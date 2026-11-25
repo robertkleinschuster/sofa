@@ -74,6 +74,12 @@ BOOL SFImageDiskWritesPaused = NO;
 
 - (void)trimDiskNow { [_lru trimAt:0]; }
 
+// a picture in the log: host and file, without query (signatures, sizes)
+static NSString *SFImageLogName(NSString *src) {
+    NSURL *u = [NSURL URLWithString:src];
+    return u.host ? [u.host stringByAppendingString:u.path ?: @""] : src.lastPathComponent;
+}
+
 static NSString *hashString(NSString *s) {
     unsigned char d[CC_SHA1_DIGEST_LENGTH];
     NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
@@ -190,7 +196,10 @@ static NSTimeInterval SFImageFetchLimit(void) {
     SFHostFetcher own = url ? SFHostFetcherFor(url) : nil;
     void (^stored)(NSData *, NSInteger) = ^(NSData *data, NSInteger st) {
         if (data.length && st < 400) { if (!SFImageDiskWritesPaused && [data writeToFile:disk atomically:YES]) [self->_lru noteUse:disk.lastPathComponent]; decodeData(data); return; }
-        if (st == 404 || st == 410) @synchronized (self->_missing) { [self->_missing addObject:src]; }
+        BOOL first;
+        @synchronized (self->_missing) { first = ![self->_missing containsObject:src]; if (st == 404 || st == 410) [self->_missing addObject:src]; }
+        // which pictures fail and why (tiles without a picture, 2026-11-25) - a remembered 404 once
+        if (first) SFLog(@"images: %@ -> %@%@", SFImageLogName(src), st ? @(st) : @"no answer", data && !data.length ? @" (empty)" : @"");
         finish(NULL);
     };
     if (own) {   // the source's own client, never natively (SFHostFetch.h)

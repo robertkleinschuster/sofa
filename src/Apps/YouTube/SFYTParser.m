@@ -1,6 +1,12 @@
 #import "SFYTParser.h"
 #import "SFYTInnerTube.h"
 
+// The picture every video has: a list's thumbnail URL can go away - a creator's thumbnail test
+// variant (hqdefault_custom_N) ends, a signed URL ages (2026-11-25: tiles without a picture).
+NSString *SFYTThumbFallback(NSString *videoID) {
+    return videoID.length ? [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", videoID] : nil;
+}
+
 NSString *SFYTBackdrop(NSString *videoID) {
     return videoID.length ? [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/maxresdefault.jpg", videoID] : nil;
 }
@@ -82,7 +88,8 @@ static NSString *tvAvatar(NSString *avatar) {
     i.channel = channel;
     if ([cid hasPrefix:@"UC"]) i.showRef = [@"ytchannel:" stringByAppendingString:cid];
     i.subtitle = meta;
-    i.image = thumb ?: [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/mqdefault.jpg", vid];
+    i.image = thumb ?: SFYTThumbFallback(vid);
+    if (thumb) i.imageFallback = SFYTThumbFallback(vid);
     i.backdrop = SFYTBackdrop(vid);
     i.duration = dur;
     i.source = @"youtube"; i.themeName = @"youtube";

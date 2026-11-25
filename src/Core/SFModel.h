@@ -43,6 +43,7 @@ typedef void (^SFResolver)(SFURLDone done);
 @property (nonatomic, copy) NSString *plot;
 @property (nonatomic, copy) NSString *image;           // path or URL
 @property (nonatomic, copy) NSString *backdrop;        // large background image
+@property (nonatomic, copy) NSString *imageFallback;   // shown when `image` can't be loaded (derived by the app, not stored)
 @property (nonatomic, copy) NSString *channel;         // show / channel
 @property (nonatomic, copy) NSString *channelImage;    // the channel's avatar (URL or file), where the source names one; nil = none
 @property (nonatomic, copy) NSString *source;          // theme ID of the origin

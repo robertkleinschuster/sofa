@@ -101,6 +101,7 @@
     NSString *vid = [SFRefPrefix(i.identifier) isEqualToString:@"yt"] ? SFRefID(i.identifier) : nil;
     if (!vid.length) return;
     if (!i.image) i.image = [NSString stringWithFormat:@"https://i.ytimg.com/vi/%@/hqdefault.jpg", vid];
+    else if ([i.image hasPrefix:@"http"]) i.imageFallback = SFYTThumbFallback(vid);   // a stored list URL can go away
     // stored entries carry the small tile picture as backdrop -> TV resolution; a local picture (download) stays
     if (!i.backdrop || [i.backdrop hasPrefix:@"https://i.ytimg.com/vi/"]) i.backdrop = SFYTBackdrop(vid);
 }

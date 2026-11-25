@@ -5,6 +5,7 @@
 #import "SFModel.h"
 
 NSString *SFYTBackdrop(NSString *videoID);   // TV-sized picture of a video (falls back to the tile picture where missing, SFImageLayer)
+NSString *SFYTThumbFallback(NSString *videoID);   // the 16:9 picture every video has (a list URL can go away)
 // "313.544 Aufrufe" / "1,4 Mio. Aufrufe" (hl=de) -> count; -1 = not a view count
 long long SFYTViewCount(NSString *s);
 

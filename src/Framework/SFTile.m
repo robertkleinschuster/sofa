@@ -261,6 +261,7 @@ static id<SFTileStatusSource> gStatus;
 - (void)loadImage {
     if (_imageRequested) return;
     _imageRequested = YES;
+    _image.fallbackSource = self.item.imageFallback;   // before the source (SFImageLayer)
     _image.source = self.item.image;
     if (_avatarSource) _avatar.source = _avatarSource;
 }
