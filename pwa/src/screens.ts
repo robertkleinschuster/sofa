@@ -82,6 +82,7 @@ export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherH
         h('label.label', null, 'Name dieses Geräts', name),
         button),
       problem,
+      h('p.hint', null, 'Fragt der Browser nach Zugriff auf Geräte im lokalen Netzwerk, bitte erlauben – sonst erreicht er Sofa nicht.'),
       h('button.link', { type: 'button', onclick: onOtherHost }, 'Anderen Mac wählen')));
 }
 
