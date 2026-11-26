@@ -155,7 +155,10 @@ moves to the top). A reload during a playback lands on the page it was opened fr
 Installed on iOS (2026-11-26): iOS 26+ lays its own scroll-edge blur over the top of a Home Screen web
 app, and no meta tag or CSS property turns it off. WebKit leaves it out only where a sticky or fixed
 box with an **opaque** background and **no backdrop-filter** covers the top edge
-(`LocalFrameView::fixedContainerEdges`), so the header is solid `--bg-top` (test-pwa 9 checks it).
+(`LocalFrameView::fixedContainerEdges`), so the header is solid `--bg-top`. The solid header alone did
+not do it on an iPhone, so the installed app on iOS also gets `#top-edge`: a fixed strip in the
+header's colour over exactly the header's top padding (status bar + 6 px, at least 12 px), invisible
+and on every screen (test-pwa 9 checks both colours).
 The apple-touch-icon is **full-bleed** (`res/icon/sofa-icon-fullbleed.svg`): iOS rounds it itself, and
 the rounded tile with its margin came out small. The manifest keeps the rounded tile for "any" and adds a
 maskable one; `pwa/tools/icons.sh` renders all PNGs. iOS reads the icon when the app is added, so a new

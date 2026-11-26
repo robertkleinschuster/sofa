@@ -61,6 +61,22 @@ main > .arrived { animation: none; }   /* content taking its skeleton's place: n
   background: var(--bg-top);
   border-bottom: 1px solid var(--line);
 }
+/* iOS 26+ lays its own scroll-edge blur over the top of an installed web app; WebKit leaves it out
+   only where a fixed/sticky box with an opaque background (no backdrop-filter) is what a hit test
+   4 px below the top edge finds (LocalFrameView::fixedContainerEdges). The header alone did not do
+   it on the device, so in the installed app on iOS a fixed strip in the header's colour covers
+   exactly the header's top padding (status bar + 6 px, at least 12 px): invisible, never over content,
+   on every screen (the header is hidden on some); below sheets (40) and the player (50). */
+#top-edge { display: none; background: var(--bg-top); }
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    #top-edge {
+      display: block; position: fixed; top: 0; left: 0; right: 0; z-index: 25; pointer-events: none;
+      height: max(12px, calc(env(safe-area-inset-top) + 6px));
+    }
+    #bar { padding-top: max(12px, calc(env(safe-area-inset-top) + 6px)); }
+  }
+}
 .brand { display: flex; align-items: center; gap: 8px; height: var(--touch); text-decoration: none; color: var(--wordmark); flex: none; border-radius: 8px; }
 .brand-word { font: 700 22px/1 var(--font-wordmark); letter-spacing: -.01em; }
 .brand-logo { height: 26px; width: auto; max-width: 120px; object-fit: contain; }

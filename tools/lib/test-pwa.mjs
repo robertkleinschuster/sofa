@@ -296,8 +296,9 @@ try {
     const r = await ff.run(`const h = document.getElementById('bar'), s = getComputedStyle(h), b = h.getBoundingClientRect();
       const c = document.createElement('canvas').getContext('2d'); c.fillStyle = s.backgroundColor; c.fillRect(0, 0, 1, 1);
       return { pos: s.position, top: Math.round(b.top), w: b.width / innerWidth, h: b.height, alpha: c.getImageData(0, 0, 1, 1).data[3],
-        filter: s.backdropFilter || 'none' }`);
-    return (['sticky', 'fixed'].includes(r.pos) && r.top === 0 && r.w >= 0.95 && r.h > 10 && r.alpha === 255 && r.filter === 'none')
+        filter: s.backdropFilter || 'none', edge: getComputedStyle(document.getElementById('top-edge')).backgroundColor, bar: s.backgroundColor }`);
+    // ... and the installed app's top strip (shown on iOS only) wears the header's colour
+    return (['sticky', 'fixed'].includes(r.pos) && r.top === 0 && r.w >= 0.95 && r.h > 10 && r.alpha === 255 && r.filter === 'none' && r.edge === r.bar)
       || Promise.reject(new Error(JSON.stringify(r)));
   });
   await check('9: the header\'s buttons keep their places on every page (search page included)', async () => {
