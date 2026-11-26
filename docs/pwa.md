@@ -152,6 +152,15 @@ playback that fails offers "Erneut versuchen" / "Schließen" (no retry for a for
 decode). A device removed on the TV is told why it pairs again. A toast never covers an open sheet (it
 moves to the top). A reload during a playback lands on the page it was opened from.
 
+Installed on iOS (2026-11-26): iOS 26+ lays its own scroll-edge blur over the top of a Home Screen web
+app, and no meta tag or CSS property turns it off. WebKit leaves it out only where a sticky or fixed
+box with an **opaque** background and **no backdrop-filter** covers the top edge
+(`LocalFrameView::fixedContainerEdges`), so the header is solid `--bg-top` (test-pwa 9 checks it).
+The apple-touch-icon is **full-bleed** (`res/icon/sofa-icon-fullbleed.svg`): iOS rounds it itself, and
+the rounded tile with its margin came out small. The manifest keeps the rounded tile for "any" and adds a
+maskable one; `pwa/tools/icons.sh` renders all PNGs. iOS reads the icon when the app is added, so a new
+icon needs the app removed and added again.
+
 ### 6. The TV: "Auf dem Fernseher abspielen" (2026-11-26)
 
 The sheet of every playable item (and a TV button in the browser's player: "Am Fernseher

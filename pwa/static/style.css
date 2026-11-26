@@ -55,8 +55,10 @@ main > .arrived { animation: none; }   /* content taking its skeleton's place: n
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 8px;
   padding: calc(env(safe-area-inset-top) + 6px) var(--gutter) 6px;
-  background: color-mix(in srgb, var(--bg-top) 88%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  /* Solid, no backdrop-filter: iOS 26+ draws its own scroll-edge blur under the status bar of an
+     installed web app unless a fixed/sticky box with an opaque background covers the top edge
+     (WebKit LocalFrameView::fixedContainerEdges; a backdrop-filter there keeps the blur). */
+  background: var(--bg-top);
   border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 8px; height: var(--touch); text-decoration: none; color: var(--wordmark); flex: none; border-radius: 8px; }

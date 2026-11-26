@@ -290,6 +290,16 @@ try {
     await ff.until(`return document.querySelectorAll('.tile[data-style="app"]').length > 0 && !document.querySelector('.skeleton')`, 20_000);
     return ff.run(`return !document.querySelector('.tile[data-style="app"] .meta')`);
   });
+  // iOS 26+ blurs the top of an installed web app unless a sticky/fixed box with an opaque
+  // background and no backdrop-filter covers the top edge (WebKit fixedContainerEdges)
+  await check('9: the header covers the top edge solidly (no iOS scroll-edge blur)', async () => {
+    const r = await ff.run(`const h = document.getElementById('bar'), s = getComputedStyle(h), b = h.getBoundingClientRect();
+      const c = document.createElement('canvas').getContext('2d'); c.fillStyle = s.backgroundColor; c.fillRect(0, 0, 1, 1);
+      return { pos: s.position, top: Math.round(b.top), w: b.width / innerWidth, h: b.height, alpha: c.getImageData(0, 0, 1, 1).data[3],
+        filter: s.backdropFilter || 'none' }`);
+    return (['sticky', 'fixed'].includes(r.pos) && r.top === 0 && r.w >= 0.95 && r.h > 10 && r.alpha === 255 && r.filter === 'none')
+      || Promise.reject(new Error(JSON.stringify(r)));
+  });
   await check('9: the header\'s buttons keep their places on every page (search page included)', async () => {
     const where = `const b = document.querySelector('.settings-button').getBoundingClientRect(); return Math.round(b.left) + ',' + Math.round(b.top)`;
     const home = await ff.run(where);
