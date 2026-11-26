@@ -119,6 +119,16 @@ try {
     v.onloadeddata = () => done(true); v.onerror = () => done(false); setTimeout(() => done(false), 15000); v.src = arguments[0];`, [E.MEDIA_H264]);
   await ff.run(`document.querySelector('.tile[data-kind="video"] .art').click()`);
   await check('3: the player opens', () => ff.until(`return !!document.querySelector('.player video')`, 10_000));
+  // picture in picture and the background (background.ts): the button only where the browser has PiP,
+  // the browser may enter it by itself, the system's controls know the video
+  await check('3: picture in picture offered where the browser has it; the system controls know the video', async () => {
+    await ff.until(`return !('mediaSession' in navigator) || !!navigator.mediaSession.metadata`, 20_000).catch(() => undefined);
+    const r = await ff.run(`const v = document.querySelector('.player video'), b = document.querySelector('.player-pip');
+      const has = document.pictureInPictureEnabled === true || typeof v.webkitSupportsPresentationMode === 'function';
+      return { btn: !!b, shown: b && !b.hidden, has, auto: v.hasAttribute('autopictureinpicture'),
+        meta: !('mediaSession' in navigator) || !!navigator.mediaSession.metadata }`);
+    return (r.btn && r.shown === r.has && r.auto && r.meta) || Promise.reject(new Error(JSON.stringify(r)));
+  });
   await ff.run(`document.querySelector('.player video').muted = true`);
   if (h264) {
     await check('3: the DASH pair plays as HLS through hls.js', () => ff.until(`const v = document.querySelector('.player video'); return v && v.currentTime > 1 && document.querySelector('.player').dataset.engine === 'hls.js'`, 45_000));

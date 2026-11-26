@@ -121,6 +121,15 @@ browser (they would run as a second live session of the same page).
 The TV is not affected: its player, its engine sessions and their view reports are separate; the
 engine's document refresh already waits for sessions in use.
 
+Beyond the page (`src/background.ts`, 2026-11-26): a "Bild in Bild" button in the player's bar where the
+browser has picture in picture (the standard API, or WebKit's presentation mode on iOS - also in a
+Home Screen app), and `autopictureinpicture` so the browser may enter it by itself when the app goes
+to the background. The audio session is "playback" (WebKit's Audio Session API), and a pause the
+system makes on the way to the background is undone once - the person's own pauses come through the
+Media Session actions (lock screen, Control Center, headphones) or happen while the page shows.
+Media Session also gets the position (the lock screen's seek bar) and "stop" (closes the player).
+What iOS allows in the background is its call: verified on the device, not in test-pwa (Firefox).
+
 ### 4. Shared state
 
 The PWA reads and writes the same store through the same modules as the TV: `SFStore

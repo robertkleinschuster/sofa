@@ -5,6 +5,7 @@
 
 import { ApiError, type Api, type StreamReport } from './api.ts';
 import { formatDuration, h, icon, ICONS } from './dom.ts';
+import { Background, pipSupported, togglePip } from './background.ts';
 import { browserFormats, mediaSourceTest } from './formats.ts';
 import type { Item, PlayAnswer } from './types.ts';
 
@@ -46,6 +47,8 @@ export class Player {
   private closing = false;
   private onPageHide = (): void => this.beaconClose();
   private statusText: HTMLElement;
+  private background: Background | null = null;
+  private pip: HTMLElement;
   private statusActions: HTMLElement;
   // Escape closes (outside fullscreen, where it leaves fullscreen first), as the close button does
   private onKey = (e: KeyboardEvent): void => {
@@ -64,8 +67,12 @@ export class Player {
     const close = h('button.player-close', { type: 'button', 'aria-label': 'Schließen', title: 'Schließen', onclick: () => history.back() }, icon(ICONS.close));
     const tvLabel = item.kind === 'live' ? 'Am Fernseher ansehen' : 'Am Fernseher weiterschauen';
     const tv = h('button.player-tv', { type: 'button', 'aria-label': tvLabel, title: tvLabel, onclick: () => this.toTV() }, icon(ICONS.tv));
+    // picture in picture: where the browser has it (the video's own controls may lack the button)
+    this.pip = h('button.player-pip', { type: 'button', 'aria-label': 'Bild in Bild', title: 'Bild in Bild', 'aria-pressed': 'false',
+      onclick: () => { togglePip(this.video).catch(() => this.host.toast('Bild in Bild ist gerade nicht möglich.')); } }, icon(ICONS.pip));
+    this.pip.hidden = !pipSupported(this.video);
     this.overlay = h('div.player', { role: 'dialog', 'aria-label': item.title ?? 'Video' },
-      h('div.player-bar', null, close, h('div.player-title', null, item.title ?? '', item.sub ? h('span', null, item.sub) : null), tv),
+      h('div.player-bar', null, close, h('div.player-title', null, item.title ?? '', item.sub ? h('span', null, item.sub) : null), this.pip, tv),
       this.video, this.status);
   }
 
@@ -76,6 +83,10 @@ export class Player {
     addEventListener('pagehide', this.onPageHide);
     addEventListener('keydown', this.onKey);
     this.video.focus({ preventScroll: true });   // the keyboard drives the video's own controls (space, arrows)
+    this.background = new Background(this.video, () => history.back(), (on) => {
+      this.pip.setAttribute('aria-pressed', String(on));
+      this.overlay.classList.toggle('in-pip', on);
+    });
     this.wire();
     try {
       await this.start();
@@ -251,6 +262,8 @@ export class Player {
     this.stopClock();
     removeEventListener('pagehide', this.onPageHide);
     removeEventListener('keydown', this.onKey);
+    this.background?.detach();
+    this.background = null;
     this.video.pause();
     this.teardownEngine();
     this.video.removeAttribute('src');
