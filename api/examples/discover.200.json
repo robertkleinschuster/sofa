@@ -1,0 +1,9 @@
+{
+  "api": {
+    "min": 1,
+    "version": 1
+  },
+  "host": "sofa.tailnet.example",
+  "name": "Sofa",
+  "port": 7443
+}

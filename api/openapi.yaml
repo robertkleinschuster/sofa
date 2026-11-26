@@ -1,0 +1,1378 @@
+# Sofa's web API - the one contract of every client: Sofa im Browser (pwa/) and the native apps.
+# Prose: docs/api.md. Checked against a running dev instance by tools/test-api (every operation,
+# request and answer), which also records scrubbed answers into api/examples/.
+# Process: an API change is made here first, then in the server, then in the clients. Additive
+# changes keep the version and are announced as a `features` entry of /hello; a breaking one is a new
+# version (/api/v2/...). Clients ignore fields they don't know.
+# Written in the YAML subset tools/lib/api/yaml.ts reads (block style, plain or quoted scalars, flow
+# sequences of scalars, `|` blocks; no anchors, tags or flow mappings beyond `{}`).
+openapi: 3.1.0
+info:
+  title: Sofa
+  version: '1'
+  summary: The API of Sofa, the TV media center - for Sofa im Browser and the native apps.
+  description: |
+    Sofa runs on the TV (a Mac) and serves this API on port 7443 of its tailnet addresses only,
+    with TLS for its MagicDNS name (a Let's Encrypt certificate: no client exception needed).
+
+    Versions: every route below lives under `/api/v1/`; the same routes answer under `/api/` (what the
+    PWA uses). `GET /api/v1/hello` names the API versions this Sofa speaks (`api.version`, `api.min`)
+    and its `features`; a client built for version N works while `api.min <= N <= api.version` and asks
+    for features, never for a Sofa version. An unknown version answers 404 `unsupported_version`.
+
+    Authentication: a device pairs once with the code the TV shows (`POST /pair`) and sends its token
+    as `Authorization: Bearer <token>` with every call. Media and pictures are capability URLs that
+    need no header (players can't send one): the play answer's `url` and every `img`-like field.
+
+    Errors: every error answer is an `Error` - `code` (stable, machine-readable: branch on it) and
+    `error` (German, for the viewer). Two transport-level refusals have no body: 400 for a request
+    that is no HTTP, 413 for a body above 256 KB.
+
+    Paths in answers (`url`, `img`, ...) are absolute paths on the same host and port.
+
+    Items: every item carries `d`, its stored dictionary - opaque: clients don't read it and send it
+    back unchanged as `item` to play, mark or send an item to the TV.
+  license:
+    name: GNU General Public License v3.0
+servers:
+  - url: 'https://{host}:{port}'
+    description: Sofa's TLS port on the tailnet (the certificate's full MagicDNS name).
+    variables:
+      host:
+        default: sofa.tailnet.example
+        description: The full MagicDNS name (learn it through /discover or the pairing link).
+      port:
+        default: '7443'
+security:
+  - bearer: []
+tags:
+  - name: connect
+    description: Finding Sofa and pairing with it.
+  - name: browse
+    description: Pages, items and search - as the TV shows them.
+  - name: play
+    description: Playing on this device - streams and their reports.
+  - name: library
+    description: Marks and downloads, shared with the TV.
+  - name: tv
+    description: The TV's own player.
+  - name: media
+    description: Capability URLs - media and pictures, no header needed.
+paths:
+  /discover:
+    servers:
+      - url: 'http://{host}:{port}'
+        description: Plain HTTP on the same port - the short name the user typed ("imac").
+        variables:
+          host:
+            default: imac
+          port:
+            default: '7443'
+    get:
+      operationId: discover
+      tags: [connect]
+      summary: The full name for the short one (plain HTTP).
+      description: |
+        The certificate is for the full MagicDNS name, the user types the short one. A native app asks
+        `http://<short name>:7443/discover` once (the tailnet's search domain resolves the short name)
+        and uses `https://<host>:<port>` from then on. Only the name is told - the same that a redirect
+        to https would tell. Plain HTTP answers nothing else (other paths: 308 to https).
+      security: []
+      responses:
+        '200':
+          description: Sofa's full name and its API versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discover'
+        '503':
+          $ref: '#/components/responses/Error'
+  /connect:
+    servers:
+      - url: 'http://{host}:{port}'
+        variables:
+          host:
+            default: imac
+          port:
+            default: '7443'
+    get:
+      operationId: connect
+      tags: [connect]
+      summary: The PWA's connect redirect (plain HTTP, a top-level navigation).
+      description: |
+        For Sofa im Browser only: a page on https can't fetch plain HTTP, but it can navigate there.
+        Answers 303 back to `return` (only the PWA's own origins) with `#host=<full name>:<port>`.
+      security: []
+      parameters:
+        - name: return
+          in: query
+          required: true
+          description: The PWA's URL to come back to (no fragment).
+          schema:
+            type: string
+      responses:
+        '303':
+          description: Back to the PWA, the full name in the fragment.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+        '400':
+          description: An unknown return address (plain text, German).
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/hello:
+    get:
+      operationId: hello
+      tags: [connect]
+      summary: Reachability, versions, features - and whether the token is (still) valid.
+      security:
+        - {}
+        - bearer: []
+      responses:
+        '200':
+          description: Sofa answers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hello'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/pair:
+    post:
+      operationId: pair
+      tags: [connect]
+      summary: Pair this device with the code the TV shows.
+      description: |
+        The TV shows a 6-digit code while Einstellungen → Sofa im Browser is open (renewed every 5
+        minutes and after three wrong entries; 10 wrong entries per minute at most), and a QR code with
+        the pairing link `https://robertkleinschuster.github.io/sofa/pair#host=<full name>:<port>&code=<code>`
+        (docs/api.md "Pairing by QR code"). A right code pairs once and answers the device's token -
+        keep it in the platform's secure storage. `client` says what pairs; the TV lists it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairRequest'
+      responses:
+        '200':
+          description: Paired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Paired'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: unpair
+      tags: [connect]
+      summary: This device unpairs itself (its token stops working).
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/info:
+    get:
+      operationId: info
+      tags: [browse]
+      summary: The apps, every theme's design tokens, this device's name.
+      responses:
+        '200':
+          description: What the header and the themes need.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Info'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/home:
+    get:
+      operationId: home
+      tags: [browse]
+      summary: Home - its sections as the TV shows them.
+      responses:
+        '200':
+          $ref: '#/components/responses/Page'
+        '401':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/app/{app}:
+    get:
+      operationId: appPage
+      tags: [browse]
+      summary: An app's start page (framed as on the TV).
+      parameters:
+        - name: app
+          in: path
+          required: true
+          description: The app's id (`Info.apps[].id`).
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Page'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/page/{handle}:
+    get:
+      operationId: page
+      tags: [browse]
+      summary: A folder's page (`Item.page`).
+      description: |
+        Handles live in Sofa's memory (the latest few thousand): after a restart of Sofa, or long
+        after the answer that named it, a handle answers 410 `page_gone` - load the start page again.
+      parameters:
+        - $ref: '#/components/parameters/Handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Page'
+        '401':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/more/{handle}:
+    get:
+      operationId: more
+      tags: [browse]
+      summary: The next portion of a shelf (`Shelf.more`).
+      description: Each answer's `more` says whether there is another; ask with the same handle. 410 as for pages.
+      parameters:
+        - $ref: '#/components/parameters/Handle'
+      responses:
+        '200':
+          description: More items for the shelf (appended at its end).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/More'
+        '401':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/show:
+    get:
+      operationId: show
+      tags: [browse]
+      summary: A show's or channel's page by its ref (`Item.showRef`).
+      parameters:
+        - name: ref
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: title
+          in: query
+          required: false
+          description: The title to show while the source has none.
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Page'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/search:
+    get:
+      operationId: search
+      tags: [browse]
+      summary: An app's search - without `q` the household's recent searches.
+      description: A search with `q` is added to the recent searches (shared with the TV's keyboard).
+      parameters:
+        - name: app
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The results as a page, or (without `q`) the recent searches.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Page'
+                  - $ref: '#/components/schemas/RecentSearches'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
+          $ref: '#/components/responses/Error'
+  /api/v1/suggest:
+    get:
+      operationId: suggest
+      tags: [browse]
+      summary: The app's search suggestions for what is typed.
+      parameters:
+        - name: app
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Suggestions, best first (empty where the app has none).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suggestions'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/play:
+    post:
+      operationId: play
+      tags: [play]
+      summary: Play an item on this device - a stream with a capability URL.
+      description: |
+        `formats`: the codecs this client decodes in (fragmented) MP4, in its order of preference
+        (docs/api.md "Formats"). Sofa serves stored tracks as they are where the client decodes them
+        and converts the rest (H.264/AAC); an app with a session format of its own (YouTube) opens it in
+        the client's preferred codecs that it offers - the biggest picture first (up to 1080p), the
+        client's order among equal ones. Without `formats`: H.264 + AAC. iOS: `[avc1, hvc1, mp4a]`;
+        Android: what MediaCodec decodes, e.g. `[av01, vp09, avc1, opus, mp4a]`.
+
+        The stream starts at `start` (the stored position, as the TV resumes). Report the player's state
+        (`POST /stream/{stream}`). A stream ends when the client says `closed`, after 10 minutes unused,
+        4 hours after a `paused` report, when its app session ends (YouTube: 10 minutes unused, as on the
+        TV) or when the device opens a fourth: its URLs then answer 404/410 - **play the item again**
+        with `at` handled by the client (seek to the position it had). The same applies to any media
+        error after a pause.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayRequest'
+      responses:
+        '200':
+          description: The stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stream'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+  /api/v1/stream/{stream}:
+    post:
+      operationId: report
+      tags: [play]
+      summary: The player's state - saves the position (the TV's history), `closed` ends the stream.
+      description: |
+        Send it every 10 s while playing and on pause, seek, end and close. `paused` keeps the stream
+        for 4 hours (background audio, picture in picture); `ended` marks the video watched (the TV's
+        rule). Sofa forwards it to the app's view reporting (YouTube).
+      parameters:
+        - $ref: '#/components/parameters/StreamID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Report'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/state:
+    post:
+      operationId: mark
+      tags: [library]
+      summary: Marks and the download of an item - answers its state now.
+      description: |
+        Every field but `item` is optional; with none it only answers the item's state. `download: true`
+        starts (or retries) it on the TV - the answer's `message` says what the TV would toast;
+        `download: false` cancels a waiting or running one, or deletes the copy (ask first for a kept one
+        or one whose source is gone, `dl.kept`/`dl.gone`, as the TV does). `keep`: Behalten.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkRequest'
+      responses:
+        '200':
+          description: The item as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Marked'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/status:
+    get:
+      operationId: status
+      tags: [tv]
+      summary: Sofa's status - the TV's player and the downloads on their way (long poll).
+      description: |
+        Answers at once when `since` is not the current `gen` (or absent), else when something changes,
+        at the latest after 25 s (3 s while a download runs). Poll only while visible; give the request
+        a timeout of at least 40 s (OkHttp's default 10 s is too short).
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: The `gen` of the previous answer.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The status now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/tv/play:
+    post:
+      operationId: tvPlay
+      tags: [tv]
+      summary: Play an item on the TV ("Auf dem Fernseher abspielen").
+      description: |
+        Another video playing there is not replaced unasked: 409 `tv_busy` names it - ask the viewer,
+        then send again with `replace`. The same video already playing plays on (`already`). This
+        device's own streams of the item end (one player per video and person): close the player first
+        when handing a playback over, and send its position as `at`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TvPlayRequest'
+      responses:
+        '200':
+          description: Opened (or playing on) on the TV.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TvAnswer'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          description: Another video plays on the TV.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TvBusy'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/tv/control:
+    post:
+      operationId: tvControl
+      tags: [tv]
+      summary: Pause, play or stop the TV's player (stop keeps the position, as MENU does).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TvControlRequest'
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TvAnswer'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /m/{stream}/{resource}:
+    get:
+      operationId: media
+      tags: [media]
+      summary: A stream's media (capability URL from `Stream.url` and the playlists it names).
+      description: |
+        Range requests are answered (206). `resource` is whatever `Stream.url` and its playlists name
+        (it may contain slashes): HLS playlists, init and media segments, track byte ranges, a file.
+        Clients never build these paths. An ended stream answers 410 `stream_gone`: play the item again.
+        Error bodies of relayed requests may come from Sofa's local services; the status is the contract.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/StreamID'
+        - name: resource
+          in: path
+          required: true
+          x-sofa-rest: true
+          schema:
+            type: string
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Media'
+        '206':
+          $ref: '#/components/responses/Media'
+        '403':
+          $ref: '#/components/responses/MediaError'
+        '404':
+          $ref: '#/components/responses/MediaError'
+        '410':
+          $ref: '#/components/responses/MediaError'
+        '416':
+          description: The range lies beyond the end.
+        '502':
+          $ref: '#/components/responses/MediaError'
+        '503':
+          $ref: '#/components/responses/MediaError'
+        '504':
+          $ref: '#/components/responses/MediaError'
+  /m/{stream}/state:
+    post:
+      operationId: reportBeacon
+      tags: [media]
+      summary: The last report as the client goes away - the same as `POST /stream/{stream}`, no header.
+      description: For a browser's `sendBeacon` (text/plain body); the capability path is the proof.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/StreamID'
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Report'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /img/{signature}:
+    get:
+      operationId: image
+      tags: [media]
+      summary: A picture Sofa handed out (`img`, `backdrop`, ...), at about `w` pixels.
+      description: |
+        Signed by Sofa with a key kept in its data folder: the URLs stay valid across restarts and
+        updates (cache them); append `&w=<pixels>` for the size shown (64-1920, in steps of 64).
+        JPEG, or PNG where the picture has transparency (logos). Cache-Control: private, 1 day.
+      security: []
+      parameters:
+        - name: signature
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{32}$'
+        - name: u
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: w
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: The picture.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The token from `POST /pair` (64 hex digits).
+  parameters:
+    Handle:
+      name: handle
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+    StreamID:
+      name: stream
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+  responses:
+    Error:
+      description: An error - `code` to branch on, `error` to show.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Ok:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Ok'
+    Page:
+      description: A page.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Page'
+    Media:
+      description: Media - a playlist, a segment, track bytes or a file.
+      content:
+        application/vnd.apple.mpegurl:
+          schema:
+            type: string
+        video/mp4:
+          schema:
+            type: string
+            format: binary
+        audio/mp4:
+          schema:
+            type: string
+            format: binary
+        video/webm:
+          schema:
+            type: string
+            format: binary
+        audio/webm:
+          schema:
+            type: string
+            format: binary
+        video/mp2t:
+          schema:
+            type: string
+            format: binary
+        video/quicktime:
+          schema:
+            type: string
+            format: binary
+        audio/mpeg:
+          schema:
+            type: string
+            format: binary
+        text/vtt:
+          schema:
+            type: string
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+    MediaError:
+      description: The stream's media is not available - 410 `stream_gone`, play the item again.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MediaError'
+  schemas:
+    ErrorCode:
+      type: string
+      description: |
+        Stable, machine-readable reasons (src/Library/SFWebErrors.h). Never renamed or reused; new
+        ones may come within a version - treat an unknown one by its HTTP status.
+      enum:
+        - bad_request
+        - unknown_item
+        - not_video
+        - not_downloadable
+        - bad_action
+        - bad_state
+        - not_paired
+        - wrong_code
+        - drm
+        - bad_signature
+        - forbidden
+        - not_found
+        - no_search
+        - tv_idle
+        - no_picture
+        - unsupported_version
+        - method_not_allowed
+        - tv_busy
+        - no_pairing_open
+        - page_gone
+        - stream_gone
+        - not_playable
+        - encoder_busy
+        - rate_limited
+        - internal
+        - upstream
+        - not_ready
+        - timeout
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: German, for the viewer.
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+    MediaError:
+      type: object
+      description: Sofa's own error (an Error), or one a local service answered (relayed as it is).
+      properties:
+        error:
+          type: string
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          const: true
+    ApiVersions:
+      type: object
+      required: [version, min]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The newest API version this Sofa speaks.
+        min:
+          type: integer
+          minimum: 1
+          description: The oldest it still speaks - a client built for an older one asks to be updated.
+    Feature:
+      type: string
+      description: |
+        What this Sofa offers within the API version - ask for the feature. Unknown ones are ignored.
+        error-codes (`Error.code`), client-identity (`PairRequest.client`), discover (`/discover`),
+        formats (`PlayRequest.formats`, the segmenter), session-formats (the formats' order chooses an
+        app session's codecs), paused-streams (4 h after `paused`), persistent-images (picture URLs
+        survive restarts), tv (`/tv/*`), downloads (`MarkRequest.download`/`keep`), status (`/status`).
+      enum: [error-codes, client-identity, discover, formats, session-formats, paused-streams, persistent-images, tv, downloads, status]
+    Discover:
+      type: object
+      required: [name, host, port, api]
+      properties:
+        name:
+          const: Sofa
+        host:
+          type: string
+          description: The full MagicDNS name (the certificate's).
+        port:
+          type: integer
+        api:
+          $ref: '#/components/schemas/ApiVersions'
+    Hello:
+      type: object
+      required: [name, version, paired, api, features]
+      properties:
+        name:
+          const: Sofa
+        version:
+          type: string
+          description: Sofa's version (for display - ask for features, not versions).
+        paired:
+          type: boolean
+          description: The request's token is a paired device's.
+        api:
+          $ref: '#/components/schemas/ApiVersions'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/Feature'
+    Client:
+      type: object
+      description: What pairs - the TV lists it ("iOS-App 1.2").
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [web, ios, android]
+        app:
+          type: string
+          maxLength: 40
+          description: The app's name.
+        version:
+          type: string
+          maxLength: 40
+          description: The app's version as the user sees it.
+    PairRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: The six digits the TV shows (spaces are ignored).
+        name:
+          type: string
+          description: This device's name as the TV lists it (60 characters at most; default "Browser").
+        client:
+          $ref: '#/components/schemas/Client'
+    Paired:
+      type: object
+      required: [token, device, name]
+      properties:
+        token:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: The device's token - Sofa keeps only its hash.
+        device:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+        name:
+          type: string
+    App:
+      type: object
+      required: [id, name, summary, search]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        search:
+          type: boolean
+        searchPlaceholder:
+          type: string
+    Color:
+      type: string
+      pattern: '^rgba\(\d{1,3},\d{1,3},\d{1,3},[0-9.]+\)$'
+      description: A CSS color, rgba(r,g,b,a) with 0-255 and 0-1.
+    Theme:
+      type: object
+      description: A theme's design tokens (src/Framework/SFTheme.h). Colors absent = the home theme's.
+      required: [fonts, corner, light, uppercaseHeaders, headerMark]
+      properties:
+        background:
+          $ref: '#/components/schemas/Color'
+        backgroundTop:
+          $ref: '#/components/schemas/Color'
+        surface:
+          $ref: '#/components/schemas/Color'
+        text:
+          $ref: '#/components/schemas/Color'
+        textDim:
+          $ref: '#/components/schemas/Color'
+        accent:
+          $ref: '#/components/schemas/Color'
+        accentText:
+          $ref: '#/components/schemas/Color'
+        focus:
+          $ref: '#/components/schemas/Color'
+        focusText:
+          $ref: '#/components/schemas/Color'
+        progress:
+          $ref: '#/components/schemas/Color'
+        seekBar:
+          $ref: '#/components/schemas/Color'
+        wordmarkColor:
+          $ref: '#/components/schemas/Color'
+        headerMarkColor:
+          $ref: '#/components/schemas/Color'
+        fonts:
+          type: object
+          description: PostScript names (Apple's faces where the device has them, else the system font).
+          required: [regular, medium, bold, wordmark]
+          properties:
+            regular:
+              type: string
+            medium:
+              type: string
+            bold:
+              type: string
+            wordmark:
+              type: string
+        corner:
+          type: number
+          description: Tile corner radius in design units of a 1920x1080 screen.
+        light:
+          type: boolean
+        uppercaseHeaders:
+          type: boolean
+        wordmark:
+          type: string
+        logo:
+          type: string
+          description: The name of a logo of res/logos.
+        logoVariant:
+          type: integer
+        headerMark:
+          type: string
+          enum: [none, playPill, bar, dot]
+    Info:
+      type: object
+      required: [apps, themes, device, host]
+      properties:
+        apps:
+          type: array
+          items:
+            $ref: '#/components/schemas/App'
+        themes:
+          type: object
+          description: Every theme by name (`home` and every app's id).
+          additionalProperties:
+            $ref: '#/components/schemas/Theme'
+        device:
+          type: string
+          description: This device's name.
+        host:
+          type: string
+          description: The short name to show ("imac").
+    TileStyle:
+      type: string
+      enum: [landscape, circle, poster, app, wide, button]
+    Broadcast:
+      type: object
+      description: A programme of a live channel (its source's EPG).
+      required: [title, start, end]
+      properties:
+        title:
+          type: string
+        subtitle:
+          type: string
+        plot:
+          type: string
+        start:
+          type: number
+          description: Epoch seconds.
+        end:
+          type: number
+    Download:
+      type: object
+      description: The item's download on the TV, as the TV's options menu reads it.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, queued, running, done, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        kept:
+          type: boolean
+          description: Behalten.
+        gone:
+          type: boolean
+          description: No longer at its source - the copy on the TV is the only one.
+        failure:
+          type: string
+    StoredItem:
+      type: object
+      description: The item's stored dictionary - opaque, sent back unchanged.
+      required: [id]
+      properties:
+        id:
+          type: string
+      additionalProperties: true
+    Item:
+      type: object
+      description: |
+        What a tile shows. `kind` decides what a tap does: video/live play, folder opens `page` (or
+        the show page of `showRef`/`id`), action opens an app's start page or search (`open`, `arg`).
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [video, live, folder, action]
+        id:
+          type: string
+        title:
+          type: string
+        sub:
+          type: string
+          description: The subtitle line (dot-joined).
+        plot:
+          type: string
+        channel:
+          type: string
+        source:
+          type: string
+          description: The app it comes from.
+        station:
+          type: string
+          description: The broadcaster (its mark, res/logos/marks, is the tile's avatar).
+        theme:
+          type: string
+        badge:
+          type: string
+        drm:
+          const: true
+        duration:
+          type: number
+        date:
+          type: number
+          description: Epoch seconds.
+        logo:
+          type: string
+        logoVariant:
+          type: integer
+        tint:
+          type: string
+          pattern: '^#[0-9a-f]{6}$'
+        fit:
+          const: true
+        heroTitle:
+          type: string
+        heroMeta:
+          type: string
+        showRef:
+          type: string
+        style:
+          $ref: '#/components/schemas/TileStyle'
+        mark:
+          const: true
+          description: Show the app's mark on the tile (rows mixing apps).
+        img:
+          type: string
+          description: A picture path (/img/...).
+        imgFallback:
+          type: string
+        backdrop:
+          type: string
+        channelImg:
+          type: string
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        watched:
+          const: true
+        later:
+          type: boolean
+          description: In Später ansehen.
+        following:
+          type: boolean
+        chip:
+          type: string
+          description: The TV's chip ("↓ 42 %", "↓ Offline").
+        dl:
+          $ref: '#/components/schemas/Download'
+        now:
+          $ref: '#/components/schemas/Broadcast'
+        next:
+          $ref: '#/components/schemas/Broadcast'
+        page:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: The handle of the folder's page (`GET /page/{handle}`).
+        open:
+          type: string
+          enum: [app, search]
+        arg:
+          type: string
+        d:
+          $ref: '#/components/schemas/StoredItem'
+    Shelf:
+      type: object
+      required: [layout, style, items]
+      properties:
+        title:
+          type: string
+        layout:
+          type: string
+          enum: [rail, grid]
+        style:
+          $ref: '#/components/schemas/TileStyle'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        more:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: More items to append (`GET /more/{handle}`) when the viewer nears the end.
+        focus:
+          type: integer
+          description: The tile the TV focuses first.
+    Page:
+      type: object
+      required: [shelves]
+      properties:
+        title:
+          type: string
+        subtitle:
+          type: string
+        theme:
+          type: string
+        backdrop:
+          type: string
+        empty:
+          type: string
+          description: What to say when it has no shelves.
+        shelves:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shelf'
+    More:
+      type: object
+      required: [items, more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        more:
+          type: boolean
+    RecentSearches:
+      type: object
+      required: [recent]
+      properties:
+        recent:
+          type: array
+          items:
+            type: string
+    Suggestions:
+      type: object
+      required: [list]
+      properties:
+        list:
+          type: array
+          items:
+            type: string
+    Codec:
+      type: string
+      description: A sample entry name, as in an MP4 / the HLS CODECS attribute.
+      enum: [avc1, hvc1, vp09, av01, mp4a, opus]
+    PlayRequest:
+      type: object
+      required: [item]
+      properties:
+        item:
+          $ref: '#/components/schemas/StoredItem'
+        formats:
+          type: array
+          description: The codecs this client decodes in MP4, its preferred first.
+          items:
+            $ref: '#/components/schemas/Codec'
+    Stream:
+      type: object
+      required: [stream, kind, url, start, duration, live, title]
+      properties:
+        stream:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+        kind:
+          type: string
+          enum: [hls, file]
+          description: hls - an HLS playlist (fMP4); file - one file with Range.
+        url:
+          type: string
+          description: The capability path to open (/m/<stream>/...).
+        start:
+          type: number
+          description: Where to start (s) - the stored position, as the TV resumes.
+        duration:
+          type: number
+          description: Seconds; 0 = not known (lives).
+        live:
+          type: boolean
+        title:
+          type: string
+        segmented:
+          type: string
+          description: What the segmenter does (diagnostics) - "copy+copy", "h264_videotoolbox+aac", ...
+    Report:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [playing, paused, buffering, ended, closed]
+        position:
+          type: number
+          minimum: 0
+        duration:
+          type: number
+          minimum: 0
+        lactMs:
+          type: number
+          description: Milliseconds since the viewer's last action (YouTube's view reporting).
+    MarkRequest:
+      type: object
+      required: [item]
+      properties:
+        item:
+          $ref: '#/components/schemas/StoredItem'
+        later:
+          type: boolean
+        watched:
+          type: boolean
+        follow:
+          type: boolean
+        forget:
+          type: boolean
+          description: Out of Weiterschauen.
+        download:
+          type: boolean
+        keep:
+          type: boolean
+    Marked:
+      type: object
+      required: [item]
+      properties:
+        item:
+          anyOf:
+            - $ref: '#/components/schemas/Item'
+            - type: object
+              maxProperties: 0
+        message:
+          type: string
+          description: A started download - what the TV would toast.
+    TvState:
+      type: object
+      required: [item, state, position, duration, live]
+      properties:
+        item:
+          $ref: '#/components/schemas/Item'
+        state:
+          type: string
+          enum: [playing, paused, buffering, ended, failed]
+        position:
+          type: number
+        duration:
+          type: number
+        live:
+          type: boolean
+    Status:
+      type: object
+      required: [gen, tv, downloads]
+      properties:
+        gen:
+          type: string
+          description: Send it back as `since`.
+        tv:
+          description: What the TV's player shows; null = nothing.
+          anyOf:
+            - $ref: '#/components/schemas/TvState'
+            - type: 'null'
+        downloads:
+          type: array
+          description: The downloads on their way (queued, running, failed), as items with `dl`.
+          items:
+            $ref: '#/components/schemas/Item'
+    TvPlayRequest:
+      type: object
+      required: [item]
+      properties:
+        item:
+          $ref: '#/components/schemas/StoredItem'
+        fromStart:
+          type: boolean
+        at:
+          type: number
+          minimum: 0
+          description: Seconds - a playback handed over from this device.
+        replace:
+          type: boolean
+          description: Replace another video playing on the TV (after asking the viewer).
+    TvAnswer:
+      type: object
+      required: [tv]
+      properties:
+        tv:
+          anyOf:
+            - $ref: '#/components/schemas/TvState'
+            - type: 'null'
+        already:
+          const: true
+          description: The video already played on the TV - it plays on.
+    TvBusy:
+      type: object
+      required: [error, code, busy]
+      properties:
+        error:
+          type: string
+        code:
+          const: tv_busy
+        busy:
+          type: object
+          required: [title]
+          properties:
+            title:
+              type: string
+    TvControlRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [play, pause, stop]

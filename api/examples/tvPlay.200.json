@@ -1,0 +1,38 @@
+{
+  "tv": {
+    "duration": 60,
+    "item": {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:3",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:3",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Mandelbrot",
+        "views": 3000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:3",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "title": "Mandelbrot"
+    },
+    "live": false,
+    "position": 12,
+    "state": "playing"
+  }
+}

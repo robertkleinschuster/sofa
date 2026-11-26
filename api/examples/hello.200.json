@@ -1,0 +1,21 @@
+{
+  "api": {
+    "min": 1,
+    "version": 1
+  },
+  "features": [
+    "error-codes",
+    "client-identity",
+    "discover",
+    "formats",
+    "session-formats",
+    "paused-streams",
+    "persistent-images",
+    "tv",
+    "downloads",
+    "status"
+  ],
+  "name": "Sofa",
+  "paired": false,
+  "version": "0.0.0"
+}

@@ -1,0 +1,66 @@
+{
+  "apps": [
+    {
+      "id": "example",
+      "name": "Beispiel",
+      "search": true,
+      "summary": "Vorlage für neue Apps"
+    }
+  ],
+  "device": "iPhone von Test",
+  "host": "sofa",
+  "themes": {
+    "example": {
+      "accent": "rgba(148,113,255,1)",
+      "accentText": "rgba(15,11,23,1)",
+      "background": "rgba(15,11,23,1)",
+      "backgroundTop": "rgba(31,21,57,1)",
+      "corner": 10,
+      "focus": "rgba(148,113,255,1)",
+      "focusText": "rgba(15,11,23,1)",
+      "fonts": {
+        "bold": "HelveticaNeue-Bold",
+        "medium": "HelveticaNeue-Medium",
+        "regular": "HelveticaNeue",
+        "wordmark": "HelveticaNeue-Bold"
+      },
+      "headerMark": "dot",
+      "headerMarkColor": "rgba(148,113,255,1)",
+      "light": false,
+      "progress": "rgba(148,113,255,1)",
+      "seekBar": "rgba(148,113,255,1)",
+      "surface": "rgba(27,29,34,1)",
+      "text": "rgba(241,242,245,1)",
+      "textDim": "rgba(241,242,245,0.6)",
+      "uppercaseHeaders": false,
+      "wordmark": "Beispiel",
+      "wordmarkColor": "rgba(241,242,245,1)"
+    },
+    "home": {
+      "accent": "rgba(255,255,255,1)",
+      "accentText": "rgba(14,14,14,1)",
+      "background": "rgba(12,13,16,1)",
+      "backgroundTop": "rgba(26,31,44,1)",
+      "corner": 18,
+      "focus": "rgba(255,255,255,1)",
+      "focusText": "rgba(14,14,14,1)",
+      "fonts": {
+        "bold": "AvenirNext-DemiBold",
+        "medium": "AvenirNext-Medium",
+        "regular": "AvenirNext-Regular",
+        "wordmark": "AvenirNext-DemiBold"
+      },
+      "headerMark": "none",
+      "headerMarkColor": "rgba(255,255,255,1)",
+      "light": false,
+      "progress": "rgba(255,255,255,1)",
+      "seekBar": "rgba(255,255,255,1)",
+      "surface": "rgba(27,29,34,1)",
+      "text": "rgba(241,242,245,1)",
+      "textDim": "rgba(241,242,245,0.6)",
+      "uppercaseHeaders": false,
+      "wordmark": "Sofa",
+      "wordmarkColor": "rgba(241,242,245,1)"
+    }
+  }
+}

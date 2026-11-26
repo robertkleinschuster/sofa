@@ -1,0 +1,253 @@
+{
+  "items": [
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more8",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:1",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 9",
+        "views": 1000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more8",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 9"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more9",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:2",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 10",
+        "views": 2000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more9",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 10"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more10",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:3",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 11",
+        "views": 3000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more10",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 11"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more11",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:4",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 12",
+        "views": 4000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more11",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 12"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more12",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:1",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 13",
+        "views": 1000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more12",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 13"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more13",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:2",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 14",
+        "views": 2000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more13",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 14"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more14",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:3",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 15",
+        "views": 3000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more14",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 15"
+    },
+    {
+      "channel": "Beispielsendung",
+      "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+      "d": {
+        "channel": "Beispielsendung",
+        "channelImage": "https://example.invalid/channel.jpg",
+        "duration": 60,
+        "id": "example:more15",
+        "image": "/tmp/sofa-api/media/picture.png",
+        "kind": 0,
+        "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+        "ref": "example:4",
+        "showRef": "exampleshow:demo",
+        "source": "example",
+        "title": "Weiteres Video 16",
+        "views": 4000
+      },
+      "dl": {
+        "state": "none"
+      },
+      "duration": 60,
+      "id": "example:more15",
+      "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+      "kind": "video",
+      "later": false,
+      "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+      "showRef": "exampleshow:demo",
+      "source": "example",
+      "theme": "example",
+      "title": "Weiteres Video 16"
+    }
+  ],
+  "more": false
+}

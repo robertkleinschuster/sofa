@@ -1,0 +1,7 @@
+{
+  "busy": {
+    "title": "Mandelbrot"
+  },
+  "code": "tv_busy",
+  "error": "Am Fernseher läuft gerade „Mandelbrot“."
+}

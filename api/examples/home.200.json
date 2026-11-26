@@ -1,0 +1,310 @@
+{
+  "shelves": [
+    {
+      "items": [
+        {
+          "arg": "example",
+          "id": "app:example",
+          "kind": "action",
+          "logo": "example",
+          "logoVariant": 0,
+          "open": "app",
+          "plot": "Vorlage für neue Apps",
+          "style": "app",
+          "theme": "example",
+          "tint": "#482997",
+          "title": "Beispiel"
+        },
+        {
+          "d": {
+            "id": "downloads:",
+            "kind": 2,
+            "plot": "Heruntergeladene Videos – auch ohne Internet. Sofa löscht nie selbst etwas: Videos können von YouTube und aus den Mediatheken verschwinden.",
+            "subtitle": "12 MB belegt · 100 GB frei",
+            "title": "Downloads"
+          },
+          "id": "downloads:",
+          "kind": "folder",
+          "page": "<handle>",
+          "plot": "Heruntergeladene Videos – auch ohne Internet. Sofa löscht nie selbst etwas: Videos können von YouTube und aus den Mediatheken verschwinden.",
+          "style": "app",
+          "sub": "12 MB belegt · 100 GB frei",
+          "theme": "home",
+          "tint": "#212f3f",
+          "title": "Downloads"
+        },
+        {
+          "d": {
+            "id": "history:",
+            "kind": 2,
+            "plot": "Alles, was du zuletzt abgespielt hast – aus allen Apps, nach Tagen sortiert. So findest du Videos schnell wieder.",
+            "subtitle": "Zuletzt angesehen",
+            "title": "Verlauf"
+          },
+          "id": "history:",
+          "kind": "folder",
+          "page": "<handle>",
+          "plot": "Alles, was du zuletzt abgespielt hast – aus allen Apps, nach Tagen sortiert. So findest du Videos schnell wieder.",
+          "style": "app",
+          "sub": "Zuletzt angesehen",
+          "theme": "home",
+          "tint": "#28384b",
+          "title": "Verlauf"
+        }
+      ],
+      "layout": "rail",
+      "style": "app"
+    },
+    {
+      "items": [
+        {
+          "badge": "LIVE",
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "id": "example:live1",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 1,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:live1",
+            "schedule": [
+              {
+                "end": 1800003600,
+                "plot": "Was gerade läuft – aus dem Programm der Quelle.",
+                "start": 1800000000,
+                "title": "Testsendung"
+              },
+              {
+                "end": 1800003600,
+                "start": 1800000000,
+                "title": "Nächste Sendung"
+              }
+            ],
+            "source": "example",
+            "title": "Testkanal"
+          },
+          "id": "example:live1",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "live",
+          "mark": true,
+          "next": {
+            "end": 1800003600,
+            "start": 1800000000,
+            "title": "Nächste Sendung"
+          },
+          "now": {
+            "end": 1800003600,
+            "plot": "Was gerade läuft – aus dem Programm der Quelle.",
+            "start": 1800000000,
+            "title": "Testsendung"
+          },
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "source": "example",
+          "theme": "example",
+          "title": "Testkanal"
+        },
+        {
+          "badge": "LIVE",
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "geo": "XX",
+            "id": "example:live3",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 1,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:live3",
+            "schedule": [
+              {
+                "end": 1800003600,
+                "plot": "Was gerade läuft – aus dem Programm der Quelle.",
+                "start": 1800000000,
+                "title": "Testsendung"
+              },
+              {
+                "end": 1800003600,
+                "start": 1800000000,
+                "title": "Nächste Sendung"
+              }
+            ],
+            "source": "example",
+            "title": "Testkanal XX"
+          },
+          "id": "example:live3",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "live",
+          "mark": true,
+          "next": {
+            "end": 1800003600,
+            "start": 1800000000,
+            "title": "Nächste Sendung"
+          },
+          "now": {
+            "end": 1800003600,
+            "plot": "Was gerade läuft – aus dem Programm der Quelle.",
+            "start": 1800000000,
+            "title": "Testsendung"
+          },
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "source": "example",
+          "theme": "example",
+          "title": "Testkanal XX"
+        }
+      ],
+      "layout": "rail",
+      "style": "landscape",
+      "title": "Jetzt live"
+    },
+    {
+      "items": [
+        {
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "date": 1800000000,
+            "duration": 60,
+            "id": "example:4",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 0,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:4",
+            "showRef": "exampleshow:demo",
+            "source": "example",
+            "title": "Leben",
+            "views": 4000
+          },
+          "date": 1800000000,
+          "dl": {
+            "state": "none"
+          },
+          "duration": 60,
+          "id": "example:4",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "video",
+          "later": false,
+          "mark": true,
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "showRef": "exampleshow:demo",
+          "source": "example",
+          "theme": "example",
+          "title": "Leben"
+        },
+        {
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "date": 1800000000,
+            "duration": 60,
+            "id": "example:3",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 0,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:3",
+            "showRef": "exampleshow:demo",
+            "source": "example",
+            "title": "Mandelbrot",
+            "views": 3000
+          },
+          "date": 1800000000,
+          "dl": {
+            "state": "none"
+          },
+          "duration": 60,
+          "id": "example:3",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "video",
+          "later": false,
+          "mark": true,
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "showRef": "exampleshow:demo",
+          "source": "example",
+          "theme": "example",
+          "title": "Mandelbrot"
+        }
+      ],
+      "layout": "rail",
+      "style": "landscape",
+      "title": "Nachrichten"
+    },
+    {
+      "items": [
+        {
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "duration": 60,
+            "id": "example:1",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 0,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:1",
+            "showRef": "exampleshow:demo",
+            "source": "example",
+            "title": "Testbild",
+            "views": 1000
+          },
+          "dl": {
+            "state": "none"
+          },
+          "duration": 60,
+          "id": "example:1",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "video",
+          "later": false,
+          "mark": true,
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "showRef": "exampleshow:demo",
+          "source": "example",
+          "theme": "example",
+          "title": "Testbild"
+        },
+        {
+          "channel": "Beispielsendung",
+          "channelImg": "/img/<signature>?u=https%3A%2F%2Fexample.invalid%2Fchannel.jpg",
+          "d": {
+            "channel": "Beispielsendung",
+            "channelImage": "https://example.invalid/channel.jpg",
+            "duration": 60,
+            "id": "example:2",
+            "image": "/tmp/sofa-api/media/picture.png",
+            "kind": 0,
+            "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+            "ref": "example:2",
+            "showRef": "exampleshow:demo",
+            "source": "example",
+            "title": "Farbbalken",
+            "views": 2000
+          },
+          "dl": {
+            "state": "none"
+          },
+          "duration": 60,
+          "id": "example:2",
+          "img": "/img/<signature>?u=%2Ftmp%2Fsofa-api%2Fmedia%2Fpicture.png",
+          "kind": "video",
+          "later": false,
+          "mark": true,
+          "plot": "Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).",
+          "showRef": "exampleshow:demo",
+          "source": "example",
+          "theme": "example",
+          "title": "Farbbalken"
+        }
+      ],
+      "layout": "rail",
+      "style": "landscape",
+      "title": "Highlights"
+    }
+  ],
+  "theme": "home"
+}

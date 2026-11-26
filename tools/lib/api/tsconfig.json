@@ -1,0 +1,25 @@
+{
+  // Type checking only (tools/test-api): node runs these .ts files directly (type stripping), nothing
+  // is emitted. Same rules as res/sofa-yt; the types of node come from its dev install
+  // (build/vendor/sofa-yt-dev, tools/fetch-sofa-yt --dev).
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "typeRoots": ["../../../build/vendor/sofa-yt-dev/node_modules/@types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

@@ -1,0 +1,9 @@
+{
+  "duration": 4,
+  "kind": "hls",
+  "live": false,
+  "start": 0,
+  "stream": "<stream>",
+  "title": "Testbild",
+  "url": "/m/<stream>/index.m3u8"
+}
