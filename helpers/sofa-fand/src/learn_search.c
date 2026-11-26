@@ -8,7 +8,17 @@
 // is validated in that mode). The step is taken only if it lowers the cost by >= 2 % (and 0.05),
 // a cooler step lowers the temperature penalty, a quieter or mixed one (a quieter move with a
 // compensating cooler one) the noise.
-// For the report, the same descent then runs without the box or the limit: where it is heading.
+// The same descent then runs without the box (still at most MAX_CHANGES parameters): where the
+// search is heading. A fan curve acts only once its start crosses the temperature the sensor
+// reaches, so a better point can lie further than one night's box with nothing gained on the way
+// (a dead zone: e.g. a curve that must move 3.5 C before its fan starts at all). If tonight's box
+// holds no step but that target passes every check of a step, the step is the first leg of the
+// way there: every parameter moves toward the target by at most tonight's box, cooler moves first
+// (quieter ones were chosen with the cooler ones in place and wait until those have arrived). Every
+// leg must pass the same safety checks as a step; tonight's leg must lie in its own direction (a
+// cooler leg must not raise the temperature penalty, a quieter or mixed one must lower the noise),
+// since the trial judges it alone. Nothing is stored: each night plans again from fresh data, so
+// the next leg is usually an ordinary step inside the box.
 #include "learn.h"
 #include <math.h>
 #include <string.h>
@@ -16,6 +26,9 @@
 typedef struct { int fan, k, prof; double lo, hi; char key[24]; } par_t;   // prof >= 0: profile base, else curve shift
 #define MAX_PAR (MAX_FANS * MAX_CURVES + P_COUNT)
 #define MAX_CHANGES 3      // parameters one step may move (a rolled-back step blocks each of them)
+#define BOX_CURVE   2.0    // tonight's box: how far a curve shift may move in one step (C)
+#define BOX_PROF    1.0    // ... a profile base shift
+#define MAX_NIGHTS  16     // a longer way is not planned (= 2 x MAX_SHIFT / BOX_PROF, the longest there is)
 
 static double get(const cfg_t *c, const par_t *p) { return p->prof >= 0 ? c->prof[p->prof].base : c->fan[p->fan].curves[p->k].shift; }
 static void set(cfg_t *c, const par_t *p, double v) { if (p->prof >= 0) c->prof[p->prof].base = v; else c->fan[p->fan].curves[p->k].shift = v; }
@@ -106,6 +119,54 @@ static void report_results(FILE *rep, const char *title, const cfg_t *c, const m
   }
 }
 
+static double box_of(const par_t *p) { return p->prof >= 0 ? BOX_PROF : BOX_CURVE; }
+static int same(const cfg_t *a, const cfg_t *b, const par_t *ps, int np) {
+  for (int i = 0; i < np; i++) if (fabs(get(a, &ps[i]) - get(b, &ps[i])) > 1e-9) return 0;
+  return 1;
+}
+
+// the next leg from `from` toward `to`: each parameter by at most its box; quieter moves (relative
+// to the current configuration) wait while a cooler one still needs more than this leg
+static void leg(cfg_t *out, const cfg_t *from, const cfg_t *to, const cfg_t *cur, const par_t *ps, int np) {
+  int cooler_left = 0;
+  for (int i = 0; i < np; i++) { double a = get(from, &ps[i]), b = get(to, &ps[i]); if (b < get(cur, &ps[i]) - 1e-9 && fabs(b - a) > box_of(&ps[i]) + 1e-9) cooler_left = 1; }
+  *out = *from;
+  for (int i = 0; i < np; i++) {
+    double a = get(from, &ps[i]), b = get(to, &ps[i]), bx = box_of(&ps[i]);
+    if (fabs(b - a) < 1e-9 || (cooler_left && b > get(cur, &ps[i]))) continue;
+    set(out, &ps[i], a + fmax(-bx, fmin(bx, b - a)));
+  }
+}
+
+// a change from cur to c in words (text, keys, kind); returns its direction: bit 1 quieter, bit 2 cooler
+static int describe(step_t *st, const cfg_t *cur, const cfg_t *c, const par_t *ps, int np) {
+  size_t o = 0, ko = 0; int quieter = 0, cooler = 0;
+  st->text[0] = st->keys[0] = 0;
+  for (int i = 0; i < np; i++) {
+    double a = get(cur, &ps[i]), b = get(c, &ps[i]);
+    if (fabs(a - b) < 1e-9) continue;
+    if (b > a) quieter = 1; else cooler = 1;
+    int w = ps[i].prof >= 0
+      ? snprintf(st->text + o, sizeof st->text - o, "%sprofile %s %+.1f -> %+.1f", o ? "; " : "", prof_name[ps[i].prof], a, b)
+      : snprintf(st->text + o, sizeof st->text - o, "%sfan %d %s curve shift %+.1f -> %+.1f", o ? "; " : "", ps[i].fan, cur->sens[cur->fan[ps[i].fan].curves[ps[i].k].sensor].key, a, b);
+    if (w > 0 && (size_t)w < sizeof st->text - o) o += (size_t)w;
+    w = snprintf(st->keys + ko, sizeof st->keys - ko, "%s%s/%c", ko ? " " : "", ps[i].key, b > a ? '+' : '-');
+    if (w > 0 && (size_t)w < sizeof st->keys - ko) ko += (size_t)w;
+  }
+  snprintf(st->kind, sizeof st->kind, "%s", quieter && cooler ? "mixed" : quieter ? "quieter" : "cooler");
+  return quieter | cooler << 1;
+}
+
+// would the change from (z0, p0) to (z1, p1) be a step? NULL if so, else why not
+static const char *refuse(int dir, double z0, double p0, double z1, double p1) {
+  if (z0 - z1 < fmax(0.02 * z0, 0.05)) return "gain";
+  // the gain must come from the part the step is about - else it is a simulation artefact
+  // (hysteresis paths), not a reason to change the fans
+  if (dir == 2 && p1 > p0 - 0.01) return "cooler but does not lower the temperature penalty";
+  if ((dir & 1) && z1 - p1 > z0 - p0 - 0.01) return "quieter but does not lower the noise";
+  return NULL;
+}
+
 void search_step(step_t *st, const cfg_t *cur, const cfg_t *ref, const model_t *m, const scen_t *sc, int nsc, FILE *rep) {
   memset(st, 0, sizeof *st);
   st->eff = *cur;
@@ -119,39 +180,53 @@ void search_step(step_t *st, const cfg_t *cur, const cfg_t *ref, const model_t *
     report_results(rep, "Current configuration, simulated", cur, m, sc, nsc);
   }
   cfg_t c = *cur; double z = st->cost_now;
-  descend(&x, &c, &z, ps, np, 2.0, 1.0, cur, quiet_ok, MAX_CHANGES);
+  descend(&x, &c, &z, ps, np, BOX_CURVE, BOX_PROF, cur, quiet_ok, MAX_CHANGES);
   st->eff = c; st->cost_step = cost(&c, m, sc, nsc, NULL, &st->pen_step);
-  // the step in words
-  size_t o = 0, ko = 0; int quieter = 0, cooler = 0;
-  for (int i = 0; i < np; i++) {
-    double a = get(cur, &ps[i]), b = get(&c, &ps[i]);
-    if (fabs(a - b) < 1e-9) continue;
-    if (b > a) quieter = 1; else cooler = 1;
-    int w = ps[i].prof >= 0
-      ? snprintf(st->text + o, sizeof st->text - o, "%sprofile %s %+.1f -> %+.1f", o ? "; " : "", prof_name[ps[i].prof], a, b)
-      : snprintf(st->text + o, sizeof st->text - o, "%sfan %d %s curve shift %+.1f -> %+.1f", o ? "; " : "", ps[i].fan, cur->sens[cur->fan[ps[i].fan].curves[ps[i].k].sensor].key, a, b);
-    if (w > 0 && (size_t)w < sizeof st->text - o) o += (size_t)w;
-    w = snprintf(st->keys + ko, sizeof st->keys - ko, "%s%s/%c", ko ? " " : "", ps[i].key, b > a ? '+' : '-');
-    if (w > 0 && (size_t)w < sizeof st->keys - ko) ko += (size_t)w;
+  int dir = describe(st, cur, &c, ps, np);
+  const char *no = dir ? refuse(dir, st->cost_now, st->pen_now, st->cost_step, st->pen_step) : "none";
+  // where it is heading: the same descent from the current configuration without the box
+  cfg_t far = *cur; double zf = st->cost_now, pf;
+  descend(&x, &far, &zf, ps, np, 2 * MAX_SHIFT, 2 * MAX_SHIFT, cur, quiet_ok, MAX_CHANGES);
+  st->cost_best = cost(&far, m, sc, nsc, NULL, &pf);
+  step_t fs; int fdir = describe(&fs, cur, &far, ps, np);
+  const char *fno = fdir ? refuse(fdir, st->cost_now, st->pen_now, st->cost_best, pf) : "none";
+  // the way there in legs of tonight's box, each checked like a step
+  int nights = 0; const char *blocked = NULL; cfg_t first = *cur;
+  for (cfg_t p = *cur; fdir && !same(&p, &far, ps, np); nights++) {
+    if (nights == MAX_NIGHTS) { blocked = "too many nights"; break; }
+    cfg_t q; leg(&q, &p, &far, cur, ps, np);
+    if (!isfinite(eval(&x, &q))) { blocked = "a leg breaks a safety rule or pushes a sensor over its target"; break; }
+    if (!nights) first = q;
+    p = q;
   }
-  snprintf(st->kind, sizeof st->kind, "%s", quieter && cooler ? "mixed" : quieter ? "quieter" : "cooler");
-  // where it is heading (report only)
-  cfg_t far = c; double zf = z;
-  descend(&x, &far, &zf, ps, np, 2 * MAX_SHIFT, 2 * MAX_SHIFT, cur, quiet_ok, np);
-  st->cost_best = zf;
   if (rep) {
-    if (o) report_results(rep, "With the step", &c, m, sc, nsc);
-    fprintf(rep, "\nWithout tonight's limits the search would go to cost %.2f:", zf);
+    if (dir) report_results(rep, "With the best step inside tonight's box", &c, m, sc, nsc);
+    fprintf(rep, "\nWithout tonight's box (at most %d parameters) the search would go to cost %.2f:", MAX_CHANGES, st->cost_best);
     int any = 0;
-    for (int i = 0; i < np; i++) { double a = get(cur, &ps[i]), b = get(&far, &ps[i]); if (fabs(a - b) > 1e-9) { fprintf(rep, "%s %s %+.1f", any ? "," : "", ps[i].key, b); any = 1; } }
+    for (int i = 0; i < np; i++) { double a0 = get(cur, &ps[i]), b0 = get(&far, &ps[i]); if (fabs(a0 - b0) > 1e-9) { fprintf(rep, "%s %s %+.1f", any ? "," : "", ps[i].key, b0); any = 1; } }
+    if (any) fprintf(rep, "; %d night%s away%s%s", nights, nights == 1 ? "" : "s", blocked ? ", way blocked: " : "", blocked ? blocked : "");
     fprintf(rep, "%s (%d simulations).\n", any ? "" : " nowhere else", x.evals);
   }
-  if (!o) { snprintf(st->why, sizeof st->why, "no step lowers the cost (%.2f)%s%s", st->cost_now, quiet_ok ? "" : "; quieter moves not allowed: ", quiet_ok ? "" : why); return; }
-  double gain = st->cost_now - st->cost_step;
-  if (gain < fmax(0.02 * st->cost_now, 0.05)) { snprintf(st->why, sizeof st->why, "best step (%s) gains only %.3f of %.2f", st->text, gain, st->cost_now); return; }
-  // the gain must come from the part the step is about - else it is a simulation artefact
-  // (hysteresis paths), not a reason to change the fans
-  if (cooler && !quieter && st->pen_step > st->pen_now - 0.01) { snprintf(st->why, sizeof st->why, "best step (%s) is cooler but does not lower the temperature penalty (%.2f -> %.2f)", st->text, st->pen_now, st->pen_step); return; }
-  if (quieter && st->cost_step - st->pen_step > st->cost_now - st->pen_now - 0.01) { snprintf(st->why, sizeof st->why, "best step (%s) is quieter but does not lower the noise", st->text); return; }
-  st->ok = 1;
+  if (!no) { st->ok = 1; return; }
+  // no step inside the box: the first leg toward the target, if the target is a step itself
+  if (!fno && !blocked && nights >= 1) {
+    double zl, pl; zl = cost(&first, m, sc, nsc, NULL, &pl);
+    step_t ls; int ldir = describe(&ls, cur, &first, ps, np);
+    const char *lno = ldir == 2 ? (pl > st->pen_now + 0.01 ? "raises the temperature penalty" : NULL)
+                                : (zl - pl > st->cost_now - st->pen_now - 0.01 ? "does not lower the noise" : NULL);
+    if (rep) {
+      report_results(rep, "With the first leg toward it", &first, m, sc, nsc);
+      if (lno) fprintf(rep, "\nThat leg (%s) %s: not taken.\n", ls.text, lno);
+    }
+    if (!lno) {
+      *st = (step_t){ .ok = 1, .eff = first, .cost_now = st->cost_now, .cost_step = zl, .cost_best = st->cost_best, .pen_now = st->pen_now, .pen_step = pl };
+      snprintf(st->kind, sizeof st->kind, "%s", ls.kind); snprintf(st->keys, sizeof st->keys, "%s", ls.keys);
+      snprintf(st->text, sizeof st->text, "%s - leg 1 of %d toward cost %.2f (%s)", ls.text, nights, st->cost_best, fs.text);
+      return;
+    }
+  }
+  if (!dir) { snprintf(st->why, sizeof st->why, "no step lowers the cost (%.2f)%s%s", st->cost_now, quiet_ok ? "" : "; quieter moves not allowed: ", quiet_ok ? "" : why); return; }
+  if (!strcmp(no, "gain")) snprintf(st->why, sizeof st->why, "best step (%s) gains only %.3f of %.2f", st->text, st->cost_now - st->cost_step, st->cost_now);
+  else snprintf(st->why, sizeof st->why, "best step (%s) is %s (%.2f/%.2f -> %.2f/%.2f)", st->text, no, st->cost_now - st->pen_now, st->pen_now, st->cost_step - st->pen_step, st->pen_step);
+  st->eff = *cur;
 }

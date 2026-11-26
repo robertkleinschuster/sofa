@@ -318,6 +318,21 @@ identification intervals (`tests.csv`) into this directory.
    gain comes from its own part (a cooler step lowers the penalty, a quieter or mixed one the
    noise) - gains from hysteresis paths in the simulation are not a reason to touch the fans.
    Applied through `apply` and put on trial.
+   **Ways longer than one night.** A fan curve acts only once its start crosses the temperature
+   its sensor reaches, so a better point can lie beyond one night's box with nothing gained on
+   the way. The same descent therefore also runs without the box (still ≤ 3 parameters): where the
+   search is heading. If the box holds no step but that target passes every check of a step, the
+   step is the first leg of the way there - each parameter moves toward it by at most the box,
+   cooler moves first (quieter ones were chosen with the cooler ones in place and wait until those
+   have arrived); every leg must pass the step's safety checks, and tonight's leg must lie in its
+   own direction (a cooler leg must not raise the penalty, a quieter one must lower the noise),
+   since the trial judges it alone. No plan is stored: the next night plans again from fresh data,
+   and the next leg is usually an ordinary step inside the box. First case (2026-11-26): the HDD
+   sat over its 45 °C target under load (simulated 45.8 / 46.4 °C, penalty 12.9 of cost 42.1), the
+   HDD fan's curve starts at 48.5; shifting it −2 changes nothing under load (the drive peaks below
+   46.5) and only costs noise in the warm room, −2.5 already gains 8 %, −3.5 removes the penalty
+   (cost 31.2; with the CPU fan's Tp2H curve +3 then 29.1). The box search stopped at "no step"
+   every night; now it takes HDD −2 as leg 1 of 3.
 6. **Identification** (afterwards, ~75 min): while Sofa rests, the daemon runs one block of steps
    through its own `IDENT` command - base, each fan alone at 1.6 × Apple's minimum, all fans at
    their lowest stable speed, 15 min each - with every safety rule of the controller (limits,
@@ -328,7 +343,8 @@ identification intervals (`tests.csv`) into this directory.
 (any user). `make test` also checks the learner against data from a known law
 (`tools/test-learn.sh`: the right fan per sensor group, free-run error < 0.3 °C, the die sensors'
 instant offsets found and none given to a board sensor, the fan-air terms found for a sensor in a
-warm stream and none given to the others).
+warm stream and none given to the others, and a dead zone - a fan that must move further than
+one night's box before it acts - answered with the first leg of the way instead of no step).
 
 ## Another Mac
 

@@ -6,7 +6,10 @@
 # learner must give it fan-air terms and its free-run error must stay small; sensors without warm air
 # must not get them. The fitted model must name that fan as the one that matters, its
 # free-run error must stay small, `init` must produce a reference that parses, and a dry run must
-# change nothing. Needs the SMC (power/ambient key names, sensor existence), no root.
+# change nothing. A dead zone: with the drive sensors' targets at 42 (they sit at ~43) and only the
+# HDD fan's curves (start 48.5) for them, nothing inside one night's box (2 C) acts at all; the
+# search must take the first leg of the way (HDD fan curves -2) instead of no step.
+# Needs the SMC (power/ambient key names, sensor existence), no root.
 set -u
 B=${B:-./sofa-fand}; C=${C:-sofa-fand.conf}
 T=$(mktemp -d /tmp/sofa-fand-learn.XXXXXX); trap 'rm -rf "$T"' EXIT
@@ -65,4 +68,8 @@ a=$(fanair Tp3H); awk -v a="$a" 'BEGIN { exit !(a != "-" && a > 1) }' && ok "Tp3
 for s in TPCD HDD TS0P TG0D; do a=$(fanair $s); [ "$a" = "-" ] && ok "$s: no fan air" || fail "$s: fan air '$a', want none"; done
 grep -q "quieter moves allowed" "$T/report.md" && ok "validated model allows quieter moves" || fail "quieter moves not allowed: $(grep 'quieter moves' "$T/report.md")"
 grep -q "^## Step" "$T/report.md" && ok "search reports a step decision" || fail "no step section"
+sed -e 's/^sensor TS0P .*/sensor TS0P trip 60 warn 56 target 42/' -e 's/^sensor HDD .*/sensor HDD  trip 60 warn 56 target 42/' -e '/^curve 0 HDD/d' $C > "$T/dead.conf"
+$B learn -n -d "$T/data" -c "$T/dead.conf" --no-ident > "$T/dead.md" 2>&1 || fail "learn -n (dead zone) failed"
+s=$(sed -n '/^## Step/,$p' "$T/dead.md" | grep -m1 "curve\|None")
+echo "$s" | grep -q "fan 1 HDD curve shift +0.0 -> -2.0.*leg 1 of .* (cooler)" && ok "dead zone: first leg taken (${s%% - leg*})" || fail "dead zone: want the first leg fan 1 HDD -2.0, got: $s"
 [ $fails = 0 ] && echo "==> all ok" || { echo "==> $fails failed"; exit 1; }
