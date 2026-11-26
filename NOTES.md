@@ -327,6 +327,23 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   VideoToolbox on 10.9: no colour tags, no forced keyframes (constant-rate frames and its exact key
   interval instead), its clock from 0 per job, >= 640 px.
 
+- 2026-11-26: **The web API made ready for native iOS and Android apps** (user; docs/api.md). One
+  contract, `api/openapi.yaml` (OpenAPI 3.1), written first and checked by `tools/test-api` (in
+  test-all) against a dev instance: every operation, request and answer validated with a strict
+  validator of our own (strict TypeScript, no packages, objects closed during the test), scrubbed
+  answers recorded into `api/examples/`. Additive throughout, the PWA keeps working: `/api/v1/...`
+  beside `/api/...`, `hello` names `api {version, min}` and `features` (clients ask for features, not
+  Sofa versions); every error carries a stable `code` beside the German text (`SFWebErrors`); a plain
+  HTTP `/discover` (short name → full name) for apps; the pairing screen shows a QR code of
+  `…/sofa/pair#host=&code=` (encoder `SFQRCode` in-process; the PWA pairs from it, a native app will
+  claim the path as Universal/App Link - needs the user-site repo for `/.well-known/`, see docs/api.md);
+  devices record their client (web/ios/android, app, version; schema step 22) and the TV lists it; the
+  image key is persistent (0600 file); `formats` (the client's order) also chooses YouTube's session
+  codecs - VP9/AV1 + Opus for clients that prefer them, still one engine page, one identity, no extra
+  session; a stream reported `paused` lives 4 h instead of 10 min (background play, PiP - an evening's
+  interruption; longer is a forgotten one, since iOS ends suspended apps silently), holding no segments
+  meanwhile, and "play again on 404/410" is the documented client rule. Not built: the apps themselves.
+
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
   (`tools/sofa-deploy`, swap during playback < 1 s) and check in SofaRemote.log

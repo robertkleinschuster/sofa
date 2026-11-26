@@ -62,7 +62,7 @@ the same.
 | Call | Node sidecar (HTTP) | Value |
 |---|---|---|
 | `start({base, block, maxPlayerRequests?, budgetWindowS?, aheadLowS?, aheadHighS?, debug?})` | process start | `{userAgent}`; 412 off youtube.com |
-| `open({v, bg, maxHeight, lang, start, prefetch, vcodec, acodec})` | `GET /open` | `VodAnswer`/`LiveAnswer`/`OpenFailure`, URLs under `base` |
+| `open({v, bg, maxHeight, lang, start, prefetch, vcodecs?, acodecs?})` | `GET /open` | `VodAnswer`/`LiveAnswer`/`OpenFailure`, URLs under `base`; `vcodecs`/`acodecs` (a browser session, docs/api.md "Formats"): the only codecs allowed, in the client's order - picture size and fps first, that order among equal ones |
 | `read(sid, track, offset, maxBytes)` | Range GET on a track | `{total, mimeType, data: bytes}` (at most 8 MB); waits for SABR like a reader |
 | `playlist(sid)` | `GET /s/<sid>/live.m3u8` | HLS media playlist (local segment URLs) |
 | `segment(sid, n)` | (mpv fetched googlevideo itself) | `{mimeType, data: bytes}`: one live segment |

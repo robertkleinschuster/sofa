@@ -72,8 +72,10 @@ devices on the local network" instead; the PWA explains that prompt on its conne
 
 No request reaches Sofa's data without a device token. Pairing is started on the TV, like the
 phone pairing: Einstellungen → "Sofa im Browser" shows a 6-digit code (valid while the screen is
-open, renewed every 5 minutes and after three wrong entries). The PWA sends
-`POST /api/pair {code, name}`; a right code returns a 256-bit random token, stored by the device in
+open, renewed every 5 minutes and after three wrong entries) and, beside it, a QR code of the pairing
+link `…/sofa/pair#host=<full name>:<port>&code=<code>` (docs/api.md "Finding Sofa and pairing"): scanned
+with a phone it opens the PWA (or a native app), which connects and pairs by itself. The PWA sends
+`POST /api/pair {code, name, client}`; a right code returns a 256-bit random token, stored by the device in
 `localStorage` and in Sofa only as its SHA-256 (`web_devices`, schema step 21). Every API call sends
 `Authorization: Bearer <token>`; the TV screen lists the devices and removes them ("Gerät trennen").
 Wrong codes are limited per code and globally (10 per minute).
@@ -81,17 +83,20 @@ Wrong codes are limited per code and globally (10 per minute).
 Media requests cannot carry headers (native HLS on iOS, `<video src>`): a playback gets a
 **capability URL** `/m/<stream id>/…` (128-bit random id) from an authenticated call; it is bound to
 the device, lives while the stream is used (10 minutes idle) and serves only that stream's local
-routes. Pictures are served as `/img/<signature>?u=…` - an HMAC of the source by a per-launch
-secret, handed out only inside authenticated answers, so the image route is no open proxy.
+routes (a `paused` one lives 4 hours: docs/api.md "Streams"). Pictures are served as
+`/img/<signature>?u=…` - an HMAC of the source by a persistent secret (`<data>/web/image.key`, 0600),
+handed out only inside authenticated answers, so the image route is no open proxy.
 
 ### 3. Playback in the browser, through Sofa
 
 Every stream goes through Sofa's existing local routes; the browser never contacts a source:
 
-- **YouTube** (`SFApp resolveForBrowser:`): the engine opens a session like the TV's, from the same
-  Firefox page, identity, BotGuard and pacing - only the format differs: H.264 + AAC (`vcodec avc1`,
-  `acodec mp4a`, up to 1080p) instead of VP9/AV1 + Opus, because every browser (iOS Safari
-  included) decodes those in fragmented MP4. Two playbacks at once are two sessions of one page
+- **YouTube** (`SFApp resolveForBrowser:formats:done:`): the engine opens a session like the TV's, from
+  the same Firefox page, identity, BotGuard and pacing - only the format is the client's: the codecs of
+  its `formats` it prefers (docs/api.md "Formats"; up to 1080p) - H.264 + AAC for Safari, iOS and
+  any client that names nothing, VP9/AV1 + Opus where the client puts them first (Android, Firefox).
+  An H.264 session's DASH pair is served as byte ranges (below), a VP9/AV1 + Opus one goes through the
+  segmenter, copied (§8). Two playbacks at once are two sessions of one page
   (the engine keeps up to four), like two tabs of one browser - one client, no second identity. The
   PWA reports its player state (`playing/paused/ended/closed`, position); Sofa forwards it to the
   engine's view reporting (`SFApp playback:reports:`), so the view is reported as youtube.com's
@@ -268,30 +273,12 @@ again with the next.
 
 Not done: audio beyond stereo is downmixed; subtitles of stored items are not offered in the browser.
 
-## API (all JSON, `Authorization: Bearer <token>` unless noted)
+## API
 
-| Route | |
-|---|---|
-| `GET /connect?return=<url>` (plain HTTP) | 303 to the PWA with `#host=<name>:<port>` |
-| `GET /api/hello` (no auth) | `{name: "Sofa", version, paired: bool}` - reachability and token check |
-| `POST /api/pair {code, name}` (no auth) | `{token, device}`; 403 wrong code, 429 too many tries |
-| `DELETE /api/pair` | this device unpairs itself |
-| `GET /api/info` | the apps (name, search), design tokens of every theme, this device's name |
-| `GET /api/home` | Home's sections as a page |
-| `GET /api/app/<id>` | an app's start page (framed as on the TV) |
-| `GET /api/page/<handle>` | a folder's page (handles name page loaders of earlier answers) |
-| `GET /api/more/<handle>` | the next portion of a shelf with `more` |
-| `GET /api/show?ref=&title=` | a show/channel page by ref |
-| `GET /api/search?app=&q=` | an app's search page (without `q`: the household's recent searches) |
-| `GET /api/suggest?app=&q=` | the app's search suggestions |
-| `POST /api/play {item, formats?}` | `{stream, kind: hls\|file, url, start, duration, segmented?}` - `formats`: the codecs the browser decodes (§8; none: `avc1 mp4a`); `segmented`: what the segmenter does (`copy+copy`, `h264_videotoolbox+aac`, ...) |
-| `POST /api/stream/<id> {state, position, duration}` | player state; `closed` ends it |
-| `POST /api/state {item, watched?, later?, follow?, forget?, download?, keep?}` | marks (`forget`: out of Weiterschauen), the download (`true` starts or retries, `false` cancels or deletes; `keep`: Behalten); answers the item's new state (+ `message` for a started download) - with no change, just its state |
-| `POST /api/tv/play {item, fromStart?, at?, replace?}` | `{tv, already?}`; 409 `{error, busy: {title}}` another video plays there; 403 DRM |
-| `POST /api/tv/control {action: play\|pause\|stop}` | `{tv}`; 404 nothing on the TV |
-| `GET /api/status?since=<gen>` | `{gen, tv: {item, state: playing\|paused\|buffering\|ended\|failed, position, duration, live} \| null, downloads: [item]}` - long poll (§6) |
-| `GET /m/<stream>/…` (capability) | the stream's media (Range) |
-| `GET /img/<sig>?u=&w=` (signed) | a picture through Sofa's image path (JPEG/PNG, sized) |
+The contract is `api/openapi.yaml` (checked by `tools/test-api` against a dev instance, examples in
+`api/examples/`); the prose for every client - versions, features, error codes, discovery, pairing by
+QR code, formats, stream lifetimes, what the native apps need - is docs/api.md. The PWA uses the
+unversioned paths (`/api/...` = `/api/v1/...`).
 
 Items carry their stored dictionary (`d`) - the PWA echoes it back in `play`/`state`/`tv`, like the
 store keeps it - plus display fields (`kind`, `title`, `sub`, `img`, `progress`, `watched`,
@@ -321,6 +308,8 @@ CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a vide
 - `theme.ts` tokens to CSS variables, fonts by PostScript name through `local()`; `logos.ts` the
   logos (copied from `res/logos` at build time) recoloured as `SFLogo.m` does.
 - `sw.ts` the service worker caches the shell only - never Sofa's data or media.
+- `static/pair.html` the target of the TV's pairing link (`/sofa/pair`): hands its fragment to the PWA;
+  the path a native app claims as Universal Link / App Link (docs/api.md).
 
 Published by `.github/workflows/pwa.yml` (check, unit tests, build, Pages) on every push to master
 that touches it. Tests: `pwa/test` (pure parts, `npm test`), `tools/test-pwa` (in test-all): the
@@ -328,7 +317,8 @@ built PWA in a headless Firefox (Marionette) against a dev instance - connect vi
 pairing with the dev code, pages, a playback with its reports, marks, the TV (send from the sheet,
 the bar's pause and stop, asking before replacing, a playback handed over at its position), downloads
 (started, the chip to "Offline", Behalten, a confirmed delete), a WebM DASH pair through the segmenter
-(copied, played and sought with hls.js), phone and desktop widths;
+(copied, played and sought with hls.js), the TV's pairing link (QR code: `pair.html` → paired without
+typing), phone and desktop widths;
 `PWA_SHOTS=<dir>` saves screenshots (Firefox then renders into an invisible Xvfb). This Mac's
 Firefox build decodes no H.264 and - in the page's MediaSource - no audio in MP4, so there the DASH pair
 is checked up to hls.js reading its master playlist; the byte relay is test-web's, a VP9 file plays end

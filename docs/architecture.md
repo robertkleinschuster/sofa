@@ -72,11 +72,17 @@ A second UI - the PWA in `pwa/` (TypeScript, GitHub Pages) - on the same backend
   tracks copied or encoded): `SFAVInput` (+`SFAVProbe`), `SFSegmentTrack` (`SFSegmentCopy`,
   `SFSegmentVideo`, `SFSegmentAudio`), `SFSegmentJob`, `SFWebTranscode` (+Plan), `SFWebStreams+Transcode`
   - on the FFmpeg libraries libmpv uses (Sofa links them itself).
-- Apps reach it only through the `SFApp` contract: `resolveForBrowser:done:` (a format browsers
-  decode - YouTube: the engine's H.264/AAC session; an item complete in the media store resolves as on
+- Apps reach it only through the `SFApp` contract: `resolveForBrowser:formats:done:` (a format the
+  client decodes, chosen from its `formats` in its order - YouTube: the engine's session in those codecs; an item complete in the media store resolves as on
   the TV and goes through the segmenter, this only as the fallback) and `playback:reports:`.
-- Shell: `SFWebServer` (+API: the routes; hands its player host to `SFWebTV` at launch),
-  `SFWebPairScreen` (Einstellungen → Sofa im Browser).
+- Shell: `SFWebServer` (+API: the routes - `/api/v1/...` and the unversioned alias, `/discover` on plain
+  HTTP; hands its player host to `SFWebTV` at launch), `SFWebPairScreen` (Einstellungen → Sofa im
+  Browser: the code and its pairing link as a QR code, the devices with their client).
+- The contract: `api/openapi.yaml` (docs/api.md), the one source for the PWA and the native apps;
+  `tools/test-api` checks the server against it. Every error answer is `SFWebError(code, message)`
+  (Library `SFWebErrors`: the stable codes, listed in the spec - the test compares both lists).
+  `SFWebDevices` also keeps each device's client (`SFWebClient`: web/ios/android, app, version).
+  Framework `SFQRCode`: a QR encoder (ISO 18004, no dependency) for the pairing screen.
 
 ## The app contract: `SFApp`
 
