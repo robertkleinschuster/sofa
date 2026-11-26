@@ -38,7 +38,9 @@ export function tile(item: Item, shelfStyle: TileStyle, host: TileHost): HTMLEle
   return el;
 }
 
-// After a mark or a playback: every tile of this item gets the new state.
+// After a mark, a playback or a download step: every tile of this item gets the new state. A change
+// of the chip alone (a download's progress) is written into the tile as it is - nothing is rebuilt, so
+// the picture does not fade in again (no blinking every few seconds).
 export function updateTiles(item: Item): void {
   if (!item.id) return;
   const set = live.get(item.id);
@@ -49,6 +51,11 @@ export function updateTiles(item: Item): void {
     if (!info) continue;
     // keep what only the page knew (a page handle is per answer), take the new state
     const merged: Item = { ...info.item, ...pickState(item) };
+    if (onlyChipChanged(info.item, merged)) {
+      itemOf.set(el, { ...info, item: merged });
+      setChip(el, merged, info.style);
+      continue;
+    }
     const fresh = tile(merged, info.style, info.host);
     el.replaceWith(fresh);
     set.delete(el);
@@ -56,23 +63,36 @@ export function updateTiles(item: Item): void {
 }
 
 function pickState(i: Item): Partial<Item> {
-  const out: Partial<Item> = { watched: !!i.watched, later: !!i.later };
+  const out: Partial<Item> = { watched: !!i.watched, later: !!i.later, chip: i.chip, dl: i.dl };
   if (i.progress !== undefined) out.progress = i.progress; else out.progress = 0;
   if (i.following !== undefined) out.following = i.following;
-  if (i.chip !== undefined) out.chip = i.chip;
   return out;
+}
+
+function onlyChipChanged(a: Item, b: Item): boolean {
+  return !!a.watched === !!b.watched && !!a.later === !!b.later && (a.progress ?? 0) === (b.progress ?? 0) && a.following === b.following;
+}
+
+function setChip(el: HTMLElement, item: Item, style: TileStyle): void {
+  const art = el.querySelector('.art');
+  if (!art) return;
+  let chip = art.querySelector<HTMLElement>('.chip');
+  if (!item.chip || style !== 'landscape') { chip?.remove(); return; }
+  if (!chip) { chip = h('span.chip'); art.append(chip); }
+  chip.textContent = item.chip;
 }
 
 export function forgetTiles(): void { live.clear(); }
 
 function build(item: Item, style: TileStyle, host: TileHost): HTMLElement {
   const disabled = item.kind === 'video' && item.drm;
-  const el = h('div.tile', { role: 'listitem', dataset: { style, kind: item.kind } });
+  const el = h('div.tile', { role: 'listitem', dataset: { style, kind: item.kind, ...(item.id ? { id: item.id } : {}) } });
+  const now = (): Item => itemOf.get(el)?.item ?? item;   // the state it has now (updateTiles may have patched it)
   if (disabled) el.classList.add('drm');
   const art = h('button.art', {
     type: 'button',
     'aria-label': dotJoin(item.title, item.sub),
-    onclick: () => host.activate(item, el),
+    onclick: () => host.activate(now(), el),
   });
   if (item.tint) art.style.setProperty('--tint', item.tint);
   el.append(art);
@@ -97,11 +117,11 @@ function build(item: Item, style: TileStyle, host: TileHost): HTMLElement {
     const bar = h('span.progress', null, h('span', { style: { width: `${Math.round(item.progress * 1000) / 10}%` } }));
     art.append(bar);
   }
-  if (disabled) art.append(h('span.drm-note', null, 'Nur am Fernseher'));
+  if (disabled) art.append(h('span.drm-note', null, 'Kopiergeschützt'));
 
   if (style !== 'wide') el.append(meta(item, style, host));
   if (hasMenu(item)) {
-    el.append(h('button.more', { type: 'button', 'aria-label': 'Optionen', title: 'Optionen', onclick: (e: Event) => { e.stopPropagation(); host.menu(item, el); } }, '⋯'));
+    el.append(h('button.more', { type: 'button', 'aria-label': 'Optionen', title: 'Optionen', onclick: (e: Event) => { e.stopPropagation(); host.menu(now(), el); } }, '⋯'));
   }
   return el;
 }

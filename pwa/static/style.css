@@ -278,8 +278,11 @@ main { padding-bottom: 48px; }
 .sheet-button {
   min-height: 46px; border: 0; border-radius: 12px; background: var(--surface); color: var(--text);
   font: 600 15px/1.2 var(--font-medium); text-align: center; padding: 0 16px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
 }
 .sheet-button.primary { background: var(--accent); color: var(--accent-text); }
+.sheet-button.danger { background: #c62828; color: #fff; }
+.sheet-detail { font-weight: 400; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
 .sheet-button.cancel { background: transparent; color: var(--text-dim); }
 
 /* Player */
@@ -289,6 +292,8 @@ main { padding-bottom: 48px; }
   display: flex; align-items: center; gap: 10px; color: #fff;
   padding: calc(env(safe-area-inset-top) + 8px) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
 }
+.player-tv { flex: none; margin-left: auto; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; }
+.player-tv svg { width: 22px; height: 22px; fill: currentColor; }
 .player-close { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff; font-size: 18px; }
 .player-title { min-width: 0; font: 600 15px/1.25 var(--font-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-title span { display: block; font-weight: 400; font-size: 13px; color: rgba(255,255,255,.65); overflow: hidden; text-overflow: ellipsis; }
@@ -298,9 +303,33 @@ main { padding-bottom: 48px; }
 }
 .player-status.error { background: #8e1c1c; }
 
+/* Am Fernseher: what the TV plays, with pause/play and stop (tv.ts) */
+:root { --tvbar-space: 0px; }
+body.tv-on { --tvbar-space: 76px; padding-bottom: calc(env(safe-area-inset-bottom) + var(--tvbar-space)); }
+body.playing .tvbar { display: none; }
+.tvbar {
+  position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 10px);
+  width: min(560px, calc(100vw - 2 * var(--gutter))); height: 60px; overflow: hidden;
+  display: flex; align-items: center; gap: 10px; padding: 0 6px 0 8px; border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-top) 92%, transparent); color: var(--text);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 6px 24px rgba(0,0,0,.45); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+.tvbar-pic { flex: none; width: 64px; height: 36px; border-radius: 6px; object-fit: cover; background: var(--surface); }
+.tvbar-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.tvbar-head { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font: 500 12px/1.2 var(--font-medium); min-width: 0; }
+.tvbar-head svg { flex: none; width: 14px; height: 14px; fill: currentColor; }
+.tvbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvbar-title { font: 600 14px/1.25 var(--font-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvbar-button { flex: none; width: 42px; height: 42px; border: 0; border-radius: 50%; background: transparent; color: var(--text); display: grid; place-items: center; }
+.tvbar-button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.tvbar-button svg { width: 22px; height: 22px; fill: currentColor; }
+.tvbar-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--text) 15%, transparent); }
+.tvbar-progress > span { display: block; height: 100%; width: 0; background: var(--progress); transition: width 1s linear; }
+
 /* Toast */
 #toast {
-  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px); z-index: 60; max-width: calc(100vw - 32px);
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px + var(--tvbar-space)); z-index: 60; max-width: calc(100vw - 32px);
   transform: translate(-50%, 20px); opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none;
   padding: 10px 16px; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-weight: 600;
 }

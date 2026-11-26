@@ -86,11 +86,11 @@ export class Marionette {
   async url() { return (await this.send('WebDriver:GetCurrentURL')).value; }
 
   // until script returns something truthy (polled in the page), or throws after ms
-  async until(script, ms = 30_000, what = script) {
+  async until(script, ms = 30_000, what = script, args = []) {
     const deadline = Date.now() + ms;
     let last;
     for (;;) {
-      try { last = await this.run(script); if (last) return last; } catch (e) { last = e.message; }
+      try { last = await this.run(script, args); if (last) return last; } catch (e) { last = e.message; }
       if (Date.now() > deadline) throw new Error(`timed out: ${what} (last: ${JSON.stringify(last)})`);
       await new Promise((r) => setTimeout(r, 250));
     }

@@ -6,6 +6,8 @@ import { discoveryURL, hostFromHash, needsDiscovery, normalizeHost, shortName } 
 import { parseRoute, routeHash, type Route } from '../src/router.ts';
 import { isOpaque, recolor, LOGO_LIGHT_TEXT, LOGO_ORIGINAL, LOGO_WHITE } from '../src/logos.ts';
 import { themeVariables } from '../src/theme.ts';
+import { downloadChoices, type DownloadAction } from '../src/choices.ts';
+import type { DownloadState } from '../src/types.ts';
 
 test('host names: what the user types becomes host:port', () => {
   assert.equal(normalizeHost('imac'), 'imac:7443');
@@ -69,4 +71,20 @@ test('theme tokens become CSS variables, with the base theme for what is missing
   const d = themeVariables({ fonts: { regular: 'AvenirNext-Regular', medium: '', bold: '', wordmark: '' }, corner: 10, light: false, uppercaseHeaders: false, headerMark: 'none' }, null);
   assert.match(d['--font']!, /^"sofa-AvenirNext-Regular", system-ui/);
   assert.equal(d['--progress'], 'rgba(255,255,255,1)');
+});
+
+test('the download options follow the TV menu for each state', () => {
+  const run = (dl?: DownloadState): string[] => {
+    const acts: DownloadAction[] = [];
+    const choices = downloadChoices({ kind: 'video', ...(dl ? { dl } : {}) }, (a) => acts.push(a));
+    for (const c of choices) void c.run();
+    return choices.map((c, i) => `${c.label}${c.detail ? ` (${c.detail})` : ''} -> ${acts[i]}`);
+  };
+  assert.deepEqual(run(), []);
+  assert.deepEqual(run({ state: 'none' }), ['Herunterladen -> start']);
+  assert.deepEqual(run({ state: 'queued' }), ['Download abbrechen (wartet) -> cancel']);
+  assert.deepEqual(run({ state: 'running', progress: 0.416 }), ['Download abbrechen (42 %) -> cancel']);
+  assert.deepEqual(run({ state: 'failed', failure: 'Quelle antwortet nicht' }), ['Erneut herunterladen (Quelle antwortet nicht) -> start', 'Aus Downloads entfernen -> remove']);
+  assert.deepEqual(run({ state: 'done', kept: false }), ['Behalten (Aus) -> keep', 'Download löschen -> delete']);
+  assert.deepEqual(run({ state: 'done', kept: true }), ['Behalten (An) -> unkeep', 'Download löschen -> delete']);
 });

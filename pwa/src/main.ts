@@ -2,7 +2,7 @@
 
 import { Api, ApiError } from './api.ts';
 import { hostFromHash, loadConnection, saveConnection, shortName, type Connection } from './connection.ts';
-import { clear, h } from './dom.ts';
+import { clear, h, icon, ICONS } from './dom.ts';
 import { logoURL } from './logos.ts';
 import { renderPage } from './pages.ts';
 import { Player } from './player.ts';
@@ -10,9 +10,12 @@ import { parseRoute, routeHash, type Route } from './router.ts';
 import { connectScreen, pairScreen, settingsScreen, unreachableScreen } from './screens.ts';
 import { searchScreen } from './search.ts';
 import { closeSheet, openSheet, type SheetActions } from './sheet.ts';
+import { Downloads } from './downloads.ts';
+import { StatusFeed } from './status.ts';
+import { Tv } from './tv.ts';
 import { applyTheme } from './theme.ts';
 import { forgetTiles, updateTiles, type TileHost } from './tiles.ts';
-import type { Info, Item, Page } from './types.ts';
+import type { Info, Item, MarkChange, Page } from './types.ts';
 
 const REFRESH_AFTER_HIDDEN_MS = 5 * 60_000;
 const VIEW_CACHE = 12;
@@ -24,6 +27,9 @@ class App {
   private api: Api | null = this.connection ? new Api(this.connection) : null;
   private info: Info | null = null;
   private player: Player | null = null;
+  private tv: Tv | null = null;                // the TV's bar and "Auf dem Fernseher abspielen"
+  private downloads: Downloads | null = null;
+  private feed: StatusFeed | null = null;      // Sofa's status for both (long poll)
   private views = new Map<number, View>();     // history entry -> its rendered view (back restores it as left)
   private entry = 0;
   private seq = 0;
@@ -51,11 +57,29 @@ class App {
   }
 
   private setConnection(c: Connection | null): void {
+    this.stopServices();
     this.connection = c;
     this.api = c ? new Api(c) : null;
     this.info = null;
     this.views.clear();
     saveConnection(c);
+  }
+
+  // paired with a Sofa: its status (the TV, downloads) follows from now on
+  private startServices(api: Api): void {
+    if (this.feed) return;
+    const statusChanged = (): void => this.feed?.refresh();
+    const tv = this.tv ??= new Tv({ api, toast: (t) => this.toast(t), statusChanged });
+    const downloads = this.downloads = new Downloads({ api, toast: (t) => this.toast(t), statusChanged });
+    this.feed = new StatusFeed(api, (s) => { tv.update(s.tv); downloads.track(s.downloads); }, () => this.lostPairing());
+    this.feed.start();
+  }
+
+  private stopServices(): void {
+    this.feed?.stop();
+    this.feed = null;
+    this.downloads = null;
+    this.tv?.reset();
   }
 
   navigate(r: Route, replace = false): void {
@@ -99,6 +123,7 @@ class App {
       this.loading();
       try { this.info = await api.info(); } catch (e) { this.failed(e); return; }
       this.buildBar();
+      this.startServices(api);
     }
     if (route.name === 'settings') {
       this.screen(settingsScreen(this.connection, this.info.device, '', () => this.unpair(), () => this.otherHost()), true);
@@ -193,11 +218,11 @@ class App {
       h('button.icon-button.back', { type: 'button', 'aria-label': 'Zurück', title: 'Zurück', onclick: () => history.back() }, '‹'),
       h('a.brand', { href: '#/', 'aria-label': 'Sofa – Start', onclick: (e: Event) => { e.preventDefault(); this.navigate({ name: 'home' }); } }),
       nav,
-      h('button.icon-button.search-button', { type: 'button', 'aria-label': 'Suchen', title: 'Suchen' }, searchIcon()),
+      h('button.icon-button.search-button', { type: 'button', 'aria-label': 'Suchen', title: 'Suchen' }, icon(ICONS.search)),
       h('button.icon-button.settings-button', {
         type: 'button', 'aria-label': 'Einstellungen', title: 'Einstellungen',
         onclick: () => this.navigate({ name: 'settings' }),
-      }, gearIcon()));
+      }, icon(ICONS.gear)));
   }
 
   private updateBar(route: Route, theme: string): void {
@@ -247,7 +272,9 @@ class App {
   private sheetActions(theme: string): SheetActions {
     return {
       play: (item, fromStart) => this.play(item, fromStart),
+      toTV: (item) => void this.tv?.send(item),
       mark: (item, change) => this.mark(item, change),
+      download: (item, action) => this.downloads?.act(item, action),
       open: (item) => this.openFolder(item, theme),
       openShow: (item) => { if (item.showRef) this.navigate({ name: 'show', ref: item.showRef, ...(item.channel ? { title: item.channel } : {}) }); },
       imageURL: (p, w) => this.api?.image(p, w),
@@ -284,6 +311,8 @@ class App {
       api: this.api,
       closed: (it) => { if (this.player === p) this.player = null; void this.refresh(it); },
       toast: (t) => this.toast(t),
+      // the browser's player closes first (its last report), then the TV opens it there
+      toTV: (it, at) => { if (this.player === p) history.back(); void this.tv?.send(it, at !== undefined ? { at } : {}); },
     }, item, fromStart);
     this.player = p;
     void p.open();
@@ -295,7 +324,7 @@ class App {
     try { updateTiles((await this.api.mark(item, {})).item); } catch { /* stays as it was */ }
   }
 
-  private async mark(item: Item, change: { watched?: boolean; later?: boolean; follow?: boolean; forget?: boolean }): Promise<void> {
+  private async mark(item: Item, change: MarkChange): Promise<void> {
     if (!this.api) return;
     try {
       const r = await this.api.mark(item, change);
@@ -353,18 +382,6 @@ class App {
 function forgetTilesOfGoneViews(views: Map<number, View>): void {
   if (views.size === 0) forgetTiles();
 }
-
-function svg(path: string): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const s = document.createElementNS(ns, 'svg');
-  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true');
-  const p = document.createElementNS(ns, 'path');
-  p.setAttribute('d', path);
-  s.append(p);
-  return s;
-}
-const searchIcon = (): SVGSVGElement => svg('M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z');
-const gearIcon = (): SVGSVGElement => svg('M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zm-1.6-6.5h3.2l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.6 2.8-2 1.7c.1.6.1 1.3 0 1.9l2 1.7-1.6 2.8-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.2l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.6-2.8 2-1.7a6 6 0 0 1 0-1.9l-2-1.7 1.6-2.8 2.5.9c.5-.4 1.1-.7 1.7-.9z');
 
 new App().start();
 

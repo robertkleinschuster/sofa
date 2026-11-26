@@ -134,7 +134,7 @@ try {
 
   // the same instance (data, port, pairing) on a VP9 file, which every Firefox decodes
   await stopSofa();
-  await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_FILE });
+  await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_FILE, SOFA_EXAMPLE_FILL: '0.3', SOFA_SOURCE_GAP: '1' });
   await ff.run(`location.reload()`);
   await check('3: still paired after Sofa restarted', () => ff.until(`return document.querySelectorAll('.tile[data-kind="video"]').length > 1`, 30_000));
   const before = sql('select count(*) from progress');
@@ -163,12 +163,85 @@ try {
   await ff.run(`[...document.querySelectorAll('.sheet-button')].find(b => b.textContent === 'Später ansehen').click()`);
   await check('4: Später ansehen in the TV\'s database', () => waitSql('select count(*) from watch_later', '1'));
   await check('4: the tile knows (the sheet offers to remove it)', async () => {
+    // the answer updates the tiles, then says so (the database is written before it answers)
+    await ff.until(`return /Später ansehen“ hinzugefügt/.test(document.getElementById('toast').textContent)`, 10_000);
     await ff.run(`document.querySelector('.tile[data-kind="video"] .more').click()`);
     await ff.until(`return !!document.querySelector('.sheet .sheet-button')`, 5_000);
     const labels = await ff.run(`return [...document.querySelectorAll('.sheet-button')].map(b => b.textContent)`);
     await ff.run(`document.querySelector('.sheet-button.cancel').click()`);
-    return labels.some((l) => l.startsWith('Aus „Später ansehen“'));
+    return labels.some((l) => l.startsWith('Aus „Später ansehen“')) || Promise.reject(new Error(JSON.stringify(labels)));
   });
+
+  console.log('==> 6 the TV');
+  const tileOf = (id) => `.tile[data-id="${id}"]`;
+  const sheetFor = async (id) => {
+    await ff.run(`document.querySelector(arguments[0] + ' .more').click()`, [tileOf(id)]);
+    await ff.until(`return !!document.querySelector('.sheet.open .sheet-button')`, 5_000);
+  };
+  const choose = (label) => ff.run(`const b = [...document.querySelectorAll('.sheet.open .sheet-button')].find(b => b.querySelector('.sheet-label') ? b.querySelector('.sheet-label').textContent === arguments[0] : b.textContent === arguments[0]);
+    if (!b) throw new Error('no button ' + arguments[0] + ' in ' + [...document.querySelectorAll('.sheet.open .sheet-button')].map(b => b.textContent)); b.click();`, [label]);
+  const barLabel = () => ff.run(`const b = document.querySelector('.tvbar'); return b && !b.hidden ? b.querySelector('.tvbar-label').textContent + ' | ' + b.querySelector('.tvbar-title').textContent : ''`);
+  await sheetFor('example:3');
+  await choose('Auf dem Fernseher abspielen');
+  await check('6: sent from the sheet: the TV\'s player opens it', () => waitLog(/web: example:3 sent to the TV/).catch(async (e) => {
+    throw new Error(`${e.message} (toast: ${await ff.run(`const t = document.getElementById('toast'); return t ? t.textContent : 'none'`)})`);
+  }));
+  await check('6: the bar shows it playing on the TV', () => ff.until(`const b = document.querySelector('.tvbar');
+      return b && !b.hidden && /Läuft/.test(b.querySelector('.tvbar-label').textContent) && b.querySelector('.tvbar-title').textContent === 'Mandelbrot'`, 30_000));
+  await check('6: the viewer hears it plays now', () => ff.until(`return /Läuft jetzt am Fernseher/.test(document.getElementById('toast').textContent)`, 30_000));
+  await shot(ff, 'phone-tvbar');
+  await ff.run(`document.querySelector('.tvbar .tvbar-button').click()`);
+  await check('6: the bar pauses the TV', async () => { await waitLog(/web: TV pause/); return ff.until(`return /Pausiert/.test(document.querySelector('.tvbar-label').textContent)`, 15_000); });
+  await ff.run(`document.querySelectorAll('.tvbar .tvbar-button')[1].click()`);
+  await check('6: the bar stops it (the TV\'s player closes)', async () => { await waitLog(/player: closed example:3/); return ff.until(`return document.querySelector('.tvbar').hidden`, 15_000); });
+
+  await sheetFor('example:1');
+  await choose('Auf dem Fernseher abspielen');
+  await waitLog(/web: example:1 sent to the TV/);
+  await sheetFor('example:2');
+  await choose('Auf dem Fernseher abspielen');
+  await check('6: another video plays there: the sheet asks first, naming it', () => ff.until(`const h = document.querySelector('.sheet.open h2'); return !!h && h.textContent === 'Am Fernseher läuft gerade „Testbild“.'`, 15_000));
+  await choose('Stattdessen „Farbbalken“ abspielen');
+  await check('6: ... and replaces it when asked', () => waitLog(/web: example:2 sent to the TV \(device [0-9a-f]+, replaced the player\)/));
+  await check('6: the bar follows', () => ff.until(`return document.querySelector('.tvbar-title').textContent === 'Farbbalken'`, 20_000));
+
+  await ff.run(`document.querySelectorAll('.tvbar .tvbar-button')[1].click()`);
+  await ff.until(`return document.querySelector('.tvbar').hidden`, 15_000);
+  // a playback in the browser moves to the TV where it is
+  await ff.run(`document.querySelector(arguments[0] + ' .art').click()`, [tileOf('example:4')]);
+  await ff.until(`return !!document.querySelector('.player video')`, 10_000);
+  await ff.run(`document.querySelector('.player video').muted = true`);
+  await ff.until(`const v = document.querySelector('.player video'); return v && v.currentTime > 4`, 45_000, 'video plays');
+  const handed = await ff.run(`return document.querySelector('.player video').currentTime`);
+  await ff.run(`document.querySelector('.player-tv').click()`);
+  await check('6: handed over: the browser\'s player closes, its stream ends', async () => {
+    await ff.until(`return !document.querySelector('.player')`, 10_000);
+    return waitLog(/web: stream [0-9a-f]{6} ended \(closed by the browser\)[^]*web: example:4 sent to the TV/);
+  });
+  await check('6: the TV goes on where the browser was', () => ff.until(`const m = /Läuft · (\\d+):(\\d\\d) \\//.exec(document.querySelector('.tvbar-label').textContent);
+      return !!m && document.querySelector('.tvbar-title').textContent === 'Leben' && Number(m[1]) * 60 + Number(m[2]) >= Math.floor(arguments[0]) - 1`, 30_000, 'TV position', [handed]));
+  await ff.run(`document.querySelectorAll('.tvbar .tvbar-button')[1].click()`);
+  await ff.until(`return document.querySelector('.tvbar').hidden`, 15_000);
+
+  console.log('==> 7 downloads');
+  await sheetFor('example:3');
+  await choose('Herunterladen');
+  await check('7: started (Sofa\'s message)', () => ff.until(`return /eruntergeladen/.test(document.getElementById('toast').textContent)`, 10_000));
+  await check('7: the tile\'s chip follows it to "Offline"', () => ff.until(`const c = document.querySelector(arguments[0] + ' .chip'); return !!c && c.textContent === '↓ Offline'`, 30_000, 'chip', [tileOf('example:3')]));
+  await check('7: done in the TV\'s database', () => waitSql(`select state from downloads where id='example:3'`, '2'));
+  await sheetFor('example:3');
+  await shot(ff, 'phone-sheet-download');
+  await choose('Behalten');
+  await check('7: Behalten (the TV\'s database, the tile\'s chip)', async () => {
+    await waitSql(`select keep from downloads where id='example:3'`, '1');
+    return ff.until(`const c = document.querySelector(arguments[0] + ' .chip'); return !!c && c.textContent === '↓ Behalten'`, 10_000, 'chip', [tileOf('example:3')]);
+  });
+  await sheetFor('example:3');
+  await choose('Download löschen');
+  await check('7: deleting a kept one asks first', () => ff.until(`const h = document.querySelector('.sheet.open h2'); return !!h && h.textContent === 'Download löschen?'`, 5_000));
+  await choose('Ja, endgültig löschen');
+  await check('7: deleted', () => waitSql(`select count(*) from downloads where id='example:3'`, '0'));
+  await check('7: the chip goes', () => ff.until(`return !document.querySelector(arguments[0] + ' .chip')`, 10_000, 'chip', [tileOf('example:3')]));
 
   console.log('==> 5 layouts');
   await ff.setWindow(1280, 800);

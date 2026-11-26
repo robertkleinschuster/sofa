@@ -4,7 +4,7 @@
 // position lands in Sofa's store (the TV's rule) and YouTube views are reported as its player would.
 
 import { ApiError, type Api, type StreamReport } from './api.ts';
-import { formatDuration, h } from './dom.ts';
+import { formatDuration, h, icon, ICONS } from './dom.ts';
 import type { Item, PlayAnswer } from './types.ts';
 
 const REPORT_EVERY_MS = 10_000;
@@ -17,6 +17,8 @@ export interface PlayerHost {
   api: Api;
   closed(item: Item): void;      // the overlay went away: refresh the item's tiles
   toast(text: string): void;
+  // "Am Fernseher weiterschauen": this playback moves to the TV (at: where it is; none for a live)
+  toTV(item: Item, at: number | undefined): void;
 }
 
 let lastActivity = Date.now();
@@ -48,8 +50,10 @@ export class Player {
     this.video.setAttribute('playsinline', '');
     this.status = h('div.player-status', { role: 'status' });
     const close = h('button.player-close', { type: 'button', 'aria-label': 'Schließen', title: 'Schließen', onclick: () => history.back() }, '✕');
+    const tvLabel = item.kind === 'live' ? 'Am Fernseher ansehen' : 'Am Fernseher weiterschauen';
+    const tv = h('button.player-tv', { type: 'button', 'aria-label': tvLabel, title: tvLabel, onclick: () => this.toTV() }, icon(ICONS.tv));
     this.overlay = h('div.player', { role: 'dialog', 'aria-label': item.title ?? 'Video' },
-      h('div.player-bar', null, close, h('div.player-title', null, item.title ?? '', item.sub ? h('span', null, item.sub) : null)),
+      h('div.player-bar', null, close, h('div.player-title', null, item.title ?? '', item.sub ? h('span', null, item.sub) : null), tv),
       this.video, this.status);
   }
 
@@ -188,6 +192,14 @@ export class Player {
 
   private teardownEngine(): void {
     if (this.hls) { this.hls.destroy(); this.hls = null; }
+  }
+
+  // The TV takes over where this playback is (its own stream ends: one player per video and person)
+  private toTV(): void {
+    const live = this.answer?.live ?? this.item.kind === 'live';
+    const t = this.video.currentTime;
+    this.video.pause();
+    this.host.toTV(this.item, !live && Number.isFinite(t) && t > 1 ? t : undefined);
   }
 
   // Back button or ✕ (via history): the last report, then away.

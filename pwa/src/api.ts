@@ -1,7 +1,7 @@
 // Talking to Sofa (docs/pwa.md, API). Every call but hello/pair carries the device token.
 
 import { baseURL, type Connection } from './connection.ts';
-import type { Info, Item, MoreAnswer, Page, PlayAnswer } from './types.ts';
+import type { Info, Item, MarkChange, MoreAnswer, Page, PlayAnswer, Status, TvState } from './types.ts';
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -17,19 +17,22 @@ export class Api {
 
   url(path: string): string { return baseURL(this.connection) + path; }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // `signal`: the caller may give up (a long poll when the page hides) - that rejects with an AbortError
+  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = {};
     if (this.connection.token) headers['Authorization'] = `Bearer ${this.connection.token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    if (signal?.aborted) ctl.abort(); else signal?.addEventListener('abort', () => ctl.abort(), { once: true });
     let res: Response;
     try {
       res = await fetch(this.url(path), {
         method, headers, signal: ctl.signal, cache: 'no-store', credentials: 'omit',
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
-    } catch {
+    } catch (e) {
+      if (signal?.aborted) throw e;
       throw new ApiError(0, 'Sofa ist gerade nicht erreichbar.');
     } finally {
       clearTimeout(timer);
@@ -60,8 +63,18 @@ export class Api {
   suggest(app: string, q: string): Promise<{ list: string[] }> { return this.request('GET', `/api/suggest?app=${encodeURIComponent(app)}&q=${encodeURIComponent(q)}`); }
   play(item: Item): Promise<PlayAnswer> { return this.request('POST', '/api/play', { item: item.d }); }
   report(stream: string, state: StreamReport): Promise<unknown> { return this.request('POST', `/api/stream/${stream}`, state); }
-  mark(item: Item, change: { watched?: boolean; later?: boolean; follow?: boolean; forget?: boolean }): Promise<{ item: Item }> {
+  // marks and the item's download; a started download also says what the TV would tell
+  mark(item: Item, change: MarkChange): Promise<{ item: Item; message?: string }> {
     return this.request('POST', '/api/state', { item: item.d, ...change });
+  }
+  // the TV (docs/pwa.md §6): 409 = another video plays there (`replace` replaces it)
+  tvPlay(item: Item, opts: { fromStart?: boolean; at?: number; replace?: boolean }): Promise<{ tv: TvState | null; already?: boolean }> {
+    return this.request('POST', '/api/tv/play', { item: item.d, ...opts });
+  }
+  tvControl(action: 'play' | 'pause' | 'stop'): Promise<{ tv: TvState | null }> { return this.request('POST', '/api/tv/control', { action }); }
+  // answers when Sofa's state is not `since` any more (at once for another), else after at most 25 s
+  status(since: string, signal: AbortSignal): Promise<Status> {
+    return this.request('GET', `/api/status?since=${encodeURIComponent(since)}`, undefined, signal);
   }
 
   // A picture through Sofa's image route, sized for its box in device pixels.

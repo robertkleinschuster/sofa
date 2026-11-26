@@ -36,12 +36,22 @@ export interface Item {
   later?: boolean;
   following?: boolean;
   chip?: string;
+  dl?: DownloadState;     // the offline layer (videos): absent = nothing to offer
   now?: Broadcast;
   next?: Broadcast;
   page?: string;          // handle of the folder's page
   open?: 'app' | 'search';
   arg?: string;
   d?: Record<string, unknown>;   // the stored dictionary, echoed back to play or mark
+}
+
+// An item's download, as the TV's options menu reads it (SFWebItems DownloadState)
+export interface DownloadState {
+  state: 'none' | 'queued' | 'running' | 'done' | 'failed';
+  progress?: number;     // running: 0..1
+  kept?: boolean;        // done: "Behalten"
+  gone?: boolean;        // done: no longer at its source - the copy on the TV is the only one
+  failure?: string;      // failed: why
 }
 
 export interface Shelf {
@@ -85,3 +95,17 @@ export interface MoreAnswer { items: Item[]; more: boolean }
 export interface SearchRecent { recent: string[] }
 
 export interface PlayAnswer { stream: string; kind: 'hls' | 'file'; url: string; start: number; duration: number; live: boolean; title: string }
+
+// What the TV's player shows (SFWebTV state)
+export interface TvState {
+  item: Item;
+  state: 'playing' | 'paused' | 'buffering' | 'ended' | 'failed';
+  position: number;
+  duration: number;
+  live: boolean;
+}
+
+// GET /api/status (SFWebStatus): long-polled with the generation the browser has
+export interface Status { gen: string; tv: TvState | null; downloads: Item[] }
+
+export interface MarkChange { watched?: boolean; later?: boolean; follow?: boolean; forget?: boolean; download?: boolean; keep?: boolean }

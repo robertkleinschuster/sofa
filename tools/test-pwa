@@ -10,6 +10,12 @@
 #      H.264 - this Mac's Firefox build has no H.264 decoder); then, with the instance restarted on
 #      a VP9 file, a playback: the position lands in the TV's database, closing ends it
 #   4  the tile's sheet marks Später ansehen in the TV's database
+#   6  the TV: "Auf dem Fernseher abspielen" from the sheet opens it in the TV's player; the bar
+#      "Am Fernseher" follows it (Sofa's status), pauses and stops it; another video playing there
+#      is replaced only after the sheet asked; a browser playback moves to the TV at its position
+#      (the browser's player closes, its stream ends)
+#   7  downloads: started from the sheet (Sofa's message), the tile's chip follows the download to
+#      "Offline", Behalten, and deleting a kept one asks first
 #   5  phone and desktop layouts (screenshots into $PWA_SHOTS when set: Firefox then renders into an
 #      invisible Xvfb display - this headless build takes none)
 #   0  the PWA's strict type check and unit tests (pwa/test), its build
