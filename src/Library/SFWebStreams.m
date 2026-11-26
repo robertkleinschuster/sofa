@@ -8,14 +8,28 @@
 #import "SFLibrary.h"
 #import "SFDownloads.h"
 #import "SFMediaStore.h"
+#import "SFWebErrors.h"
 #import <Security/SecRandom.h>
 
-static const NSTimeInterval kIdle = 600;            // a stream nobody read or reported for this long ends
+// A stream nobody read or reported for this long ends: the client is gone without saying so (closed
+// tab, killed app). One that said "paused" is not gone - it waits for its viewer (background audio,
+// picture in picture, the phone put away during a call or a meal): it is kept for an evening, after which
+// a paused stream is a forgotten one (iOS ends a suspended app without a word). While it waits it holds
+// little: no segmenter job runs (they stop after 45 s), its made segments are dropped once it is idle
+// past the first limit, and an app session behind it ends by the app's own rule (YouTube's engine closes
+// an unused session after 10 minutes, as on the TV) - the stream ends with it. Either way the client
+// plays the item again at its position on 404/410 (docs/api.md "Streams"). Dev: SOFA_STREAM_IDLE/_PAUSED.
+static NSTimeInterval IdleLimit(void) { return SFDevSeconds(@"SOFA_STREAM_IDLE", 600); }
+static NSTimeInterval PausedLimit(void) { return SFDevSeconds(@"SOFA_STREAM_PAUSED", 4 * 3600); }
 static const NSUInteger kPerDevice = 3;             // a device's streams at once (a fourth ends the oldest)
 static const NSTimeInterval kHeaderTimeout = 60;    // a track's header ranges (the engine's first SABR answer)
 static const NSUInteger kHeaderPiece = 16;
 
 static NSString *const kNotForBrowser = @"Dieses Video lässt sich im Browser nicht abspielen.";
+
+NSDictionary *SFWebStreamReportError(NSInteger status) {
+    return status == 400 ? SFWebError(SFWebErrBadState, @"Unbekannter Zustand.") : SFWebError(SFWebErrStreamGone, @"Diese Wiedergabe ist beendet.");
+}
 
 @implementation SFWebStream
 @end
@@ -38,6 +52,7 @@ static NSString *NewID(void) {
 @implementation SFWebStreams {
     NSMutableDictionary *_streams;   // id -> SFWebStream (guarded by self)
     NSTimer *_sweep;
+    NSMutableSet *_observed;         // apps' session-lost notifications observed (main thread)
 }
 
 + (instancetype)shared {
@@ -65,9 +80,10 @@ static NSString *NewID(void) {
 // A codec string's sample entry ("avc1.64002a" -> "avc1", "mp4a.40.2" -> "mp4a"), as SFAVBrowserCodec names it
 static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByString:@"."].firstObject lowercaseString]; }
 
-- (void)play:(SFItem *)item device:(NSString *)device formats:(NSSet *)formats done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
-    if (item.drm) { done(nil, 403, SFDRMNotice); return; }
-    if (item.kind != SFItemVideo && item.kind != SFItemLive) { done(nil, 400, @"Das ist kein Video."); return; }
+- (void)play:(SFItem *)item device:(NSString *)device formats:(NSArray *)order done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done {
+    if (item.drm) { done(nil, 403, SFWebErrDRM, SFDRMNotice); return; }
+    if (item.kind != SFItemVideo && item.kind != SFItemLive) { done(nil, 400, SFWebErrNotVideo, @"Das ist kein Video."); return; }
+    NSSet *formats = [NSSet setWithArray:order];
     Class<SFApp> app = [SFAppRegistry appForItem:item];
     NSString *ref = item.resolverRef ?: item.identifier;
     SFURLDone (^resolved)(dispatch_block_t) = ^SFURLDone(dispatch_block_t fallback) {
@@ -75,15 +91,15 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
             SFMain(^{
                 if (url) { [self open:item url:url app:app device:device formats:formats fallback:fallback done:done]; return; }
                 if (fallback) { fallback(); return; }
-                done(nil, 502, e.localizedDescription ?: @"Das Video ließ sich nicht abrufen.");
+                done(nil, 502, SFWebErrUpstream, e.localizedDescription ?: @"Das Video ließ sich nicht abrufen.");
             });
         };
     };
-    if (![app respondsToSelector:@selector(resolveForBrowser:done:)] || ![[app refPrefixes] containsObject:SFRefPrefix(ref) ?: @""]) {
+    if (![app respondsToSelector:@selector(resolveForBrowser:formats:done:)] || ![[app refPrefixes] containsObject:SFRefPrefix(ref) ?: @""]) {
         [item resolveURL:resolved(nil)];
         return;
     }
-    dispatch_block_t online = ^{ [app resolveForBrowser:ref done:resolved(nil)]; };
+    dispatch_block_t online = ^{ [app resolveForBrowser:ref formats:order done:resolved(nil)]; };
     // an app with a browser format of its own (YouTube: an H.264 session) - but a copy complete in the media
     // store plays from there (the segmenter makes it playable, docs/pwa.md §8); online if that can't be
     if ([[SFDownloads shared].mediaStore itemIsComplete:item.identifier]) [item resolveURL:resolved(online)];
@@ -91,7 +107,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
 }
 
 - (void)open:(SFItem *)item url:(NSURL *)url app:(Class<SFApp>)app device:(NSString *)device formats:(NSSet *)formats
-    fallback:(dispatch_block_t)fallback done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+    fallback:(dispatch_block_t)fallback done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done {
     SFWebStream *s = [SFWebStream new];
     s.identifier = NewID();
     s.device = device;
@@ -99,11 +115,12 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     s.source = SFMPVSourceFor(url) ?: @{};
     s.live = item.kind == SFItemLive || [s.source[@"live"] boolValue];
     s.lastUsed = [NSDate timeIntervalSinceReferenceDate];
-    if (!s.identifier) { done(nil, 500, kNotForBrowser); return; }
+    if (!s.identifier) { done(nil, 500, SFWebErrInternal, kNotForBrowser); return; }
     // what can't be: the fallback (the app's browser format) or the viewer is told
     void (^cannot)(NSString *) = ^(NSString *message) {
         [self endSession:s app:app];
-        if (fallback) fallback(); else done(nil, 415, message ?: kNotForBrowser);
+        if (fallback) fallback();
+        else done(nil, 415, [message isEqualToString:SFWebTranscodeBusyMessage] ? SFWebErrEncoderBusy : SFWebErrNotPlayable, message ?: kNotForBrowser);
     };
     NSString *v = str(s.source[@"video"]), *a = str(s.source[@"audio"]);
     if (v && a) { [self openPair:s video:v audio:a app:app formats:formats cannot:cannot done:done]; return; }
@@ -139,7 +156,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
 // A DASH pair: the browser reads the tracks' byte ranges itself where they are fragmented MP4 of codecs it
 // decodes (YouTube's browser session: H.264 + AAC); else the segmenter (a stored video's WebM/AV1 + Opus)
 - (void)openPair:(SFWebStream *)s video:(NSString *)v audio:(NSString *)a app:(Class<SFApp>)app formats:(NSSet *)formats
-          cannot:(void (^)(NSString *))cannot done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+          cannot:(void (^)(NSString *))cannot done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done {
     s.video = [NSURL URLWithString:v]; s.audio = [NSURL URLWithString:a];
     s.prefixes = [@[RoutePrefix(s.video) ?: @"", RoutePrefix(s.audio) ?: @""] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
     SFBackground(^{   // its headers decide (the reads wait for the engine)
@@ -187,7 +204,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
 }
 
 - (void)opened:(SFWebStream *)s app:(Class<SFApp>)app duration:(NSTimeInterval)duration
-          done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+          done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done {
     NSTimeInterval start = [self startOf:s];
     if ([app respondsToSelector:@selector(playback:startsAt:)] && !s.live) [app playback:s.source startsAt:start];
     NSMutableArray *ended = [NSMutableArray new];
@@ -198,7 +215,8 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
         for (NSUInteger i = 0; i + kPerDevice < mine.count; i++) { [ended addObject:mine[i]]; [_streams removeObjectForKey:[mine[i] identifier]]; }
     }
     for (SFWebStream *old in ended) { [self endSession:old app:[SFAppRegistry appForItem:old.item]]; [self ended:old why:@"the device opened another"]; }
-    if (!_sweep) _sweep = [NSTimer scheduledTimerWithTimeInterval:60 target:self selector:@selector(sweep) userInfo:nil repeats:YES];
+    if (!_sweep) _sweep = [NSTimer scheduledTimerWithTimeInterval:MIN(60, IdleLimit() / 2) target:self selector:@selector(sweep) userInfo:nil repeats:YES];
+    [self observeSessionsOf:app];
     NSString *kindName = s.kind == SFWebStreamDash || s.kind == SFWebStreamHLS || s.kind == SFWebStreamSegmented ? @"hls" : @"file";
     // an HLS playlist is served at its own local path (l/<port>/<path>): relative URIs in it resolve as they do locally
     NSString *path = s.kind == SFWebStreamDash || s.kind == SFWebStreamSegmented ? @"index.m3u8"
@@ -209,7 +227,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     NSMutableDictionary *answer = [@{@"stream": s.identifier, @"kind": kindName, @"url": [NSString stringWithFormat:@"/m/%@/%@", s.identifier, path],
            @"start": @(start), @"duration": @(duration > 0 ? duration : 0), @"live": @(s.live), @"title": s.item.title ?: @""} mutableCopy];
     if (s.transcode) answer[@"segmented"] = s.transcode.mode;   // what the segmenter does (diagnostics)
-    done(answer, 200, nil);
+    done(answer, 200, nil, nil);
 }
 
 #pragma mark Reports and lifetime
@@ -219,6 +237,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     if (!s || (device && ![s.device isEqualToString:device])) return 404;   // nil: asked on the stream's own capability path
     NSString *st = str(state[@"state"]);
     if (![@[@"playing", @"paused", @"buffering", @"ended", @"closed"] containsObject:st ?: @""]) return 400;
+    s.paused = [st isEqualToString:@"paused"];
     double pos = [num(state[@"position"]) doubleValue], dur = [num(state[@"duration"]) doubleValue];
     Class<SFApp> app = [SFAppRegistry appForItem:s.item];
     if ([app respondsToSelector:@selector(playback:reports:)]) {
@@ -256,15 +275,48 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     return gone.count;
 }
 
+- (void)sweepForTesting { [self sweep]; }
+
 - (void)sweep {
-    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-    NSMutableArray *idle = [NSMutableArray new];
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate], idleLimit = IdleLimit(), pausedLimit = PausedLimit();
+    NSMutableArray *idle = [NSMutableArray new], *waiting = [NSMutableArray new];
     @synchronized (self) {
-        for (SFWebStream *s in _streams.allValues) if (now - s.lastUsed > kIdle) [idle addObject:s];
+        for (SFWebStream *s in _streams.allValues) {
+            NSTimeInterval unused = now - s.lastUsed;
+            if (unused > (s.paused ? MAX(pausedLimit, idleLimit) : idleLimit)) [idle addObject:s];
+            else if (unused > idleLimit) [waiting addObject:s];
+        }
         for (SFWebStream *s in idle) [_streams removeObjectForKey:s.identifier];
         if (!_streams.count) { [_sweep invalidate]; _sweep = nil; }
     }
-    for (SFWebStream *s in idle) { [self endSession:s app:[SFAppRegistry appForItem:s.item]]; [self ended:s why:@"unused"]; }
+    for (SFWebStream *s in waiting) [s.transcode dropSegments];   // a paused stream holds no made segments meanwhile
+    for (SFWebStream *s in idle) { [self endSession:s app:[SFAppRegistry appForItem:s.item]]; [self ended:s why:s.paused ? @"paused too long" : @"unused"]; }
+}
+
+// An app session behind streams ended (YouTube: the engine closed an unused one, or its page reloaded):
+// those streams end with it - their media would fail; the client plays the item again (410)
+- (void)observeSessionsOf:(Class<SFApp>)app {
+    if (![app respondsToSelector:@selector(playbackSessionLostNotification)]) return;
+    NSString *name = [app playbackSessionLostNotification];
+    if (!name || [_observed containsObject:name]) return;
+    if (!_observed) _observed = [NSMutableSet new];
+    [_observed addObject:name];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(sessionsLost:) name:name object:nil];
+}
+
+- (void)sessionsLost:(NSNotification *)n {
+    NSMutableArray *gone = [NSMutableArray new];
+    @synchronized (self) {
+        for (SFWebStream *s in _streams.allValues) {
+            Class<SFApp> app = [SFAppRegistry appForItem:s.item];
+            if (![app respondsToSelector:@selector(playbackSessionLostNotification)] || ![[app playbackSessionLostNotification] isEqualToString:n.name]) continue;
+            if (![app respondsToSelector:@selector(playbackIsSession:)] || ![app playbackIsSession:s.source]) continue;
+            if ([app respondsToSelector:@selector(playback:lostIn:)] && ![app playback:s.source lostIn:n]) continue;
+            [gone addObject:s];
+        }
+        for (SFWebStream *s in gone) [_streams removeObjectForKey:s.identifier];
+    }
+    for (SFWebStream *s in gone) [self ended:s why:@"its app session ended"];
 }
 
 - (void)ended:(SFWebStream *)s why:(NSString *)why {

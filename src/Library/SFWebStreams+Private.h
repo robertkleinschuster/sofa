@@ -24,6 +24,7 @@ typedef NS_ENUM(NSInteger, SFWebStreamKind) {
 @property (nonatomic, strong) NSURL *proxied;          // a media proxy session opened for it (released at the end)
 @property (nonatomic, strong) SFWebTranscode *transcode;   // segmented: its session (closed at the end)
 @property (nonatomic) BOOL live, saved, everSaved;
+@property (atomic) BOOL paused;                        // its last report said "paused" (it may stay unused longer)
 @property (atomic) NSTimeInterval lastUsed;
 @end
 
@@ -31,7 +32,7 @@ typedef NS_ENUM(NSInteger, SFWebStreamKind) {
 - (SFWebStream *)streamWithID:(NSString *)identifier;   // any queue; notes it as used
 - (double)startOf:(SFWebStream *)s;                      // where its playback begins (the stored position, as the TV resumes)
 - (void)opened:(SFWebStream *)s app:(Class<SFApp>)app duration:(NSTimeInterval)duration
-          done:(void (^)(NSDictionary *, NSInteger, NSString *))done;
+          done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done;
 @end
 
 @interface SFWebStreams (Transcode)   // SFWebStreams+Transcode.m

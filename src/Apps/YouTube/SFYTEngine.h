@@ -41,10 +41,12 @@ extern NSString *const SFYTEngineSessionsLostNotification;
 @end
 
 @interface SFYTEngine (Browser)   // SFYTEngine+Browser.m
-// A session for a web browser (Sofa im Browser, docs/pwa.md): the same page, identity and pacing as
-// the TV's sessions, in the formats every browser decodes - H.264 + AAC (fragmented MP4) up to 1080p.
-// Its tracks are buffer in the media store; the item's own format (downloads) stays the TV's.
-- (void)openForBrowser:(NSString *)videoID done:(void (^)(NSDictionary *r, NSError *e))done;
+// A session for a client of the web API (Sofa im Browser, the native apps; docs/pwa.md §3, docs/api.md
+// "Formats"): the same page, identity and pacing as the TV's sessions - one more session of the one
+// client, never another client - up to 1080p, in the codecs the client decodes (`formats`, its order of
+// preference: SFYTBrowserCodecs): browsers and iOS H.264 + AAC, a native Android VP9/AV1 + Opus as on
+// the TV. Its tracks are buffer in the media store; the item's own format (downloads) stays the TV's.
+- (void)openForBrowser:(NSString *)videoID formats:(NSArray *)formats done:(void (^)(NSDictionary *r, NSError *e))done;
 @end
 
 @interface SFYTEngine (Rest)   // SFYTEngine+Rest.m

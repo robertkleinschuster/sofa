@@ -6,20 +6,46 @@
 #import <Security/SecRandom.h>
 #import <ImageIO/ImageIO.h>
 
-static NSString *const kKeySetting = @"web.imageKey";
 static const NSUInteger kMinWidth = 64, kMaxWidth = 1920;
+static NSString *const kOldKeySetting = @"web.imageKey";   // where the key was kept until 2026-11-26 (moved, then removed)
 
+static NSString *Hex(const uint8_t *b, size_t n) {
+    NSMutableString *h = [NSMutableString stringWithCapacity:n * 2];
+    for (size_t i = 0; i < n; i++) [h appendFormat:@"%02x", b[i]];
+    return h;
+}
+
+static BOOL IsKey(NSString *hex) {
+    return hex.length == 64 && [hex rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location == NSNotFound;
+}
+
+// The signing key: 256 random bits, in <data dir>/web/image.key (the folder 0700, the file 0600, next
+// to the tailnet certificate's key) - a secret is no setting and no row of the database, which tests
+// and backups copy. It lives as long as the data folder: the picture URLs a client cached (a native
+// app's image cache, the browser's) stay valid across Sofa's restarts and updates.
 static NSData *Key(void) {
     static NSData *key; static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSString *hex = [[SFStore shared] setting:kKeySetting];
-        if (hex.length != 64) {
-            uint8_t b[32];
-            if (SecRandomCopyBytes(kSecRandomDefault, sizeof b, b) != 0) arc4random_buf(b, sizeof b);
-            NSMutableString *h = [NSMutableString new];
-            for (int i = 0; i < 32; i++) [h appendFormat:@"%02x", b[i]];
-            hex = h;
-            [[SFStore shared] setSetting:hex forKey:kKeySetting];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSString *dir = [SFAppSupportDir() stringByAppendingPathComponent:@"web"], *path = [dir stringByAppendingPathComponent:@"image.key"];
+        NSString *hex = [[[NSString alloc] initWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil]
+                         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!IsKey(hex)) {
+            NSString *old = [[SFStore shared] setting:kOldKeySetting];   // the pictures handed out before keep working
+            if (IsKey(old)) hex = old;
+            else {
+                uint8_t b[32];
+                if (SecRandomCopyBytes(kSecRandomDefault, sizeof b, b) != 0) arc4random_buf(b, sizeof b);
+                hex = Hex(b, sizeof b);
+            }
+            [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:nil];
+            NSString *tmp = [path stringByAppendingString:@".tmp"];
+            BOOL written = [fm createFileAtPath:tmp contents:[hex dataUsingEncoding:NSUTF8StringEncoding] attributes:@{NSFilePosixPermissions: @0600}]
+                        && rename(tmp.fileSystemRepresentation, path.fileSystemRepresentation) == 0;
+            if (written) {
+                if (old) [[SFStore shared] setSetting:nil forKey:kOldKeySetting];
+                SFLog(@"web: picture key %@", IsKey(old) ? @"moved into the data folder" : @"made");
+            } else SFLog(@"web: picture key not written (%s) - pictures are signed for this run only", strerror(errno));
         }
         key = [hex dataUsingEncoding:NSUTF8StringEncoding];
     });

@@ -24,6 +24,7 @@ extern NSString *const SFWebTranscodeBusyMessage;   // the viewer's message when
 - (void)serveInit:(SFHTTPExchange *)x;
 - (void)serveSegment:(NSUInteger)n to:(SFHTTPExchange *)x;
 - (void)close;    // the stream ended: the job stops, the segments go
+- (void)dropSegments;   // the stream waits paused: its made segments go (made again when asked for)
 + (NSUInteger)activeJobsForTesting;
 @end
 

@@ -85,10 +85,12 @@ export interface OpenRequest {
   /** default: prefetch unless bg */
   prefetch?: boolean;
   isolated?: boolean;
-  vcodec?: string;
-  acodec?: string;
-  /** vcodec/acodec are requirements, not preferences: a web browser (Sofa im Browser) decodes only these */
-  onlyCodecs?: boolean;
+  /**
+   * A client of Sofa's web API (Sofa im Browser, the native apps; docs/api.md "Formats") decodes only
+   * these: a requirement, in its order of preference (formats.ts pickVideo/pickAudio). Absent: the TV's choice.
+   */
+  vcodecs?: string[];
+  acodecs?: string[];
 }
 
 /** A subtitle track of an open answer. */
@@ -459,10 +461,12 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     const maxHeight = Number(q.maxHeight) || DEFAULT_MAX_HEIGHT;
     const lang = (q.lang || 'de').slice(0, 12);
     const startSec = Math.max(0, Number(q.start) || 0);
-    // codec preferences (downloads ask for avc1 + mp4a: an MP4 without re-encoding)
-    const vcodec = ['avc1', 'vp9', 'av01'].includes(q.vcodec ?? '') ? q.vcodec! : null;
-    const acodec = ['mp4a', 'opus'].includes(q.acodec ?? '') ? q.acodec! : null;
-    const onlyCodecs = !!q.onlyCodecs && !!vcodec && !!acodec;
+    // a client's codecs (its requirement, in its order): only YouTube's own names count; none left = the TV's choice
+    const known = (list: unknown, names: string[]): string[] | null => {
+      const l = Array.isArray(list) ? [...new Set(list.filter((c): c is string => typeof c === 'string' && names.includes(c)))] : [];
+      return l.length ? l : null;
+    };
+    const vcodecs = known(q.vcodecs, ['avc1', 'vp9', 'av01']), acodecs = known(q.acodecs, ['mp4a', 'opus']);
     const prefetch = q.prefetch ?? !bg;
     let info; let cached;
     try {
@@ -484,15 +488,15 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     // an existing healthy session for the same choice keeps its buffered media
     for (const s of sessions.values()) {
       if (s.kind !== 'hls' && s.isolated === !!q.isolated && !s.closed && !s.failed && s.info === info && s.maxHeight === maxHeight && s.lang === lang
-          && s.vcodec === vcodec && s.acodec === acodec && !!s.onlyCodecs === onlyCodecs) {
+          && String(s.vcodecs) === String(vcodecs) && String(s.acodecs) === String(acodecs)) {
         s.lastActivity = Date.now();
         if (prefetch && startSec) s.hint(startSec * 1000);
         return describeSession(s, { cached: true, reused: true, secs: +((performance.now() - t0) / 1000).toFixed(2), blocked_until: breaker.blockedUntil() });
       }
     }
     const formats = describeFormats(info.formats);
-    const video = pickVideo(formats, maxHeight, vcodec, onlyCodecs);
-    const audio = pickAudio(formats, acodec, onlyCodecs);
+    const video = pickVideo(formats, maxHeight, vcodecs);
+    const audio = pickAudio(formats, acodecs);
     if (!video || !audio) return { id: vid, error: 'no usable video/audio format', bot: false, blocked_until: breaker.blockedUntil() };
     const list = audioTracks(formats);
     makeRoom();
@@ -509,7 +513,7 @@ export function createEngine({ youtube, po, breaker, startPump, base, sessionCfg
     s.audioList = list;
     s.maxHeight = maxHeight;
     s.lang = lang;
-    s.vcodec = vcodec; s.acodec = acodec; s.onlyCodecs = onlyCodecs;
+    s.vcodecs = vcodecs; s.acodecs = acodecs;
     sessions.set(s.sid, s);
     if (prefetch) s.hint(startSec * 1000);
     log(`open ${vid}${bg ? ' (bg)' : ''}: ${video.itag} ${video.codec} ${video.height}p${video.fps} + ${audio.key} ${audio.codec} ${audio.lang || '?'}`

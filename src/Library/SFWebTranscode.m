@@ -1,6 +1,7 @@
 #import "SFWebTranscode.h"
 #import "SFSegmentTrack.h"
 #import "SFCore.h"
+#import "SFWebErrors.h"
 
 static const NSUInteger kAhead = 4;            // segments a job makes beyond the furthest one asked for, then waits
 static const NSUInteger kJump = 2;             // a request this far beyond the job's front waits for it (further: a new job)
@@ -144,7 +145,10 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
     return ^(NSData *data, NSInteger status) {
         dispatch_async(x.queue, ^{
             if (data) [x respond:200 type:@"video/mp4" body:data];
-            else [x respondJSON:status object:@{@"error": status == 410 ? @"stream ended" : status == 504 ? @"segment not ready" : @"segment unavailable"}];
+            else [x respondJSON:status object:status == 410 ? SFWebError(SFWebErrStreamGone, @"Diese Wiedergabe ist beendet.")
+                                         : status == 504 ? SFWebError(SFWebErrTimeout, @"Dieser Abschnitt ist noch nicht fertig.")
+                                         : status == 404 ? SFWebError(SFWebErrNotFound, @"Diesen Abschnitt gibt es nicht.")
+                                         : SFWebError(SFWebErrUpstream, @"Dieser Abschnitt ist nicht verfügbar.")];
         });
     };
 }
@@ -278,6 +282,18 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
         _cacheBytes -= [_cache[victim] length];
         [_cache removeObjectForKey:victim];
     }
+}
+
+// A paused stream waiting long (SFWebStreams): its made segments go, nothing else changes - the init
+// stays (every job's is the same), a later request makes what it asks for again
+- (void)dropSegments {
+    dispatch_async(_q, ^{
+        if (self->_closed || self->_job || !self->_cache.count) return;
+        SFLog(@"transcode: stream %@ waits - %lu segments dropped (%.1f MB)", [self->_stream substringToIndex:6],
+              (unsigned long)self->_cache.count, self->_cacheBytes / 1e6);
+        [self->_cache removeAllObjects];
+        self->_cacheBytes = 0;
+    });
 }
 
 - (void)close {

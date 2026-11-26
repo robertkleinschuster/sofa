@@ -37,6 +37,7 @@ static SFItem *video(NSArray *entry) {
     i.themeName = i.source;
     i.style = SFTileStyleLandscape;
     i.plot = @"Ein Video der Beispiel-App – Vorlage für neue Apps (docs/new-app.md).";
+    i.image = SFDevEnv(@"SOFA_EXAMPLE_IMAGE");   // tests: a picture (a local file), else none
     return i;
 }
 
@@ -128,7 +129,7 @@ static NSArray *videos(NSString *filter) {
 // (a resumed download fetches only the rest), every fetched one is logged.
 + (BOOL)respondsToSelector:(SEL)sel {
     if (sel == @selector(fillItem:progress:done:)) return SFDevEnv(@"SOFA_EXAMPLE_FILL") != nil;
-    if (sel == @selector(resolveForBrowser:done:)) return SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VIDEO") != nil;
+    if (sel == @selector(resolveForBrowser:formats:done:)) return SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VIDEO") != nil;
     return [super respondsToSelector:sel];
 }
 
@@ -160,11 +161,17 @@ static NSArray *videos(NSString *filter) {
     return ^{ cancelled = YES; step = nil; };
 }
 
-// A browser format of its own (as YouTube's H.264 session, docs/pwa.md §3) - tests only:
-// SOFA_EXAMPLE_BROWSER_VIDEO / _AUDIO = a DASH pair the browser reads by byte ranges.
-+ (void)resolveForBrowser:(NSString *)ref done:(SFURLDone)done {
+// A client format of its own (as YouTube's sessions, docs/pwa.md §3) - tests only:
+// SOFA_EXAMPLE_BROWSER_VIDEO / _AUDIO = an H.264 + AAC DASH pair the client reads by byte ranges;
+// SOFA_EXAMPLE_BROWSER_VP9_VIDEO / _AUDIO = a VP9 + Opus pair as well: taken when the client names vp09
+// before avc1 (its order of preference, as YouTube's engine chooses).
++ (void)resolveForBrowser:(NSString *)ref formats:(NSArray *)formats done:(SFURLDone)done {
     NSString *v = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VIDEO"), *a = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_AUDIO");
-    SFLog(@"example: browser format for %@", ref);
+    NSString *v9 = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VP9_VIDEO"), *a9 = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VP9_AUDIO");
+    NSUInteger avc = [formats indexOfObject:@"avc1"], vp9 = [formats indexOfObject:@"vp09"];
+    BOOL takeVP9 = v9 && a9 && vp9 != NSNotFound && (avc == NSNotFound || vp9 < avc);
+    if (takeVP9) { v = v9; a = a9; }
+    SFLog(@"example: browser format for %@ (%@)", ref, takeVP9 ? @"vp09+opus" : @"avc1+mp4a");
     if (a) SFSetMPVSource([NSURL URLWithString:v], @{@"video": v, @"audio": a});
     done([NSURL URLWithString:v], nil);
 }

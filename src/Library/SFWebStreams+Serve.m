@@ -5,6 +5,7 @@
 //   segmented: index.m3u8 · init.mp4 · s/<n>.m4s (SFWebTranscode, made on demand)
 #import "SFWebStreams+Private.h"
 #import "SFLoopbackClient.h"
+#import "SFWebErrors.h"
 
 static const NSUInteger kFilePiece = 1 << 20;
 static const NSTimeInterval kPlaylistTimeout = 60;
@@ -30,9 +31,9 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
 
 - (void)serve:(SFHTTPExchange *)x stream:(NSString *)streamID rest:(NSArray *)rest {
     NSString *m = x.request.method;
-    if (![m isEqualToString:@"GET"] && ![m isEqualToString:@"HEAD"]) { [x respondJSON:405 object:@{@"error": @"method not allowed"}]; return; }
+    if (![m isEqualToString:@"GET"] && ![m isEqualToString:@"HEAD"]) { [x respondJSON:405 object:SFWebError(SFWebErrMethodNotAllowed, @"Nur GET und HEAD.")]; return; }
     SFWebStream *s = [self streamWithID:streamID];
-    if (!s) { [x respondJSON:410 object:@{@"error": @"stream ended"}]; return; }
+    if (!s) { [x respondJSON:410 object:SFWebError(SFWebErrStreamGone, @"Diese Wiedergabe ist beendet.")]; return; }
     NSString *what = rest.firstObject ?: @"";
     switch (s.kind) {
         case SFWebStreamDash:
@@ -62,7 +63,7 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
             }
             break;
     }
-    [x respondJSON:404 object:@{@"error": @"not found"}];
+    [x respondJSON:404 object:SFWebError(SFWebErrNotFound, @"Nicht gefunden.")];
 }
 
 - (void)text:(NSString *)text to:(SFHTTPExchange *)x {
@@ -88,7 +89,7 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
     BOOL allowed = NO;
     for (NSString *prefix in s.prefixes) if ([target hasPrefix:prefix]) allowed = YES;
     NSURL *u = allowed && port > 0 && port < 65536 ? [NSURL URLWithString:target] : nil;
-    if (!u) { [x respondJSON:403 object:@{@"error": @"not this stream's"}]; return; }
+    if (!u) { [x respondJSON:403 object:SFWebError(SFWebErrForbidden, @"Gehört nicht zu dieser Wiedergabe.")]; return; }
     NSString *ext = u.path.pathExtension.lowercaseString;
     if (![ext isEqualToString:@"m3u8"] && ![ext isEqualToString:@"m3u"]) { [SFLoopbackClient relay:u to:x]; return; }
     NSString *sid = s.identifier;
@@ -96,7 +97,7 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
         SFLoopbackResponse *r = [SFLoopbackClient get:u range:nil timeout:kPlaylistTimeout];
         NSString *text = r.status == 200 ? [[NSString alloc] initWithData:r.body encoding:NSUTF8StringEncoding] : nil;
         dispatch_async(x.queue, ^{
-            if (!text) { [x respondJSON:r.status >= 400 ? r.status : 502 object:@{@"error": @"playlist unavailable"}]; return; }
+            if (!text) { [x respondJSON:r.status >= 400 ? r.status : 502 object:SFWebError(SFWebErrUpstream, @"Die Wiedergabeliste ist nicht verfügbar.")]; return; }
             [self text:Rewrite(text, sid) to:x];
         });
     });
@@ -106,7 +107,7 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
 - (void)file:(NSString *)path to:(SFHTTPExchange *)x {
     long long total = [[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil] fileSize];
     NSFileHandle *fh = total > 0 ? [NSFileHandle fileHandleForReadingAtPath:path] : nil;
-    if (!fh) { [x respondJSON:404 object:@{@"error": @"file gone"}]; return; }
+    if (!fh) { [x respondJSON:404 object:SFWebError(SFWebErrStreamGone, @"Die Datei ist nicht mehr da.")]; return; }
     long long start, end; BOOL partial;
     if (!SFHTTPParseRange([x.request header:@"range"], total, &start, &end, &partial)) {
         [x begin:416 headers:@{@"Content-Range": [NSString stringWithFormat:@"bytes */%lld", total], @"Content-Length": @"0"}];

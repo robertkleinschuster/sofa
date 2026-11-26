@@ -1,12 +1,16 @@
 // SFWebServer - Sofa im Browser (docs/pwa.md): the HTTPS API and media routes the PWA (GitHub Pages)
 // talks to over the tailnet. TLS with the tailnet's certificate for this machine's MagicDNS name
 // (SFTailnet, SFTLS), only on tailnet addresses; plain HTTP on the same port answers only the
-// connect redirect that teaches the PWA the full name. Every route but `hello`, `pair` and the
+// connect redirect and `discover`, which teach a client the full name. The contract: api/openapi.yaml
+// (docs/api.md). Every route but `hello`, `pair` and the
 // capability routes (/m/<stream>, signed /img) needs a paired device's token (SFWebDevices).
 #import "SFCore.h"
 #import "SFPlayerHost.h"
 
 extern NSString *const SFWebServerStatusDidChangeNotification;   // address/problem changed (main thread)
+// The API's version (docs/api.md "Versions"): /api/v<n>/ for min <= n <= version; additions within a
+// version are announced as `features` in /api/hello, a breaking change is a new version.
+extern const NSInteger SFWebAPIVersion, SFWebAPIMinVersion;
 
 @interface SFWebServer : NSObject
 + (instancetype)shared;

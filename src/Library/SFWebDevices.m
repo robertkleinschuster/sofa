@@ -11,6 +11,37 @@ static const NSUInteger kTriesPerCode = 3;
 static const NSUInteger kWrongPerMinute = 10;
 static const NSTimeInterval kSeenEvery = 600;   // "last seen" is written at most this often per device
 static const NSUInteger kMaxName = 60;
+static const NSUInteger kMaxClientField = 40;
+
+@implementation SFWebClient
+
++ (instancetype)kind:(NSString *)kind app:(NSString *)app version:(NSString *)version {
+    SFWebClient *c = [SFWebClient new];
+    c->_kind = [kind copy] ?: @"web"; c->_app = app.length ? [app copy] : nil; c->_version = version.length ? [version copy] : nil;
+    return c;
+}
+
++ (instancetype)clientFrom:(id)json {
+    if (!json || json == [NSNull null]) return [self kind:@"web" app:nil version:nil];
+    if (![json isKindOfClass:[NSDictionary class]]) return nil;
+    NSString *kind = json[@"kind"];
+    if (![kind isKindOfClass:[NSString class]] || ![@[@"web", @"ios", @"android"] containsObject:kind]) return nil;
+    NSString *fields[2] = {json[@"app"], json[@"version"]};
+    for (int i = 0; i < 2; i++) {
+        id f = fields[i];
+        if (!f || f == (id)[NSNull null]) { fields[i] = nil; continue; }
+        if (![f isKindOfClass:[NSString class]]) return nil;
+        NSString *t = [f stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        fields[i] = t.length > kMaxClientField ? [t substringToIndex:kMaxClientField] : t;
+    }
+    return [self kind:kind app:fields[0] version:fields[1]];
+}
+
+- (NSString *)label {
+    NSString *what = [_kind isEqualToString:@"ios"] ? @"iOS-App" : [_kind isEqualToString:@"android"] ? @"Android-App" : @"Browser";
+    return _version ? [NSString stringWithFormat:@"%@ %@", what, _version] : what;
+}
+@end
 
 @implementation SFWebDevice
 @end
@@ -63,9 +94,10 @@ static NSString *NewCode(void) {
         _q = dispatch_queue_create("sofa.web-devices", DISPATCH_QUEUE_SERIAL);
         _byHash = [NSMutableDictionary new];
         _wrong = [NSMutableArray new];
-        for (NSDictionary *r in [[SFStore shared] rows:@"SELECT id, name, token, paired, seen FROM web_devices" args:nil]) {
+        for (NSDictionary *r in [[SFStore shared] rows:@"SELECT id, name, token, paired, seen, client_kind, client_app, client_version FROM web_devices" args:nil]) {
             SFWebDevice *d = [SFWebDevice new];
             d.identifier = r[@"id"]; d.name = r[@"name"];
+            d.client = [SFWebClient kind:nn(r[@"client_kind"]) app:nn(r[@"client_app"]) version:nn(r[@"client_version"])];
             d.paired = [r[@"paired"] doubleValue]; d.seen = [nn(r[@"seen"]) doubleValue];
             if (d.identifier && r[@"token"]) _byHash[r[@"token"]] = d;
         }
@@ -120,7 +152,7 @@ static void Changed(void) {
 
 #pragma mark Devices
 
-- (NSDictionary *)pairWithCode:(NSString *)code name:(NSString *)name status:(NSInteger *)status {
+- (NSDictionary *)pairWithCode:(NSString *)code name:(NSString *)name client:(SFWebClient *)client status:(NSInteger *)status {
     __block NSDictionary *out = nil;
     __block NSInteger st = 403;
     __block BOOL changed = NO;
@@ -148,14 +180,17 @@ static void Changed(void) {
         NSString *n = [name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         d.name = n.length ? (n.length > kMaxName ? [n substringToIndex:kMaxName] : n) : @"Browser";
         d.paired = now.timeIntervalSince1970;
+        d.client = client ?: [SFWebClient kind:@"web" app:nil version:nil];
         NSString *h = TokenHash(token);
         self->_byHash[h] = d;
-        [[SFStore shared] run:@"INSERT INTO web_devices (id, name, token, paired) VALUES (?, ?, ?, ?)" args:@[ident, d.name, h, @(d.paired)]];
+        [[SFStore shared] run:@"INSERT INTO web_devices (id, name, token, paired, client_kind, client_app, client_version) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                         args:@[ident, d.name, h, @(d.paired), d.client.kind, d.client.app ?: [NSNull null], d.client.version ?: [NSNull null]]];
         [self newCodeOnQueue];   // a code pairs once
         changed = YES;
         out = @{@"token": token, @"device": ident, @"name": d.name};
         st = 200;
-        SFLog(@"web: paired device %@ (%@)", ident, d.name);
+        SFLog(@"web: paired device %@ (%@, %@%@%@)", ident, d.name, d.client.kind, d.client.app ? [@" " stringByAppendingString:d.client.app] : @"",
+              d.client.version ? [@" " stringByAppendingString:d.client.version] : @"");
     });
     if (changed) Changed();
     if (status) *status = st;

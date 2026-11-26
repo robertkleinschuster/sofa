@@ -151,13 +151,13 @@ static NSDictionary *publishedInfo(NSDictionary *r) {
 
 // Sofa im Browser (docs/pwa.md): a session of the same engine page in H.264 + AAC; lives as on the TV
 // (the engine's HLS). Like a play here: the watch page follows a few seconds in, as a browser's would.
-+ (void)resolveForBrowser:(NSString *)ref done:(SFURLDone)done {
++ (void)resolveForBrowser:(NSString *)ref formats:(NSArray *)formats done:(SFURLDone)done {
     NSString *p = SFRefPrefix(ref), *vid = SFRefID(ref);
     if ([p isEqualToString:@"ytlive"]) { playLive(vid, done); return; }
     if (![p isEqualToString:@"yt"]) { done(nil, SFError(@"Quelle nicht verfügbar")); return; }
     SFYTEngine *engine = [SFYTEngine shared];
     if (!engine.available) { SFCount(@"yt.browser.no-engine"); done(nil, SFError(kNoEngineMsg)); return; }
-    [engine openForBrowser:vid done:^(NSDictionary *r, NSError *e) {
+    [engine openForBrowser:vid formats:formats done:^(NSDictionary *r, NSError *e) {
         if (!r) {
             SFCount([@"yt.browser." stringByAppendingString:outcome(e)]);
             done(nil, SFError(sabrMessage(e))); return;

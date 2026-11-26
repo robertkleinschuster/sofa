@@ -24,15 +24,27 @@ test('video: 1080p, VP9 before AV1 before H.264 at equal resolution', () => {
   assert.equal(F.pickVideo(avcOnly)?.itag, 137, 'H.264 last');
 });
 
-test('a required codec (a web browser): only H.264 + AAC, else nothing', () => {
+test('a client\'s codecs (web API): a requirement - only H.264 + AAC for a browser, else nothing', () => {
   const f = F.describeFormats(oz.adaptiveFormats);
-  const v = F.pickVideo(f, 1080, 'avc1', true);
+  const v = F.pickVideo(f, 1080, ['avc1']);
   assert.equal(v?.codec, 'avc1');
   assert.equal(v?.height, 1080);
-  assert.equal(F.pickAudio(f, 'mp4a', true)?.codec, 'mp4a');
+  assert.equal(F.pickAudio(f, ['mp4a'])?.codec, 'mp4a');
   const noAvc = F.describeFormats(oz.adaptiveFormats.filter((x) => !x.mimeType?.includes('avc1')));
-  assert.equal(F.pickVideo(noAvc, 1080, 'avc1', true), null, 'no H.264: no choice instead of another codec');
-  assert.equal(F.pickVideo(noAvc, 1080, 'avc1')?.codec, 'vp9', 'a preference still falls back');
+  assert.equal(F.pickVideo(noAvc, 1080, ['avc1']), null, 'no H.264: no choice instead of another codec');
+});
+
+test('a client\'s codecs in its order: its first choice at equal picture, never less picture for it', () => {
+  const f = F.describeFormats(oz.adaptiveFormats);
+  assert.equal(F.pickVideo(f, 1080, ['avc1', 'vp9', 'av01'])?.codec, 'avc1', 'a browser naming H.264 first: H.264');
+  assert.equal(F.pickVideo(f, 1080, ['av01', 'vp9', 'avc1'])?.itag, 399, 'an Android app naming AV1 first: AV1 1080p');
+  assert.equal(F.pickVideo(f, 1080, ['vp9', 'avc1'])?.itag, 248, 'VP9 first: VP9 1080p');
+  assert.equal(F.pickAudio(f, ['opus', 'mp4a'])?.codec, 'opus');
+  assert.equal(F.pickAudio(f, ['mp4a', 'opus'])?.itag, 140, 'AAC first: AAC, still not the DRC variant');
+  // a codec offered only smaller than another of the client's: the bigger picture wins over the order
+  const avcSmall = F.describeFormats(oz.adaptiveFormats.filter((x) => !(x.mimeType?.includes('avc1') && (x.height ?? 0) > 720)));
+  assert.equal(F.pickVideo(avcSmall, 1080, ['avc1', 'vp9'])?.codec, 'vp9', 'H.264 only to 720p: VP9 1080p');
+  assert.equal(F.pickVideo(avcSmall, 1080, ['avc1', 'vp9'])?.height, 1080);
 });
 
 test('video: small videos work (no strict quality filter), fps cap', () => {
@@ -120,15 +132,15 @@ test('Range header parsing', () => {
   assert.equal(parseRange('bytes=0-5,10-20', 100), null, 'multi-range -> whole file');
 });
 
-test('downloads: codec preference gives H.264 720p + AAC (plain MP4), still non-DRC', () => {
+test('H.264 + AAC required: 720p and 1080p as capped, AAC non-DRC, small videos too', () => {
   const f = F.describeFormats(oz.adaptiveFormats);
-  const v = F.pickVideo(f, 720, 'avc1');
+  const v = F.pickVideo(f, 720, ['avc1']);
   assert.equal(v?.itag, 136, 'H.264 720p');
-  assert.equal(F.pickVideo(f, 1080, 'avc1')?.itag, 137);
-  const a = F.pickAudio(f, 'mp4a');
+  assert.equal(F.pickVideo(f, 1080, ['avc1'])?.itag, 137);
+  const a = F.pickAudio(f, ['mp4a']);
   assert.equal(a?.itag, 140);
   assert.equal(a?.drc, false);
-  assert.equal(F.pickVideo(F.describeFormats(jnq.adaptiveFormats), 720, 'avc1')?.codec, 'avc1', 'small video too');
+  assert.equal(F.pickVideo(F.describeFormats(jnq.adaptiveFormats), 720, ['avc1'])?.codec, 'avc1', 'small video too');
 });
 
 test('end screen: videos/playlists/channels with position and time, websites skipped', async () => {

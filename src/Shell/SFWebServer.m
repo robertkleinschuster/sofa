@@ -6,8 +6,11 @@
 #import "SFWebImages.h"
 #import "SFWebTV.h"
 #import "SFJSON.h"
+#import "SFWebErrors.h"
 
 NSString *const SFWebServerStatusDidChangeNotification = @"SFWebServerStatusDidChange";
+const NSInteger SFWebAPIVersion = 1;
+const NSInteger SFWebAPIMinVersion = 1;
 
 static const uint16_t kPort = 7443;
 static NSString *const kAppURL = @"https://robertkleinschuster.github.io/sofa/";   // the Pages site (.github/workflows/pwa.yml)
@@ -147,7 +150,7 @@ static NSString *Origin(NSString *url) {
             NSDictionary *state = dict([NSJSONSerialization JSONObjectWithData:r.body options:0 error:nil]);
             dispatch_async(dispatch_get_main_queue(), ^{
                 NSInteger st = [[SFWebStreams shared] report:sid device:nil state:state ?: @{}];
-                SFWebReply(x, st, @{@"ok": st == 200 ? @YES : @NO});
+                SFWebReply(x, st, st == 200 ? @{@"ok": @YES} : SFWebStreamReportError(st));
             });
             return;
         }
@@ -156,12 +159,23 @@ static NSString *Origin(NSString *url) {
     }
     if ([first isEqualToString:@"img"] && parts.count == 2) { [self image:x signature:parts[1]]; return; }
     if ([first isEqualToString:@"api"]) {
+        NSArray *rest = [parts subarrayWithRange:NSMakeRange(1, parts.count - 1)];
+        // /api/v1/<route> is /api/<route> (docs/api.md "Versions"): the unversioned paths stay for the PWA
+        NSString *v = rest.firstObject;
+        if (v.length > 1 && [v hasPrefix:@"v"] && [[v substringFromIndex:1] rangeOfCharacterFromSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location == NSNotFound) {
+            NSInteger n = [v substringFromIndex:1].integerValue;
+            if (n < SFWebAPIMinVersion || n > SFWebAPIVersion) {
+                [x respondJSON:404 object:SFWebError(SFWebErrUnsupportedVersion, @"Diese Sofa-Version kennt diese Schnittstelle nicht – bitte Sofa oder die App aktualisieren.")];
+                return;
+            }
+            rest = [rest subarrayWithRange:NSMakeRange(1, rest.count - 1)];
+        }
         NSString *auth = [r header:@"authorization"];
         NSString *device = [auth hasPrefix:@"Bearer "] ? [[SFWebDevices shared] deviceForToken:[auth substringFromIndex:7]] : nil;
-        dispatch_async(dispatch_get_main_queue(), ^{ [self api:x parts:[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] device:device]; });
+        dispatch_async(dispatch_get_main_queue(), ^{ [self api:x parts:rest device:device]; });
         return;
     }
-    [x respondJSON:404 object:@{@"error": @"not found"}];
+    [x respondJSON:404 object:SFWebError(SFWebErrNotFound, @"Nicht gefunden.")];
 }
 
 - (void)preflight:(SFHTTPExchange *)x allowed:(BOOL)allowed {
@@ -175,12 +189,21 @@ static NSString *Origin(NSString *url) {
     [x finish];
 }
 
-// Plain HTTP: only the connect redirect - it teaches the PWA this machine's full name (the
-// certificate's) after the user typed the short one; anything else goes to https
+// Plain HTTP: what teaches a client this machine's full name (the certificate's) after the user typed
+// the short one - the PWA's connect redirect (a top-level navigation) and a native app's discover
+// (JSON); anything else goes to https. Only the name is said, which the redirect to https says anyway.
 - (void)plain:(SFHTTPExchange *)x {
     SFHTTPRequest *r = x.request;
     NSString *full = _fullName;
     uint16_t port = _http.port;
+    // no CORS here: an https page can't read plain HTTP anyway (mixed content)
+    x.extraHeaders = @{@"X-Content-Type-Options": @"nosniff", @"Referrer-Policy": @"no-referrer", @"Cache-Control": @"no-store"};
+    if ([r.pathParts.firstObject isEqualToString:@"discover"] && r.pathParts.count == 1) {
+        if (![r.method isEqualToString:@"GET"] && ![r.method isEqualToString:@"HEAD"]) { [x respondJSON:405 object:SFWebError(SFWebErrMethodNotAllowed, @"Nur GET.")]; return; }
+        if (!full) { [x respondJSON:503 object:SFWebError(SFWebErrNotReady, @"Die sichere Verbindung wird noch vorbereitet.")]; return; }
+        [x respondJSON:200 object:@{@"name": @"Sofa", @"host": full, @"port": @(port), @"api": @{@"version": @(SFWebAPIVersion), @"min": @(SFWebAPIMinVersion)}}];
+        return;
+    }
     if ([r.pathParts.firstObject isEqualToString:@"connect"] && r.pathParts.count == 1) {
         NSString *ret = r.query[@"return"];
         NSString *o = Origin(ret);
@@ -200,11 +223,11 @@ static NSString *Origin(NSString *url) {
 // /img/<signature>?u=<source>&w=<px>: a picture this server handed out, cached by the browser
 - (void)image:(SFHTTPExchange *)x signature:(NSString *)sig {
     NSString *src = x.request.query[@"u"];
-    if (![SFWebImages signature:sig matches:src]) { [x respondJSON:403 object:@{@"error": @"unknown picture"}]; return; }
+    if (![SFWebImages signature:sig matches:src]) { [x respondJSON:403 object:SFWebError(SFWebErrBadSignature, @"Unbekanntes Bild.")]; return; }
     NSUInteger w = (NSUInteger)MAX(0, [x.request.query[@"w"] integerValue]);
     [SFWebImages imageFor:src width:w done:^(NSData *data, NSString *mime) {
         dispatch_async(x.queue, ^{
-            if (!data) { [x respondJSON:404 object:@{@"error": @"no picture"}]; return; }
+            if (!data) { [x respondJSON:404 object:SFWebError(SFWebErrNoPicture, @"Das Bild ist nicht verfügbar.")]; return; }
             [x begin:200 headers:@{@"Content-Type": mime, @"Content-Length": [NSString stringWithFormat:@"%lu", (unsigned long)data.length],
                                    @"Cache-Control": @"private, max-age=86400", @"Content-Security-Policy": @"sandbox"}];
             if (![x.request.method isEqualToString:@"HEAD"]) [x write:data done:nil];

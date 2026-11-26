@@ -47,7 +47,7 @@ static NSDictionary *DownloadState(SFItem *i) {
     switch ([dl stateFor:i.identifier progress:&p]) {
         case SFDLQueued: return @{@"state": @"queued"};
         case SFDLRunning: return @{@"state": @"running", @"progress": @(MAX(0, MIN(1, p)))};
-        case SFDLDone: return @{@"state": @"done", @"kept": @([dl isKept:i.identifier]), @"gone": @([dl onlineStateFor:i.identifier] == 0)};
+        case SFDLDone: return @{@"state": @"done", @"kept": @([dl isKept:i.identifier]), @"gone": @((BOOL)([dl onlineStateFor:i.identifier] == 0))};
         case SFDLFailed: return @{@"state": @"failed", @"failure": [dl failureOf:i.identifier] ?: @""};
         default: return i.resolverRef && !i.localPath ? @{@"state": @"none"} : nil;
     }

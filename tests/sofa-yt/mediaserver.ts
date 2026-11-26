@@ -2,7 +2,7 @@
 // (src/Apps/YouTube/SFYTEngine+Media.m) over the engine core, with the same data path - media in
 // engine.read() pieces, the first one telling size and type - plus the calls Sofa makes over the
 // extension's channel as plain HTTP for test convenience. 127.0.0.1 only, Connection: close.
-//   GET /open?v=<id>&bg=0|1&maxHeight=&lang=&start=&prefetch=0|1&vcodec=&acodec=   (open)
+//   GET /open?v=<id>&bg=0|1&maxHeight=&lang=&start=&prefetch=0|1&vcodecs=a,b&acodecs=a,b   (open)
 //   GET|HEAD /s/<sid>/video   /s/<sid>/audio   /s/<sid>/audio/<key>              (Range, 206)
 //   GET /s/<sid>/live.m3u8   /s/<sid>/seg/<n>.<ext>   /s/<sid>/subs/<key>.vtt   /s/<sid>/status
 //   GET /close?sid=   POST /yt/<endpoint>?bg=0|1   GET /suggest?q=   GET /health
@@ -35,7 +35,7 @@ function openRequest(q: URLSearchParams): OpenRequest {
     v: q.get('v') || '', bg: q.get('bg') === '1', maxHeight: Number(q.get('maxHeight')) || undefined,
     lang: q.get('lang') || undefined, start: Number(q.get('start')) || 0,
     prefetch: q.has('prefetch') ? q.get('prefetch') === '1' : undefined,
-    vcodec: q.get('vcodec') ?? undefined, acodec: q.get('acodec') ?? undefined,
+    vcodecs: q.get('vcodecs')?.split(','), acodecs: q.get('acodecs')?.split(','),
   };
 }
 

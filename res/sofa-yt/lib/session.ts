@@ -351,9 +351,8 @@ export class PlaybackSession {
   audioList?: AudioTrackChoice[];
   maxHeight?: number;
   lang?: string;
-  vcodec?: string | null;
-  acodec?: string | null;
-  onlyCodecs?: boolean;
+  vcodecs?: string[] | null;
+  acodecs?: string[] | null;
 
   constructor({ info, formats, video, audio, audioChoices = [], subs = [], startPump, cfg = {} }: PlaybackSessionOptions) {
     this.kind = 'sabr';

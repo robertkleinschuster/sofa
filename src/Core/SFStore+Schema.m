@@ -264,6 +264,13 @@
             [self exec:@"CREATE TABLE web_devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, token TEXT NOT NULL UNIQUE "
                         "CHECK (length(token) = 64), paired REAL NOT NULL, seen REAL)"];
         },
+        // 22: the native apps (docs/api.md "Pairing") - what a device paired with: web (the PWA - every
+        // device paired before this step), ios or android, and the app's name and version as it said
+        ^{
+            [self exec:@"ALTER TABLE web_devices ADD COLUMN client_kind TEXT NOT NULL DEFAULT 'web' CHECK (client_kind IN ('web', 'ios', 'android'))"];
+            [self exec:@"ALTER TABLE web_devices ADD COLUMN client_app TEXT"];
+            [self exec:@"ALTER TABLE web_devices ADD COLUMN client_version TEXT"];
+        },
     ];
 }
 

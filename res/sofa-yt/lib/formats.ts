@@ -145,28 +145,31 @@ const VIDEO_CODEC_RANK: Record<string, number> = { vp9: 2, av01: 1, avc1: 0 };
  * Video choice (user requirement: max 1080p60): highest resolution, then fps, then
  * VP9 > AV1 > H.264 (mpv decodes in software; VP9 is the cheapest, see docs/codecs-research.md).
  * HDR and super-resolution variants only if nothing else is left.
+ * `codecs`: a client of Sofa's web API (docs/api.md "Formats") decodes only these - a requirement, in
+ * its order of preference, which replaces the TV's codec order (the picture's size and rate still come
+ * first: a client is never given less picture for its favourite codec).
  */
-export function pickVideo(formats: DescribedFormat[], maxHeight = DEFAULT_MAX_HEIGHT, preferCodec: string | null = null, onlyPreferred = false): DescribedFormat | null {
-  // onlyPreferred: the codec is a requirement (a web browser's player decodes nothing else)
-  const vids = formats.filter((f) => !f.isAudio && f.codec in VIDEO_CODEC_RANK && f.height > 0 && (!onlyPreferred || f.codec === preferCodec));
+export function pickVideo(formats: DescribedFormat[], maxHeight = DEFAULT_MAX_HEIGHT, codecs: readonly string[] | null = null): DescribedFormat | null {
+  const vids = formats.filter((f) => !f.isAudio && f.codec in VIDEO_CODEC_RANK && f.height > 0 && (!codecs || codecs.includes(f.codec)));
   const ok = (f: DescribedFormat): boolean => f.height <= maxHeight && (f.fps || 30) <= MAX_FPS;
   const plain = vids.filter((f) => ok(f) && !f.hdr && !f.sr);
   const pool = plain.length ? plain : vids.filter(ok).length ? vids.filter(ok) : vids;
   if (!pool.length) return null;
-  // preferCodec (downloads: avc1, so the file is a plain MP4) wins at equal resolution and fps
-  const rank = (f: DescribedFormat): number => (f.codec === preferCodec ? 9 : VIDEO_CODEC_RANK[f.codec]!);
+  const rank = (f: DescribedFormat): number => (codecs ? codecs.length - codecs.indexOf(f.codec) : VIDEO_CODEC_RANK[f.codec]!);
   const key = (f: DescribedFormat): number[] => [ok(f) ? 1 : 0, ok(f) ? f.height : -f.height, f.fps, rank(f), f.bitrate];
   return pool.reduce((best, f) => (cmpTuple(key(f), key(best)) > 0 ? f : best));
 }
 
-/** Best audio format overall (original language first, never auto-dubbed when anything else exists). */
-export function pickAudio(formats: DescribedFormat[], preferCodec: string | null = null, onlyPreferred = false): DescribedFormat | null {
-  const auds = formats.filter((f) => f.isAudio && (f.codec === 'opus' || f.codec === 'mp4a') && (!onlyPreferred || f.codec === preferCodec));
+/**
+ * Best audio format overall (original language first, never auto-dubbed when anything else exists).
+ * `codecs`: a client's requirement in its order of preference (as pickVideo), replacing the Opus preference.
+ */
+export function pickAudio(formats: DescribedFormat[], codecs: readonly string[] | null = null): DescribedFormat | null {
+  const auds = formats.filter((f) => f.isAudio && (f.codec === 'opus' || f.codec === 'mp4a') && (!codecs || codecs.includes(f.codec)));
   if (!auds.length) return null;
-  // preferCodec (downloads: mp4a) replaces the opus preference; the original track still wins first
   const rank = (f: DescribedFormat): number[] => {
     const r = audioRank(f);
-    if (preferCodec) r[2] = f.codec === preferCodec ? 1 : 0;
+    if (codecs) r[2] = codecs.length - codecs.indexOf(f.codec);
     return r;
   };
   return auds.reduce((best, f) => (cmpTuple(rank(f), rank(best)) > 0 ? f : best));

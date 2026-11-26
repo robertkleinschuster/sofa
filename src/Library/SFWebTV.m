@@ -2,6 +2,7 @@
 #import "SFPlayerScreen.h"
 #import "SFWebItems.h"
 #import "SFWebStreams.h"
+#import "SFWebErrors.h"
 
 static const NSTimeInterval kSameSpot = 3;   // a handed-over position this close to the TV's is where it is
 
@@ -32,9 +33,9 @@ static BOOL Busy(SFPlayerScreen *p) {
 - (void)play:(SFItem *)item fromStart:(BOOL)fromStart at:(NSTimeInterval)at replace:(BOOL)replace device:(NSString *)device
         done:(void (^)(NSInteger, NSDictionary *))done {
     id<SFPlayerHost> host = self.host;
-    if (!host) { done(503, @{@"error": @"Der Fernseher ist gerade nicht bereit."}); return; }
-    if (item.drm) { done(403, @{@"error": SFDRMNotice}); return; }
-    if (item.kind != SFItemVideo && item.kind != SFItemLive) { done(400, @{@"error": @"Das ist kein Video."}); return; }
+    if (!host) { done(503, SFWebError(SFWebErrNotReady, @"Der Fernseher ist gerade nicht bereit.")); return; }
+    if (item.drm) { done(403, SFWebError(SFWebErrDRM, SFDRMNotice)); return; }
+    if (item.kind != SFItemVideo && item.kind != SFItemLive) { done(400, SFWebError(SFWebErrNotVideo, @"Das ist kein Video.")); return; }
     BOOL live = item.kind == SFItemLive;
     SFPlayerScreen *cur = [host topPlayer];
     if (Busy(cur) && [cur.item.identifier isEqualToString:item.identifier]) {
@@ -51,7 +52,9 @@ static BOOL Busy(SFPlayerScreen *p) {
     if (Busy(cur) && !replace) {
         NSString *title = cur.item.title ?: @"ein Video";
         SFLog(@"web: %@ not sent to the TV - %@ plays there (device %@ asked first)", item.identifier, cur.item.identifier, device);
-        done(409, @{@"error": [NSString stringWithFormat:@"Am Fernseher läuft gerade „%@“.", title], @"busy": @{@"title": title}});
+        NSMutableDictionary *busy = [SFWebError(SFWebErrTVBusy, [NSString stringWithFormat:@"Am Fernseher läuft gerade „%@“.", title]) mutableCopy];
+        busy[@"busy"] = @{@"title": title};
+        done(409, busy);
         return;
     }
     [[SFWebStreams shared] endItem:item.identifier device:device why:@"sent to the TV"];

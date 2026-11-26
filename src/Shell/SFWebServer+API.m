@@ -17,8 +17,16 @@
 #import "SFWebStatus.h"
 #import "SFDownloads.h"
 #import "SFJSON.h"
+#import "SFWebErrors.h"
 
 static const NSTimeInterval kPageTimeout = 45;
+
+// What this Sofa offers within the API version (`hello`; docs/api.md "Versions", api/openapi.yaml
+// `Feature`): a client asks for a feature, never for a Sofa version.
+static NSArray *Features(void) {
+    return @[@"error-codes", @"client-identity", @"discover", @"formats", @"session-formats", @"paused-streams",
+             @"persistent-images", @"tv", @"downloads", @"status"];
+}
 
 static NSString *CSSColor(NSColor *c) {
     NSColor *x = [c colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
@@ -49,20 +57,20 @@ static NSDictionary *ThemeJSON(SFTheme *t) {
 // A page loader's first answer (some answer again with fresher data - the TV takes each; the browser
 // asks again when it wants), bounded in time
 static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
-    if (!loader) { SFWebReply(x, 410, @{@"error": @"Diese Seite ist nicht mehr da – bitte neu laden."}); return; }
+    if (!loader) { SFWebReply(x, 410, SFWebError(SFWebErrPageGone, @"Diese Seite ist nicht mehr da – bitte neu laden.")); return; }
     __block BOOL answered = NO;
     loader(^(SFPage *page, NSError *e) {
         SFMain(^{
             if (answered) return;
             answered = YES;
-            if (!page) SFWebReply(x, 502, @{@"error": e.localizedDescription ?: @"Der Inhalt konnte gerade nicht geladen werden."});
+            if (!page) SFWebReply(x, 502, SFWebError(SFWebErrUpstream, e.localizedDescription ?: @"Der Inhalt konnte gerade nicht geladen werden."));
             else SFWebReply(x, 200, [SFWebItems page:page]);
         });
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kPageTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (answered) return;
         answered = YES;
-        SFWebReply(x, 504, @{@"error": @"Der Inhalt antwortet gerade nicht."});
+        SFWebReply(x, 504, SFWebError(SFWebErrTimeout, @"Der Inhalt antwortet gerade nicht."));
     });
 }
 
@@ -74,53 +82,64 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     BOOL get = [m isEqualToString:@"GET"], post = [m isEqualToString:@"POST"];
     NSDictionary *body = post ? dict([NSJSONSerialization JSONObjectWithData:r.body options:0 error:nil]) : nil;
     if ([what isEqualToString:@"hello"] && get) {
-        SFWebReply(x, 200, @{@"name": @"Sofa", @"version": [SFUpdater shared].installedVersion ?: @"", @"paired": device ? @YES : @NO});
+        SFWebReply(x, 200, @{@"name": @"Sofa", @"version": [SFUpdater shared].installedVersion ?: @"", @"paired": device ? @YES : @NO,
+                             @"api": @{@"version": @(SFWebAPIVersion), @"min": @(SFWebAPIMinVersion)}, @"features": Features()});
         return;
     }
     if ([what isEqualToString:@"pair"] && post) {
+        if (!body) { SFWebReply(x, 400, SFWebError(SFWebErrBadRequest, @"Unvollständige Anfrage.")); return; }
         NSInteger st = 0;
-        NSDictionary *ok = [[SFWebDevices shared] pairWithCode:str(body[@"code"]) name:str(body[@"name"]) status:&st];
-        NSString *msg = st == 429 ? @"Zu viele falsche Versuche – bitte eine Minute warten."
-                      : st == 410 ? @"Am Fernseher ist gerade kein Code offen: Einstellungen → Sofa im Browser."
-                      : @"Der Code stimmt nicht. Der aktuelle steht am Fernseher.";
-        SFWebReply(x, st, ok ?: @{@"error": msg});
+        SFWebClient *client = [SFWebClient clientFrom:body[@"client"]];
+        if (!client) { SFWebReply(x, 400, SFWebError(SFWebErrBadRequest, @"Unbekannte App.")); return; }
+        NSDictionary *ok = [[SFWebDevices shared] pairWithCode:str(body[@"code"]) name:str(body[@"name"]) client:client status:&st];
+        NSDictionary *err = st == 429 ? SFWebError(SFWebErrRateLimited, @"Zu viele falsche Versuche – bitte eine Minute warten.")
+                          : st == 410 ? SFWebError(SFWebErrNoPairingOpen, @"Am Fernseher ist gerade kein Code offen: Einstellungen → Sofa im Browser.")
+                          : st == 500 ? SFWebError(SFWebErrInternal, @"Das hat nicht geklappt – bitte noch einmal versuchen.")
+                          : SFWebError(SFWebErrWrongCode, @"Der Code stimmt nicht. Der aktuelle steht am Fernseher.");
+        SFWebReply(x, st, ok ?: err);
         return;
     }
-    if (!device) { SFWebReply(x, 401, @{@"error": @"Dieses Gerät ist nicht (mehr) mit Sofa verbunden."}); return; }
+    if (!device) { SFWebReply(x, 401, SFWebError(SFWebErrNotPaired, @"Dieses Gerät ist nicht (mehr) mit Sofa verbunden.")); return; }
     if ([what isEqualToString:@"pair"] && [m isEqualToString:@"DELETE"]) { [[SFWebDevices shared] remove:device]; SFWebReply(x, 200, @{@"ok": @YES}); return; }
     if ([what isEqualToString:@"info"] && get) { [self info:x device:device]; return; }
     if ([what isEqualToString:@"home"] && get) { RunLoader([SFHome homeLoader], x); return; }
-    if ([what isEqualToString:@"app"] && get && parts.count == 2) { RunLoader([SFHome appLoader:parts[1]], x); return; }
+    if ([what isEqualToString:@"app"] && get && parts.count == 2) {
+        SFPageLoader loader = [SFHome appLoader:parts[1]];
+        if (loader) RunLoader(loader, x); else SFWebReply(x, 404, SFWebError(SFWebErrNotFound, @"Diese App gibt es hier nicht."));
+        return;
+    }
     if ([what isEqualToString:@"page"] && get && parts.count == 2) { RunLoader([SFWebItems pageLoaderForHandle:parts[1]], x); return; }
     if ([what isEqualToString:@"more"] && get && parts.count == 2) { [self more:parts[1] to:x]; return; }
     if ([what isEqualToString:@"show"] && get) {
         NSString *ref = r.query[@"ref"];
-        RunLoader(ref && [SFAppRegistry isShowRef:ref] ? SFShowPageLoader(ref, r.query[@"title"]) : nil, x);
+        if (ref && [SFAppRegistry isShowRef:ref]) RunLoader(SFShowPageLoader(ref, r.query[@"title"]), x);
+        else SFWebReply(x, 404, SFWebError(SFWebErrNotFound, @"Diese Sendung gibt es hier nicht."));
         return;
     }
     if ([what isEqualToString:@"search"] && get) { [self search:x]; return; }
     if ([what isEqualToString:@"suggest"] && get) { [self suggest:x]; return; }
     if ([what isEqualToString:@"play"] && post) {
         SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
-        if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekanntes Video."}); return; }
-        // the codecs the browser decodes (it says so; an older PWA: H.264 + AAC, what every browser plays)
-        NSMutableSet *formats = [NSMutableSet new];
+        if (!item) { SFWebReply(x, 400, SFWebError(SFWebErrUnknownItem, @"Unbekanntes Video.")); return; }
+        // the codecs the client decodes, in its order of preference (it says so; an older PWA: H.264 + AAC,
+        // what every browser plays)
+        NSMutableOrderedSet *formats = [NSMutableOrderedSet new];
         for (id f in [body[@"formats"] isKindOfClass:[NSArray class]] ? body[@"formats"] : @[@"avc1", @"mp4a"])
             if ([f isKindOfClass:[NSString class]]) [formats addObject:[f lowercaseString]];
-        [[SFWebStreams shared] play:item device:device formats:formats done:^(NSDictionary *answer, NSInteger status, NSString *message) {
-            SFWebReply(x, status, answer ?: @{@"error": message ?: @"Das Video ließ sich nicht abspielen."});
+        [[SFWebStreams shared] play:item device:device formats:formats.array done:^(NSDictionary *answer, NSInteger status, NSString *code, NSString *message) {
+            SFWebReply(x, status, answer ?: SFWebError(code, message ?: @"Das Video ließ sich nicht abspielen."));
         }];
         return;
     }
     if ([what isEqualToString:@"stream"] && post && parts.count == 2) {
         NSInteger st = [[SFWebStreams shared] report:parts[1] device:device state:body ?: @{}];
-        SFWebReply(x, st, @{@"ok": st == 200 ? @YES : @NO});
+        SFWebReply(x, st, st == 200 ? @{@"ok": @YES} : SFWebStreamReportError(st));
         return;
     }
     if ([what isEqualToString:@"state"] && post) { [self state:body to:x]; return; }
     if ([what isEqualToString:@"status"] && get) { [[SFWebStatus shared] answer:x since:r.query[@"since"] ?: @""]; return; }
     if ([what isEqualToString:@"tv"] && post && parts.count == 2) { [self tv:parts[1] body:body device:device to:x]; return; }
-    SFWebReply(x, 404, @{@"error": @"not found"});
+    SFWebReply(x, 404, SFWebError(SFWebErrNotFound, @"Nicht gefunden."));
 }
 
 - (void)info:(SFHTTPExchange *)x device:(NSString *)device {
@@ -135,13 +154,13 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
         [apps addObject:d];
     }
     NSString *name = @"";
-    for (SFWebDevice *d in [[SFWebDevices shared] devices]) if ([d.identifier isEqualToString:device]) name = d.name;
+    for (SFWebDevice *d in [[SFWebDevices shared] devices]) if ([d.identifier isEqualToString:device]) name = d.name ?: @"";
     SFWebReply(x, 200, @{@"apps": apps, @"themes": themes, @"device": name, @"host": self.shortName ?: @""});
 }
 
 - (void)more:(NSString *)handle to:(SFHTTPExchange *)x {
     void (^more)(void (^)(NSArray *, BOOL)) = [SFWebItems moreLoaderForHandle:handle];
-    if (!more) { SFWebReply(x, 410, @{@"error": @"Diese Liste ist nicht mehr da – bitte neu laden."}); return; }
+    if (!more) { SFWebReply(x, 410, SFWebError(SFWebErrPageGone, @"Diese Liste ist nicht mehr da – bitte neu laden.")); return; }
     __block BOOL answered = NO;
     more(^(NSArray *items, BOOL further) {
         SFMain(^{
@@ -151,14 +170,14 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
         });
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kPageTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!answered) { answered = YES; SFWebReply(x, 504, @{@"error": @"Die Liste antwortet gerade nicht."}); }
+        if (!answered) { answered = YES; SFWebReply(x, 504, SFWebError(SFWebErrTimeout, @"Die Liste antwortet gerade nicht.")); }
     });
 }
 
 - (void)search:(SFHTTPExchange *)x {
     NSString *source = x.request.query[@"app"], *q = [x.request.query[@"q"] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     Class<SFApp> app = source ? [SFAppRegistry appNamed:source] : nil;
-    if (!app || ![app respondsToSelector:@selector(searchLoader:)]) { SFWebReply(x, 404, @{@"error": @"Hier gibt es keine Suche."}); return; }
+    if (!app || ![app respondsToSelector:@selector(searchLoader:)]) { SFWebReply(x, 404, SFWebError(SFWebErrNoSearch, @"Hier gibt es keine Suche.")); return; }
     if (!q.length) { SFWebReply(x, 200, @{@"recent": SFRecentSearches(source) ?: @[]}); return; }
     SFAddRecentSearch(source, q);   // shared with the TV's keyboard (one household)
     RunLoader([app searchLoader:q], x);
@@ -176,7 +195,7 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     SFWebTV *tv = [SFWebTV shared];
     if ([what isEqualToString:@"play"]) {
         SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
-        if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekanntes Video."}); return; }
+        if (!item) { SFWebReply(x, 400, SFWebError(SFWebErrUnknownItem, @"Unbekanntes Video.")); return; }
         [tv play:item fromStart:[body[@"fromStart"] boolValue] at:MAX(0, [num(body[@"at"]) doubleValue]) replace:[body[@"replace"] boolValue]
           device:device done:^(NSInteger status, NSDictionary *answer) { SFWebReply(x, status, answer); }];
         return;
@@ -184,10 +203,10 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     if ([what isEqualToString:@"control"]) {
         NSInteger st = [tv control:str(body[@"action"]) ?: @""];
         SFWebReply(x, st, st == 200 ? @{@"tv": [tv state] ?: [NSNull null]}
-                       : @{@"error": st == 404 ? @"Am Fernseher läuft gerade nichts." : @"Unbekannte Aktion."});
+                       : st == 404 ? SFWebError(SFWebErrTVIdle, @"Am Fernseher läuft gerade nichts.") : SFWebError(SFWebErrBadAction, @"Unbekannte Aktion."));
         return;
     }
-    SFWebReply(x, 404, @{@"error": @"not found"});
+    SFWebReply(x, 404, SFWebError(SFWebErrNotFound, @"Nicht gefunden."));
 }
 
 // Marks on an item: {item, later?, watched?, follow?, forget?, download?, keep?} -> the item as it is
@@ -196,10 +215,10 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
 // asking first, for a kept one or one no longer online, is the browser's - as it is the TV's menu's).
 - (void)state:(NSDictionary *)body to:(SFHTTPExchange *)x {
     SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
-    if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekannter Eintrag."}); return; }
+    if (!item) { SFWebReply(x, 400, SFWebError(SFWebErrUnknownItem, @"Unbekannter Eintrag.")); return; }
     BOOL startDownload = num(body[@"download"]) && [body[@"download"] boolValue];
     if (startDownload && (item.kind != SFItemVideo || item.drm || !item.resolverRef)) {
-        SFWebReply(x, 400, @{@"error": @"Dieses Video lässt sich nicht herunterladen."});
+        SFWebReply(x, 400, SFWebError(SFWebErrNotDownloadable, @"Dieses Video lässt sich nicht herunterladen."));
         return;
     }
     BOOL changed = NO;
