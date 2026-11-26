@@ -45,12 +45,23 @@ export class Player {
   private gone = false;          // Sofa no longer knows the stream
   private closing = false;
   private onPageHide = (): void => this.beaconClose();
+  private statusText: HTMLElement;
+  private statusActions: HTMLElement;
+  // Escape closes (outside fullscreen, where it leaves fullscreen first), as the close button does
+  private onKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && !document.fullscreenElement && !e.defaultPrevented) { e.preventDefault(); history.back(); }
+  };
 
   constructor(private host: PlayerHost, private item: Item, private fromStart = false) {
     this.video = h('video', { controls: true, playsInline: true, preload: 'auto' });
     this.video.setAttribute('playsinline', '');
-    this.status = h('div.player-status', { role: 'status' });
-    const close = h('button.player-close', { type: 'button', 'aria-label': 'Schließen', title: 'Schließen', onclick: () => history.back() }, '✕');
+    this.status = h('div.player-status', { role: 'status', 'aria-live': 'polite' });
+    this.statusText = h('span.player-status-text');
+    this.statusActions = h('div.player-status-actions', null,
+      h('button.button.primary', { type: 'button', onclick: () => this.retry() }, 'Erneut versuchen'),
+      h('button.button', { type: 'button', onclick: () => history.back() }, 'Schließen'));
+    this.status.append(this.statusText, this.statusActions);
+    const close = h('button.player-close', { type: 'button', 'aria-label': 'Schließen', title: 'Schließen', onclick: () => history.back() }, icon(ICONS.close));
     const tvLabel = item.kind === 'live' ? 'Am Fernseher ansehen' : 'Am Fernseher weiterschauen';
     const tv = h('button.player-tv', { type: 'button', 'aria-label': tvLabel, title: tvLabel, onclick: () => this.toTV() }, icon(ICONS.tv));
     this.overlay = h('div.player', { role: 'dialog', 'aria-label': item.title ?? 'Video' },
@@ -63,6 +74,8 @@ export class Player {
     document.body.classList.add('playing');
     this.showStatus('Wird geöffnet …');
     addEventListener('pagehide', this.onPageHide);
+    addEventListener('keydown', this.onKey);
+    this.video.focus({ preventScroll: true });   // the keyboard drives the video's own controls (space, arrows)
     this.wire();
     try {
       await this.start();
@@ -186,8 +199,27 @@ export class Player {
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   private showStatus(text: string, delayMs = 0): void {
     if (this.statusTimer) { clearTimeout(this.statusTimer); this.statusTimer = null; }
-    const apply = (): void => { this.status.textContent = text; this.status.hidden = !text; this.status.classList.toggle('error', this.failed); };
+    const apply = (): void => {
+      this.statusText.textContent = text;
+      this.status.hidden = !text;
+      this.status.classList.toggle('error', this.failed);
+      this.statusActions.hidden = !this.failed;
+      // a format this browser can't decode stays so: no retry offered, only Schließen
+      (this.statusActions.firstElementChild as HTMLElement).hidden = text === UNSUPPORTED;
+    };
     if (delayMs && text) this.statusTimer = setTimeout(apply, delayMs); else apply();
+  }
+
+  // "Erneut versuchen" after a failure: opened again where it was
+  private retry(): void {
+    if (this.closing) return;
+    const at = this.answer?.live ? undefined : this.video.currentTime || undefined;
+    if (this.answer && !this.gone) this.host.api.beacon(this.answer.stream, this.state('closed'));
+    this.answer = null;
+    this.failed = false;
+    this.reopened = 0;
+    this.showStatus('Wird geöffnet …');
+    this.start(at).catch((e) => this.fail(e));
   }
 
   private beaconClose(): void {
@@ -218,6 +250,7 @@ export class Player {
     this.closing = true;
     this.stopClock();
     removeEventListener('pagehide', this.onPageHide);
+    removeEventListener('keydown', this.onKey);
     this.video.pause();
     this.teardownEngine();
     this.video.removeAttribute('src');

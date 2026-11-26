@@ -2,19 +2,22 @@
 
 import { Api, ApiError } from './api.ts';
 import { codeFromHash, hostFromHash, loadConnection, saveConnection, shortName, type Connection } from './connection.ts';
-import { clear, h, icon, ICONS } from './dom.ts';
-import { logoURL } from './logos.ts';
+import { clear, h } from './dom.ts';
+import { Header } from './header.ts';
+import { NetBar } from './netbar.ts';
 import { renderPage } from './pages.ts';
 import { Player } from './player.ts';
 import { parseRoute, routeHash, type Route } from './router.ts';
 import { connectScreen, pairScreen, settingsScreen, unreachableScreen } from './screens.ts';
 import { searchScreen } from './search.ts';
+import { skeletonPage } from './skeleton.ts';
 import { closeSheet, openSheet, type SheetActions } from './sheet.ts';
 import { Downloads } from './downloads.ts';
 import { StatusFeed } from './status.ts';
 import { Tv } from './tv.ts';
 import { applyTheme } from './theme.ts';
 import { forgetTiles, updateTiles, type TileHost } from './tiles.ts';
+import { toast } from './toast.ts';
 import type { Info, Item, MarkChange, Page } from './types.ts';
 
 const REFRESH_AFTER_HIDDEN_MS = 5 * 60_000;
@@ -32,11 +35,16 @@ class App {
   private feed: StatusFeed | null = null;      // Sofa's status for both (long poll)
   private views = new Map<number, View>();     // history entry -> its rendered view (back restores it as left)
   private entry = 0;
-  private seq = 0;
+  // history entry ids: from this load's start time on, so an id is never one an entry of an earlier load
+  // of the page (before a reload) still carries - Back to such an entry must not find a view of this load
+  private seq = Date.now();
   private hiddenAt = 0;
   private scannedCode: string | undefined;     // the code of the TV's pairing link, until the pairing screen used it
+  private pairNotice: string | undefined;      // why the pairing screen shows (once)
   private readonly bar = document.getElementById('bar')!;
   private readonly main = document.getElementById('view')!;
+  private readonly header = new Header(this.bar, (r) => this.navigate(r));
+  private netbar: NetBar | null = null;
 
   start(): void {
     // the connect route came back with the full name: keep it, the token only for the same host; the
@@ -52,6 +60,10 @@ class App {
     }
     this.entry = (history.state as { entry?: number } | null)?.entry ?? this.seq;
     window.addEventListener('popstate', (e) => this.onPop(e));
+    addEventListener('online', () => this.feed?.refresh());
+    // reloaded while a video played: its player is gone, so is its history entry's meaning - one
+    // step back to the page it was opened from (else Back would seem to do nothing once)
+    if ((history.state as { player?: boolean } | null)?.player) { history.back(); return; }
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { this.hiddenAt = Date.now(); return; }
       if (this.hiddenAt && Date.now() - this.hiddenAt > REFRESH_AFTER_HIDDEN_MS && !this.player) void this.render(true);
@@ -72,15 +84,19 @@ class App {
   private startServices(api: Api): void {
     if (this.feed) return;
     const statusChanged = (): void => this.feed?.refresh();
-    const tv = this.tv ??= new Tv({ api, toast: (t) => this.toast(t), statusChanged });
-    const downloads = this.downloads = new Downloads({ api, toast: (t) => this.toast(t), statusChanged });
-    this.feed = new StatusFeed(api, (s) => { tv.update(s.tv); downloads.track(s.downloads); }, () => this.lostPairing());
+    const tv = this.tv ??= new Tv({ api, toast, statusChanged });
+    const downloads = this.downloads = new Downloads({ api, toast, statusChanged });
+    const netbar = this.netbar ??= new NetBar(() => this.feed?.refresh());
+    const name = shortName(api.connection.host);
+    this.feed = new StatusFeed(api, (s) => { tv.update(s.tv); downloads.track(s.downloads); }, () => this.lostPairing(),
+      (ok) => { if (ok) netbar.hide(); else netbar.show(name); });
     this.feed.start();
   }
 
   private stopServices(): void {
     this.feed?.stop();
     this.feed = null;
+    this.netbar?.hide();
     this.downloads = null;
     this.tv?.reset();
   }
@@ -119,20 +135,20 @@ class App {
     const api = this.api;
     if (!this.connection.token || route.name === 'pair') {
       if (this.connection.token && route.name === 'pair') { this.navigate({ name: 'home' }, true); return; }
-      const scanned = this.scannedCode;
-      this.scannedCode = undefined;   // once: a wrong or expired one is typed again
-      this.screen(pairScreen(api, (token) => this.paired(token), () => this.otherHost(), scanned));
+      const scanned = this.scannedCode, notice = this.pairNotice;
+      this.scannedCode = this.pairNotice = undefined;   // once: a wrong or expired code is typed again
+      this.screen(pairScreen(api, (token) => this.paired(token), () => this.otherHost(), scanned, notice));
       return;
     }
     if (!this.info) {
-      this.loading();
+      this.loading(route.name === 'settings' || route.name === 'search' ? undefined : route);
       try { this.info = await api.info(); } catch (e) { this.failed(e); return; }
-      this.buildBar();
+      this.header.build(this.info);
       this.startServices(api);
     }
     if (route.name === 'settings') {
       this.screen(settingsScreen(this.connection, this.info.device, '', () => this.unpair(), () => this.otherHost()), true);
-      void api.hello().then((hi) => { const dd = this.main.querySelectorAll('dd')[2]; if (dd) dd.textContent = hi.version || '–'; }).catch(() => undefined);
+      void api.hello().then((hi) => { const dd = this.main.querySelector('dd.version'); if (dd) dd.textContent = hi.version || '–'; }).catch(() => undefined);
       return;
     }
     if (route.name === 'search') {
@@ -151,8 +167,10 @@ class App {
       if (e instanceof ApiError && e.status === 401) { this.lostPairing(); return; }
       if (e instanceof ApiError && e.unreachable) { this.failed(e); return; }
       const msg = e instanceof Error ? e.message : 'Der Inhalt konnte nicht geladen werden.';
-      this.screen(h('div.screen', null, h('div.screen-card', null, h('p.lead', null, msg),
-        h('div.form', null, h('button.button.primary', { type: 'button', onclick: () => this.navigate({ name: 'home' }) }, 'Zur Startseite')))), true);
+      this.screen(h('div.screen', null, h('div.screen-card', null, h('h1', null, 'Das hat nicht geklappt'), h('p.lead', null, msg),
+        h('div.form', null,
+          h('button.button.primary', { type: 'button', onclick: () => void this.render(true) }, 'Erneut versuchen'),
+          h('button.button', { type: 'button', onclick: () => this.navigate({ name: 'home' }) }, 'Zur Startseite')))), true);
       return;
     }
     if (entry !== this.entry) return;   // the user went on meanwhile
@@ -181,10 +199,11 @@ class App {
 
   private show(v: View, route: Route): void {
     applyTheme(document.documentElement, this.info?.themes[v.theme] ?? this.info?.themes['home']);
+    v.el.classList.toggle('arrived', !!this.main.querySelector(':scope > .skeleton'));
     clear(this.main);
     this.main.append(v.el);
     document.title = v.title === 'Sofa' ? 'Sofa' : `${v.title} – Sofa`;
-    this.updateBar(route, v.theme);
+    if (this.info) this.header.update(this.info, route, v.theme);
   }
 
   private screen(el: HTMLElement, withBar = false): void {
@@ -192,78 +211,29 @@ class App {
     this.bar.hidden = !withBar;
     clear(this.main);
     this.main.append(el);
-    if (withBar) this.updateBar(parseRoute(location.hash), 'home');
+    if (withBar && this.info) this.header.update(this.info, parseRoute(location.hash), 'home');
   }
 
+  // While a page loads: its shape in its own colours (the theme of the app it belongs to, where known
+  // before the answer), so neither the colours nor the layout jump when it arrives
   private loading(route?: Route): void {
-    if (route) this.updateBar(route, route.name === 'app' ? route.id : 'home');
+    const theme = !route ? 'home' : route.name === 'app' ? route.id : route.name === 'page' ? route.theme : route.name === 'home' ? 'home' : undefined;
+    const t = theme ? this.info?.themes[theme] : undefined;
+    if (t) applyTheme(document.documentElement, t);
+    if (route && this.info) this.header.update(this.info, route, theme && t ? theme : 'home');
     clear(this.main);
-    this.main.append(h('div.loading', { 'aria-label': 'Lädt' }));
+    // a heading only where the page will have one (a folder's or a show's page; an app's starts with its shelves)
+    this.main.append(route ? skeletonPage({ showTitle: route.name === 'page' || route.name === 'show' }) : h('div.loading', { 'aria-label': 'Lädt' }));
   }
 
   private failed(e: unknown): void {
     if (e instanceof ApiError && e.status === 401) { this.lostPairing(); return; }
     const err = e instanceof ApiError ? e : new ApiError(0, 'Sofa ist gerade nicht erreichbar.');
-    this.screen(unreachableScreen(this.connection!, err, () => void this.render(true), () => this.otherHost()));
+    const api = this.api!;
+    this.screen(unreachableScreen(this.connection!, err, () => api.hello(), () => void this.render(true), () => this.otherHost()));
   }
 
   private appName(id: string): string | undefined { return this.info?.apps.find((a) => a.id === id)?.name; }
-
-  // Header: back, the page's wordmark or logo, the apps, search, settings
-  private buildBar(): void {
-    clear(this.bar);
-    this.bar.hidden = false;
-    const nav = h('nav.apps', { 'aria-label': 'Apps' },
-      h('a.app-link', { href: '#/', dataset: { app: 'home' }, onclick: (e: Event) => { e.preventDefault(); this.navigate({ name: 'home' }); } }, 'Start'),
-      ...(this.info?.apps ?? []).map((a) => h('a.app-link', {
-        href: routeHash({ name: 'app', id: a.id }), dataset: { app: a.id },
-        onclick: (e: Event) => { e.preventDefault(); this.navigate({ name: 'app', id: a.id }); },
-      }, a.name)));
-    this.bar.append(
-      h('button.icon-button.back', { type: 'button', 'aria-label': 'Zurück', title: 'Zurück', onclick: () => history.back() }, '‹'),
-      h('a.brand', { href: '#/', 'aria-label': 'Sofa – Start', onclick: (e: Event) => { e.preventDefault(); this.navigate({ name: 'home' }); } }),
-      nav,
-      h('button.icon-button.search-button', { type: 'button', 'aria-label': 'Suchen', title: 'Suchen' }, icon(ICONS.search)),
-      h('button.icon-button.settings-button', {
-        type: 'button', 'aria-label': 'Einstellungen', title: 'Einstellungen',
-        onclick: () => this.navigate({ name: 'settings' }),
-      }, icon(ICONS.gear)));
-  }
-
-  private updateBar(route: Route, theme: string): void {
-    if (!this.info) return;
-    this.bar.hidden = false;
-    const t = this.info.themes[theme] ?? this.info.themes['home'];
-    const brand = this.bar.querySelector<HTMLElement>('.brand');
-    if (brand && t) {
-      clear(brand);
-      const word = h('span.brand-word', null, t.wordmark ?? 'Sofa');
-      brand.append(word);
-      if (t.logo) {
-        void logoURL(t.logo, t.logoVariant ?? 0).then((u) => {
-          if (!u || !word.isConnected) return;
-          word.replaceWith(h('img.brand-logo', { src: u, alt: t.wordmark ?? '' }));
-        });
-      }
-      brand.dataset['mark'] = t.headerMark;
-    }
-    const appOf = route.name === 'app' ? route.id : route.name === 'search' ? route.app : theme;
-    for (const a of this.bar.querySelectorAll<HTMLElement>('.app-link')) {
-      const on = route.name === 'home' ? a.dataset['app'] === 'home' : a.dataset['app'] === appOf && route.name !== 'settings';
-      a.classList.toggle('current', on);
-      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-    }
-    const back = this.bar.querySelector<HTMLElement>('.back');
-    if (back) back.hidden = route.name === 'home';
-    // search: the current app's, else the first app with one (Home searches YouTube on the TV too)
-    const searchApp = this.info.apps.find((a) => a.id === appOf && a.search) ?? this.info.apps.find((a) => a.search);
-    const sb = this.bar.querySelector<HTMLButtonElement>('.search-button');
-    if (sb) {
-      sb.hidden = !searchApp || route.name === 'search';
-      sb.onclick = searchApp ? () => this.navigate({ name: 'search', app: searchApp.id }) : null;
-      if (searchApp) sb.title = `${searchApp.name} durchsuchen`;
-    }
-  }
 
   private tileHost(theme = 'home'): TileHost {
     const api = this.api!;
@@ -315,7 +285,7 @@ class App {
     const p = new Player({
       api: this.api,
       closed: (it) => { if (this.player === p) this.player = null; void this.refresh(it); },
-      toast: (t) => this.toast(t),
+      toast,
       // the browser's player closes first (its last report), then the TV opens it there
       toTV: (it, at) => { if (this.player === p) history.back(); void this.tv?.send(it, at !== undefined ? { at } : {}); },
     }, item, fromStart);
@@ -338,20 +308,10 @@ class App {
         : change.watched !== undefined ? (change.watched ? 'Als gesehen markiert' : 'Als ungesehen markiert')
         : change.follow !== undefined ? (change.follow ? 'Du folgst jetzt dieser Sendung' : 'Du folgst nicht mehr')
         : change.forget ? 'Aus „Weiterschauen“ entfernt' : '';
-      if (text) this.toast(text);
+      if (text) toast(text);
     } catch (e) {
-      this.toast(e instanceof Error ? e.message : 'Das hat nicht geklappt.');
+      toast(e instanceof Error ? e.message : 'Das hat nicht geklappt.');
     }
-  }
-
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
-  toast(text: string): void {
-    let t = document.getElementById('toast');
-    if (!t) { t = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' }); document.body.append(t); }
-    t.textContent = text;
-    t.classList.add('show');
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => t!.classList.remove('show'), 2800);
   }
 
   private useHost(host: string): void {
@@ -366,15 +326,17 @@ class App {
     this.navigate({ name: 'home' }, true);
   }
 
-  private lostPairing(): void {
+  // Sofa no longer knows this device's token (removed on the TV): pair again, saying why
+  private lostPairing(notice = 'Dieses Gerät wurde am Fernseher getrennt. Bitte mit einem neuen Code wieder verbinden.'): void {
     if (!this.connection) return;
+    this.pairNotice = notice || undefined;
     this.setConnection({ host: this.connection.host });
     this.navigate({ name: 'pair' }, true);
   }
 
   private async unpair(): Promise<void> {
     try { await this.api?.unpair(); } catch { /* the token goes either way */ }
-    this.lostPairing();
+    this.lostPairing('');
   }
 
   private otherHost(): void {

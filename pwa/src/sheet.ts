@@ -5,6 +5,7 @@
 import { clock, dotJoin, h } from './dom.ts';
 import { resumeLabel } from './player.ts';
 import { downloadChoices, type Choice, type DownloadAction } from './choices.ts';
+import { hideToast } from './toast.ts';
 import type { Item, MarkChange } from './types.ts';
 
 export type { DownloadAction };
@@ -32,6 +33,7 @@ export function closeSheet(): boolean {
 // The sheet itself: a panel from the bottom (centred on wide screens) with the choices and Abbrechen
 function present(label: string, top: (Node | null)[], choices: Choice[], returnFocus?: HTMLElement): void {
   closeSheet();
+  hideToast();   // an earlier toast ("Wird gesendet …") would cover the sheet's buttons
   let closed = false;   // fading out: nothing in it acts any more
   const close = (): void => {
     if (closed) return;
@@ -39,6 +41,7 @@ function present(label: string, top: (Node | null)[], choices: Choice[], returnF
     el.classList.remove('open');
     el.inert = true;
     setTimeout(() => el.remove(), 200);
+    document.body.classList.remove('sheet-open');
     removeEventListener('keydown', onKey);
     if (current?.el === el) current = null;
     if (returnFocus?.isConnected) returnFocus.querySelector<HTMLElement>('.more')?.focus({ preventScroll: true });
@@ -53,6 +56,7 @@ function present(label: string, top: (Node | null)[], choices: Choice[], returnF
     h('div.sheet-buttons', null, ...buttons, h('button.sheet-button.cancel', { type: 'button', onclick: close }, 'Abbrechen')));
   const el = h('div.sheet', { onclick: (e: Event) => { if (e.target === el) close(); } }, panel);
   document.body.append(el);
+  document.body.classList.add('sheet-open');
   addEventListener('keydown', onKey);
   // (closed before its first frame - a quick Abbrechen: it stays closed)
   requestAnimationFrame(() => { if (closed) return; el.classList.add('open'); (panel.querySelector('.sheet-button') as HTMLElement | null)?.focus({ preventScroll: true }); });

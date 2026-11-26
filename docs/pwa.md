@@ -139,7 +139,18 @@ has them (`local()` by PostScript name: Avenir Next, Helvetica Neue, Gill Sans o
 the system font elsewhere - Apple's fonts can't be bundled. Logos come from `res/logos` at build
 time. Tiles, rails, hero, progress bars, the "Weiterschauen" rail and the dot-joined subtitles follow
 the TV's components; layout is responsive (phone: one column of rails with swipe, desktop: wider
-rails and a hero).
+rails and arrows at a rail's sides for a mouse).
+
+States and polish (2026-11-26): a page loads as its **skeleton** - the real tiles' boxes in the page's
+own colours (the app's theme is applied before the answer), so nothing jumps or changes colour when it
+arrives (test-pwa 9 compares the boxes). App and wide tiles carry their text in the picture, as the
+TV's (no line below). Icons are inline SVG. Every button is at least 44 px; hover and keyboard focus
+show the TV's focus (ring + slight growth); `prefers-reduced-motion` stills every animation. Sofa not
+answering: content on screen stays, a bar says "Keine Verbindung zu „imac“" (gone by itself, or
+"Erneut versuchen"); at start the "nicht erreichbar" screen probes quietly and goes on by itself; a
+playback that fails offers "Erneut versuchen" / "Schließen" (no retry for a format the browser can't
+decode). A device removed on the TV is told why it pairs again. A toast never covers an open sheet (it
+moves to the top). A reload during a playback lands on the page it was opened from.
 
 ### 6. The TV: "Auf dem Fernseher abspielen" (2026-11-26)
 
@@ -305,6 +316,10 @@ CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a vide
 - `player.ts` native HLS on Apple's browsers, hls.js elsewhere, files in `<video>`; reports
   every 10 s and on pause, seek, end and close (a beacon on the capability path when the page goes
   away); a broken stream is opened again (twice), a format the browser can't decode says so.
+- `header.ts` the header (built once, updated per view - its buttons never move); `skeleton.ts` the
+  loading shapes; `toast.ts` the toast; `netbar.ts` the "Keine Verbindung" bar.
+- `static/style.css` (tokens, header, screens), `tiles.css` (pages, tiles, skeletons), `overlays.css`
+  (sheet, player, the TV's bar, toast, connection bar).
 - `theme.ts` tokens to CSS variables, fonts by PostScript name through `local()`; `logos.ts` the
   logos (copied from `res/logos` at build time) recoloured as `SFLogo.m` does.
 - `sw.ts` the service worker caches the shell only - never Sofa's data or media.

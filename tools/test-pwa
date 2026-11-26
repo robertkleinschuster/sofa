@@ -18,6 +18,11 @@
 #   7  downloads: started from the sheet (Sofa's message), the tile's chip follows the download to
 #      "Offline", Behalten, and deleting a kept one asks first
 #   8  the TV's pairing link (its QR code, pair#host=...&code=...) pairs a fresh browser without typing
+#      (and a device removed on the TV is told why it pairs again)
+#   9  the look holds: the skeleton has the real tiles' boxes (nothing jumps), app tiles without text
+#      below, the header's buttons in place on every page, 44 px targets; Sofa unreachable: the
+#      connection bar, a playback's "Erneut versuchen" that plays once Sofa is back; a reload during
+#      a playback leaves no dead Back step
 #   5  phone and desktop layouts (screenshots into $PWA_SHOTS when set: Firefox then renders into an
 #      invisible Xvfb display - this headless build takes none)
 #   0  the PWA's strict type check and unit tests (pwa/test), its build

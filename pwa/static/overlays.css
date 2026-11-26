@@ -1,0 +1,118 @@
+/* What lies over the page: the item's sheet, the player, "Am Fernseher", the toast, the connection bar. */
+
+/* Sheet */
+.sheet {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(0,0,0,0); transition: background-color .22s;
+}
+.sheet.open { background: rgba(0,0,0,.55); }
+.sheet-panel {
+  width: 100%; max-width: 560px; max-height: 88vh; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg-top); border-radius: 18px 18px 0 0; padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  transform: translateY(100%); transition: transform .28s var(--ease);
+  box-shadow: 0 -8px 40px rgba(0,0,0,.4);
+}
+.sheet.open .sheet-panel { transform: none; }
+@media (min-width: 700px) {
+  .sheet { align-items: center; }
+  .sheet-panel { border-radius: 18px; transform: translateY(24px) scale(.98); opacity: 0; transition: transform .22s var(--ease), opacity .18s; padding-bottom: 12px; }
+  .sheet.open .sheet-panel { opacity: 1; }
+}
+.sheet-picture { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--surface); }
+/* a phone on its side: the picture gives the choices room */
+@media (max-height: 560px) { .sheet-picture { max-height: 32vh; } }
+.sheet-text { padding: 16px 20px 4px; }
+.sheet-text h2 { margin: 0; font: 700 20px/1.25 var(--font-bold); }
+.sheet-sub { margin: 4px 0 0; color: var(--text-dim); }
+.sheet-note { margin: 8px 0 0; color: var(--warn-text); }
+.sheet-plot { margin: 10px 0 0; color: var(--text-dim); white-space: pre-line; }
+.sheet-buttons { display: grid; gap: 8px; padding: 14px 20px 6px; }
+.sheet-button {
+  min-height: 48px; border: 0; border-radius: 12px; background: var(--surface); color: var(--text);
+  font: 600 15px/1.2 var(--font-medium); text-align: center; padding: 0 16px;
+  display: flex; align-items: center; justify-content: center; gap: 10px; transition: filter .15s, transform .1s;
+}
+.sheet-button:hover { filter: brightness(1.15); }
+.sheet-button:active { transform: scale(.985); }
+.sheet-button.primary { background: var(--accent); color: var(--accent-text); }
+.sheet-button.danger { background: var(--danger); color: #fff; }
+.sheet-detail { font-weight: 400; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
+.sheet-button.cancel { background: transparent; color: var(--text-dim); }
+
+/* Player */
+.player { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; flex-direction: column; animation: view-in .2s ease-out both; }
+.player video { flex: 1; width: 100%; min-height: 0; background: #000; outline: none; }
+.player-bar {
+  display: flex; align-items: center; gap: 10px; color: #fff;
+  padding: calc(env(safe-area-inset-top) + 8px) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+}
+.player-tv, .player-close {
+  flex: none; width: var(--touch); height: var(--touch); border-radius: 50%; border: 0; background: rgba(255,255,255,.14); color: #fff;
+  display: grid; place-items: center; font-size: 22px; transition: background-color .15s;
+}
+.player-tv { margin-left: auto; }
+.player-tv:hover, .player-close:hover { background: rgba(255,255,255,.26); }
+.player-title { min-width: 0; font: 600 15px/1.25 var(--font-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-title span { display: block; font-weight: 400; font-size: 13px; color: rgba(255,255,255,.65); overflow: hidden; text-overflow: ellipsis; }
+.player-status {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 16px; border-radius: 12px; background: rgba(0,0,0,.7); color: #fff; text-align: center; pointer-events: none;
+}
+.player-status.error { padding: 18px 20px; background: rgba(28,28,30,.96); box-shadow: 0 10px 40px rgba(0,0,0,.6); pointer-events: auto; width: max-content; }
+.player-status-text { display: block; }
+.player-status-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px; }
+.player-status-actions .button { --accent: #fff; --accent-text: #111; background: rgba(255,255,255,.14); color: #fff; }
+.player-status-actions .button.primary { background: #fff; color: #111; }
+
+/* Am Fernseher: what the TV plays, with pause/play and stop (tv.ts) */
+:root { --tvbar-space: 0px; --netbar-space: 0px; }
+body.tv-on { --tvbar-space: 76px; padding-bottom: calc(env(safe-area-inset-bottom) + var(--tvbar-space)); }
+body.net-off { --netbar-space: 60px; }
+body.playing .tvbar, body.playing .netbar { display: none; }
+.tvbar {
+  position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 10px);
+  width: min(560px, calc(100vw - 2 * var(--gutter))); height: 60px; overflow: hidden;
+  display: flex; align-items: center; gap: 10px; padding: 0 4px 0 8px; border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-top) 92%, transparent); color: var(--text);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 6px 24px rgba(0,0,0,.45); border: 1px solid var(--line);
+  animation: rise .28s var(--ease) both;
+}
+@keyframes rise { from { transform: translate(-50%, 24px); opacity: 0; } }
+.tvbar-pic { flex: none; width: 64px; height: 36px; border-radius: 6px; object-fit: cover; background: var(--surface); }
+.tvbar-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.tvbar-head { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font: 500 12px/1.2 var(--font-medium); min-width: 0; }
+.tvbar-head .icon { font-size: 14px; }
+.tvbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 479px) { .tvbar-where { display: none; } }
+.tvbar-title { font: 600 14px/1.25 var(--font-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvbar-button { flex: none; width: var(--touch); height: var(--touch); border: 0; border-radius: 50%; background: transparent; color: var(--text); display: grid; place-items: center; font-size: 22px; }
+.tvbar-button:hover { background: var(--hover); }
+.tvbar-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--text) 15%, transparent); }
+.tvbar-progress > span { display: block; height: 100%; width: 0; background: var(--progress); transition: width 1s linear; }
+
+/* No connection to Sofa (netbar.ts): over the content, above the TV's bar */
+.netbar {
+  position: fixed; z-index: 31; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 10px + var(--tvbar-space));
+  width: max-content; max-width: calc(100vw - 2 * var(--gutter)); min-height: 48px;
+  display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 14px; border-radius: 14px;
+  background: var(--surface); color: var(--text); box-shadow: 0 6px 24px rgba(0,0,0,.45); border: 1px solid var(--line);
+  font: 500 14px/1.25 var(--font-medium); animation: rise .28s var(--ease) both;
+}
+.netbar .icon { font-size: 18px; color: var(--danger-text); }
+.netbar-text { min-width: 0; }
+.netbar-retry { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--hover); color: var(--text); font-weight: 600; }
+
+/* Toast */
+#toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px + var(--tvbar-space) + var(--netbar-space)); z-index: 60;
+  width: max-content; max-width: min(440px, calc(100vw - 32px)); text-align: center;
+  transform: translate(-50%, 20px); opacity: 0; transition: opacity .2s, transform .2s var(--ease); pointer-events: none;
+  padding: 12px 18px; border-radius: 14px; background: var(--accent); color: var(--accent-text); font-weight: 600;
+  box-shadow: 0 8px 28px rgba(0,0,0,.4);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* a sheet is open: the toast comes from the top, never over its buttons */
+body.sheet-open #toast { bottom: auto; top: calc(env(safe-area-inset-top) + 16px); transform: translate(-50%, -20px); }
+body.sheet-open #toast.show { transform: translate(-50%, 0); }

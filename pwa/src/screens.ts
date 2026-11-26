@@ -3,7 +3,7 @@
 
 import { ApiError, type Api } from './api.ts';
 import { discoveryURL, needsDiscovery, normalizeHost, shortName, type Connection } from './connection.ts';
-import { h } from './dom.ts';
+import { h, icon, ICONS } from './dom.ts';
 
 export function appURL(): string { return location.origin + location.pathname; }
 
@@ -45,8 +45,9 @@ function deviceName(): string {
   return `${browser} auf ${os}`;
 }
 
-// `scanned`: the code of the TV's pairing link (its QR code) - entered and sent at once
-export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherHost: () => void, scanned?: string): HTMLElement {
+// `scanned`: the code of the TV's pairing link (its QR code) - entered and sent at once; `notice`: why
+// this device has to pair (again), e.g. it was removed on the TV
+export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherHost: () => void, scanned?: string, notice?: string): HTMLElement {
   const code = h('input.field.code', {
     type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, pattern: '[0-9]{6}',
     placeholder: '000000', 'aria-label': 'Code vom Fernseher',
@@ -54,7 +55,7 @@ export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherH
   const name = h('input.field', { type: 'text', value: deviceName(), maxlength: 40, 'aria-label': 'Name dieses Geräts' });
   const problem = h('p.form-error', { role: 'alert' });
   problem.hidden = true;
-  const button = h('button.button.primary', { type: 'submit' }, 'Verbinden');
+  const button = h('button.button.primary.wide', { type: 'submit' }, 'Verbinden');
   const submit = async (e: Event): Promise<void> => {
     e.preventDefault();
     const c = code.value.replace(/\D/g, '');
@@ -76,9 +77,10 @@ export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherH
     h('div.screen-card', null,
       h('h1.wordmark-big', null, 'Sofa'),
       h('p.lead', null, `Mit „${shortName(api.connection.host)}“ verbinden`),
+      notice ? h('p.notice', { role: 'status' }, notice) : null,
       h('ol.steps', null,
         h('li', null, 'Am Fernseher: Einstellungen → Sofa im Browser.'),
-        h('li', null, 'Den sechsstelligen Code hier eingeben.')),
+        h('li', null, 'Den sechsstelligen Code hier eingeben – oder den QR-Code daneben mit der Handykamera scannen.')),
       h('form.form', { onsubmit: submit },
         code,
         h('label.label', null, 'Name dieses Geräts', name),
@@ -88,7 +90,10 @@ export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherH
       h('button.link', { type: 'button', onclick: onOtherHost }, 'Anderen Mac wählen')));
 }
 
-export function unreachableScreen(c: Connection, error: ApiError, retry: () => void, onOtherHost: () => void): HTMLElement {
+// Sofa did not answer: what to check, a retry - and it comes back by itself: every few seconds and
+// when the device is online again a quiet probe asks Sofa (no reload flashing the screen).
+const PROBE_MS = 8_000;
+export function unreachableScreen(c: Connection, error: ApiError, probe: () => Promise<unknown>, retry: () => void, onOtherHost: () => void): HTMLElement {
   const reasons = error.unreachable
     ? [
       'Ist Tailscale auf diesem Gerät eingeschaltet?',
@@ -96,32 +101,50 @@ export function unreachableScreen(c: Connection, error: ApiError, retry: () => v
       'Hat der Browser nach Zugriff auf das lokale Netzwerk gefragt? Dann bitte erlauben (in den Website-Einstellungen änderbar).',
     ]
     : [error.message];
-  return h('div.screen', null,
+  const state = h('p.hint', { role: 'status', 'aria-live': 'polite' }, 'Sobald Sofa erreichbar ist, geht es von selbst weiter.');
+  const button = h('button.button.primary', { type: 'button' }, 'Erneut versuchen');
+  let busy = false;
+  const attempt = async (byUser: boolean): Promise<void> => {
+    if (busy || !el.isConnected) return;
+    busy = true;
+    if (byUser) { button.disabled = true; button.textContent = 'Wird versucht …'; }
+    try { await probe(); stop(); retry(); } catch {
+      if (byUser) state.textContent = 'Immer noch nicht erreichbar. Es wird weiter versucht.';
+    } finally { busy = false; button.disabled = false; button.textContent = 'Erneut versuchen'; }
+  };
+  button.addEventListener('click', () => void attempt(true));
+  const timer = setInterval(() => { if (!el.isConnected) stop(); else if (!document.hidden) void attempt(false); }, PROBE_MS);
+  const online = (): void => void attempt(false);
+  const stop = (): void => { clearInterval(timer); removeEventListener('online', online); };
+  addEventListener('online', online);
+  const el = h('div.screen', null,
     h('div.screen-card', null,
-      h('h1.wordmark-big', null, 'Sofa'),
-      h('p.lead', null, `${shortName(c.host)} ist gerade nicht erreichbar.`),
+      h('div.screen-icon', null, icon(ICONS.offline)),
+      h('h1', null, `„${shortName(c.host)}“ ist gerade nicht erreichbar`),
       h('ul.steps', null, ...reasons.map((r) => h('li', null, r))),
-      h('div.form', null, h('button.button.primary', { type: 'button', onclick: retry }, 'Erneut versuchen')),
-      h('button.link', { type: 'button', onclick: onOtherHost }, 'Anderen Mac wählen')));
+      h('div.form', null, button),
+      state,
+      h('button.link', { type: 'button', onclick: () => { stop(); onOtherHost(); } }, 'Anderen Mac wählen')));
+  return el;
 }
 
 export function settingsScreen(c: Connection, device: string, version: string, unpair: () => Promise<void>, onOtherHost: () => void): HTMLElement {
   const confirm = h('div.confirm');
   confirm.hidden = true;
-  const ask = h('button.button', { type: 'button', onclick: () => { confirm.hidden = false; ask.hidden = true; } }, 'Dieses Gerät trennen');
+  const ask = h('button.button.wide', { type: 'button', onclick: () => { confirm.hidden = false; ask.hidden = true; (confirm.querySelector('.danger') as HTMLElement | null)?.focus(); } }, 'Dieses Gerät trennen');
   confirm.append(
     h('p', null, 'Danach braucht dieses Gerät wieder einen Code vom Fernseher.'),
     h('div.form', null,
-      h('button.button.danger', { type: 'button', onclick: () => { void unpair(); } }, 'Trennen'),
-      h('button.button', { type: 'button', onclick: () => { confirm.hidden = true; ask.hidden = false; } }, 'Abbrechen')));
+      h('button.button.danger', { type: 'button', onclick: () => { void unpair(); } }, 'Ja, trennen'),
+      h('button.button', { type: 'button', onclick: () => { confirm.hidden = true; ask.hidden = false; ask.focus(); } }, 'Abbrechen')));
   return h('div.screen', null,
     h('div.screen-card', null,
       h('h1', null, 'Einstellungen'),
       h('dl.facts', null,
-        h('dt', null, 'Verbunden mit'), h('dd', null, shortName(c.host)),
-        h('dt', null, 'Dieses Gerät'), h('dd', null, device || '–'),
-        h('dt', null, 'Sofa-Version'), h('dd', null, version || '–')),
+        h('div', null, h('dt', null, 'Verbunden mit'), h('dd', null, shortName(c.host))),
+        h('div', null, h('dt', null, 'Dieses Gerät'), h('dd', null, device || '–')),
+        h('div', null, h('dt', null, 'Sofa-Version'), h('dd.version', null, version || '–'))),
       h('p.hint', null, 'Verlauf, „Später ansehen“ und gefolgte Sendungen sind dieselben wie am Fernseher.'),
-      ask, confirm,
-      h('button.link', { type: 'button', onclick: onOtherHost }, 'Anderen Mac wählen')));
+      h('div.stack', null, ask, confirm,
+        h('button.button.wide.quiet', { type: 'button', onclick: onOtherHost }, 'Anderen Mac wählen'))));
 }

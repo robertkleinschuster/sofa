@@ -3,7 +3,7 @@
 // a tile is re-rendered in place when its state changes, so nothing moves.
 
 import type { Api } from './api.ts';
-import { clock, dotJoin, formatDuration, h } from './dom.ts';
+import { clock, dotJoin, formatDuration, h, icon, ICONS } from './dom.ts';
 import { hasMark, logoURL, markURL } from './logos.ts';
 import type { Item, TileStyle } from './types.ts';
 
@@ -13,7 +13,7 @@ export interface TileHost {
   menu(item: Item, tile: HTMLElement): void;
 }
 
-// CSS width of a style's picture (for the image size asked of Sofa); matches style.css.
+// CSS width of a style's picture (for the image size asked of Sofa); matches tiles.css.
 const CSS_WIDTH: Record<TileStyle, number> = { landscape: 320, poster: 200, circle: 160, app: 270, wide: 460, button: 0 };
 
 const LIVE_RED = '#e5162a';
@@ -91,7 +91,7 @@ function build(item: Item, style: TileStyle, host: TileHost): HTMLElement {
   if (disabled) el.classList.add('drm');
   const art = h('button.art', {
     type: 'button',
-    'aria-label': dotJoin(item.title, item.sub),
+    'aria-label': spokenLabel(item),
     onclick: () => host.activate(now(), el),
   });
   if (item.tint) art.style.setProperty('--tint', item.tint);
@@ -112,18 +112,26 @@ function build(item: Item, style: TileStyle, host: TileHost): HTMLElement {
   }
   if (style === 'landscape' && item.duration && item.duration > 0) art.append(h('span.duration', null, formatDuration(item.duration)));
   if (style === 'landscape' && item.chip) art.append(h('span.chip', null, item.chip));
-  if (item.watched) art.append(h('span.watched', { title: 'Gesehen', 'aria-label': 'Gesehen' }, '✓'));
+  if (item.watched) art.append(h('span.watched', { title: 'Gesehen', 'aria-label': 'Gesehen' }, icon(ICONS.check)));
   if ((style === 'landscape' || style === 'poster') && item.progress && item.progress > 0 && !item.watched) {
     const bar = h('span.progress', null, h('span', { style: { width: `${Math.round(item.progress * 1000) / 10}%` } }));
     art.append(bar);
   }
   if (disabled) art.append(h('span.drm-note', null, 'Kopiergeschützt'));
 
-  if (style !== 'wide') el.append(meta(item, style, host));
+  // app and wide tiles carry their text in the picture (the TV's SFTile: no text below them)
+  if (style !== 'wide' && style !== 'app') el.append(meta(item, style, host));
   if (hasMenu(item)) {
-    el.append(h('button.more', { type: 'button', 'aria-label': 'Optionen', title: 'Optionen', onclick: (e: Event) => { e.stopPropagation(); host.menu(now(), el); } }, '⋯'));
+    el.append(h('button.more', { type: 'button', 'aria-label': 'Optionen', title: 'Optionen', onclick: (e: Event) => { e.stopPropagation(); host.menu(now(), el); } }, icon(ICONS.more)));
   }
   return el;
+}
+
+// What a screen reader says for the tile: its text and the state the picture shows
+function spokenLabel(item: Item): string {
+  const seen = item.watched ? 'gesehen' : item.progress && item.progress > 0 ? `zu ${Math.round(item.progress * 100)} % gesehen` : null;
+  return dotJoin(item.badge === 'LIVE' ? 'Live' : null, item.title, item.sub,
+    item.duration && item.duration > 0 ? formatDuration(item.duration) : null, seen, item.chip?.replace(/^↓\s*/, 'Download: '));
 }
 
 function picture(art: HTMLElement, item: Item, style: TileStyle, host: TileHost): void {

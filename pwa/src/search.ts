@@ -4,6 +4,7 @@
 import type { Api } from './api.ts';
 import { clear, h } from './dom.ts';
 import { renderPage } from './pages.ts';
+import { skeletonPage } from './skeleton.ts';
 import type { TileHost } from './tiles.ts';
 import type { AppInfo } from './types.ts';
 
@@ -36,11 +37,15 @@ export function searchScreen(api: Api, app: AppInfo, query: string | undefined, 
     }, 250);
   });
   const showRecent = async (): Promise<void> => {
-    try { const r = await api.recentSearches(app.id); if (!input.value.trim()) chips('Zuletzt gesucht', r.recent); } catch { /* none */ }
+    let recent: string[] = [];
+    try { recent = (await api.recentSearches(app.id)).recent; } catch { /* none */ }
+    if (input.value.trim()) return;
+    if (recent.length) chips('Zuletzt gesucht', recent);
+    else { clear(hints); hints.append(h('p.search-hint', null, `Was möchtest du in ${app.name} finden? Vorschläge erscheinen beim Tippen.`)); }
   };
 
   if (query) {
-    results.append(h('div.loading', { 'aria-label': 'Lädt' }));
+    results.append(skeletonPage({ showTitle: false }));
     api.search(app.id, query).then((page) => {
       clear(results);
       results.append(renderPage(page, host, { showTitle: false }));

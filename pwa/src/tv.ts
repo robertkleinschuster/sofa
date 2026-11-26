@@ -26,6 +26,7 @@ export class Tv {
   private bar: HTMLElement;
   private pic: HTMLImageElement;
   private label: HTMLElement;
+  private state: HTMLElement;   // in the label, after "Am Fernseher · " (which narrow screens leave to the icon)
   private title: HTMLElement;
   private toggle: HTMLButtonElement;
   private fill: HTMLElement;
@@ -39,6 +40,7 @@ export class Tv {
     this.pic = h('img.tvbar-pic', { alt: '' });
     this.pic.addEventListener('error', () => { this.pic.hidden = true; });
     this.label = h('span.tvbar-label');
+    this.state = h('span');
     this.title = h('span.tvbar-title');
     this.toggle = h('button.tvbar-button', { type: 'button', onclick: () => this.control(this.playingNow() ? 'pause' : 'play') });
     this.fill = h('span');
@@ -117,7 +119,8 @@ export class Tv {
     if (!tv) { if (this.ticker) { clearInterval(this.ticker); this.ticker = null; } return; }
     const pos = tv.state === 'playing' ? Math.min(tv.duration || Infinity, tv.position + (performance.now() - this.at) / 1000) : tv.position;
     const time = !tv.live && tv.duration > 0 ? `${formatDuration(pos)} / ${formatDuration(tv.duration)}` : null;
-    this.label.textContent = dotJoin('Am Fernseher', tv.live && tv.state === 'playing' ? 'Live' : STATE_TEXT[tv.state], tv.state === 'failed' ? null : time);
+    if (!this.state.isConnected) this.label.replaceChildren(h('span.tvbar-where', null, 'Am Fernseher · '), this.state);
+    this.state.textContent = dotJoin(tv.live && tv.state === 'playing' ? 'Live' : STATE_TEXT[tv.state], tv.state === 'failed' ? null : time);
     this.fill.style.width = !tv.live && tv.duration > 0 ? `${Math.round(Math.min(1, pos / tv.duration) * 1000) / 10}%` : '0';
   }
 

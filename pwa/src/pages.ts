@@ -3,7 +3,7 @@
 // nothing on screen moves.
 
 import type { Api } from './api.ts';
-import { h } from './dom.ts';
+import { h, icon, ICONS } from './dom.ts';
 import { tile, type TileHost } from './tiles.ts';
 import type { Page, Shelf } from './types.ts';
 
@@ -24,7 +24,7 @@ export function renderPage(page: Page, host: TileHost, opts: { showTitle: boolea
       page.subtitle ? h('p.page-sub', null, page.subtitle) : null));
   }
   const shelves = page.shelves.filter((s) => s.items.length || s.more);
-  if (!shelves.length) root.append(h('p.empty', null, page.empty ?? 'Hier ist gerade nichts.'));
+  if (!shelves.length) root.append(h('div.empty', null, h('p', null, page.empty ?? 'Hier ist gerade nichts.')));
   for (const s of shelves) root.append(renderShelf(s, host));
   return root;
 }
@@ -50,8 +50,8 @@ function renderShelf(shelf: Shelf, host: TileHost): HTMLElement {
 // Desktop: arrows at the rail's sides (a mouse has no sideways swipe); touch screens swipe.
 function addRailButtons(sec: HTMLElement, list: HTMLElement): void {
   const step = (dir: number): void => list.scrollBy({ left: dir * list.clientWidth * 0.85, behavior: 'smooth' });
-  const prev = h('button.rail-arrow.prev', { type: 'button', 'aria-label': 'Zurück blättern', onclick: () => step(-1) }, '‹');
-  const next = h('button.rail-arrow.next', { type: 'button', 'aria-label': 'Weiter blättern', onclick: () => step(1) }, '›');
+  const prev = h('button.rail-arrow.prev', { type: 'button', 'aria-label': 'Zurück blättern', onclick: () => step(-1) }, icon(ICONS.back));
+  const next = h('button.rail-arrow.next', { type: 'button', 'aria-label': 'Weiter blättern', onclick: () => step(1) }, icon(ICONS.next));
   const update = (): void => {
     prev.hidden = list.scrollLeft <= 4;
     next.hidden = list.scrollLeft + list.clientWidth >= list.scrollWidth - 4;

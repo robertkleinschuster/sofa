@@ -7,6 +7,7 @@ import { ApiError, type Api } from './api.ts';
 import type { Status } from './types.ts';
 
 const RETRY_MS = [2_000, 5_000, 10_000, 30_000];
+const UNREACHABLE_AFTER = 2;   // failures in a row before the viewer is told (one can be a blip)
 
 export class StatusFeed {
   private gen = '';
@@ -17,7 +18,9 @@ export class StatusFeed {
   private onVisibility = (): void => { if (document.hidden) this.pause(); else this.resume(); };
   last: Status | null = null;
 
-  constructor(private api: Api, private changed: (s: Status) => void, private lost: () => void) {}
+  // reachable: Sofa answers again (true) / has not answered UNREACHABLE_AFTER times (false)
+  constructor(private api: Api, private changed: (s: Status) => void, private lost: () => void,
+    private reachable: (ok: boolean) => void = () => undefined) {}
 
   start(): void {
     if (this.running) return;
@@ -28,6 +31,8 @@ export class StatusFeed {
 
   stop(): void {
     this.running = false;
+    if (this.failures >= UNREACHABLE_AFTER) this.reachable(true);
+    this.failures = 0;
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.pause();
   }
@@ -58,6 +63,7 @@ export class StatusFeed {
     this.api.status(this.gen, ctl.signal).then((s) => {
       if (this.ctl !== ctl) return;
       this.ctl = null;
+      if (this.failures >= UNREACHABLE_AFTER) this.reachable(true);
       this.failures = 0;
       this.gen = s.gen;
       this.last = s;
@@ -68,6 +74,7 @@ export class StatusFeed {
       this.ctl = null;
       if (e instanceof ApiError && e.status === 401) { this.stop(); this.lost(); return; }
       const wait = RETRY_MS[Math.min(this.failures++, RETRY_MS.length - 1)]!;
+      if (this.failures === UNREACHABLE_AFTER && e instanceof ApiError && e.unreachable) this.reachable(false);
       this.retry = setTimeout(() => { this.retry = null; if (this.running && !document.hidden) this.poll(); }, wait);
     });
   }

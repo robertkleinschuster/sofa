@@ -226,6 +226,8 @@ try {
   await sheetFor('example:2');
   await choose('Auf dem Fernseher abspielen');
   await check('6: another video plays there: the sheet asks first, naming it', () => ff.until(`const h = document.querySelector('.sheet.open h2'); return !!h && h.textContent === 'Am Fernseher läuft gerade „Testbild“.'`, 15_000));
+  await check('6: ... no toast over the question', () => ff.run(`const t = document.getElementById('toast'); const p = document.querySelector('.sheet.open .sheet-panel').getBoundingClientRect();
+      if (!t || !t.classList.contains('show')) return true; const r = t.getBoundingClientRect(); return r.bottom <= p.top || r.top >= p.bottom;`));
   await choose('Stattdessen „Farbbalken“ abspielen');
   await check('6: ... and replaces it when asked', () => waitLog(/web: example:2 sent to the TV \(device [0-9a-f]+, replaced the player\)/));
   await check('6: the bar follows', () => ff.until(`return document.querySelector('.tvbar-title').textContent === 'Farbbalken'`, 20_000));
@@ -268,6 +270,63 @@ try {
   await check('7: deleted', () => waitSql(`select count(*) from downloads where id='example:3'`, '0'));
   await check('7: the chip goes', () => ff.until(`return !document.querySelector(arguments[0] + ' .chip')`, 10_000, 'chip', [tileOf('example:3')]));
 
+  console.log('==> 9 the look holds (layout stability, states)');
+  // a page's skeleton has the real boxes: the first tile does not move when the content arrives
+  await ff.run(`location.hash = '#/'`);
+  await ff.until(`return location.hash === '#/' && !document.querySelector('.skeleton') && document.querySelectorAll('.tile').length > 0`, 20_000);
+  await check('9: the skeleton holds the tiles\' places (no jump when the page arrives)', async () => {
+    const r = await ff.runAsync(`const done = arguments[arguments.length - 1]; const f = window.fetch;
+      window.fetch = (...a) => new Promise((ok) => setTimeout(ok, 1500)).then(() => f(...a));
+      const box = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map(Math.round).join(','); };
+      document.querySelector('.app-link[data-app="example"]').click();
+      setTimeout(() => { const sk = box(document.querySelector('.skeleton .tile .art'));
+        const wait = () => { const t = document.querySelector('main .page:not(.skeleton) .tile[data-style="landscape"] .art');
+          if (!t) { setTimeout(wait, 100); return; } window.fetch = f; done({ sk, real: box(t) }); };
+        wait(); }, 300);`);
+    return (r.sk && r.sk === r.real) || Promise.reject(new Error(JSON.stringify(r)));
+  });
+  await check('9: app tiles carry their text in the picture (none below, as on the TV)', async () => {
+    await ff.run(`location.hash = '#/'`);
+    await ff.until(`return document.querySelectorAll('.tile[data-style="app"]').length > 0 && !document.querySelector('.skeleton')`, 20_000);
+    return ff.run(`return !document.querySelector('.tile[data-style="app"] .meta')`);
+  });
+  await check('9: the header\'s buttons keep their places on every page (search page included)', async () => {
+    const where = `const b = document.querySelector('.settings-button').getBoundingClientRect(); return Math.round(b.left) + ',' + Math.round(b.top)`;
+    const home = await ff.run(where);
+    await ff.run(`location.hash = '#/search/example'`);
+    await ff.until(`return !!document.querySelector('.search-field')`, 10_000);
+    const search = await ff.run(where);
+    return home === search || Promise.reject(new Error(`${home} -> ${search}`));
+  });
+  await check('9: every button is at least 44 px for a finger (header, tiles, sheet)', async () => {
+    await ff.run(`location.hash = '#/app/example'`);
+    await ff.until(`return document.querySelectorAll('.tile[data-kind="video"]').length > 1 && !document.querySelector('.skeleton')`, 20_000);
+    await sheetFor('example:1');
+    const small = await ff.run(`return [...document.querySelectorAll('#bar button, .tile .more, .sheet.open button')].filter((b) => b.offsetParent && getComputedStyle(b).visibility !== 'hidden')
+      .map((b) => [b.className, b.getBoundingClientRect()]).filter(([, r]) => r.width < 44 || r.height < 44).map(([c, r]) => c + ' ' + Math.round(r.width) + 'x' + Math.round(r.height))`);
+    await ff.run(`document.querySelector('.sheet.open .sheet-button.cancel').click()`);
+    return small.length === 0 || Promise.reject(new Error(small.join('; ')));
+  });
+  // Sofa goes away: the content stays, a bar says so; a playback says so and offers to try again
+  await stopSofa();
+  await check('9: Sofa unreachable: "Keine Verbindung" over the content', () => ff.until(`const n = document.querySelector('.netbar');
+      return !!n && !n.hidden && /Keine Verbindung/.test(n.textContent) && document.querySelectorAll('.tile').length > 0`, 30_000));
+  await ff.run(`document.querySelector(arguments[0] + ' .art').click()`, [tileOf('example:2')]);
+  await check('9: ... a playback says so and offers "Erneut versuchen"', () => ff.until(`const s = document.querySelector('.player-status.error');
+      return !!s && /nicht erreichbar/.test(s.textContent) && [...s.querySelectorAll('button')].some((b) => b.offsetParent && b.textContent === 'Erneut versuchen')`, 30_000));
+  await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_FILE, SOFA_EXAMPLE_FILL: '0.3', SOFA_SOURCE_GAP: '1' });
+  await ff.run(`[...document.querySelectorAll('.player-status button')].find((b) => b.textContent === 'Erneut versuchen').click()`);
+  await check('9: ... and plays once Sofa is back', () => ff.until(`const v = document.querySelector('.player video'); if (v) v.muted = true; return !!v && v.currentTime > 1`, 45_000));
+  await ff.run(`history.back()`);
+  await ff.until(`return !document.querySelector('.player')`, 10_000);
+  await check('9: ... the connection bar goes by itself', () => ff.until(`return document.querySelector('.netbar').hidden`, 45_000));
+  // a reload during a playback: the page it was opened from, no dead Back step
+  await ff.run(`document.querySelector(arguments[0] + ' .art').click()`, [tileOf('example:2')]);
+  await ff.until(`return !!document.querySelector('.player video')`, 10_000);
+  await ff.run(`location.reload()`);
+  await check('9: reloaded during a playback: back on its page, no player entry left', () => ff.until(`return !document.querySelector('.player') && !(history.state && history.state.player)
+      && document.querySelectorAll('.tile[data-kind="video"]').length > 1`, 30_000));
+
   console.log('==> 5 layouts');
   await ff.setWindow(1280, 800);
   await sleep(500);
@@ -294,6 +353,12 @@ try {
     .then((r) => r === true || Promise.reject(new Error(String(r)))));
   await check('8: the code is not left in the address', async () => !/code=/.test(await ff.run(`return location.href`)));
   await check('8: a second device in the TV\'s list, the PWA', async () => sql(`select count(*) || '|' || group_concat(distinct client_kind) from web_devices`) === '2|web');
+  // removed on the TV: the pairing screen says why
+  await stopSofa();
+  sql('delete from web_devices');
+  await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_FILE });
+  await ff.run(`location.reload()`);
+  await check('8: a device removed on the TV is told why it has to pair again', () => ff.until(`const n = document.querySelector('.notice'); return !!n && /getrennt/.test(n.textContent) && !!document.querySelector('input.code')`, 30_000));
 } catch (e) {
   bad(`browser: ${e.message}`);
 } finally {
