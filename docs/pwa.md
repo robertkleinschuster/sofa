@@ -159,6 +159,9 @@ box with an **opaque** background and **no backdrop-filter** covers the top edge
 not do it on an iPhone, so the installed app on iOS also gets `#top-edge`: a fixed strip in the
 header's colour over exactly the header's top padding (status bar + 6 px, at least 12 px), invisible
 and on every screen (test-pwa 9 checks both colours).
+No `apple-mobile-web-app-status-bar-style` either: `black-translucent` is deprecated (WebKit bug 317153 -
+a Home Screen web app draws nothing under the status bar); with it, iOS 27 laid the page under the clock
+with a top inset of 0 (header cut off). iOS reads the tag when the app is added: remove and add again.
 The apple-touch-icon is **full-bleed** (`res/icon/sofa-icon-fullbleed.svg`): iOS rounds it itself, and
 the rounded tile with its margin came out small. The manifest keeps the rounded tile for "any" and adds a
 maskable one; `pwa/tools/icons.sh` renders all PNGs. iOS reads the icon when the app is added, so a new
