@@ -247,7 +247,12 @@ again with the next.
   HD is BT.709); ignores forced keyframes - but keeps its key interval exactly, so the frames are made
   constant-rate (nearest decoded frame per slot) and every segment has exactly `gop` frames; budgets
   its bit rate from timestamp 0 (a job at 40 min made a 4x first segment) - its clock starts at 0 per
-  job; refuses sessions below 640 px on the longer side (-8973: x264 takes those).
+  job; refuses sessions below 640 px on the longer side (-8973: x264 takes those); takes only one
+  session at a time (a second is refused with -8973 while the first runs) - a seek's new job waits
+  for the cancelled job's session to close (a process-wide slot, at most 15 s, plus a few re-tries of
+  the open); its rate control is an average over the whole run and ignores `maxrate` here: after a
+  static start it spends the saved bits (a real stored track, 6.2 Mbit/s target: segments of ~1 Mbit/s,
+  then 13, 27, 20 and 12 Mbit/s when the picture got busy, 5.5 Mbit/s over the first minute).
 - Speed (VP9 1080p60 source, 3.2 Mbit/s, + Opus -> AAC, real stored YouTube tracks): VideoToolbox
   1080p30 1.95x real time with 1.2 cores busy (at playback pace ~0.6 of one core, ~15 % of the CPU),
   first segment 2.7 s after a seek; x264 (veryfast, zerolatency: no lookahead/B-frames; the default

@@ -368,6 +368,11 @@ A0=$(echo "$F" | sed -n 's/.*audio=[0-9]* first=\([0-9.]*\).*/\1/p')
 log_since $MARK "$LOG" | grep -q "job from segment 11" && ok "14: ... a new job from there" || bad "14: the seek made no job at 11"
 cmp -s <(C "$U/m/$SID/init.mp4") <(C "$U/m/$SID/init.mp4") && ok "14: the init stays the same" || bad "14: init changed"
 check "14: after an idle stop a request makes it again" "$(C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/14.m4s")" 200
+# a seek while a job still encodes: the GPU's encoder takes one session at a time - the new job
+# waits for the cancelled one's (2026-11-26: refused, the encoder struck off)
+MARK=$(log_mark "$LOG")
+check "14: a seek while a job runs" "$(C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/5.m4s") $(C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/1.m4s")" "200 200"
+log_since $MARK "$LOG" | grep -qE "failed|struck|not used again" && bad "14: ... an encoder failed: $(log_since $MARK "$LOG" | grep -E 'failed|not used' | head -1)" || ok "14: ... no encoder failed"
 # another device meanwhile: not encoded (one at a time) - its app's browser format
 TOKEN_D=$TOKEN; A_D=("${A[@]}"); pair E
 P2=$(play '["avc1","mp4a"]')

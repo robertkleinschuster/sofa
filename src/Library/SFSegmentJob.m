@@ -43,7 +43,7 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
 
 - (void)cancel {
     _cancelled = YES;
-    [_video cancel]; [_audio cancel];
+    @synchronized (self) { [_video cancel]; [_audio cancel]; }
 }
 
 - (void)run {
@@ -51,6 +51,8 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
         [NSThread currentThread].name = @"Sofa transcode";
         [NSThread setThreadPriority:0.25];   // below the player and the UI
         NSString *failure = [self work];
+        // the tracks go now, not whenever the job object does: the GPU's encoder is free for the next job
+        @synchronized (self) { _video = nil; _audio = nil; }
         if (self.cancelled) failure = nil;
         void (^end)(NSString *) = self.onEnd;
         if (end) end(failure);
@@ -59,12 +61,14 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
 
 - (NSString *)work {
     SFSegmentPlan *p = _plan;
-    _video = p.videoMode == SFSegmentModeCopy ? [[SFSegmentCopy alloc] initWithURL:p.videoURL type:AVMEDIA_TYPE_VIDEO timeout:kReadTimeout]
+    id<SFSegmentTrack> video = p.videoMode == SFSegmentModeCopy ? [[SFSegmentCopy alloc] initWithURL:p.videoURL type:AVMEDIA_TYPE_VIDEO timeout:kReadTimeout]
            : [[SFSegmentVideo alloc] initWithURL:p.videoURL encoder:p.encoder width:p.width height:p.height fps:p.fps
                                          bitrate:p.bitrate segment:(int64_t)(p.segment * 1e6) timeout:kReadTimeout];
     NSString *audioURL = p.audioURL ?: p.videoURL;
-    if (p.audioMode == SFSegmentModeCopy) _audio = [[SFSegmentCopy alloc] initWithURL:audioURL type:AVMEDIA_TYPE_AUDIO timeout:kReadTimeout];
-    else if (p.audioMode == SFSegmentModeEncode) _audio = [[SFSegmentAudio alloc] initWithURL:audioURL timeout:kReadTimeout];
+    id<SFSegmentTrack> audio = nil;
+    if (p.audioMode == SFSegmentModeCopy) audio = [[SFSegmentCopy alloc] initWithURL:audioURL type:AVMEDIA_TYPE_AUDIO timeout:kReadTimeout];
+    else if (p.audioMode == SFSegmentModeEncode) audio = [[SFSegmentAudio alloc] initWithURL:audioURL timeout:kReadTimeout];
+    @synchronized (self) { _video = video; _audio = audio; }
     if (self.cancelled) return nil;
     int64_t startUs = (int64_t)([p.starts[_first] doubleValue] * 1e6);
     NSString *why = nil;

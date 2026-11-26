@@ -11,10 +11,44 @@
 static const AVRational kTB = {1, 90000};
 static const int64_t kSlackUs = 2000;
 
+// The GPU's encoder takes one session at a time (measured 2026-11-26: a second one is refused with
+// -8973 while the first runs). A seek's new job therefore waits for the cancelled job's session to
+// close - held from opening an encoder until FreeEncoder, released on every path.
+static const NSTimeInterval kHardwareWait = 15;
+static NSCondition *gHardware;
+static BOOL gHardwareTaken;
+
+static BOOL IsHardware(NSString *name) { return [name isEqualToString:@"h264_videotoolbox"]; }
+
+static BOOL TakeHardware(BOOL (^cancelled)(void)) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ gHardware = [NSCondition new]; });
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:kHardwareWait];
+    [gHardware lock];
+    while (gHardwareTaken && !(cancelled && cancelled()) && [until timeIntervalSinceNow] > 0)
+        [gHardware waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
+    BOOL got = !gHardwareTaken && !(cancelled && cancelled());
+    if (got) gHardwareTaken = YES;
+    [gHardware unlock];
+    return got;
+}
+
+static void ReleaseHardware(void) {
+    [gHardware lock];
+    gHardwareTaken = NO;
+    [gHardware broadcast];
+    [gHardware unlock];
+}
+
+static void FreeEncoder(AVCodecContext **e) {
+    if (!*e) return;
+    BOOL hardware = IsHardware(@((*e)->codec->name));
+    avcodec_free_context(e);
+    if (hardware) ReleaseHardware();
+}
+
 // The encoder's settings (shared by the availability test and the jobs)
-static AVCodecContext *NewEncoder(NSString *name, int w, int h, double fps, int gop, long long bitrate, NSString **why) {
-    const AVCodec *c = avcodec_find_encoder_by_name(name.UTF8String);
-    if (!c) { if (why) *why = [NSString stringWithFormat:@"%@ not built in", name]; return NULL; }
+static AVCodecContext *Configured(const AVCodec *c, NSString *name, int w, int h, double fps, int gop, long long bitrate) {
     AVCodecContext *e = avcodec_alloc_context3(c);
     e->width = w; e->height = h;
     e->pix_fmt = AV_PIX_FMT_YUV420P;
@@ -43,10 +77,32 @@ static AVCodecContext *NewEncoder(NSString *name, int w, int h, double fps, int 
         e->rc_max_rate = bitrate * 3 / 2;
         e->rc_buffer_size = (int)MIN(bitrate * 2, INT_MAX);
     }
+    return e;
+}
+
+// An open encoder, or NULL and why. `cancelled`: when to stop waiting for the GPU's encoder.
+static AVCodecContext *NewEncoder(NSString *name, int w, int h, double fps, int gop, long long bitrate,
+                                  BOOL (^cancelled)(void), NSString **why) {
+    const AVCodec *c = avcodec_find_encoder_by_name(name.UTF8String);
+    if (!c) { if (why) *why = [NSString stringWithFormat:@"%@ not built in", name]; return NULL; }
+    if (IsHardware(name) && !TakeHardware(cancelled)) {
+        // (worded without "encode": a busy GPU is no reason to give up on it for good)
+        if (why) *why = cancelled && cancelled() ? @"cancelled" : @"the GPU's H.264 unit stayed in use";
+        return NULL;
+    }
+    AVCodecContext *e = Configured(c, name, w, h, fps, gop, bitrate);
     int r = avcodec_open2(e, c, NULL);
+    // a session closed just before may hold the GPU's encoder a moment longer: a few more tries
+    for (int i = 0; r < 0 && IsHardware(name) && i < 4 && !(cancelled && cancelled()); i++) {
+        avcodec_free_context(&e);
+        [NSThread sleepForTimeInterval:0.25];
+        e = Configured(c, name, w, h, fps, gop, bitrate);
+        r = avcodec_open2(e, c, NULL);
+    }
     if (r < 0) {
         if (why) *why = [NSString stringWithFormat:@"%@: %s", name, av_err2str(r)];
         avcodec_free_context(&e);
+        if (IsHardware(name)) ReleaseHardware();
     }
     return e;
 }
@@ -55,7 +111,7 @@ static AVCodecContext *NewEncoder(NSString *name, int w, int h, double fps, int 
 // encoder, or a session the system refuses, fails here instead of in a playback)
 static BOOL EncoderWorks(NSString *name) {
     NSString *why = nil;
-    AVCodecContext *e = NewEncoder(name, 640, 360, 30, 120, 1000000, &why);
+    AVCodecContext *e = NewEncoder(name, 640, 360, 30, 120, 1000000, nil, &why);
     if (!e) { SFLog(@"transcode: %@ unavailable (%@)", name, why); return NO; }
     AVFrame *f = av_frame_alloc();
     f->format = e->pix_fmt; f->width = e->width; f->height = e->height;
@@ -68,7 +124,7 @@ static BOOL EncoderWorks(NSString *name) {
     AVPacket *p = av_packet_alloc();
     BOOL got = NO;
     while (ok && avcodec_receive_packet(e, p) >= 0) { got = got || p->size > 0; av_packet_unref(p); }
-    av_packet_free(&p); av_frame_free(&f); avcodec_free_context(&e);
+    av_packet_free(&p); av_frame_free(&f); FreeEncoder(&e);
     if (!got) SFLog(@"transcode: %@ opens but encodes nothing", name);
     return got;
 }
@@ -142,7 +198,7 @@ static NSMutableSet *gBroken;
 
 - (void)dealloc {
     if (_unkeyed) SFLog(@"transcode: %lu segment(s) did not start with a keyframe", (unsigned long)_unkeyed);
-    avcodec_free_context(&_dec); avcodec_free_context(&_enc);
+    avcodec_free_context(&_dec); FreeEncoder(&_enc);
     avcodec_parameters_free(&_par);
     sws_freeContext(_sws);
     av_frame_free(&_frame); av_frame_free(&_cur); av_frame_free(&_next); av_frame_free(&_emit); av_frame_free(&_scaled); av_packet_free(&_pkt);
@@ -175,7 +231,7 @@ static NSMutableSet *gBroken;
     _dec->thread_count = 0;   // as many as the decoder likes (the cores)
     int r = avcodec_open2(_dec, dc, NULL);
     if (r < 0) { if (why) *why = [NSString stringWithFormat:@"decoder: %s", av_err2str(r)]; return NO; }
-    if (!(_enc = NewEncoder(_encoderName, _w, _h, _fps, _perSegment, _bitrate, why))) return NO;
+    if (!(_enc = NewEncoder(_encoderName, _w, _h, _fps, _perSegment, _bitrate, ^BOOL { return self->_cancelled; }, why))) return NO;
     if (!_clearColors) {   // x264 writes the source's colour description into the stream (VUI)
         _enc->color_primaries = sp->color_primaries; _enc->color_trc = sp->color_trc;
         _enc->colorspace = sp->color_space; _enc->color_range = sp->color_range;
