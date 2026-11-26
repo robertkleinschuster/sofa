@@ -65,10 +65,13 @@ A second UI - the PWA in `pwa/` (TypeScript, GitHub Pages) - on the same backend
 - Library: `SFWebDevices` (pairing, token hashes, table `web_devices`), `SFWebItems` (pages and
   items as JSON, page handles), `SFWebImages` (signed picture paths), `SFWebHLS` (a DASH pair's
   init as HLS playlists), `SFWebStreams` (+Serve: the browser's playbacks through the media proxy,
-  the engines and downloads; capability paths).
+  the engines and downloads; capability paths), `SFWebTV` (an item sent to the TV's own player through
+  the shell's `SFPlayerHost`; what the TV plays, pause/play/stop), `SFWebStatus` (the long-polled
+  status: the TV and the downloads on their way). Downloads from the browser go to `SFDownloads` itself.
 - Apps reach it only through the `SFApp` contract: `resolveForBrowser:done:` (a format browsers
   decode - YouTube: the engine's H.264/AAC session) and `playback:reports:`.
-- Shell: `SFWebServer` (+API: the routes), `SFWebPairScreen` (Einstellungen → Sofa im Browser).
+- Shell: `SFWebServer` (+API: the routes; hands its player host to `SFWebTV` at launch),
+  `SFWebPairScreen` (Einstellungen → Sofa im Browser).
 
 ## The app contract: `SFApp`
 

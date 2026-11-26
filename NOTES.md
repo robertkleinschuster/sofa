@@ -305,6 +305,14 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   through the media proxy. Progress, marks and follows go through the TV's own modules. PWA in
   `pwa/` (strict TypeScript, esbuild, hls.js), published by `.github/workflows/pwa.yml`.
 
+- 2026-11-26: **Sofa im Browser: "Auf dem Fernseher abspielen" and downloads** (user; docs/pwa.md §6-7).
+  An item from the PWA opens in the TV's own player through the shell's player host, as with the
+  remote (resume, history, marks); something else playing there is replaced only after the PWA asked;
+  the browser's own stream of the item ends first (one player per video and person - no second
+  YouTube session for a video moved to the TV). A bar "Am Fernseher" follows the TV's player (pause/
+  play, stop) through one long-polled status (`SFWebStatus`). Downloads start, cancel, keep and delete
+  through `SFDownloads` with the TV menu's choices; tiles follow the chip.
+
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
   (`tools/sofa-deploy`, swap during playback < 1 s) and check in SofaRemote.log

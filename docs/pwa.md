@@ -103,7 +103,10 @@ Every stream goes through Sofa's existing local routes; the browser never contac
 - **Mediatheks** (ZDF, ARD, CCC files; ORF and lives HLS): the resolver's URL through
   `SFMediaProxy` (the media store), exactly as the TV player opens it. Files are served as files;
   HLS playlists are relayed with their loopback URIs rewritten to the stream's capability path.
-- **Downloads**: a local file or a complete item in the media store plays from there.
+- **Downloads**: a local file or a complete item in the media store plays from there - a mediathek
+  download in the browser too. A downloaded YouTube video plays from the store on the TV; in the
+  browser it plays online as an H.264 session, because the store keeps the TV's tracks (VP9/AV1 +
+  Opus), which Apple's browsers don't decode.
 - The browser plays HLS natively where it can (Safari, iOS) and with hls.js (MSE) elsewhere;
   progressive MP4 in a plain `<video>`.
 
@@ -133,6 +136,58 @@ time. Tiles, rails, hero, progress bars, the "Weiterschauen" rail and the dot-jo
 the TV's components; layout is responsive (phone: one column of rails with swipe, desktop: wider
 rails and a hero).
 
+### 6. The TV: "Auf dem Fernseher abspielen" (2026-11-26)
+
+The sheet of every playable item (and a TV button in the browser's player: "Am Fernseher
+weiterschauen") sends it to the TV (`POST /api/tv/play`). `SFWebTV` (Library) opens it in the TV's own
+player through the shell's player host (`SFPlayerHost`, handed to `SFWebServer` at launch) - exactly as
+when chosen with the remote: `SFPlayerScreen` resumes from the stored position (or from `at`, where the
+browser handed a playback over, or from the start), keeps history and marks, autoplays as always. The
+screen wakes as for the phone remote (`wakeAndFront`: a user activity wakes the display; playing ends a
+rest).
+
+- **Something else plays on the TV** (playing, paused or loading): not replaced unasked - the answer is
+  409 naming it, and the PWA asks ("Am Fernseher läuft gerade „X“." - "Es wird dort beendet – die
+  Stelle bleibt gespeichert." - "Stattdessen „Y“ abspielen"). The TV may be watched by someone else; the
+  phone remote's direct replace is YouTube's protocol, not a model for a second device. A failed or
+  finished player is replaced without asking. The same video already playing is not reopened: it
+  plays on (at the handed-over position if there is one).
+  A hand-over from the browser's player asks the same way; the browser's player has closed by
+  then (its position is saved either way).
+- **One player per video and person.** Before the TV opens it, the device's own browser streams of that
+  item end (`SFWebStreams endItem:device:` - the app's session closes as on "closed"); the PWA closes
+  its player first when it hands a playback over. So moving a YouTube video to the TV never leaves a
+  second session of it running for the browser. (The TV and a browser watching *different* videos -
+  or another person the same one - stay two sessions of the one engine page, §3.)
+- **Feedback.** The PWA says "Am Fernseher geöffnet", then - from Sofa's status - "Läuft jetzt am
+  Fernseher" once it plays, or "„X“ ließ sich am Fernseher nicht abspielen." when the TV's player failed
+  (the TV shows its reason); network failures: "Der Fernseher ist gerade nicht erreichbar.".
+- **"Am Fernseher"**: a bar at the bottom shows what the TV's player shows (picture, title, state,
+  position / length running on between answers, a progress line) with pause/play and stop
+  (`POST /api/tv/control`; stop leaves the player as MENU does - the position is kept; play wakes the
+  screen). It shows whatever plays on the TV, sent from the browser or chosen with the remote.
+
+Sofa's status (`SFWebStatus`, `GET /api/status?since=<gen>`) is one long poll for the TV and the
+downloads: it answers at once when the browser's generation is not the current one (a new launch has
+a new prefix), else when the TV's player or a download changes (`SFPlayerStateNotification`,
+`SFDownloadsDidChangeNotification`, coalesced 0.25 s), at the latest after 25 s (3 s while a download
+runs). The PWA polls only while visible (no request in the background), backs off up to 30 s while Sofa
+is unreachable, and asks at once after its own actions.
+
+### 7. Downloads from the browser (2026-11-26)
+
+The sheet offers what the TV's options menu offers for the item's download state (`dl` in the item:
+none / queued / running with progress / done with Behalten and "gone" / failed with its reason):
+Herunterladen, Download abbrechen, Erneut herunterladen, Aus Downloads entfernen, Behalten, Download
+löschen. They go through `POST /api/state` (`download: true|false`, `keep`) to `SFDownloads` - the same
+queue, per-source spacing, YouTube pacing and storage guard as on the TV; a started download answers
+with what the TV would toast (`download:told:`: "Wird heruntergeladen – noch 340 MB …"). Deleting a copy
+that can't come back (kept, or no longer online) asks first, naming why, as the TV does. Tiles show the
+TV's chip (`↓ 42 %`, `↓ wartet`, `↓ Offline`); Sofa's status lists the downloads on their way, their
+tiles follow (only the chip is rewritten - no rebuilt tile, no picture fading in again), and one that
+left the list gets its final state. Only items with a resolver ref can be downloaded from the browser
+(the ref travels in the item's `d`; a resolver block cannot).
+
 ## API (all JSON, `Authorization: Bearer <token>` unless noted)
 
 | Route | |
@@ -151,13 +206,17 @@ rails and a hero).
 | `GET /api/suggest?app=&q=` | the app's search suggestions |
 | `POST /api/play {item}` | `{stream, kind: hls\|file, url, start, duration}` |
 | `POST /api/stream/<id> {state, position, duration}` | player state; `closed` ends it |
-| `POST /api/state {item, watched?, later?, follow?, forget?}` | marks (`forget`: out of Weiterschauen); answers the item's new state - with no mark, just its state |
+| `POST /api/state {item, watched?, later?, follow?, forget?, download?, keep?}` | marks (`forget`: out of Weiterschauen), the download (`true` starts or retries, `false` cancels or deletes; `keep`: Behalten); answers the item's new state (+ `message` for a started download) - with no change, just its state |
+| `POST /api/tv/play {item, fromStart?, at?, replace?}` | `{tv, already?}`; 409 `{error, busy: {title}}` another video plays there; 403 DRM |
+| `POST /api/tv/control {action: play\|pause\|stop}` | `{tv}`; 404 nothing on the TV |
+| `GET /api/status?since=<gen>` | `{gen, tv: {item, state: playing\|paused\|buffering\|ended\|failed, position, duration, live} \| null, downloads: [item]}` - long poll (§6) |
 | `GET /m/<stream>/…` (capability) | the stream's media (Range) |
 | `GET /img/<sig>?u=&w=` (signed) | a picture through Sofa's image path (JPEG/PNG, sized) |
 
-Items carry their stored dictionary (`d`) - the PWA echoes it back in `play`/`state`, like the
+Items carry their stored dictionary (`d`) - the PWA echoes it back in `play`/`state`/`tv`, like the
 store keeps it - plus display fields (`kind`, `title`, `sub`, `img`, `progress`, `watched`,
-`later`, `following`, `page` handle, `theme`).
+`later`, `following`, `chip`, `dl` (the download: `state`, `progress`, `kept`, `gone`, `failure`),
+`page` handle, `theme`).
 
 ## The PWA (`pwa/`)
 
@@ -171,8 +230,10 @@ CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a vide
 - `pages.ts` shelves (rails scroll sideways with arrows for a mouse, grids wrap; `more` appends at
   the end), `tiles.ts` the TV's tiles (SFTile.m: badge, duration, chip, progress, watched, avatar);
   a mark or a playback updates every tile of the item in place. A tap plays (as OK on the remote),
-  ⋯ opens the sheet (`sheet.ts`: play / from the start, Später ansehen, gesehen, aus Weiterschauen,
-  zur Sendung, folgen).
+  ⋯ opens the sheet (`sheet.ts`: play / from the start, auf dem Fernseher, Später ansehen, the
+  download (`choices.ts`), gesehen, aus Weiterschauen, zur Sendung, folgen; and its confirmations).
+- `status.ts` the long poll of Sofa's status; `tv.ts` sending to the TV and the "Am Fernseher" bar;
+  `downloads.ts` the download actions and the tiles of downloads on their way.
 - `player.ts` native HLS on Apple's browsers, hls.js elsewhere, files in `<video>`; reports
   every 10 s and on pause, seek, end and close (a beacon on the capability path when the page goes
   away); a broken stream is opened again (twice), a format the browser can't decode says so.
@@ -183,13 +244,15 @@ CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a vide
 Published by `.github/workflows/pwa.yml` (check, unit tests, build, Pages) on every push to master
 that touches it. Tests: `pwa/test` (pure parts, `npm test`), `tools/test-pwa` (in test-all): the
 built PWA in a headless Firefox (Marionette) against a dev instance - connect via the short name,
-pairing with the dev code, pages, a playback with its reports, marks, phone and desktop widths;
+pairing with the dev code, pages, a playback with its reports, marks, the TV (send from the sheet,
+the bar's pause and stop, asking before replacing, a playback handed over at its position), downloads
+(started, the chip to "Offline", Behalten, a confirmed delete), phone and desktop widths;
 `PWA_SHOTS=<dir>` saves screenshots (Firefox then renders into an invisible Xvfb). This Mac's
 Firefox build decodes no H.264, so there the DASH pair is checked up to hls.js reading its master
 playlist; the byte relay is test-web's, and a VP9 file plays end to end.
 
 ## Open questions (for the user)
 
-- Should "Auf dem Fernseher abspielen" (send the item to the TV) be added? Not built: the request
-  was an independent second UI.
-- Downloads are visible (played from the store) but not started from the browser yet.
+- Downloaded YouTube videos play online in the browser (H.264), from the store only on the TV (§3).
+  Serving the stored VP9/Opus tracks to browsers that decode them (Firefox, Chrome) would need an MSE
+  path of its own; not built.
