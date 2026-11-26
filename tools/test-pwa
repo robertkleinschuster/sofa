@@ -17,6 +17,7 @@
 #      (the browser's player closes, its stream ends)
 #   7  downloads: started from the sheet (Sofa's message), the tile's chip follows the download to
 #      "Offline", Behalten, and deleting a kept one asks first
+#   8  the TV's pairing link (its QR code, pair#host=...&code=...) pairs a fresh browser without typing
 #   5  phone and desktop layouts (screenshots into $PWA_SHOTS when set: Firefox then renders into an
 #      invisible Xvfb display - this headless build takes none)
 #   0  the PWA's strict type check and unit tests (pwa/test), its build
@@ -67,6 +68,9 @@ class H(http.server.SimpleHTTPRequestHandler):
     def handle(self):
         try: super().handle()
         except (BrokenPipeError, ConnectionResetError): pass   # a reader that has what it wanted (a probe, a seek)
+    def translate_path(self, path):   # GitHub Pages: /pair is pair.html
+        F = super().translate_path(path)
+        return F + ".html" if not os.path.exists(F) and os.path.isfile(F + ".html") else F
     def send_head(self):
         r = self.headers.get("Range", "")
         F = self.translate_path(self.path)

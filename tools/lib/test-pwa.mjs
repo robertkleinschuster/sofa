@@ -279,6 +279,21 @@ try {
   await ff.setWindow(390, 844);
   await sleep(500);
   await check('5: phone: no sideways page scroll', async () => (await ff.run(`return document.documentElement.scrollWidth <= innerWidth + 1`)) === true);
+
+  console.log('==> 8 the TV\'s pairing link');
+  // what the QR code on the TV's pairing screen says (docs/api.md): a browser that knows nothing of this TV
+  // opens it, pair.html hands the fragment to the PWA, which connects and sends the code by itself
+  await ff.run(`localStorage.clear()`);
+  const from = log().length;
+  appendFileSync(FIFO, 'open web\n');
+  const linkCode = (await waitLog(/dev: web pairing code (\d{6})/, 30_000, from))[1];
+  await ff.navigate(`${E.PWA_URL}pair#host=${E.SOFA_NAME}:${E.SOFA_PORT}&code=${linkCode}`);
+  await check('8: paired from the link alone (a token, Home loads)', () => ff.until(`const e = document.querySelector('.form-error:not([hidden])'); if (e) return 'error: ' + e.textContent;
+      const c = JSON.parse(localStorage.getItem('sofa.connection') || 'null');
+      return !!c && !!c.token && c.host === arguments[0] && document.querySelectorAll('.tile').length > 0`, 30_000, 'paired', [`${E.SOFA_NAME}:${E.SOFA_PORT}`])
+    .then((r) => r === true || Promise.reject(new Error(String(r)))));
+  await check('8: the code is not left in the address', async () => !/code=/.test(await ff.run(`return location.href`)));
+  await check('8: a second device in the TV\'s list, the PWA', async () => sql(`select count(*) || '|' || group_concat(distinct client_kind) from web_devices`) === '2|web');
 } catch (e) {
   bad(`browser: ${e.message}`);
 } finally {

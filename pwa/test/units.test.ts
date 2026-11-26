@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { discoveryURL, hostFromHash, needsDiscovery, normalizeHost, shortName } from '../src/connection.ts';
+import { codeFromHash, discoveryURL, hostFromHash, needsDiscovery, normalizeHost, shortName } from '../src/connection.ts';
 import { parseRoute, routeHash, type Route } from '../src/router.ts';
 import { isOpaque, recolor, LOGO_LIGHT_TEXT, LOGO_ORIGINAL, LOGO_WHITE } from '../src/logos.ts';
 import { themeVariables } from '../src/theme.ts';
@@ -33,6 +33,15 @@ test('the connect redirect hands back the full name in the fragment', () => {
   assert.equal(hostFromHash('#/app/zdf&host=imac.example.org%3A7443'), 'imac.example.org:7443');
   assert.equal(hostFromHash('#/'), null);
   assert.equal(hostFromHash('#host=<script>'), null);
+});
+
+test('the TV\'s pairing link (QR code) carries the full name and the code', () => {
+  const hash = '#host=imac.example.org:7443&code=042137';
+  assert.equal(hostFromHash(hash), 'imac.example.org:7443');
+  assert.equal(codeFromHash(hash), '042137');
+  assert.equal(codeFromHash('#host=imac.example.org:7443'), null);
+  assert.equal(codeFromHash('#host=a:1&code=12345'), null, 'six digits only');
+  assert.equal(codeFromHash('#host=a:1&code=1234567'), null);
 });
 
 test('routes round-trip through the hash', () => {

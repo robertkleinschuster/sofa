@@ -45,7 +45,8 @@ function deviceName(): string {
   return `${browser} auf ${os}`;
 }
 
-export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherHost: () => void): HTMLElement {
+// `scanned`: the code of the TV's pairing link (its QR code) - entered and sent at once
+export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherHost: () => void, scanned?: string): HTMLElement {
   const code = h('input.field.code', {
     type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, pattern: '[0-9]{6}',
     placeholder: '000000', 'aria-label': 'Code vom Fernseher',
@@ -69,7 +70,8 @@ export function pairScreen(api: Api, onPaired: (token: string) => void, onOtherH
     } finally { button.disabled = false; }
   };
   code.addEventListener('input', () => { code.value = code.value.replace(/\D/g, '').slice(0, 6); });
-  requestAnimationFrame(() => code.focus());
+  if (scanned) { code.value = scanned; queueMicrotask(() => { void submit(new Event('submit')); }); }
+  else requestAnimationFrame(() => code.focus());
   return h('div.screen', null,
     h('div.screen-card', null,
       h('h1.wordmark-big', null, 'Sofa'),

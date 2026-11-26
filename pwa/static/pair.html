@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark light">
+<title>Sofa verbinden</title>
+<!-- The TV's pairing link (its QR code, docs/api.md "Pairing by QR code"): pair#host=<name>:<port>&code=<code>.
+     A native Sofa app claims this path (Universal Link / App Link) and opens instead where it is
+     installed; here Sofa im Browser takes over with the fragment, which never leaves this device. -->
+<script>location.replace('./' + location.hash);</script>
+</head>
+<body style="background:#1c1f26;color:#eef0f4;font:17px -apple-system,system-ui,sans-serif;padding:2em">
+<noscript><p>Sofa im Browser braucht JavaScript.</p></noscript>
+</body>
+</html>

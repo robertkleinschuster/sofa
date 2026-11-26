@@ -1,7 +1,7 @@
 // Sofa im Browser (docs/pwa.md): the app's controller - connection, routes, header, views.
 
 import { Api, ApiError } from './api.ts';
-import { hostFromHash, loadConnection, saveConnection, shortName, type Connection } from './connection.ts';
+import { codeFromHash, hostFromHash, loadConnection, saveConnection, shortName, type Connection } from './connection.ts';
 import { clear, h, icon, ICONS } from './dom.ts';
 import { logoURL } from './logos.ts';
 import { renderPage } from './pages.ts';
@@ -34,15 +34,18 @@ class App {
   private entry = 0;
   private seq = 0;
   private hiddenAt = 0;
+  private scannedCode: string | undefined;     // the code of the TV's pairing link, until the pairing screen used it
   private readonly bar = document.getElementById('bar')!;
   private readonly main = document.getElementById('view')!;
 
   start(): void {
-    // the connect route came back with the full name: keep it, the token only for the same host
+    // the connect route came back with the full name: keep it, the token only for the same host; the
+    // TV's pairing link (QR code) names the code too - paired with that code at once
     const learned = hostFromHash(location.hash);
     if (learned) {
       const keep = this.connection?.host === learned ? this.connection.token : undefined;
       this.setConnection({ host: learned, ...(keep ? { token: keep } : {}) });
+      if (!keep) this.scannedCode = codeFromHash(location.hash) ?? undefined;
       history.replaceState({ entry: ++this.seq }, '', keep ? '#/' : '#/pair');
     } else {
       history.replaceState({ entry: ++this.seq, ...(history.state ?? {}) }, '', location.hash || '#/');
@@ -116,7 +119,9 @@ class App {
     const api = this.api;
     if (!this.connection.token || route.name === 'pair') {
       if (this.connection.token && route.name === 'pair') { this.navigate({ name: 'home' }, true); return; }
-      this.screen(pairScreen(api, (token) => this.paired(token), () => this.otherHost()));
+      const scanned = this.scannedCode;
+      this.scannedCode = undefined;   // once: a wrong or expired one is typed again
+      this.screen(pairScreen(api, (token) => this.paired(token), () => this.otherHost(), scanned));
       return;
     }
     if (!this.info) {

@@ -4,7 +4,9 @@ import { baseURL, type Connection } from './connection.ts';
 import type { Info, Item, MarkChange, MoreAnswer, Page, PlayAnswer, Status, TvState } from './types.ts';
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  // `code`: Sofa's machine-readable reason (api/openapi.yaml ErrorCode; absent from older Sofas and
+  // network failures) - `message` is its German text, for the viewer
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
   // Sofa could not be reached at all (offline, not on the tailnet, the Mac asleep, a blocked
   // local-network permission) - as opposed to an answer with an error.
   get unreachable(): boolean { return this.status === 0; }
@@ -40,15 +42,18 @@ export class Api {
     let json: unknown = null;
     try { json = await res.json(); } catch { /* an empty or non-JSON answer */ }
     if (!res.ok) {
-      const msg = json && typeof json === 'object' && typeof (json as { error?: unknown }).error === 'string'
-        ? (json as { error: string }).error : `Sofa antwortet mit Fehler ${res.status}.`;
-      throw new ApiError(res.status, msg);
+      const body = json && typeof json === 'object' ? json as { error?: unknown; code?: unknown } : {};
+      const msg = typeof body.error === 'string' ? body.error : `Sofa antwortet mit Fehler ${res.status}.`;
+      throw new ApiError(res.status, msg, typeof body.code === 'string' ? body.code : undefined);
     }
     return json as T;
   }
 
   hello(): Promise<{ name: string; version: string; paired: boolean }> { return this.request('GET', '/api/hello'); }
-  pair(code: string, name: string): Promise<{ token: string; device: string }> { return this.request('POST', '/api/pair', { code, name }); }
+  // `client`: what pairs (the TV lists it: "Browser")
+  pair(code: string, name: string): Promise<{ token: string; device: string }> {
+    return this.request('POST', '/api/pair', { code, name, client: { kind: 'web', app: 'Sofa im Browser' } });
+  }
   unpair(): Promise<unknown> { return this.request('DELETE', '/api/pair'); }
   info(): Promise<Info> { return this.request('GET', '/api/info'); }
   home(): Promise<Page> { return this.request('GET', '/api/home'); }

@@ -50,6 +50,13 @@ export function discoveryURL(host: string, returnURL: string): string {
   return `http://${host}/connect?return=${encodeURIComponent(returnURL)}`;
 }
 
+// The TV's pairing link (its QR code, docs/api.md "Pairing by QR code"): pair#host=<name>:<port>&code=<6 digits>
+// - the code in the fragment, null when absent or not six digits.
+export function codeFromHash(hash: string): string | null {
+  const m = /(?:^#|&)code=(\d{6})(?:&|$)/.exec(hash);
+  return m ? m[1]! : null;
+}
+
 // "#host=<name>:<port>" from the connect redirect (or a shared link); null when absent or invalid.
 export function hostFromHash(hash: string): string | null {
   const m = /(?:^#|&)host=([^&]+)/.exec(hash);
