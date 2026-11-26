@@ -130,7 +130,7 @@ NSString *gInstance = @"view";
     [[SFHomeFeatures shared] start];   // live + highlights rows of Home (after the apps)
     [SFLibraryPages watchStorage];          // before the queue starts: a full disk asks the user to make room
     [[SFDownloads shared] start];
-    [[SFWebServer shared] start];   // Sofa im Browser (docs/pwa.md): after the store, apps and library
+    [[SFWebServer shared] startWithHost:self];   // Sofa im Browser (docs/pwa.md): after the store, apps and library
     // remote control services (phone pairing): real app always; dev instance only with SOFA_LOUNGE=1 (own screenId)
     if (!SFDevMode || getenv("SOFA_LOUNGE")) {
         [SFAppRegistry startRemotesWithHost:self];

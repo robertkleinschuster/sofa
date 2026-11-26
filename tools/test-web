@@ -18,6 +18,15 @@
 #   9  a source's file goes through the media proxy (the store) and is served with Range
 #  10  a signed picture path only: an unsigned one is refused
 #  11  unpairing: the token stops working
+#  12  the TV ("Auf dem Fernseher abspielen", docs/pwa.md §6): an item opens in the TV's own player; another
+#      video playing there is replaced only when asked (409 names it), the same one plays on; Sofa's
+#      status follows the TV's player (a long poll answers at once on a change, waits when quiet);
+#      pause, play, stop; copy-protected items are refused; the browser's own stream of an item sent to
+#      the TV ends (one player per video and person)
+#  13  downloads from the browser (docs/pwa.md §7): started through the TV's download machinery (its
+#      message), progress in Sofa's status, done, Behalten, deleted, cancelled while waiting; a video
+#      without a resolver can't be; a downloaded source file plays in the browser from the media store
+#      with its source gone
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -34,7 +43,7 @@ APPS=(); SRV=
 cleanup() {
   for p in ${APPS[@]+"${APPS[@]}"}; do kill "$p" 2>/dev/null; done
   [ -n "$SRV" ] && kill "$SRV" 2>/dev/null
-  for i in a b; do { defaults delete de.sofa.dev.$INST$i; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST$i.plist"; } >/dev/null 2>&1; done
+  for i in a b c; do { defaults delete de.sofa.dev.$INST$i; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST$i.plist"; } >/dev/null 2>&1; done
   [ $fail = 0 ] || [ -z "${WEBTEST_KEEP:-}" ] && rm -rf "$T" || echo "kept: $T"
 }
 trap cleanup EXIT
@@ -73,19 +82,38 @@ for i in $(seq 1 150); do [ -s "$T/media.port" ] && break; sleep 0.1; done
 MP=$(cat "$T/media.port")
 freeport() { /opt/local/bin/python3.14 -I -c 'import socket; s=socket.socket(socket.AF_INET6); s.bind(("::",0)); print(s.getsockname()[1])'; }
 
-# start INSTANCE-SUFFIX MEDIA [AUDIO]: a dev instance with the web server; sets PORT, LOG, FIFO, DB
+# start INSTANCE-SUFFIX [MEDIA [AUDIO]]: a dev instance with the web server (no media: the Example app's
+# 60-s test pattern; $EXTRA: more environment); sets PORT, LOG, FIFO, DB
+EXTRA=
 start() {
   local d="$T/data-$1"; mkdir -p "$d"
   PORT=$(freeport); LOG="$d/sofa.log"; FIFO="$d/dev.fifo"; DB="$d/sofa.db"
   env SOFA_DATA_DIR="$d" SOFA_ONLY_APPS=example SOFA_WEB_PORT=$PORT SOFA_WEB_CERT="$T/c.pem" SOFA_WEB_KEY="$T/k.pem" \
-      SOFA_WEB_LOOPBACK=1 SOFA_WEB_ORIGINS=https://pwa.test SOFA_WEB_APP_URL=https://pwa.test/app/ SOFA_PROXY_LOOPBACK=1 \
-      SOFA_EXAMPLE_MEDIA="$2" ${3:+SOFA_EXAMPLE_AUDIO="$3"} "$BIN" --dev --instance $INST$1 >/dev/null 2>&1 & APPS+=($!); APP=$!
+      SOFA_WEB_LOOPBACK=1 SOFA_WEB_ORIGINS=https://pwa.test SOFA_WEB_APP_URL=https://pwa.test/app/ SOFA_PROXY_LOOPBACK=1 SOFA_AUDIO_OUT=null \
+      SOFA_SOURCE_GAP=1 ${2:+SOFA_EXAMPLE_MEDIA="$2"} ${3:+SOFA_EXAMPLE_AUDIO="$3"} $EXTRA "$BIN" --dev --instance $INST$1 >/dev/null 2>&1 & APPS+=($!); APP=$!
   dev_wait_ready $APP "$LOG"
   dev_wait_log $APP "$LOG" 'web: listening on port'
 }
 C() { /opt/local/bin/curl -s --max-time 20 --resolve "$NAME:$PORT:127.0.0.1" --cacert "$T/c.pem" "$@"; }
 U="https://$NAME"
 json() { /opt/local/bin/python3.14 -I -c "import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))" "$1"; }
+# pair: the TV's code (dev: open web) -> a device token in A
+pair() {
+  echo "open web" > "$FIFO"
+  dev_wait_log $APP "$LOG" 'dev: web pairing code [0-9]{6}'
+  local code=$(grep -o 'dev: web pairing code [0-9]*' "$LOG" | tail -1 | awk '{print $5}')
+  TOKEN=$(C -d "{\"code\":\"$code\",\"name\":\"$1\"}" "$U/api/pair" | json 'd["token"]')
+  A=(-H "Authorization: Bearer $TOKEN")
+}
+# body ITEM [key=json ...]: a request body {"item": ITEM, key: value, ...} (no braces for the shell to expand)
+body() { /opt/local/bin/python3.14 -I -c 'import json,sys; d={"item": json.loads(sys.argv[1])}; d.update((k, json.loads(v)) for k, v in (a.split("=", 1) for a in sys.argv[2:])); print(json.dumps(d))' "$@"; }
+itemjson() { C "${A[@]}" "$U/api/app/example" | json "json.dumps(next(i for s in d['shelves'] for i in s['items'] if i.get('id')=='$1')['d'])"; }
+# logged PATTERN [s]: the instance's log has it (default 30 s)
+logged() { local i; for i in $(seq 1 $(( ${2:-30} * 10 ))); do grep -qE "$1" "$LOG" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+# status EXPR: Sofa's status now (no generation: answers at once), EXPR of it
+status() { C "${A[@]}" "$U/api/status" | json "$1"; }
+# until_status EXPR WANT [s]: the status until EXPR is WANT (or the time is up); prints the last value
+until_status() { local got= i; for i in $(seq 1 $(( ${3:-30} * 4 ))); do got=$(status "$1" 2>/dev/null); [ "$got" = "$2" ] && break; sleep 0.25; done; echo "$got"; }
 
 echo "==> instance a: DASH pair"
 start a "http://127.0.0.1:$MP/media/x/video.mp4" "http://127.0.0.1:$MP/media/x/audio.mp4"
@@ -174,20 +202,85 @@ echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 echo "==> instance b: a source's file through the media proxy"
 start b "http://127.0.0.1:$MP/media/x/file.mp4"
 U="https://$NAME:$PORT"
-echo "open web" > "$FIFO"
-dev_wait_log $APP "$LOG" 'dev: web pairing code [0-9]{6}'
-CODE=$(grep -o 'dev: web pairing code [0-9]*' "$LOG" | tail -1 | awk '{print $5}')
-TOKEN=$(C -d "{\"code\":\"$CODE\",\"name\":\"B\"}" "$U/api/pair" | json 'd["token"]')
-A=(-H "Authorization: Bearer $TOKEN")
-ITEM=$(C "${A[@]}" "$U/api/app/example" | json 'json.dumps(next(i for s in d["shelves"] for i in s["items"] if i.get("id")=="example:2")["d"])')
+pair B
+ITEM=$(itemjson example:2)
 PLAY=$(C "${A[@]}" -d "{\"item\":$ITEM}" "$U/api/play")
 check "9: a file" "$(echo "$PLAY" | json 'd["kind"]')" file
 SURL=$(echo "$PLAY" | json 'd["url"]')
 GOT=$(C -r 100-131 "$U$SURL" | od -An -tx1 | tr -d ' \n')
 WANT=$(dd if="$T/media/x/file.mp4" bs=1 skip=100 count=32 2>/dev/null | od -An -tx1 | tr -d ' \n')
 check "9: its bytes with Range (media proxy -> relay)" "$GOT" "$WANT"
-echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 grep -q "media-proxy: example:2 is file:example:2" "$LOG" && ok "9: through the media store (a track of the item)" || bad "9: the media proxy did not take the file"
+
+# the browser hands its playback over to the TV: its own stream of the item ends
+R=$(C "${A[@]}" -w "\n%{http_code}" -d "$(body "$ITEM" at=2)" "$U/api/tv/play")
+check "12: sent to the TV while the browser plays it" "$(echo "$R" | tail -1)" 200
+[ "$(echo "$R" | tail -1)" = 200 ] || echo "        answered: $R"
+check "12: the browser's stream of it ended" "$(C -o /dev/null -w '%{http_code}' "$U$SURL")" 410
+grep -q "web: stream [0-9a-f]* ended (sent to the TV)" "$LOG" && ok "12: ... as sent to the TV" || bad "12: no 'sent to the TV' end in the log"
+logged 'player: resolve .*example:2' && ok "12: the TV's player opens it" || bad "12: the TV's player did not open it"
+C "${A[@]}" -d '{"action":"stop"}' "$U/api/tv/control" >/dev/null
+
+# a download from the browser fills the media store from the source's file; it then plays from there
+ST=$(C "${A[@]}" -d "$(body "$ITEM" download=true)" "$U/api/state")
+has "13: a download starts (the TV's message)" "$(echo "$ST" | json 'd.get("message","")')" "eruntergeladen"
+logged 'downloads: done example:2' 60 && ok "13: done (filled through the media proxy)" || bad "13: the download did not finish: $(grep 'downloads:\|media-proxy' "$LOG" | tail -3)"
+check "13: the item says so" "$(C "${A[@]}" -d "$(body "$ITEM")" "$U/api/state" | json 'd["item"]["dl"]["state"] + " " + d["item"].get("chip","")')" "done ↓ Offline"
+kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; SRV=
+PLAY=$(C "${A[@]}" -d "$(body "$ITEM")" "$U/api/play")
+SURL=$(echo "$PLAY" | json 'd.get("url","")')
+GOT=$(C -r 100-131 "$U$SURL" | od -An -tx1 | tr -d ' \n')
+check "13: with its source gone it plays in the browser from the media store" "$GOT" "$WANT"
+echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
+
+echo "==> instance c: the TV and downloads (the Example app's test pattern, its own fill)"
+EXTRA="SOFA_EXAMPLE_FILL=0.5"
+start c
+U="https://$NAME:$PORT"
+pair C
+I1=$(itemjson example:1); I2=$(itemjson example:2); I3=$(itemjson example:3); I4=$(itemjson example:4)
+check "12: no player on the TV yet" "$(status 'd["tv"]')" None
+check "12: nothing to pause" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d '{"action":"pause"}' "$U/api/tv/control")" 404
+R=$(C "${A[@]}" -d "$(body "$I1")" "$U/api/tv/play")
+check "12: sent to the TV" "$(echo "$R" | json 'd["tv"]["item"]["id"]')" example:1
+logged 'web: example:1 sent to the TV' && ok "12: logged" || bad "12: not logged"
+check "12: it plays there (Sofa's status)" "$(until_status 'd["tv"] and d["tv"]["state"]' playing)" playing
+R=$(C "${A[@]}" -w '\n%{http_code}' -d "$(body "$I2")" "$U/api/tv/play")
+check "12: another video is not replaced unasked (409)" "$(echo "$R" | tail -1)" 409
+has "12: ... and the answer names what plays" "$(echo "$R" | head -1 | json 'd["error"]')" "„Testbild“"
+check "12: the same video plays on (not reopened)" "$(C "${A[@]}" -d "$(body "$I1")" "$U/api/tv/play" | json 'd.get("already")')" True
+check "12: one player opened for it" "$(grep -c 'player: resolve .*(example:1)' "$LOG")" 1
+GEN=$(status 'd["gen"]')
+( s=$(date +%s); C "${A[@]}" "$U/api/status?since=$GEN" > "$T/poll.json"; echo $(( $(date +%s) - s )) > "$T/poll.sec" ) &
+POLL=$!
+sleep 1
+check "12: pause" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d '{"action":"pause"}' "$U/api/tv/control")" 200
+wait $POLL
+[ "$(cat "$T/poll.sec")" -le 5 ] && ok "12: a waiting status answers on the change ($(cat "$T/poll.sec") s)" || bad "12: the long poll took $(cat "$T/poll.sec") s"
+check "12: paused (Sofa's status)" "$(until_status 'd["tv"]["state"]' paused 10)" paused
+GEN=$(status 'd["gen"]')
+check "12: a quiet status waits (no answer within 2 s)" "$(C "${A[@]}" --max-time 2 -o /dev/null -w '%{http_code}' "$U/api/status?since=$GEN")" 000
+C "${A[@]}" -d '{"action":"play"}' "$U/api/tv/control" >/dev/null
+check "12: play" "$(until_status 'd["tv"]["state"]' playing 10)" playing
+check "12: replaced when asked" "$(C "${A[@]}" -d "$(body "$I2" replace=true)" "$U/api/tv/play" -o /dev/null -w '%{http_code}')/$(until_status 'd["tv"]["item"]["id"]' example:2 10)" "200/example:2"
+logged 'player: closed example:1' && ok "12: the replaced player closed (its position kept)" || bad "12: the old player did not close"
+check "12: stop" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d '{"action":"stop"}' "$U/api/tv/control")" 200
+check "12: no player on the TV any more" "$(until_status 'd["tv"]' None 10)" None
+DRM=$(echo "$I3" | /opt/local/bin/python3.14 -I -c 'import json,sys; d=json.load(sys.stdin); d["drm"]=True; print(json.dumps(d))')
+check "12: a copy-protected video is refused" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d "$(body "$DRM")" "$U/api/tv/play")" 403
+
+ST=$(C "${A[@]}" -d "$(body "$I3" download=true)" "$U/api/state")
+has "13: started" "$(echo "$ST" | json 'd["message"]')" "Wird heruntergeladen"
+has "13: ... queued or running" "queued running" "$(echo "$ST" | json 'd["item"]["dl"]["state"]')"
+check "13: running, in Sofa's status with its progress" "$(until_status '[(i["id"], i["dl"]["state"], "chip" in i) for i in d["downloads"]][:1]' "[('example:3', 'running', True)]" 10)" "[('example:3', 'running', True)]"
+check "13: done" "$(until_status 'd["downloads"]' '[]' 30)/$(/opt/local/bin/sqlite3 "$DB" "select state from downloads where id='example:3'")" "[]/2"
+check "13: Behalten" "$(C "${A[@]}" -d "$(body "$I3" keep=true)" "$U/api/state" | json 'd["item"]["dl"]["kept"]')/$(/opt/local/bin/sqlite3 "$DB" "select keep from downloads where id='example:3'")" "True/1"
+check "13: deleted" "$(C "${A[@]}" -d "$(body "$I3" download=false)" "$U/api/state" | json 'd["item"]["dl"]["state"]')/$(/opt/local/bin/sqlite3 "$DB" "select count(*) from downloads where id='example:3'")" "none/0"
+C "${A[@]}" -d "$(body "$I4" download=true)" "$U/api/state" >/dev/null
+check "13: cancelled on its way" "$(C "${A[@]}" -d "$(body "$I4" download=false)" "$U/api/state" | json 'd["item"]["dl"]["state"]')/$(/opt/local/bin/sqlite3 "$DB" "select count(*) from downloads where id='example:4'")" "none/0"
+NOREF=$(echo "$I4" | /opt/local/bin/python3.14 -I -c 'import json,sys; d=json.load(sys.stdin); d.pop("ref",None); print(json.dumps(d))')
+check "13: no resolver, no download" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d "$(body "$NOREF" download=true)" "$U/api/state")" 400
+echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 
 [ $fail = 0 ] && echo "==> test-web ok" || echo "==> test-web FAILED"
 exit $fail

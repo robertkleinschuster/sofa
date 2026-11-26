@@ -4,6 +4,7 @@
 // connect redirect that teaches the PWA the full name. Every route but `hello`, `pair` and the
 // capability routes (/m/<stream>, signed /img) needs a paired device's token (SFWebDevices).
 #import "SFCore.h"
+#import "SFPlayerHost.h"
 
 extern NSString *const SFWebServerStatusDidChangeNotification;   // address/problem changed (main thread)
 
@@ -11,8 +12,9 @@ extern NSString *const SFWebServerStatusDidChangeNotification;   // address/prob
 + (instancetype)shared;
 // Main thread, once at launch: the real app always; a dev instance only with SOFA_WEB_PORT
 // (SOFA_WEB_CERT + SOFA_WEB_KEY: its own certificate, SOFA_WEB_LOOPBACK=1: also on 127.0.0.1,
-// SOFA_WEB_ORIGINS: allowed browser origins, comma separated).
-- (void)start;
+// SOFA_WEB_ORIGINS: allowed browser origins, comma separated). `host`: the TV's player for
+// "Auf dem Fernseher abspielen" (SFWebTV).
+- (void)startWithHost:(id<SFPlayerHost>)host;
 @property (nonatomic, readonly) uint16_t port;
 @property (nonatomic, readonly, copy) NSString *shortName;   // what to type ("imac"); nil until known
 @property (nonatomic, readonly, copy) NSString *fullName;    // the certificate's name

@@ -4,6 +4,7 @@
 #import "SFWebDevices.h"
 #import "SFWebStreams.h"
 #import "SFWebImages.h"
+#import "SFWebTV.h"
 #import "SFJSON.h"
 
 NSString *const SFWebServerStatusDidChangeNotification = @"SFWebServerStatusDidChange";
@@ -42,9 +43,10 @@ static NSString *Origin(NSString *url) {
 
 + (NSString *)appURL { return SFDevEnv(@"SOFA_WEB_APP_URL") ?: kAppURL; }
 
-- (void)start {
+- (void)startWithHost:(id<SFPlayerHost>)host {
     if (_started || (SFDevMode && !SFDevEnv(@"SOFA_WEB_PORT"))) return;
     _started = YES;
+    [SFWebTV shared].host = host;
     _q = dispatch_queue_create("sofa.web", DISPATCH_QUEUE_SERIAL);
     _tls = [SFTLS new];
     _port = SFDevMode ? (uint16_t)SFDevEnv(@"SOFA_WEB_PORT").intValue : kPort;

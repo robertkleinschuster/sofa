@@ -4,6 +4,7 @@
 #import "SFWatchLater.h"
 #import "SFFollows.h"
 #import "SFTileStatus.h"
+#import "SFDownloads.h"
 #import "SFApp.h"
 #import "SFJSON.h"
 
@@ -33,6 +34,23 @@ static NSString *HexOf(NSColor *c) {
     NSColor *x = [c colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
     if (!x) return nil;
     return [NSString stringWithFormat:@"#%02x%02x%02x", (int)round(x.redComponent * 255), (int)round(x.greenComponent * 255), (int)round(x.blueComponent * 255)];
+}
+
+// The item's place in the offline layer, as the TV's options menu reads it (SFBrowseScreen+Context):
+// none (can be downloaded: a resolver ref the browser can send back), queued, running (progress),
+// done (kept; gone = no longer at its source - the copy here is the only one), failed (why). nil =
+// nothing to offer (copy-protected, no resolver ref, a file of the old library).
+static NSDictionary *DownloadState(SFItem *i) {
+    if (i.drm) return nil;
+    SFDownloads *dl = [SFDownloads shared];
+    double p = 0;
+    switch ([dl stateFor:i.identifier progress:&p]) {
+        case SFDLQueued: return @{@"state": @"queued"};
+        case SFDLRunning: return @{@"state": @"running", @"progress": @(MAX(0, MIN(1, p)))};
+        case SFDLDone: return @{@"state": @"done", @"kept": @([dl isKept:i.identifier]), @"gone": @([dl onlineStateFor:i.identifier] == 0)};
+        case SFDLFailed: return @{@"state": @"failed", @"failure": [dl failureOf:i.identifier] ?: @""};
+        default: return i.resolverRef && !i.localPath ? @{@"state": @"none"} : nil;
+    }
 }
 
 @implementation SFWebItems
@@ -143,6 +161,8 @@ static NSString *ActionKind(SFItem *i, NSString **arg) {
         d[@"later"] = @([[SFWatchLater shared] contains:i.identifier]);
         NSString *chip = [status chipTextForItem:i];
         if (chip) d[@"chip"] = chip;
+        NSDictionary *dl = DownloadState(i);
+        if (dl) d[@"dl"] = dl;
     }
     if (i.kind == SFItemLive) {
         SFBroadcast *now = [i broadcastAt:[NSDate date]];

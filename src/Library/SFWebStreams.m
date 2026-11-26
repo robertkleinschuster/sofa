@@ -203,6 +203,17 @@ static NSString *NewID(void) {
     return 200;
 }
 
+- (NSUInteger)endItem:(NSString *)identifier device:(NSString *)device why:(NSString *)why {
+    NSMutableArray *gone = [NSMutableArray new];
+    @synchronized (self) {
+        for (SFWebStream *s in _streams.allValues)
+            if ([s.item.identifier isEqualToString:identifier] && [s.device isEqualToString:device]) [gone addObject:s];
+        for (SFWebStream *s in gone) [_streams removeObjectForKey:s.identifier];
+    }
+    for (SFWebStream *s in gone) { [self endSession:s app:[SFAppRegistry appForItem:s.item]]; [self ended:s why:why]; }
+    return gone.count;
+}
+
 - (void)sweep {
     NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
     NSMutableArray *idle = [NSMutableArray new];

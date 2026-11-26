@@ -1,5 +1,6 @@
 // SFWebServer - the JSON routes of Sofa im Browser (docs/pwa.md, "API"). Main thread: the same
-// modules the TV's screens use (SFHome's pages, the apps, SFStore, SFWatchLater, SFFollows).
+// modules the TV's screens use (SFHome's pages, the apps, SFStore, SFWatchLater, SFFollows,
+// SFDownloads, the TV's player through SFWebTV).
 #import "SFWebServer+Private.h"
 #import "SFHome.h"
 #import "SFApp.h"
@@ -12,6 +13,9 @@
 #import "SFWebDevices.h"
 #import "SFWebItems.h"
 #import "SFWebStreams.h"
+#import "SFWebTV.h"
+#import "SFWebStatus.h"
+#import "SFDownloads.h"
 #import "SFJSON.h"
 
 static const NSTimeInterval kPageTimeout = 45;
@@ -110,6 +114,8 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
         return;
     }
     if ([what isEqualToString:@"state"] && post) { [self state:body to:x]; return; }
+    if ([what isEqualToString:@"status"] && get) { [[SFWebStatus shared] answer:x since:r.query[@"since"] ?: @""]; return; }
+    if ([what isEqualToString:@"tv"] && post && parts.count == 2) { [self tv:parts[1] body:body device:device to:x]; return; }
     SFWebReply(x, 404, @{@"error": @"not found"});
 }
 
@@ -161,10 +167,37 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     [app suggestions:q done:^(NSArray *list) { SFWebReply(x, 200, @{@"list": list ?: @[]}); }];
 }
 
-// Marks on an item: {item, later?, watched?, follow?, forget?} -> the item as it is now
+// The TV: play {item, fromStart?, at?, replace?} -> {tv}; control {action: play|pause|stop} -> {tv}
+- (void)tv:(NSString *)what body:(NSDictionary *)body device:(NSString *)device to:(SFHTTPExchange *)x {
+    SFWebTV *tv = [SFWebTV shared];
+    if ([what isEqualToString:@"play"]) {
+        SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
+        if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekanntes Video."}); return; }
+        [tv play:item fromStart:[body[@"fromStart"] boolValue] at:MAX(0, [num(body[@"at"]) doubleValue]) replace:[body[@"replace"] boolValue]
+          device:device done:^(NSInteger status, NSDictionary *answer) { SFWebReply(x, status, answer); }];
+        return;
+    }
+    if ([what isEqualToString:@"control"]) {
+        NSInteger st = [tv control:str(body[@"action"]) ?: @""];
+        SFWebReply(x, st, st == 200 ? @{@"tv": [tv state] ?: [NSNull null]}
+                       : @{@"error": st == 404 ? @"Am Fernseher läuft gerade nichts." : @"Unbekannte Aktion."});
+        return;
+    }
+    SFWebReply(x, 404, @{@"error": @"not found"});
+}
+
+// Marks on an item: {item, later?, watched?, follow?, forget?, download?, keep?} -> the item as it is
+// now; a download started also says what the TV would tell ({message}: SFDownloads download:told:).
+// download false cancels a waiting or running one, or deletes it (as "Download löschen" on the TV:
+// asking first, for a kept one or one no longer online, is the browser's - as it is the TV's menu's).
 - (void)state:(NSDictionary *)body to:(SFHTTPExchange *)x {
     SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
     if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekannter Eintrag."}); return; }
+    BOOL startDownload = num(body[@"download"]) && [body[@"download"] boolValue];
+    if (startDownload && (item.kind != SFItemVideo || item.drm || !item.resolverRef)) {
+        SFWebReply(x, 400, @{@"error": @"Dieses Video lässt sich nicht herunterladen."});
+        return;
+    }
     BOOL changed = NO;
     if (num(body[@"later"]) && (item.kind == SFItemVideo || item.kind == SFItemLive)) {
         if ([body[@"later"] boolValue]) [[SFWatchLater shared] add:item]; else [[SFWatchLater shared] remove:item.identifier];
@@ -177,7 +210,15 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     if (num(body[@"follow"]) && item.kind == SFItemFolder && [[SFFollows shared] canFollow:item]) {
         if ([body[@"follow"] boolValue]) [[SFFollows shared] follow:item]; else [[SFFollows shared] unfollow:item.identifier];
     }
+    SFDownloads *dl = [SFDownloads shared];
+    if (num(body[@"keep"]) && item.kind == SFItemVideo && [dl stateFor:item.identifier progress:NULL] == SFDLDone)
+        [dl setKept:[body[@"keep"] boolValue] forIdentifier:item.identifier];
+    if (num(body[@"download"]) && !startDownload && item.kind == SFItemVideo) [dl remove:item.identifier];
     if (changed) [[NSNotificationCenter defaultCenter] postNotificationName:SFLibraryDidChangeNotification object:nil];   // the TV's pages
+    if (startDownload) {
+        [dl download:item told:^(NSString *message) { SFWebReply(x, 200, @{@"item": [SFWebItems item:item] ?: @{}, @"message": message ?: @""}); }];
+        return;
+    }
     SFWebReply(x, 200, @{@"item": [SFWebItems item:item] ?: @{}});
 }
 @end

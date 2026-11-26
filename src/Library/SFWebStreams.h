@@ -18,6 +18,9 @@
 // Main thread. {state: playing|paused|buffering|ended|closed, position, duration, lactMs}. 404 = no such
 // stream (of this device; device nil: asked on the stream's capability path, which is its own proof).
 - (NSInteger)report:(NSString *)streamID device:(NSString *)device state:(NSDictionary *)state;
+// Main thread. Ends a device's playbacks of an item as its "closed" would (the item moved to the TV:
+// one player per video and person - the browser stops its own stream for it). Returns how many.
+- (NSUInteger)endItem:(NSString *)identifier device:(NSString *)device why:(NSString *)why;
 - (NSUInteger)countForTesting;
 @end
 
