@@ -1,7 +1,8 @@
 // Grey-box thermal model per sensor, fitted on one-minute bins:
 //
 //   T = N + r_gpu*Pg + r_cpu*Pc
-//   dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
+//   dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 + sum_f q_f*[fan f runs]
+//                   - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
 //
 // N is the slow node (heat sink, board): heat in from the measured power (CPU package, GPU, the rest of
 // the machine), heat out through the case (k0) and through every fan's air flow (k_f, proportional to
@@ -11,6 +12,16 @@
 // (GPU 15 -> 5 W: TG0D 9 C in 5 min, the heat sink 4 C) cannot be followed (2026-11-25: TG0D free-run
 // error in idle 2.9 C -> 1.9 C). Board sensors get worse with it - so r is chosen per sensor, from a
 // grid, by the same held-out validation; 0 is a valid answer.
+//
+// Fan air (q_f): a fan's air does not reach every sensor at the ambient reading - on its way it has
+// passed other heat sources (a heat sink, the board) whose heat Q it carries. Its temperature there is
+// Tamb + Q/(c*rpm), so the exchange k*rpm*(Tair - N) = -k*rpm*(N - Tamb) + k*Q/c: the cooling term plus
+// a constant heat input while the fan runs, whatever its speed. Without it a sensor downstream of a
+// warm stream is cooled far too much at low speed and too little at high speed (2026-11-26: Tp3H, CPU
+// fan at ~500 rpm in the identification block: measured -3.8 C, model -7 C; in playback at ~1800 rpm
+// the model 6 C too warm; free-run error in playback 2.09 -> 1.48 C, in the identification 2.80 -> 1.50).
+// Other sensors fit worse with the extra terms (TPCD in playback 1.74 -> 2.28), so whether a sensor
+// gets them is again the validation's choice.
 //
 // Validation is what the simulator does: a free run (the model integrates its own temperature from
 // a measured start, driven only by the measured inputs) over every held-out 2 h chunk, with the model
@@ -23,12 +34,13 @@
 
 #define CHUNK 7200.0
 
-static int npar(int nfans) { return 5 + nfans; }
+static int npar(int nfans) { return 5 + 2 * nfans; }
 
-static void features(const bin_t *b, double N, int nfans, double *x) {
+static void features(const bin_t *b, double N, int nfans, int air, double *x) {
   double dT = N - b->amb;
   x[0] = 1; x[1] = b->pc / 10; x[2] = b->pg / 10; x[3] = b->pr / 10; x[4] = -dT;
   for (int f = 0; f < nfans; f++) x[5 + f] = -(isnan(b->fan[f]) ? 0 : b->fan[f] / 1000) * dT;
+  for (int f = 0; f < nfans; f++) x[5 + nfans + f] = air && !isnan(b->fan[f]) && b->fan[f] > 0;   // 0: th stays 0
 }
 
 double model_offset(const smodel_t *s, double pc, double pg) { return s->rg * pg + s->rc * pc; }
@@ -36,7 +48,9 @@ double model_offset(const smodel_t *s, double pc, double pg) { return s->rg * pg
 double model_rate(const smodel_t *s, int nfans, double N, double amb, double pc, double pg, double pr, const double *rpm) {
   double k = s->th[4];
   for (int f = 0; f < nfans; f++) k += s->th[5 + f] * rpm[f] / 1000;
-  return s->th[0] + s->th[1] * pc / 10 + s->th[2] * pg / 10 + s->th[3] * pr / 10 - k * (N - amb);
+  double q = 0;
+  for (int f = 0; f < nfans; f++) if (rpm[f] > 0) q += s->th[5 + nfans + f];
+  return s->th[0] + s->th[1] * pc / 10 + s->th[2] * pg / 10 + s->th[3] * pr / 10 + q - k * (N - amb);
 }
 
 // min 0.5 th'G th - b'th, th[j] >= 0 for j >= 1 (projected coordinate descent, small ridge)
@@ -81,7 +95,7 @@ static double fit_sensor(smodel_t *sm, int s, const series_t *d, const cfg_t *c,
     if (isnan(bi->temp[s]) || !bin_inputs(bi, c)) continue;
     if (!bin_next(d, i) || isnan(d->b[i + 1].temp[s]) || !bin_inputs(&d->b[i + 1], c)) continue;
     double y = NODE(&d->b[i + 1]) - NODE(bi);
-    features(bi, NODE(bi), nf, x);
+    features(bi, NODE(bi), nf, sm->air, x);
     int ch = (int)((bi->t - w->t0) / CHUNK);
     for (int j = 0; j < np; j++) {
       w->bc[ch * np + j] += x[j] * y;
@@ -154,20 +168,26 @@ void model_fit(model_t *m, const series_t *d, const cfg_t *c, const machine_t *m
       const bin_t *bi = &d->b[i];
       if (!isnan(bi->temp[s]) && bin_inputs(bi, c) && bi->curve && !bi->test) lev[nlev++] = bi->temp[s] - bi->amb;
     }
-    // the instant offsets: a coarse grid, then its neighbourhood (C/W)
-    double best = INFINITY, brg = 0, brc = 0;
-    for (int pass = 0; pass < 2; pass++) {
-      double step = pass ? R_STEP / 2 : R_STEP, cg = brg, cc = brc;
-      int lo = pass ? -1 : 0, hi = pass ? 1 : (int)(R_MAX / R_STEP + 0.5);
-      for (int ig = lo; ig <= hi; ig++) for (int ic = lo; ic <= hi; ic++) {
-        double rg = pass ? cg + ig * step : ig * step, rc = pass ? cc + ic * step : ic * step;
-        if (rg < 0 || rc < 0 || rg > R_MAX || rc > R_MAX || (pass && !ig && !ic)) continue;
-        sm->rg = rg; sm->rc = rc;
-        double sc = fit_sensor(sm, s, d, c, &w);
-        if (sc < best - 1e-9) { best = sc; brg = rg; brc = rc; }
+    // the model's shape is chosen by the validation: without and with the fan-air terms, each with
+    // the instant offsets from a coarse grid, then its neighbourhood (C/W); the simpler shape wins ties
+    double best = INFINITY, brg = 0, brc = 0; int bair = 0;
+    for (int air = 0; air < 2; air++) {
+      double ag = 0, ac = 0, abest = INFINITY;
+      sm->air = air;
+      for (int pass = 0; pass < 2; pass++) {
+        double step = pass ? R_STEP / 2 : R_STEP, cg = ag, cc = ac;
+        int lo = pass ? -1 : 0, hi = pass ? 1 : (int)(R_MAX / R_STEP + 0.5);
+        for (int ig = lo; ig <= hi; ig++) for (int ic = lo; ic <= hi; ic++) {
+          double rg = pass ? cg + ig * step : ig * step, rc = pass ? cc + ic * step : ic * step;
+          if (rg < 0 || rc < 0 || rg > R_MAX || rc > R_MAX || (pass && !ig && !ic)) continue;
+          sm->rg = rg; sm->rc = rc;
+          double sc = fit_sensor(sm, s, d, c, &w);
+          if (sc < abest - 1e-9) { abest = sc; ag = rg; ac = rc; }
+        }
       }
+      if (abest < best - 1e-9) { best = abest; brg = ag; brc = ac; bair = air; }
     }
-    sm->rg = brg; sm->rc = brc;
+    sm->rg = brg; sm->rc = brc; sm->air = bair;
     fit_sensor(sm, s, d, c, &w);
     if (nlev > 10) { qsort(lev, (size_t)nlev, sizeof *lev, cmpd); sm->steady_lo = lev[nlev / 10]; sm->steady_hi = lev[(nlev * 95) / 100]; }
   }

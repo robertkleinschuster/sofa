@@ -285,7 +285,7 @@ identification intervals (`tests.csv`) into this directory.
    14 days. No new step while one is on trial.
 2. **Model.** Per sensor, on the last 30 days of one-minute bins:
    `T = N + r_gpu·Pgpu + r_cpu·Pcpu`,
-   `dN/dt = a0 + h_cpu·Pcpu/10 + h_gpu·Pgpu/10 + h_rest·Prest/10 − (k0 + Σ k_f·rpm_f/1000)·(N − Tamb)`
+   `dN/dt = a0 + h_cpu·Pcpu/10 + h_gpu·Pgpu/10 + h_rest·Prest/10 + Σ q_f·[fan f runs] − (k0 + Σ k_f·rpm_f/1000)·(N − Tamb)`
    (non-negative least squares: power heats, fans cool). N is the slow node (heat sink, board); a
    sensor on a die also follows its chip's power at once (r, °C/W). r is chosen per sensor from a
    grid (0-0.6, refined to 0.05) by the validation itself - board sensors keep 0. Validated by free
@@ -295,6 +295,16 @@ identification intervals (`tests.csv`) into this directory.
    the GPU die (TG0D) missed its fast drop when playback ends (15 -> 5 W: 9 °C in 5 min, the model
    4 °C) - 2.9 °C error in idle, which kept every quieter move blocked; with r (0.25 °C/W) 1.9 °C
    (2026-11-25).
+   **Fan air** (q_f): a fan's air reaches a sensor downstream of other heat sources warmer than the
+   ambient reading. With air at `Tamb + Q/(c·rpm)` the exchange `k·rpm·(Tair − N)` is the usual cooling
+   term plus a constant heat input `k·Q/c` while the fan runs, whatever its speed. Whether a sensor
+   gets these terms is chosen by the same validation (with and without, each with its own r grid; the
+   simpler model wins ties). Without them the power-supply sensor Tp3H, in the CPU fan's stream, was
+   cooled far too much at low speed (identification block, CPU fan ~500 rpm: measured −3.8 °C, model
+   −7 °C) and too little at high speed (playback with the CPU fan near 1800 rpm: model 6 °C too warm):
+   free-run error 2.09 °C in playback, which blocked every quieter move. With them (CPU fan air 4.6 °C
+   at full speed) 1.48 °C in playback, 1.50 in the identification block (2.80); Tp1P, Tp2H, TO0P, TS0P
+   and the CPU cores improve as well, PCH and RAM keep the plain model (2026-11-26).
 3. **Scenarios** per use mode with ≥ 2 h of data: mean inputs, high load (top 10 %), warm room
    (+5 °C). Each runs 6 h through `policy_fan` - the controller's own decision function, so what
    is simulated is what runs - from a cold and a hot start.
@@ -317,7 +327,8 @@ identification intervals (`tests.csv`) into this directory.
 `sofa-fand learn -n [-d DATADIR] [-c CONF]` writes the report to stdout and changes nothing
 (any user). `make test` also checks the learner against data from a known law
 (`tools/test-learn.sh`: the right fan per sensor group, free-run error < 0.3 °C, the die sensors'
-instant offsets found and none given to a board sensor).
+instant offsets found and none given to a board sensor, the fan-air terms found for a sensor in a
+warm stream and none given to the others).
 
 ## Another Mac
 

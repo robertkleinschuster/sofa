@@ -51,8 +51,10 @@ void measure(metric_t out[MODE_N], const series_t *d, const cfg_t *c, double fro
 double fan_noise(const cfg_t *c, const double *rpm);
 
 // ------------------------------------------------------------------------------ model
-// T = N + rg*Pg + rc*Pc; dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
-#define NPAR (5 + MAX_FANS)
+// T = N + rg*Pg + rc*Pc; dN/dt [C/min] = a0 + h_cpu*Pc/10 + h_gpu*Pg/10 + h_rest*Pr/10 + sum_f q_f*[rpm_f > 0]
+//                                    - (k0 + sum_f k_f*rpm_f/1000)*(N - Tamb)
+// th: a0 h_cpu h_gpu h_rest k0, k_f per fan, q_f per fan (fan air: only if the validation picks it)
+#define NPAR (5 + 2 * MAX_FANS)
 #define R_MAX  0.6             // instant offsets searched: 0 .. R_MAX C/W in R_STEP, then R_STEP/2 around the best
 #define R_STEP 0.1
 typedef struct {
@@ -60,6 +62,7 @@ typedef struct {
   int npts;
   double th[NPAR];
   double rg, rc;               // instant offset of the sensor over its node, C/W of GPU / CPU power
+  int air;                     // fan-air terms q_f fitted (chosen by the validation, like rg/rc)
   double rmse[MODE_N]; double vmin[MODE_N];   // free-run validation on held-out 2 h chunks (minutes)
   double rmse_all, err90, errmax;
   double steady_lo, steady_hi; // measured T - ambient, 10 % / 95 % (start points for the simulation)

@@ -54,10 +54,10 @@ static int is_init_ref(const char *conf) {
 }
 
 static void report_model(FILE *rep, const model_t *m, const cfg_t *c) {
-  fprintf(rep, "\n## Model\n\nFree-run error (C, held-out 2 h chunks) per mode; fan effect = share of the heat flow out that a fan at full speed carries; instant = how much the sensor follows its chip's power at once (C/W, chosen by the validation).\n\n| sensor | minutes | ruhe | idle | playback | test | all: RMSE / 90 %% | gate | fan effect | instant C/W |\n|---|---|---|---|---|---|---|---|---|---|\n");
+  fprintf(rep, "\n## Model\n\nFree-run error (C, held-out 2 h chunks) per mode; fan effect = share of the heat flow out that a fan at full speed carries; instant = how much the sensor follows its chip's power at once (C/W); fan air = how much warmer a fan's own air keeps the sensor at that fan's full speed (C); both chosen by the validation.\n\n| sensor | minutes | ruhe | idle | playback | test | all: RMSE / 90 %% | gate | fan effect | instant C/W | fan air C |\n|---|---|---|---|---|---|---|---|---|---|---|\n");
   for (int s = 0; s < c->nsens; s++) {
     const smodel_t *sm = &m->s[s];
-    if (sm->fixed) { fprintf(rep, "| %s | - | ambient (reference) ||||||||\n", c->sens[s].key); continue; }
+    if (sm->fixed) { fprintf(rep, "| %s | - | ambient (reference) |||||||||\n", c->sens[s].key); continue; }
     fprintf(rep, "| %s | %d |", c->sens[s].key, sm->npts);
     for (int md = 0; md < MODE_N; md++) { if (isnan(sm->rmse[md]) || sm->vmin[md] < 1) fprintf(rep, " - |"); else fprintf(rep, " %.2f (%.0f) |", sm->rmse[md], sm->vmin[md]); }
     if (sm->ok) fprintf(rep, " %.2f / %.1f | %.1f |", sm->rmse_all, sm->err90, gate_rmse(c, s));
@@ -70,8 +70,15 @@ static void report_model(FILE *rep, const model_t *m, const cfg_t *c) {
         if (w > 0 && (size_t)w < sizeof buf - o) o += (size_t)w;
       }
       fprintf(rep, " %s |", o ? buf : "-");
-      if (sm->rg > 0 || sm->rc > 0) fprintf(rep, " GPU %.2f, CPU %.2f |\n", sm->rg, sm->rc); else fprintf(rep, " - |\n");
-    } else fprintf(rep, " | |\n");
+      if (sm->rg > 0 || sm->rc > 0) fprintf(rep, " GPU %.2f, CPU %.2f |", sm->rg, sm->rc); else fprintf(rep, " - |");
+      o = 0;   // q_f / (k0 + k_f * max): the steady warming of the fan's air alone at its full speed
+      for (int n = 0; sm->air && n < m->nfans; n++) if (c->fan[n].used) {
+        double kf = sm->th[4] + sm->th[5 + n] * c->fan[n].max / 1000;
+        int w = snprintf(buf + o, sizeof buf - o, "%s%s %.1f", o ? ", " : "", c->fan[n].name, kf > 0 ? sm->th[5 + m->nfans + n] / kf : 0);
+        if (w > 0 && (size_t)w < sizeof buf - o) o += (size_t)w;
+      }
+      fprintf(rep, " %s |\n", o ? buf : "-");
+    } else fprintf(rep, " | | |\n");
   }
   for (int s = 0; s < c->nsens; s++) if (m->s[s].ok && !m->s[s].fixed && m->s[s].err90 > 0) { fprintf(rep, "\nLargest free-run error:"); break; }
   for (int s = 0; s < c->nsens; s++) if (m->s[s].ok && !m->s[s].fixed) fprintf(rep, " %s %.1f", c->sens[s].key, m->s[s].errmax);
