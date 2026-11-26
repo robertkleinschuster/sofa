@@ -61,7 +61,8 @@ export class Api {
   recentSearches(app: string): Promise<{ recent: string[] }> { return this.request('GET', `/api/search?app=${encodeURIComponent(app)}`); }
   search(app: string, q: string): Promise<Page> { return this.request('GET', `/api/search?app=${encodeURIComponent(app)}&q=${encodeURIComponent(q)}`); }
   suggest(app: string, q: string): Promise<{ list: string[] }> { return this.request('GET', `/api/suggest?app=${encodeURIComponent(app)}&q=${encodeURIComponent(q)}`); }
-  play(item: Item): Promise<PlayAnswer> { return this.request('POST', '/api/play', { item: item.d }); }
+  // `formats`: the codecs this browser decodes (formats.ts) - Sofa converts what it can't
+  play(item: Item, formats: string[]): Promise<PlayAnswer> { return this.request('POST', '/api/play', { item: item.d, formats }); }
   report(stream: string, state: StreamReport): Promise<unknown> { return this.request('POST', `/api/stream/${stream}`, state); }
   // marks and the item's download; a started download also says what the TV would tell
   mark(item: Item, change: MarkChange): Promise<{ item: Item; message?: string }> {

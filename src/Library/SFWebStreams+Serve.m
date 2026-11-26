@@ -2,6 +2,7 @@
 //   dash:  index.m3u8 · v.m3u8 · a.m3u8 (SFWebHLS) · t/v · t/a (the tracks, Range relayed)
 //   hls:   l/<port>/<path> - a local route of the stream (its prefixes only); playlists rewritten
 //   file:  media[.ext] - the local route, or the file on disk (Range)
+//   segmented: index.m3u8 · init.mp4 · s/<n>.m4s (SFWebTranscode, made on demand)
 #import "SFWebStreams+Private.h"
 #import "SFLoopbackClient.h"
 
@@ -49,6 +50,16 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
             break;
         case SFWebStreamLocalFile:
             if (rest.count == 1 && [what hasPrefix:@"media"]) { [self file:s.upstream.path to:x]; return; }
+            break;
+        case SFWebStreamSegmented:
+            if (rest.count == 1 && [what isEqualToString:@"index.m3u8"]) { [self text:s.transcode.playlist to:x]; return; }
+            if (rest.count == 1 && [what isEqualToString:@"init.mp4"]) { [s.transcode serveInit:x]; return; }
+            if (rest.count == 2 && [what isEqualToString:@"s"] && [rest[1] hasSuffix:@".m4s"]) {
+                NSString *n = [rest[1] stringByDeletingPathExtension];
+                NSScanner *sc = [NSScanner scannerWithString:n];
+                long long k;
+                if ([sc scanLongLong:&k] && sc.isAtEnd && k >= 0) { [s.transcode serveSegment:(NSUInteger)k to:x]; return; }
+            }
             break;
     }
     [x respondJSON:404 object:@{@"error": @"not found"}];

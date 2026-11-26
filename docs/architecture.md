@@ -68,8 +68,13 @@ A second UI - the PWA in `pwa/` (TypeScript, GitHub Pages) - on the same backend
   the engines and downloads; capability paths), `SFWebTV` (an item sent to the TV's own player through
   the shell's `SFPlayerHost`; what the TV plays, pause/play/stop), `SFWebStatus` (the long-polled
   status: the TV and the downloads on their way). Downloads from the browser go to `SFDownloads` itself.
+  The segmenter (docs/pwa.md §8: what the browser can't play as it is, as HLS segments made on demand,
+  tracks copied or encoded): `SFAVInput` (+`SFAVProbe`), `SFSegmentTrack` (`SFSegmentCopy`,
+  `SFSegmentVideo`, `SFSegmentAudio`), `SFSegmentJob`, `SFWebTranscode` (+Plan), `SFWebStreams+Transcode`
+  - on the FFmpeg libraries libmpv uses (Sofa links them itself).
 - Apps reach it only through the `SFApp` contract: `resolveForBrowser:done:` (a format browsers
-  decode - YouTube: the engine's H.264/AAC session) and `playback:reports:`.
+  decode - YouTube: the engine's H.264/AAC session; an item complete in the media store resolves as on
+  the TV and goes through the segmenter, this only as the fallback) and `playback:reports:`.
 - Shell: `SFWebServer` (+API: the routes; hands its player host to `SFWebTV` at launch),
   `SFWebPairScreen` (Einstellungen → Sofa im Browser).
 

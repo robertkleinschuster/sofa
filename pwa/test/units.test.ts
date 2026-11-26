@@ -7,6 +7,7 @@ import { parseRoute, routeHash, type Route } from '../src/router.ts';
 import { isOpaque, recolor, LOGO_LIGHT_TEXT, LOGO_ORIGINAL, LOGO_WHITE } from '../src/logos.ts';
 import { themeVariables } from '../src/theme.ts';
 import { downloadChoices, type DownloadAction } from '../src/choices.ts';
+import { browserFormats, FORMAT_PROBES } from '../src/formats.ts';
 import type { DownloadState } from '../src/types.ts';
 
 test('host names: what the user types becomes host:port', () => {
@@ -87,4 +88,12 @@ test('the download options follow the TV menu for each state', () => {
   assert.deepEqual(run({ state: 'failed', failure: 'Quelle antwortet nicht' }), ['Erneut herunterladen (Quelle antwortet nicht) -> start', 'Aus Downloads entfernen -> remove']);
   assert.deepEqual(run({ state: 'done', kept: false }), ['Behalten (Aus) -> keep', 'Download löschen -> delete']);
   assert.deepEqual(run({ state: 'done', kept: true }), ['Behalten (An) -> unkeep', 'Download löschen -> delete']);
+});
+
+test('formats: the browser\'s own HLS player is told H.264 + AAC; MSE what it decodes', () => {
+  assert.deepEqual(browserFormats(null), ['avc1', 'mp4a']);
+  // this Mac's Firefox: VP9, AV1 and Opus, no H.264/AAC decoder
+  const firefox = new Set([FORMAT_PROBES['vp09'], FORMAT_PROBES['av01'], FORMAT_PROBES['opus']]);
+  assert.deepEqual(browserFormats((t) => firefox.has(t)), ['vp09', 'av01', 'opus']);
+  assert.deepEqual(browserFormats(() => { throw new Error('no'); }), []);
 });

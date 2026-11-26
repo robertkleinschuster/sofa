@@ -5,6 +5,7 @@
 
 import { ApiError, type Api, type StreamReport } from './api.ts';
 import { formatDuration, h, icon, ICONS } from './dom.ts';
+import { browserFormats, mediaSourceTest } from './formats.ts';
 import type { Item, PlayAnswer } from './types.ts';
 
 const REPORT_EVERY_MS = 10_000;
@@ -71,14 +72,18 @@ export class Player {
   }
 
   private async start(at?: number): Promise<void> {
-    const a = await this.host.api.play(this.item);
+    const native = preferNative(this.video);
+    const formats = browserFormats(native ? null : mediaSourceTest());
+    this.overlay.dataset['formats'] = formats.join(' ');
+    const a = await this.host.api.play(this.item, formats);
     if (this.closing) { this.host.api.beacon(a.stream, { state: 'closed' }); return; }
     this.answer = a;
     this.gone = false;
     this.failed = false;
     const start = at ?? (this.fromStart ? 0 : a.start);
     this.teardownEngine();
-    if (a.kind === 'hls' && !preferNative(this.video)) {
+    if (a.segmented) this.overlay.dataset['segmented'] = a.segmented;
+    if (a.kind === 'hls' && !native) {
       const { default: Hls } = await import('hls.js');
       if (this.closing) return;
       if (!Hls.isSupported()) { this.overlay.dataset['engine'] = 'native'; this.video.src = this.host.api.url(a.url); }

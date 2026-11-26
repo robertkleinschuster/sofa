@@ -313,6 +313,20 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   play, stop) through one long-polled status (`SFWebStatus`). Downloads start, cancel, keep and delete
   through `SFDownloads` with the TV menu's choices; tiles follow the chip.
 
+- 2026-11-26: **Sofa im Browser: stored items in every browser, converted on the fly** (user: "das
+  Format on the fly transkodieren"; docs/pwa.md §8). The PWA tells Sofa the codecs it decodes in MP4; a
+  stored item the browser can't play as it is (a downloaded YouTube video's VP9/AV1 + Opus in Safari,
+  two separate WebM tracks anywhere) goes through an in-process segmenter on the FFmpeg libraries libmpv
+  already uses: fMP4 HLS, each track copied where the browser decodes it, else H.264 / AAC. Encoder
+  order: VideoToolbox, x264, then the online H.264 session (user: software encoding allowed, the
+  encoder chosen on quality and robustness). Measured: VideoToolbox 1080p30 from VP9 1080p60 at 1.95x
+  real time, ~0.6 core at playback pace, VMAF 94.9 at 5.5 Mbit/s; x264 veryfast/zerolatency 1.9x,
+  ~1.65 cores, VMAF 89.3 -> VideoToolbox first. Caps from the real-time margin: 1080 lines, the pixel
+  rate of 1080p30 (VideoToolbox 1080p60 only 1.17x). Segments made on demand at the requested position
+  (a seek = a new job), 4 ahead, stopped when idle or closed, one encoding session at a time.
+  VideoToolbox on 10.9: no colour tags, no forced keyframes (constant-rate frames and its exact key
+  interval instead), its clock from 0 per job, >= 640 px.
+
 ## Dev loop (closed loop, does not disturb the real app)
 - **Rule (user 2026-11-04): install every change live immediately after testing**
   (`tools/sofa-deploy`, swap during playback < 1 s) and check in SofaRemote.log

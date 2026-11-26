@@ -104,9 +104,9 @@ Every stream goes through Sofa's existing local routes; the browser never contac
   `SFMediaProxy` (the media store), exactly as the TV player opens it. Files are served as files;
   HLS playlists are relayed with their loopback URIs rewritten to the stream's capability path.
 - **Downloads**: a local file or a complete item in the media store plays from there - a mediathek
-  download in the browser too. A downloaded YouTube video plays from the store on the TV; in the
-  browser it plays online as an H.264 session, because the store keeps the TV's tracks (VP9/AV1 +
-  Opus), which Apple's browsers don't decode.
+  download and a downloaded YouTube video too (§8: what the browser can't decode as it is - the TV's
+  VP9/AV1 + Opus tracks in Safari - is converted while it streams; online as an H.264 session only
+  when that can't be done).
 - The browser plays HLS natively where it can (Safari, iOS) and with hls.js (MSE) elsewhere;
   progressive MP4 in a plain `<video>`.
 
@@ -188,6 +188,81 @@ tiles follow (only the chip is rewritten - no rebuilt tile, no picture fading in
 left the list gets its final state. Only items with a resolver ref can be downloaded from the browser
 (the ref travels in the item's `d`; a resolver block cannot).
 
+### 8. Converting on the fly: the segmenter (2026-11-26)
+
+User: "das Format on the fly transkodieren" - a stored item always plays from the store, in any browser.
+
+**Negotiation.** Every play sends the codecs the browser decodes in fragmented MP4 (`formats`:
+`avc1 hvc1 vp09 av01 mp4a opus`, `pwa/src/formats.ts`): through hls.js the page's own
+`MediaSource.isTypeSupported` (Firefox/Chrome: VP9, AV1, Opus, AAC, H.264 where they have it); the
+browser's own HLS player (Safari, iOS) is told H.264 + AAC only - what every Apple player decodes in HLS.
+An older PWA sends nothing: H.264 + AAC. Sofa then decides per track:
+- a DASH pair of fMP4 tracks of codecs the browser decodes (YouTube's browser session): byte ranges as in §3;
+- a single MP4 file of such codecs (a mediathek download): served as the file;
+- anything else that is stored (a downloaded YouTube video's VP9/AV1 + Opus, two separate tracks, a
+  local MKV): through the **segmenter** - each track **copied** where the browser decodes its codec, else
+  **encoded** (video H.264, audio AAC-LC stereo 48 kHz). Not stored: as before (§3).
+- When the segmenter can't (no encoder for the browser's formats, another device's playback encodes):
+  the app's browser format (YouTube: the online H.264 session), else the message
+  "Dieses Video lässt sich im Browser nicht abspielen." / "Gerade wird schon ein anderes Video für einen
+  Browser umgewandelt – bitte später noch einmal versuchen.".
+
+**Where it lives.** In Sofa's process, on the FFmpeg libraries libmpv already uses (bundled in
+`Contents/Frameworks`; FFmpeg 9.0.2 of MacPorts is built with VideoToolbox, AudioToolbox and x264 -
+no port change was needed; Sofa now links them itself, Makefile). Library modules:
+`SFAVInput` (one track through libavformat: a file or a local route, every blocking read bounded by
+a deadline and cancellable; `SFAVProbe`: codecs, size, rate, duration, the container's keyframe
+index), `SFSegmentTrack` (`SFSegmentCopy`, `SFSegmentVideo`, `SFSegmentAudio`), `SFSegmentJob` (one
+run from a segment on: fragmented MP4 into memory - the init once, one fragment per segment),
+`SFWebTranscode` (+Plan: what is copied/encoded, the caps, the segments; the session: playlist,
+on-demand jobs, pacing, cache, one encoder at a time), `SFWebStreams+Transcode`. Routes of a
+segmented stream: `/m/<stream>/index.m3u8` (VOD media playlist, `EXT-X-MAP` + `EXT-X-START` at the
+resume position), `init.mp4`, `s/<n>.m4s`.
+
+**HLS fMP4, muxed.** One media playlist, video and audio in the same fragments (hls.js and Safari both
+play it); timestamps are the source's + 10 s (MP4 fragments carry no negative decode times; the first
+packets of a source may have them - B-frames, Opus pre-skip); every fragment's `tfdt` is its first
+packet's (`frag_discont`, no edit list, the muxer told not to shift), so segments of different jobs
+line up exactly and the init is byte-identical across jobs (a job whose init differs fails the
+session - the PWA opens the stream again).
+
+**Seeking.** Nothing is made ahead of need. Encoded video has segments of a fixed number of frames
+(4 s: 120 at 30 fps; 4.004 s at 29.97), copied video's start at the keyframes the container names
+(WebM cues - read at a first seek when they sit at the end -, an MP4's sync samples, a fragmented
+MP4's `sidx`), at least 4 s apart. A request for a segment that is cached is answered from memory;
+one at or just past the running job's front (2 segments) waits for it; anything else starts a new job
+there (the old one stops): it seeks the source to the keyframe before, decodes and drops what comes
+before the segment's start, encodes from exactly there. A job makes at most 4 segments beyond the
+furthest one asked for, then waits; nobody asking for 45 s stops it (a later request starts one
+again); closing the stream stops it and drops its segments. Segments are kept in memory (48 MB per
+stream, the ones furthest from the player first). Jobs run on a thread of their own at low priority.
+A request waits at most 60 s.
+
+**Encoders, measured on this Mac (i5-2500S, HD 3000 Quick Sync; 2026-11-26).** Order: the GPU's
+VideoToolbox (`h264_videotoolbox`, `allow_sw 0` - Apple's software path is no better than x264), then
+x264, then the fallback above. Each is tried once at launch of the first conversion (a small frame
+through it); one that breaks in a job is struck off until Sofa restarts and the stream is planned
+again with the next.
+- VideoToolbox on 10.9: refuses frames with colour tags (-12917) - sent untagged (H.264's default for
+  HD is BT.709); ignores forced keyframes - but keeps its key interval exactly, so the frames are made
+  constant-rate (nearest decoded frame per slot) and every segment has exactly `gop` frames; budgets
+  its bit rate from timestamp 0 (a job at 40 min made a 4x first segment) - its clock starts at 0 per
+  job; refuses sessions below 640 px on the longer side (-8973: x264 takes those).
+- Speed (VP9 1080p60 source, 3.2 Mbit/s, + Opus -> AAC, real stored YouTube tracks): VideoToolbox
+  1080p30 1.95x real time with 1.2 cores busy (at playback pace ~0.6 of one core, ~15 % of the CPU),
+  first segment 2.7 s after a seek; x264 (veryfast, zerolatency: no lookahead/B-frames; the default
+  lookahead managed only 1.6x) 1.9x with 3.15 cores busy (~1.65 cores at playback pace). VideoToolbox
+  1080p60 only 1.17x - too tight. Quality at ~5.5 Mbit/s 1080p30: VMAF 94.9 VideoToolbox, 89.3 x264
+  veryfast/zerolatency. Decoding the VP9 itself: ~15x real time.
+- Caps (from the real-time margin, not power): at most 1080 lines, at most the pixel rate of 1080p30 -
+  a faster source keeps its size and loses every second frame (1080p60 -> 1080p30, 720p60 stays);
+  ~0.1 bit per pixel (1080p30 6 Mbit/s, 720p30 2.8 Mbit/s, 1.5-8 Mbit/s); x264 constant quality (CRF 21)
+  under the same ceiling. 10-bit (VP9.2 HDR) is converted to 8 bit without tone mapping.
+- One encoding session at a time: a second device's play while one encodes (asked within 45 s) gets
+  the app's browser format; the same device's new play takes the encoder over. Copying has no limit.
+
+Not done: audio beyond stereo is downmixed; subtitles of stored items are not offered in the browser.
+
 ## API (all JSON, `Authorization: Bearer <token>` unless noted)
 
 | Route | |
@@ -204,7 +279,7 @@ left the list gets its final state. Only items with a resolver ref can be downlo
 | `GET /api/show?ref=&title=` | a show/channel page by ref |
 | `GET /api/search?app=&q=` | an app's search page (without `q`: the household's recent searches) |
 | `GET /api/suggest?app=&q=` | the app's search suggestions |
-| `POST /api/play {item}` | `{stream, kind: hls\|file, url, start, duration}` |
+| `POST /api/play {item, formats?}` | `{stream, kind: hls\|file, url, start, duration, segmented?}` - `formats`: the codecs the browser decodes (§8; none: `avc1 mp4a`); `segmented`: what the segmenter does (`copy+copy`, `h264_videotoolbox+aac`, ...) |
 | `POST /api/stream/<id> {state, position, duration}` | player state; `closed` ends it |
 | `POST /api/state {item, watched?, later?, follow?, forget?, download?, keep?}` | marks (`forget`: out of Weiterschauen), the download (`true` starts or retries, `false` cancels or deletes; `keep`: Behalten); answers the item's new state (+ `message` for a started download) - with no change, just its state |
 | `POST /api/tv/play {item, fromStart?, at?, replace?}` | `{tv, already?}`; 409 `{error, busy: {title}}` another video plays there; 403 DRM |
@@ -234,6 +309,7 @@ CI and on this Mac) into `pwa/dist`; hls.js is its own chunk, loaded when a vide
   download (`choices.ts`), gesehen, aus Weiterschauen, zur Sendung, folgen; and its confirmations).
 - `status.ts` the long poll of Sofa's status; `tv.ts` sending to the TV and the "Am Fernseher" bar;
   `downloads.ts` the download actions and the tiles of downloads on their way.
+- `formats.ts` the codecs this browser decodes (sent with every play, §8).
 - `player.ts` native HLS on Apple's browsers, hls.js elsewhere, files in `<video>`; reports
   every 10 s and on pause, seek, end and close (a beacon on the capability path when the page goes
   away); a broken stream is opened again (twice), a format the browser can't decode says so.
@@ -246,13 +322,15 @@ that touches it. Tests: `pwa/test` (pure parts, `npm test`), `tools/test-pwa` (i
 built PWA in a headless Firefox (Marionette) against a dev instance - connect via the short name,
 pairing with the dev code, pages, a playback with its reports, marks, the TV (send from the sheet,
 the bar's pause and stop, asking before replacing, a playback handed over at its position), downloads
-(started, the chip to "Offline", Behalten, a confirmed delete), phone and desktop widths;
+(started, the chip to "Offline", Behalten, a confirmed delete), a WebM DASH pair through the segmenter
+(copied, played and sought with hls.js), phone and desktop widths;
 `PWA_SHOTS=<dir>` saves screenshots (Firefox then renders into an invisible Xvfb). This Mac's
-Firefox build decodes no H.264, so there the DASH pair is checked up to hls.js reading its master
-playlist; the byte relay is test-web's, and a VP9 file plays end to end.
+Firefox build decodes no H.264 and - in the page's MediaSource - no audio in MP4, so there the DASH pair
+is checked up to hls.js reading its master playlist; the byte relay is test-web's, a VP9 file plays end
+to end, and so does a segmented VP9 pair without sound. `tools/test-web` 14 checks the segmenter with
+ffprobe: codecs, a keyframe at each segment's start, continuity, audio with video, a seek's job, the
+idle stop, one encoder at a time, the fallbacks (no encoder, x264 only).
 
 ## Open questions (for the user)
 
-- Downloaded YouTube videos play online in the browser (H.264), from the store only on the TV (§3).
-  Serving the stored VP9/Opus tracks to browsers that decode them (Firefox, Chrome) would need an MSE
-  path of its own; not built.
+- Subtitles of stored items are not offered in the browser yet (the TV shows them).

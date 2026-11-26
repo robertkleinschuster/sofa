@@ -8,7 +8,8 @@
 #   3  a DASH pair (H.264 + AAC, as YouTube's engine serves a browser) as HLS through hls.js: the
 #      playlists and both tracks' bytes come through Sofa (and it plays where the browser decodes
 #      H.264 - this Mac's Firefox build has no H.264 decoder); then, with the instance restarted on
-#      a VP9 file, a playback: the position lands in the TV's database, closing ends it
+#      a VP9 file, a playback: the position lands in the TV's database, closing ends it; a WebM DASH pair
+#      (a stored YouTube video's kind of tracks) through the segmenter, copied, plays and seeks
 #   4  the tile's sheet marks Später ansehen in the TV's database
 #   6  the TV: "Auf dem Fernseher abspielen" from the sheet opens it in the TV's player; the bar
 #      "Am Fernseher" follows it (Sofa's status), pauses and stops it; another video playing there
@@ -55,16 +56,23 @@ cp "$SRC/tests/fixtures/web/video.mp4" "$SRC/tests/fixtures/web/audio.mp4" "$T/m
   -movflags +faststart "$T/media/vonly.mp4" || { echo "ffmpeg failed"; exit 1; }
 /opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=25 -t 40 -c:v libvpx-vp9 -b:v 200k -an "$T/media/vonly.webm" \
   || { echo "ffmpeg failed"; exit 1; }
+# a stored YouTube video's kind of video track: VP9 in WebM, a keyframe every second (cues)
+/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=25 -t 40 -c:v libvpx-vp9 -b:v 200k -g 25 -deadline realtime -cpu-used 8 -an "$T/media/v.webm" \
+  || { echo "ffmpeg failed"; exit 1; }
 # the media: a plain Range server; the PWA: a static server (its own origin)
 cat > "$T/srv.py" <<'PY'
 import http.server, functools, sys, os
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
+    def handle(self):
+        try: super().handle()
+        except (BrokenPipeError, ConnectionResetError): pass   # a reader that has what it wanted (a probe, a seek)
     def send_head(self):
         r = self.headers.get("Range", "")
         F = self.translate_path(self.path)
         if not r.startswith("bytes=") or not os.path.isfile(F): return super().send_head()
         size = os.path.getsize(F); a, _, z = r[6:].partition("-"); start = int(a or 0); end = min(size, int(z) + 1) if z else size
+        if start >= size: self.send_response(416); self.send_header("Content-Range", "bytes */%d" % size); self.end_headers(); return None
         self.send_response(206); self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, size))
         self.send_header("Content-Length", str(end - start)); self.send_header("Content-Type", "video/mp4"); self.end_headers()
         f = open(F, "rb"); f.seek(start); self.wfile.write(f.read(end - start)); f.close(); return None
@@ -90,7 +98,7 @@ fi
 # the browser half starts and restarts the instance itself (tools/lib/test-pwa.mjs)
 env PWA_URL="http://127.0.0.1:$WP/" SOFA_BIN="$BIN" SOFA_INSTANCE=$INST SOFA_DATA="$D" SOFA_PORT=$PORT SOFA_NAME=$NAME \
     SOFA_CERT="$T/c.pem" SOFA_KEY="$T/k.pem" PWA_ORIGIN="http://127.0.0.1:$WP" \
-    MEDIA_DASH_V="http://127.0.0.1:$MP/video.mp4" MEDIA_DASH_A="http://127.0.0.1:$MP/audio.mp4" MEDIA_FILE="http://127.0.0.1:$MP/vonly.webm" MEDIA_H264="http://127.0.0.1:$MP/vonly.mp4" \
+    MEDIA_DASH_V="http://127.0.0.1:$MP/video.mp4" MEDIA_DASH_A="http://127.0.0.1:$MP/audio.mp4" MEDIA_FILE="http://127.0.0.1:$MP/vonly.webm" MEDIA_WEBM_V="http://127.0.0.1:$MP/v.webm" MEDIA_H264="http://127.0.0.1:$MP/vonly.mp4" \
     FIREFOX="$FIREFOX" MARIONETTE_PORT=$MPORT PROFILE="$T/profile" PWA_SHOTS="${PWA_SHOTS:-}" PWA_DISPLAY="$DISP" "$NODE" "$SRC/tools/lib/test-pwa.mjs"
 fail=$?
 [ $fail = 0 ] && echo "==> test-pwa ok" || { echo "==> test-pwa FAILED"; tail -20 "$D/sofa.log" | sed 's/^/    /'; }

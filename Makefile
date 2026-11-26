@@ -22,12 +22,15 @@ CFLAGS  := -I$(MP)/include -fobjc-arc -mmacosx-version-min=10.9 -O2 -g -Wall -Wn
            -Wno-unused-variable -Wno-unused-function $(addprefix -I,$(SRCDIRS))
 # linked libraries (MacPorts on the build machine; make-release bundles them):
 #   mpv (+libmpv) -lmpv, sqlite3 -lsqlite3, curl -lcurl, webp -lwebp (WebP thumbnails, SFWebP),
-#   openssl -lssl -lcrypto (the TLS server of Sofa im Browser, SFTLS - the same libraries curl uses)
+#   openssl -lssl -lcrypto (the TLS server of Sofa im Browser, SFTLS - the same libraries curl uses),
+#   ffmpeg -lavformat -lavcodec -lavutil -lswscale -lswresample (the browser segmenter, SFSegmentJob -
+#   the same libraries libmpv plays with; built with VideoToolbox, AudioToolbox and x264)
 # -headerpad_max_install_names: deploy/make-release rewrite every library path to the bundle's own
 # copies (relink.py, longer paths); without room in the header that failed once the binary grew
 # ("larger updated load commands do not fit", 2026-11-07)
 LDFLAGS := -mmacosx-version-min=10.9 -headerpad_max_install_names -framework Cocoa -framework QuartzCore -framework OpenGL \
-           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework IOBluetooth -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lssl -lcrypto -lwebp -lX11 -lXtst
+           -lmpv -framework IOKit -framework CoreServices -framework ImageIO -framework CoreAudio -framework IOBluetooth -framework AudioToolbox -framework SystemConfiguration -framework Security -L$(MP)/lib -lsqlite3 -lcurl -lssl -lcrypto -lwebp -lX11 -lXtst \
+           -lavformat -lavcodec -lavutil -lswscale -lswresample
 # libmpv (overlay port multimedia/mpv) is the player engine: required
 SRC     := $(wildcard src/*/*.m src/Apps/*/*.m)
 OBJ     := $(patsubst src/%.m,$(BUILD)/obj/%.o,$(SRC))

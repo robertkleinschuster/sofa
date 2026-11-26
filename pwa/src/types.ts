@@ -94,7 +94,8 @@ export interface MoreAnswer { items: Item[]; more: boolean }
 
 export interface SearchRecent { recent: string[] }
 
-export interface PlayAnswer { stream: string; kind: 'hls' | 'file'; url: string; start: number; duration: number; live: boolean; title: string }
+// segmented: what Sofa's segmenter does for this stream ("copy+copy", "h264_videotoolbox+aac", ...; docs/pwa.md §8)
+export interface PlayAnswer { stream: string; kind: 'hls' | 'file'; url: string; start: number; duration: number; live: boolean; title: string; segmented?: string }
 
 // What the TV's player shows (SFWebTV state)
 export interface TvState {

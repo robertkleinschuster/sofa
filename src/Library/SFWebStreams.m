@@ -6,6 +6,8 @@
 #import "SFLoopbackClient.h"
 #import "SFJSON.h"
 #import "SFLibrary.h"
+#import "SFDownloads.h"
+#import "SFMediaStore.h"
 #import <Security/SecRandom.h>
 
 static const NSTimeInterval kIdle = 600;            // a stream nobody read or reported for this long ends
@@ -60,24 +62,36 @@ static NSString *NewID(void) {
 
 #pragma mark Opening
 
-- (void)play:(SFItem *)item device:(NSString *)device done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+// A codec string's sample entry ("avc1.64002a" -> "avc1", "mp4a.40.2" -> "mp4a"), as SFAVBrowserCodec names it
+static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByString:@"."].firstObject lowercaseString]; }
+
+- (void)play:(SFItem *)item device:(NSString *)device formats:(NSSet *)formats done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
     if (item.drm) { done(nil, 403, SFDRMNotice); return; }
     if (item.kind != SFItemVideo && item.kind != SFItemLive) { done(nil, 400, @"Das ist kein Video."); return; }
     Class<SFApp> app = [SFAppRegistry appForItem:item];
     NSString *ref = item.resolverRef ?: item.identifier;
-    SFURLDone resolved = ^(NSURL *url, NSError *e) {
-        SFMain(^{
-            if (!url) { done(nil, 502, e.localizedDescription ?: @"Das Video ließ sich nicht abrufen."); return; }
-            [self open:item url:url app:app device:device done:done];
-        });
+    SFURLDone (^resolved)(dispatch_block_t) = ^SFURLDone(dispatch_block_t fallback) {
+        return ^(NSURL *url, NSError *e) {
+            SFMain(^{
+                if (url) { [self open:item url:url app:app device:device formats:formats fallback:fallback done:done]; return; }
+                if (fallback) { fallback(); return; }
+                done(nil, 502, e.localizedDescription ?: @"Das Video ließ sich nicht abrufen.");
+            });
+        };
     };
-    if ([app respondsToSelector:@selector(resolveForBrowser:done:)] && [[app refPrefixes] containsObject:SFRefPrefix(ref) ?: @""])
-        [app resolveForBrowser:ref done:resolved];
-    else [item resolveURL:resolved];
+    if (![app respondsToSelector:@selector(resolveForBrowser:done:)] || ![[app refPrefixes] containsObject:SFRefPrefix(ref) ?: @""]) {
+        [item resolveURL:resolved(nil)];
+        return;
+    }
+    dispatch_block_t online = ^{ [app resolveForBrowser:ref done:resolved(nil)]; };
+    // an app with a browser format of its own (YouTube: an H.264 session) - but a copy complete in the media
+    // store plays from there (the segmenter makes it playable, docs/pwa.md §8); online if that can't be
+    if ([[SFDownloads shared].mediaStore itemIsComplete:item.identifier]) [item resolveURL:resolved(online)];
+    else online();
 }
 
-- (void)open:(SFItem *)item url:(NSURL *)url app:(Class<SFApp>)app device:(NSString *)device
-        done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+- (void)open:(SFItem *)item url:(NSURL *)url app:(Class<SFApp>)app device:(NSString *)device formats:(NSSet *)formats
+    fallback:(dispatch_block_t)fallback done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
     SFWebStream *s = [SFWebStream new];
     s.identifier = NewID();
     s.device = device;
@@ -86,50 +100,72 @@ static NSString *NewID(void) {
     s.live = item.kind == SFItemLive || [s.source[@"live"] boolValue];
     s.lastUsed = [NSDate timeIntervalSinceReferenceDate];
     if (!s.identifier) { done(nil, 500, kNotForBrowser); return; }
+    // what can't be: the fallback (the app's browser format) or the viewer is told
+    void (^cannot)(NSString *) = ^(NSString *message) {
+        [self endSession:s app:app];
+        if (fallback) fallback(); else done(nil, 415, message ?: kNotForBrowser);
+    };
     NSString *v = str(s.source[@"video"]), *a = str(s.source[@"audio"]);
-    if (v && a) {   // a DASH pair: its headers decide (background: the reads wait for the engine)
-        s.kind = SFWebStreamDash;
-        s.video = [NSURL URLWithString:v]; s.audio = [NSURL URLWithString:a];
-        s.prefixes = [@[RoutePrefix(s.video) ?: @"", RoutePrefix(s.audio) ?: @""] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
-        SFBackground(^{
-            NSString *why = nil;
-            SFFMP4Track *vt = [self trackAt:s.video why:&why], *at = vt ? [self trackAt:s.audio why:&why] : nil;
-            SFMain(^{
-                if (!vt || !at || !vt.isVideo || at.isVideo) {
-                    SFLog(@"web: %@ is no browser stream (%@)", item.identifier, why ?: @"track kinds");
-                    [self endSession:s app:app];
-                    done(nil, 415, kNotForBrowser);
-                    return;
-                }
-                s.master = SFHLSMasterPlaylist(vt, at, @"v.m3u8", @"a.m3u8");
-                s.videoPlaylist = SFHLSMediaPlaylist(vt, @"t/v");
-                s.audioPlaylist = SFHLSMediaPlaylist(at, @"t/a");
-                [self opened:s app:app duration:vt.duration done:done];
-            });
-        });
-        return;
-    }
+    if (v && a) { [self openPair:s video:v audio:a app:app formats:formats cannot:cannot done:done]; return; }
+    BOOL stored = url.isFileURL || [s.source[@"stored"] boolValue];
     NSURL *local = url;
     if (url.isFileURL) {
         s.kind = SFWebStreamLocalFile;
         s.upstream = url;
-        [self opened:s app:app duration:item.duration done:done];
-        return;
+    } else {
+        // a source's URL: through the media proxy (the store), as the TV's player opens it (the proxy keeps
+        // its own URLs as they are); a local service's (the engine's live playlist) is served as it is
+        if ([SFMediaProxy canServe:url]) {
+            local = [[SFMediaProxy shared] localURLFor:url item:item.identifier];
+            if (![local isEqual:url]) s.proxied = local;
+        }
+        if (![local.host isEqualToString:@"127.0.0.1"]) { cannot(nil); return; }
+        NSString *ext = local.path.pathExtension.lowercaseString;
+        s.kind = ([ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"] || [s.source[@"hls"] boolValue]) ? SFWebStreamHLS : SFWebStreamFile;
+        s.upstream = local;
+        NSString *prefix = RoutePrefix(local);
+        if (!prefix) { cannot(nil); return; }
+        s.prefixes = @[prefix];
     }
-    // a source's URL: through the media proxy (the store), as the TV's player opens it (the proxy keeps
-    // its own URLs as they are); a local service's (the engine's live playlist) is served as it is
-    if ([SFMediaProxy canServe:url]) {
-        local = [[SFMediaProxy shared] localURLFor:url item:item.identifier];
-        if (![local isEqual:url]) s.proxied = local;
-    }
-    if (![local.host isEqualToString:@"127.0.0.1"]) { done(nil, 415, kNotForBrowser); return; }
-    NSString *ext = local.path.pathExtension.lowercaseString;
-    s.kind = ([ext isEqualToString:@"m3u8"] || [ext isEqualToString:@"m3u"] || [s.source[@"hls"] boolValue]) ? SFWebStreamHLS : SFWebStreamFile;
-    s.upstream = local;
-    NSString *prefix = RoutePrefix(local);
-    if (!prefix) { done(nil, 415, kNotForBrowser); return; }
-    s.prefixes = @[prefix];
-    [self opened:s app:app duration:item.duration done:done];
+    if (s.kind == SFWebStreamHLS || !stored || s.live) { [self opened:s app:app duration:item.duration done:done]; return; }
+    // a stored file: as it is where the browser plays it (an MP4 of its codecs), else through the segmenter
+    NSString *input = url.isFileURL ? url.path : local.absoluteString;
+    [self segment:s video:input audio:nil keyframes:nil formats:formats done:^(BOOL segmented, BOOL asIs, NSString *why) {
+        if (!segmented && !asIs) SFLog(@"web: %@ as it is (%@)", item.identifier, why);
+        [self opened:s app:app duration:segmented ? s.transcode.duration : item.duration done:done];
+    }];
+}
+
+// A DASH pair: the browser reads the tracks' byte ranges itself where they are fragmented MP4 of codecs it
+// decodes (YouTube's browser session: H.264 + AAC); else the segmenter (a stored video's WebM/AV1 + Opus)
+- (void)openPair:(SFWebStream *)s video:(NSString *)v audio:(NSString *)a app:(Class<SFApp>)app formats:(NSSet *)formats
+          cannot:(void (^)(NSString *))cannot done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
+    s.video = [NSURL URLWithString:v]; s.audio = [NSURL URLWithString:a];
+    s.prefixes = [@[RoutePrefix(s.video) ?: @"", RoutePrefix(s.audio) ?: @""] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+    SFBackground(^{   // its headers decide (the reads wait for the engine)
+        NSString *why = nil;
+        SFFMP4Track *vt = [self trackAt:s.video why:&why], *at = vt ? [self trackAt:s.audio why:&why] : nil;
+        SFMain(^{
+            BOOL pair = vt && at && vt.isVideo && !at.isVideo;
+            void (^byRanges)(void) = ^{
+                s.kind = SFWebStreamDash;
+                s.master = SFHLSMasterPlaylist(vt, at, @"v.m3u8", @"a.m3u8");
+                s.videoPlaylist = SFHLSMediaPlaylist(vt, @"t/v");
+                s.audioPlaylist = SFHLSMediaPlaylist(at, @"t/a");
+                [self opened:s app:app duration:vt.duration done:done];
+            };
+            if (pair && [formats containsObject:Tag(vt.codec)] && [formats containsObject:Tag(at.codec)]) { byRanges(); return; }
+            NSMutableArray *keys = nil;   // a fragmented MP4's subsegments start at keyframes (its sidx)
+            if (vt) { keys = [NSMutableArray new]; double t = 0; for (NSArray *seg in vt.segments) { [keys addObject:@(t)]; t += [seg[2] doubleValue]; } }
+            [self segment:s video:v audio:a keyframes:keys formats:formats done:^(BOOL segmented, BOOL asIs, NSString *why2) {
+                if (segmented) { [self opened:s app:app duration:s.transcode.duration done:done]; return; }
+                SFLog(@"web: %@ - no segments (%@; the browser decodes %@)", s.item.identifier, why2 ?: why ?: @"?",
+                      [[formats.allObjects sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@" "]);
+                if (pair) byRanges();   // the browser says itself what it can't decode
+                else cannot([why2 isEqualToString:SFWebTranscodeBusyMessage] ? why2 : nil);
+            }];
+        });
+    });
 }
 
 // A track's header (moov, sidx) through its route: small reads within the init (what the engine has
@@ -145,10 +181,14 @@ static NSString *NewID(void) {
     } error:why];
 }
 
+- (double)startOf:(SFWebStream *)s {
+    NSTimeInterval resume = s.live ? 0 : [[SFStore shared] positionFor:s.item.identifier];
+    return resume > 15 ? resume - 3 : 0;   // as the TV resumes (a short lead-in)
+}
+
 - (void)opened:(SFWebStream *)s app:(Class<SFApp>)app duration:(NSTimeInterval)duration
           done:(void (^)(NSDictionary *, NSInteger, NSString *))done {
-    NSTimeInterval resume = s.live ? 0 : [[SFStore shared] positionFor:s.item.identifier];
-    NSTimeInterval start = resume > 15 ? resume - 3 : 0;   // as the TV resumes (a short lead-in)
+    NSTimeInterval start = [self startOf:s];
     if ([app respondsToSelector:@selector(playback:startsAt:)] && !s.live) [app playback:s.source startsAt:start];
     NSMutableArray *ended = [NSMutableArray new];
     @synchronized (self) {
@@ -159,15 +199,17 @@ static NSString *NewID(void) {
     }
     for (SFWebStream *old in ended) { [self endSession:old app:[SFAppRegistry appForItem:old.item]]; [self ended:old why:@"the device opened another"]; }
     if (!_sweep) _sweep = [NSTimer scheduledTimerWithTimeInterval:60 target:self selector:@selector(sweep) userInfo:nil repeats:YES];
-    NSString *kindName = s.kind == SFWebStreamDash || s.kind == SFWebStreamHLS ? @"hls" : @"file";
+    NSString *kindName = s.kind == SFWebStreamDash || s.kind == SFWebStreamHLS || s.kind == SFWebStreamSegmented ? @"hls" : @"file";
     // an HLS playlist is served at its own local path (l/<port>/<path>): relative URIs in it resolve as they do locally
-    NSString *path = s.kind == SFWebStreamDash ? @"index.m3u8"
+    NSString *path = s.kind == SFWebStreamDash || s.kind == SFWebStreamSegmented ? @"index.m3u8"
                    : s.kind == SFWebStreamHLS ? [NSString stringWithFormat:@"l/%@%@", s.upstream.port, CFBridgingRelease(CFURLCopyPath((__bridge CFURLRef)s.upstream))]
                    : [@"media" stringByAppendingString:s.upstream.path.pathExtension.length ? [@"." stringByAppendingString:s.upstream.path.pathExtension] : @""];
     SFLog(@"web: stream %@ for %@ (%@, device %@)", [s.identifier substringToIndex:6], s.item.identifier,
-          @[@"dash", @"hls", @"file", @"local file"][s.kind], s.device);
-    done(@{@"stream": s.identifier, @"kind": kindName, @"url": [NSString stringWithFormat:@"/m/%@/%@", s.identifier, path],
-           @"start": @(start), @"duration": @(duration > 0 ? duration : 0), @"live": @(s.live), @"title": s.item.title ?: @""}, 200, nil);
+          s.transcode ? [@"segments " stringByAppendingString:s.transcode.mode] : @[@"dash", @"hls", @"file", @"local file", @"segments"][s.kind], s.device);
+    NSMutableDictionary *answer = [@{@"stream": s.identifier, @"kind": kindName, @"url": [NSString stringWithFormat:@"/m/%@/%@", s.identifier, path],
+           @"start": @(start), @"duration": @(duration > 0 ? duration : 0), @"live": @(s.live), @"title": s.item.title ?: @""} mutableCopy];
+    if (s.transcode) answer[@"segmented"] = s.transcode.mode;   // what the segmenter does (diagnostics)
+    done(answer, 200, nil);
 }
 
 #pragma mark Reports and lifetime
@@ -227,6 +269,7 @@ static NSString *NewID(void) {
 
 - (void)ended:(SFWebStream *)s why:(NSString *)why {
     if (s.proxied) [[SFMediaProxy shared] releaseURL:s.proxied];
+    [s.transcode close];
     SFLog(@"web: stream %@ ended (%@)", [s.identifier substringToIndex:6], why);
 }
 

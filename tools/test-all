@@ -12,9 +12,10 @@
 #   tools/test-schema     database migrations from a 0.3.8 database, integrity, nothing lost
 #   tools/test-startup    one instance per data directory
 #   tools/test-web        Sofa im Browser: TLS, CORS/PNA, connect redirect, pairing, pages, marks, HLS of a DASH pair, reports,
-#                         the TV (send, replace, status long poll, controls), downloads (start, keep, delete, from the store)
+#                         the TV (send, replace, status long poll, controls), downloads (start, keep, delete, from the store),
+#                         the segmenter (copied/encoded HLS segments of stored items, checked with ffprobe; seek, idle, fallbacks)
 #   tools/test-pwa        the PWA in a headless Firefox against a dev instance: connect, pair, pages, playback, marks,
-#                         the TV (sheet, bar, hand-over), downloads
+#                         the TV (sheet, bar, hand-over), downloads, a WebM pair through the segmenter
 #   tools/test-sofa-yt    YouTube engine: index/virtual files/pacing/eviction, mpv via fake SABR, bundle in Firefox (offline)
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -298,7 +298,11 @@ for k in down right left down; do n=$((n + 1)); cmd "key $k"; for i in $(seq 1 4
 since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ' | grep -q '0 (video) 1 (video) 0 (video) 2 (follow)' \
   && ok "DOWN enters, arrows move spatially" || bad "focus path: $(since $m | grep 'endscreen: focus' | sed 's/.*focus //' | tr '\n' ' ')"
 shot "$T/endscreen-focus.png"; keep "$T/endscreen-focus.png"
-m=$(mark); cmd "key select"; sleep 0.6; cmd "key select"; sleep 0.6
+# each select waits for its follow line (fixed 0.6 s pauses were too short under test-all's load)
+m=$(mark); cmd "key select"
+for i in $(seq 1 100); do since $m | grep -q 'follows: + Endscreen-Testkanal' && break; sleep 0.1; done
+cmd "key select"
+for i in $(seq 1 100); do since $m | grep -q "follows: - ytchannel:$ESCH" && break; sleep 0.1; done
 since $m | grep -q 'follows: + Endscreen-Testkanal' && since $m | grep -q "follows: - ytchannel:$ESCH" && ok "follow tile follows and unfollows" || bad "follow toggle: $(since $m | grep 'follows' | tail -2)"
 m=$(mark); cmd "key menu"; sleep 0.6; t1=$(pos); sleep 1.5; t2=$(pos)
 since $m | grep -q 'endscreen: left the tiles' && ok "MENU leaves the tiles" || bad "MENU did not leave the tiles"

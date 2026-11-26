@@ -132,6 +132,30 @@ try {
   await check('3: closing removes the player', () => ff.until(`return !document.querySelector('.player')`, 10_000));
   await check('3: closing ends the stream in Sofa', () => waitLog(/web: stream [0-9a-f]{6} ended \(closed by the browser\)/));
 
+  // a stored YouTube video's kind of tracks - VP9 in WebM, video and audio as two inputs: the segmenter
+  // (docs/pwa.md §8) serves them as fMP4 HLS, copied where the browser decodes them, and a seek starts its
+  // job there. This Firefox build decodes no audio in MP4 (MediaSource says so in the page), so the
+  // "audio" input is the silent video's own file (no audio track: the stream has none); test-web checks
+  // Opus and AAC with ffprobe.
+  await stopSofa();
+  await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_WEBM_V, SOFA_EXAMPLE_AUDIO: E.MEDIA_WEBM_V });
+  await ff.run(`location.reload()`);
+  await ff.until(`return document.querySelectorAll('.tile[data-kind="video"]').length > 1`, 30_000);
+  await ff.until(`if (document.querySelector('.player video')) return true; const a = document.querySelector('.tile[data-kind="video"] .art'); if (a) a.click(); return false`, 15_000);
+  await ff.run(`document.querySelector('.player video').muted = true`);
+  await check('3: VP9 tracks play through the segmenter, copied (hls.js)', () => ff.until(`const v = document.querySelector('.player video'); const p = document.querySelector('.player');
+      const s = document.querySelector('.player-status');
+      if (s && s.classList.contains('error')) return 'error: ' + s.textContent;
+      return v.currentTime > 2.5 && p.dataset.engine === 'hls.js' && p.dataset.segmented === 'copy+none'`, 45_000)
+    .then((r) => r === true || Promise.reject(new Error(String(r))))
+    .catch(async (e) => { console.log('        the browser decodes: ' + await ff.run(`return document.querySelector('.player').dataset.formats`)); for (const l of log().split('\n').filter((x) => /transcode:|no segments|web: stream/.test(x)).slice(-6)) console.log(`        ${l}`); throw e; }));
+  await ff.run(`document.querySelector('.player video').currentTime = 20`);
+  await check('3: ... a seek plays on from there', () => ff.until(`const v = document.querySelector('.player video'); return v.currentTime > 21.5 && !v.paused`, 30_000));
+  const ends = (log().match(/ended \(closed by the browser\)/g) || []).length;
+  await ff.run(`history.back()`);
+  await check('3: ... closing ends its stream', () => ff.until(`return !document.querySelector('.player')`, 10_000)
+    .then(() => waitLog(new RegExp(`(ended \\(closed by the browser\\)[^]*){${ends + 1}}`))));
+
   // the same instance (data, port, pairing) on a VP9 file, which every Firefox decodes
   await stopSofa();
   await startSofa({ SOFA_EXAMPLE_MEDIA: E.MEDIA_FILE, SOFA_EXAMPLE_FILL: '0.3', SOFA_SOURCE_GAP: '1' });
@@ -154,7 +178,8 @@ try {
   await ff.run(`document.querySelector('.player video').pause()`);
   await check('3: the paused position is in the TV\'s history', () => waitSql('select count(*) from progress', String(Number(before) + 1)));
   await ff.run(`document.querySelector('.player-close').click()`);
-  await check('3: ✕ closes the player and ends the stream', async () => { await ff.until(`return !document.querySelector('.player')`, 10_000); return waitLog(/ended \(closed by the browser\)[^]*ended \(closed by the browser\)/); });
+  const ended = (log().match(/ended \(closed by the browser\)/g) || []).length;
+  await check('3: ✕ closes the player and ends the stream', async () => { await ff.until(`return !document.querySelector('.player')`, 10_000); return waitLog(new RegExp(`(ended \\(closed by the browser\\)[^]*){${ended + 1}}`)); });
   await check('3: the tile shows the progress', () => ff.until(`return !!document.querySelector('.tile[data-kind="video"] .progress')`, 10_000));
 
   console.log('==> 4 marks');

@@ -128,6 +128,7 @@ static NSArray *videos(NSString *filter) {
 // (a resumed download fetches only the rest), every fetched one is logged.
 + (BOOL)respondsToSelector:(SEL)sel {
     if (sel == @selector(fillItem:progress:done:)) return SFDevEnv(@"SOFA_EXAMPLE_FILL") != nil;
+    if (sel == @selector(resolveForBrowser:done:)) return SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VIDEO") != nil;
     return [super respondsToSelector:sel];
 }
 
@@ -157,6 +158,15 @@ static NSArray *videos(NSString *filter) {
     };
     step(0);
     return ^{ cancelled = YES; step = nil; };
+}
+
+// A browser format of its own (as YouTube's H.264 session, docs/pwa.md §3) - tests only:
+// SOFA_EXAMPLE_BROWSER_VIDEO / _AUDIO = a DASH pair the browser reads by byte ranges.
++ (void)resolveForBrowser:(NSString *)ref done:(SFURLDone)done {
+    NSString *v = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_VIDEO"), *a = SFDevEnv(@"SOFA_EXAMPLE_BROWSER_AUDIO");
+    SFLog(@"example: browser format for %@", ref);
+    if (a) SFSetMPVSource([NSURL URLWithString:v], @{@"video": v, @"audio": a});
+    done([NSURL URLWithString:v], nil);
 }
 
 // Session streams (an app service behind the URL, like YouTube's engine): tests make the Example

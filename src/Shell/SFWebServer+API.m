@@ -103,7 +103,11 @@ static void RunLoader(SFPageLoader loader, SFHTTPExchange *x) {
     if ([what isEqualToString:@"play"] && post) {
         SFItem *item = [SFWebItems itemFromBrowser:dict(body[@"item"])];
         if (!item) { SFWebReply(x, 400, @{@"error": @"Unbekanntes Video."}); return; }
-        [[SFWebStreams shared] play:item device:device done:^(NSDictionary *answer, NSInteger status, NSString *message) {
+        // the codecs the browser decodes (it says so; an older PWA: H.264 + AAC, what every browser plays)
+        NSMutableSet *formats = [NSMutableSet new];
+        for (id f in [body[@"formats"] isKindOfClass:[NSArray class]] ? body[@"formats"] : @[@"avc1", @"mp4a"])
+            if ([f isKindOfClass:[NSString class]]) [formats addObject:[f lowercaseString]];
+        [[SFWebStreams shared] play:item device:device formats:formats done:^(NSDictionary *answer, NSInteger status, NSString *message) {
             SFWebReply(x, status, answer ?: @{@"error": message ?: @"Das Video ließ sich nicht abspielen."});
         }];
         return;
