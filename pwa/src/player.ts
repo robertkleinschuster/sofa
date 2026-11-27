@@ -6,7 +6,7 @@
 import { ApiError, type Api, type StreamReport } from './api.ts';
 import { formatDuration, h, icon, ICONS } from './dom.ts';
 import { Background, pipSupported, togglePip } from './background.ts';
-import { browserFormats, mediaSourceTest } from './formats.ts';
+import { formatsOf } from './formats.ts';
 import type { Item, PlayAnswer } from './types.ts';
 
 const REPORT_EVERY_MS = 10_000;
@@ -99,7 +99,7 @@ export class Player {
 
   private async start(at?: number): Promise<void> {
     const native = preferNative(this.video);
-    const formats = browserFormats(native ? null : mediaSourceTest());
+    const formats = await formatsOf(native, this.video);
     this.overlay.dataset['formats'] = formats.join(' ');
     const a = await this.host.api.play(this.item, formats);
     if (this.closing) { this.host.api.beacon(a.stream, { state: 'closed' }); return; }

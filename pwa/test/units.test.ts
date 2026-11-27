@@ -7,7 +7,7 @@ import { parseRoute, routeHash, type Route } from '../src/router.ts';
 import { isOpaque, recolor, LOGO_LIGHT_TEXT, LOGO_ORIGINAL, LOGO_WHITE } from '../src/logos.ts';
 import { themeVariables } from '../src/theme.ts';
 import { downloadChoices, type DownloadAction } from '../src/choices.ts';
-import { browserFormats, FORMAT_PROBES } from '../src/formats.ts';
+import { browserFormats } from '../src/formats.ts';
 import type { DownloadState } from '../src/types.ts';
 
 test('host names: what the user types becomes host:port', () => {
@@ -99,10 +99,18 @@ test('the download options follow the TV menu for each state', () => {
   assert.deepEqual(run({ state: 'done', kept: true }), ['Behalten (An) -> unkeep', 'Download löschen -> delete']);
 });
 
-test('formats: the browser\'s own HLS player is told H.264 + AAC; MSE what it decodes', () => {
-  assert.deepEqual(browserFormats(null), ['avc1', 'mp4a']);
-  // this Mac's Firefox: VP9, AV1 and Opus, no H.264/AAC decoder
-  const firefox = new Set([FORMAT_PROBES['vp09'], FORMAT_PROBES['av01'], FORMAT_PROBES['opus']]);
-  assert.deepEqual(browserFormats((t) => firefox.has(t)), ['vp09', 'av01', 'opus']);
-  assert.deepEqual(browserFormats(() => { throw new Error('no'); }), []);
+test('formats: newest first, hardware before software, Apple\'s HLS codecs for the browser\'s own player', async () => {
+  type P = Record<string, [boolean, boolean]>;   // codec -> [supported, in hardware]
+  const prober = (p: P) => async (c: string) => ({ supported: p[c]?.[0] ?? false, efficient: p[c]?.[1] ?? false });
+  // iPhone 17 Pro (AV1 in hardware), native HLS: VP9/Opus not asked even where a probe says yes
+  assert.deepEqual(await browserFormats(prober({ av01: [true, true], hvc1: [true, true], avc1: [true, true], vp09: [true, true], mp4a: [true, true], opus: [true, true] }), true),
+    ['av01', 'hvc1', 'avc1', 'mp4a']);
+  // an older iPhone: no AV1; H.264 + AAC whatever a probe says
+  assert.deepEqual(await browserFormats(prober({ hvc1: [true, true] }), true), ['hvc1', 'avc1', 'mp4a']);
+  // a Mac decoding AV1 only in software: left out while VP9/H.264 decode in hardware
+  assert.deepEqual(await browserFormats(prober({ av01: [true, false], vp09: [true, true], avc1: [true, true], opus: [true, true], mp4a: [true, true] }), false),
+    ['vp09', 'avc1', 'opus', 'mp4a']);
+  // this Mac's Firefox: nothing in hardware - what it decodes, newest first
+  assert.deepEqual(await browserFormats(prober({ vp09: [true, false], av01: [true, false], opus: [true, true] }), false), ['av01', 'vp09', 'opus']);
+  assert.deepEqual(await browserFormats(async () => { throw new Error('no'); }, false), []);
 });

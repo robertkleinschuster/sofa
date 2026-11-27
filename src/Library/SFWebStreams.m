@@ -154,7 +154,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
 }
 
 // A DASH pair: the browser reads the tracks' byte ranges itself where they are fragmented MP4 of codecs it
-// decodes (YouTube's browser session: H.264 + AAC); else the segmenter (a stored video's WebM/AV1 + Opus)
+// decodes (YouTube's browser session: H.264 or AV1 + AAC); else the segmenter (a stored video's WebM, Opus)
 - (void)openPair:(SFWebStream *)s video:(NSString *)v audio:(NSString *)a app:(Class<SFApp>)app formats:(NSSet *)formats
           cannot:(void (^)(NSString *))cannot done:(void (^)(NSDictionary *, NSInteger, NSString *, NSString *))done {
     s.video = [NSURL URLWithString:v]; s.audio = [NSURL URLWithString:a];

@@ -93,17 +93,18 @@ Every stream goes through Sofa's existing local routes; the browser never contac
 
 - **YouTube** (`SFApp resolveForBrowser:formats:done:`): the engine opens a session like the TV's, from
   the same Firefox page, identity, BotGuard and pacing - only the format is the client's: the codecs of
-  its `formats` it prefers (docs/api.md "Formats"; up to 1080p) - H.264 + AAC for Safari, iOS and
-  any client that names nothing, VP9/AV1 + Opus where the client puts them first (Android, Firefox).
-  An H.264 session's DASH pair is served as byte ranges (below), a VP9/AV1 + Opus one goes through the
-  segmenter, copied (§8). Two playbacks at once are two sessions of one page
+  its `formats` it prefers (docs/api.md "Formats"; up to 1080p) - the newest the device decodes in
+  hardware: AV1 + AAC on an iPhone with an AV1 decoder (15 Pro and later), H.264 + AAC on older ones
+  and any client that names nothing, AV1/VP9 + Opus where the client puts them first (Android, Firefox).
+  A DASH pair of fragmented MP4 in the client's codecs (H.264 or AV1 + AAC) is served as byte ranges
+  (below), a WebM one (VP9, Opus) goes through the segmenter, copied (§8). Two playbacks at once are two sessions of one page
   (the engine keeps up to four), like two tabs of one browser - one client, no second identity. The
   PWA reports its player state (`playing/paused/ended/closed`, position); Sofa forwards it to the
   engine's view reporting (`SFApp playback:reports:`), so the view is reported as youtube.com's
   player would. The tracks are byte-identical DASH files (docs/youtube-engine.md); Sofa reads their
   init (ftyp, moov, sidx - only the header ranges, which the engine has after the first SABR
   answer) and writes an HLS playlist with byte ranges (`SFWebHLS`): video and audio as separate
-  renditions, codecs from the `avcC`/`esds` boxes. Every byte the browser reads is a Range request
+  renditions, codecs from the `avcC`/`av1C`/`esds` boxes. Every byte the browser reads is a Range request
   relayed to `/s/<sid>/video|audio`, so the media store keeps it and serves what it has.
 - **Mediatheks** (ZDF, ARD, CCC files; ORF and lives HLS): the resolver's URL through
   `SFMediaProxy` (the media store), exactly as the TV player opens it. Files are served as files;

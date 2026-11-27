@@ -107,7 +107,11 @@ which doesn't exist yet (both URLs answer 404 today, checked 2026-11-26). When t
 **in its order of preference**: `avc1 hvc1 vp09 av01 mp4a opus`. Without it: `avc1, mp4a`.
 - iOS (AVPlayer, HLS): `[avc1, hvc1, mp4a]` - Apple's HLS stack wants H.264/HEVC + AAC.
 - Android (ExoPlayer): what `MediaCodecList` decodes, best first - e.g. `[av01, vp09, avc1, opus, mp4a]`.
-- Browsers: what `MediaSource.isTypeSupported` says (hls.js), H.264 + AAC for native HLS (`pwa/src/formats.ts`).
+- Browsers (`pwa/src/formats.ts`): newest first, AV1 > VP9 > HEVC > H.264, Opus > AAC - those the
+  device decodes in hardware (Media Capabilities `powerEfficient`); software-only ones only when none
+  decodes in hardware. hls.js: what `MediaSource.isTypeSupported` says; the browser's own HLS player
+  (Safari, iOS): Apple's HLS codecs only (AV1, HEVC, H.264 + AAC - VP9 and Opus are none), e.g.
+  `[av01, hvc1, avc1, mp4a]` on an iPhone with an AV1 decoder (15 Pro and later), H.264 + AAC always.
 
 Sofa uses the list twice. Stored items: tracks the client decodes are served as they are (copied into
 HLS segments), the rest is converted to H.264/AAC (docs/pwa.md §8). Apps with a session format of their

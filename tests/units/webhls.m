@@ -2,7 +2,7 @@
 // flags: -Isrc/Library
 // SFWebHLS (Sofa im Browser, docs/pwa.md): a pair of fragmented MP4 tracks laid out like YouTube's
 // DASH files (ftyp, moov, sidx, moof/mdat...; tests/fixtures/web, made by ffmpeg) becomes HLS: the
-// codecs from avcC/esds, the init range, the sidx's subsegments as byte ranges - read through header
+// codecs from avcC/av1C/esds, the init range, the sidx's subsegments as byte ranges - read through header
 // ranges only, never past the sidx. Broken or foreign tracks are refused.
 #import "SFWebHLS.h"
 
@@ -66,6 +66,13 @@ int main(void) {
         CHECK([media rangeOfString:firstRange].location != NSNotFound, "first segment byte range");
         CHECK([media hasSuffix:@"#EXT-X-ENDLIST\n"], "VOD playlist ends");
         CHECK([media componentsSeparatedByString:@"#EXTINF:"].count == 5, "one EXTINF per segment");
+
+        // AV1 (YouTube's AV1 DASH files; an iPhone 15 Pro and later play it in Apple's HLS): from av1C
+        SFFMP4Track *av1 = Parse(Fixture(@"video-av1.mp4"), &maxRead, &why);
+        CHECK(av1 && av1.isVideo, [[@"AV1 parsed: " stringByAppendingString:why ?: @""] UTF8String]);
+        CHECK([av1.codec isEqualToString:@"av01.0.00M.08"], [[@"AV1 Main level 2.0 8 bit codec string, got " stringByAppendingString:av1.codec ?: @"nil"] UTF8String]);
+        CHECK(av1.width == 96 && av1.height == 54 && av1.segments.count == 4, "AV1 picture size and segments");
+        CHECK([SFHLSMasterPlaylist(av1, at, @"v.m3u8", @"a.m3u8") rangeOfString:@"CODECS=\"av01.0.00M.08,mp4a.40.2\""].location != NSNotFound, "master names AV1 + AAC");
 
         // refused: a truncated header, a WebM file, a track without sidx
         CHECK(!Parse([v subdataWithRange:NSMakeRange(0, 400)], &maxRead, &why), "truncated moov refused");

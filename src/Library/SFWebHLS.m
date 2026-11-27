@@ -95,13 +95,24 @@ static NSString *AACCodec(NSData *d, NSUInteger s, NSUInteger e) {
         _isVideo = YES;
         return YES;
     }
+    if ([type isEqualToString:@"av01"]) {
+        // av1C (AV1 ISOBMFF binding 2.3): marker/version, seq_profile(3) seq_level_idx_0(5),
+        // seq_tier_0(1) high_bitdepth(1) twelve_bit(1) ... -> "av01.<profile>.<level><tier>.<bit depth>"
+        if (content + 78 > end) { *why = @"short video sample entry"; return NO; }
+        _width = BE16(b + content + 24); _height = BE16(b + content + 26);
+        if (!FindBox(m, content + 78, end, "av1C", &cs, &ce) || ce - cs < 4 || b[cs] != 0x81) { *why = @"no av1C"; return NO; }
+        int depth = (b[cs + 2] & 0x40) ? ((b[cs + 2] & 0x20) ? 12 : 10) : 8;
+        _codec = [NSString stringWithFormat:@"av01.%d.%02d%c.%02d", b[cs + 1] >> 5, b[cs + 1] & 0x1f, (b[cs + 2] & 0x80) ? 'H' : 'M', depth];
+        _isVideo = YES;
+        return YES;
+    }
     if ([type isEqualToString:@"mp4a"]) {
         if (content + 28 > end || !FindBox(m, content + 28, end, "esds", &cs, &ce)) { *why = @"no esds"; return NO; }
         _codec = AACCodec(m, cs, ce);
         if (!_codec) { *why = @"unreadable esds"; return NO; }
         return YES;
     }
-    *why = [NSString stringWithFormat:@"sample entry %@ is not H.264 or AAC", type];
+    *why = [NSString stringWithFormat:@"sample entry %@ is not H.264, AV1 or AAC", type];
     return NO;
 }
 
