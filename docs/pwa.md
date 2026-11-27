@@ -257,8 +257,9 @@ An older PWA sends nothing: H.264 + AAC. Sofa then decides per track:
   for a browser decoding AV1 (iPhone 15 Pro and later, recent Macs and PCs): its video is **re-encoded
   into AV1** by the segmenter (the audio copied), for fewer bytes over the viewer's line; as the file
   when that can't be (no AV1 encoder, another device's playback encodes);
-- an HLS presentation on demand (ORF's, online or downloaded) for a browser decoding AV1: the variant
-  the media proxy keeps (the best up to 1080p) and its default audio rendition through the segmenter -
+- an HLS presentation on demand (ORF's, online or downloaded) for a browser decoding AV1: the best
+  variant up to 720 lines (the media proxy's root asked with `?height=720`; a downloaded item has its
+  one variant) and its default audio rendition through the segmenter -
   video into AV1, audio into AAC (an ADTS track isn't copyable into MP4); else the playlist as it is;
 - anything else that is stored (a downloaded YouTube video's VP9/AV1 + Opus, two separate tracks, a
   local MKV): through the **segmenter** - each track **copied** where the browser decodes its codec, else
@@ -281,8 +282,9 @@ next one (a seek) - `SFAVInputPool`, only inputs none of whose reads or seeks fa
 opening ORF's two tracks again took ~1 s, now ~45 ms. After a seek the video's packets up to the last
 keyframe at or before the start are read, not decoded (HLS lands on a segment's start: ORF 9.6 s
 segments, a keyframe every 4.8 s - 2.2 s of decoding before, 0.3 s after). Measured 2026-11-27, first
-segment after the init: BR MP4 2.2 s (seek 2.6 s), ORF ~2.5 s (seek ~5.5 s: the source's 5 MB segment
-before the target comes over the line first, ~1.8 s). What remains is encoding: SVT-AV1 needs 0.2 s to
+segment after the init: BR MP4 2.2 s (seek 2.6 s), ORF ~1.8-2.5 s (seek 4.2-5.5 s: the source's 5 MB
+segment before the target comes over the line first, ~1.8 s). ORF's 1080p variant made the re-encode
+into 720p 2.06x real time and its segments 7.5 MB - the 720p variant (2.65x, 5 MB) is taken instead. What remains is encoding: SVT-AV1 needs 0.2 s to
 start and 1.4 s for 4 s of 720p50; shorter segments would cost data (2 s: +13 %, 1 s: +40 %).
 - When the segmenter can't (no encoder for the browser's formats, another device's playback encodes):
   the app's browser format (YouTube: the online H.264 session), else the message

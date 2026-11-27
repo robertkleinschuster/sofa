@@ -14,12 +14,19 @@ static const NSTimeInterval kMasterTimeout = 60;   // the media proxy fetches th
 
 - (void)reencodeHLS:(SFWebStream *)s formats:(NSSet *)formats done:(void (^)(BOOL))done {
     SFBackground(^{
-        SFLoopbackResponse *r = [SFLoopbackClient get:s.upstream range:nil timeout:kMasterTimeout];
+        // the variant up to the re-encode's height (ORF: 720p instead of 1080p - 2.65x instead of 2.06x real
+        // time here, a third fewer bytes from the source, measured 2026-11-27); the media proxy reduces its
+        // master to it (a stored item has only its downloaded variant)
+        int maxHeight = [SFWebTranscode maxHeightFor:@"av01"];
+        NSURLComponents *c = [NSURLComponents componentsWithURL:s.upstream resolvingAgainstBaseURL:NO];
+        NSString *q = [NSString stringWithFormat:@"height=%d", maxHeight];
+        c.percentEncodedQuery = c.percentEncodedQuery.length ? [c.percentEncodedQuery stringByAppendingFormat:@"&%@", q] : q;
+        SFLoopbackResponse *r = [SFLoopbackClient get:c.URL ?: s.upstream range:nil timeout:kMasterTimeout];
         NSString *text = r.status == 200 && r.body ? [[NSString alloc] initWithData:r.body encoding:NSUTF8StringEncoding] : nil;
         long long bandwidth = 0;
         // a master: its variant + audio rendition; a media playlist: itself (audio inside)
         NSArray *tracks = ![text hasPrefix:@"#EXTM3U"] ? nil
-                        : [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound ? SFHLSChooseVariant(text, s.upstream.absoluteString, &bandwidth)
+                        : [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound ? SFHLSChooseVariant(text, s.upstream.absoluteString, maxHeight, &bandwidth)
                         : @[s.upstream.absoluteString];
         SFMain(^{
             if (!tracks.count) { SFLog(@"web: %@ as HLS (its playlist answered %ld)", s.item.identifier, (long)r.status); done(NO); return; }

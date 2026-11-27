@@ -145,11 +145,15 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
     }
     if (n >= (NSInteger)s.playlists.count) { [x respondJSON:404 object:@{@"error": @"not found"}]; return; }
     NSString *url = n < 0 ? s.url : s.playlists[(NSUInteger)n];
+    // the root's variant: the best up to 1080p (the TV, downloads) or, asked with ?height=<lines>, up to
+    // that (the browser segmenter re-encoding into a smaller picture reads less and decodes less)
+    int asked = [x.request.query[@"height"] intValue];
+    int maxHeight = asked > 0 ? MIN(asked, kSFHLSMaxHeight) : kSFHLSMaxHeight;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         NSInteger st = 0; NSString *eff = nil; NSError *e = nil;
         NSData *d = SFCurlFetchLimitedFinal(url, &st, &eff, &e, ^BOOL(NSUInteger n) { return [SFHTTPBudget takeSource:n token:[x.request header:@"x-sofa-read-budget"]]; });
         NSString *text = d ? [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] : nil;
-        if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = SFHLSOneVariant(text, eff ?: url);
+        if (n < 0 && [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound) text = SFHLSOneVariant(text, eff ?: url, maxHeight);
         dispatch_async(self.queue, ^{
             if (!text || st >= 400) { [x respondJSON:st >= 400 ? st : 502 object:@{@"error": e.localizedDescription ?: @"playlist"}]; return; }
             NSString *body = [self rewrite:text base:eff ?: url session:s];
@@ -278,7 +282,7 @@ static NSArray *SegmentsOf(NSString *text, NSString *base, NSString *item) {
         if (!root) { fail(@"Wiedergabeliste nicht erreichbar"); return; }
         long long bandwidth = 0;
         NSArray *media = [root rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound
-            ? SFHLSChooseVariant(root, eff ?: url.absoluteString, &bandwidth) : @[eff ?: url.absoluteString];
+            ? SFHLSChooseVariant(root, eff ?: url.absoluteString, kSFHLSMaxHeight, &bandwidth) : @[eff ?: url.absoluteString];
         if (!media.count) { fail(@"Keine Variante"); return; }
         NSMutableArray *playlists = [NSMutableArray new], *resources = [NSMutableArray new];
         for (NSString *mu in media) {

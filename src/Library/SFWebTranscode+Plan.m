@@ -62,6 +62,8 @@ static const NSTimeInterval kProbeTimeout = 20;
     return plan;
 }
 
++ (int)maxHeightFor:(NSString *)codec { return [codec isEqualToString:@"av01"] ? kMaxHeightAV1 : kMaxHeight; }
+
 // Encoder, size, rate, bit rate and segments of a video encoded into `codec` (avc1 | av01); NO without
 // an encoder for it
 + (BOOL)capPlan:(SFSegmentPlan *)plan probe:(SFAVProbe *)p codec:(NSString *)codec {

@@ -52,9 +52,9 @@ NSArray *SFHLSResources(NSString *text, NSString *base) {
     return out;
 }
 
-// the best variant up to kSFHLSMaxHeight (by bandwidth), and the default audio rendition of its group if
+// the best variant up to maxHeight (by bandwidth), and the default audio rendition of its group if
 // it has its own playlist: @[variant URL, audio URL?], bandwidth
-NSArray *SFHLSChooseVariant(NSString *master, NSString *base, long long *bandwidth) {
+NSArray *SFHLSChooseVariant(NSString *master, NSString *base, int maxHeight, long long *bandwidth) {
     NSArray *lines = [master componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
     NSDictionary *best = nil; NSString *bestURL = nil; long long bestBW = -1; BOOL bestFits = NO;
     NSMutableDictionary *audio = [NSMutableDictionary new];   // group -> URL (DEFAULT=YES wins)
@@ -70,7 +70,7 @@ NSArray *SFHLSChooseVariant(NSString *master, NSString *base, long long *bandwid
         NSString *uri = [lines[i + 1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         long long bw = [a[@"BANDWIDTH"] longLongValue];
         int height = [[[a[@"RESOLUTION"] ?: @"" componentsSeparatedByString:@"x"] lastObject] intValue];
-        BOOL fits = height == 0 || height <= kSFHLSMaxHeight;
+        BOOL fits = height == 0 || height <= maxHeight;
         if ((fits && !bestFits) || (fits == bestFits && bw > bestBW)) { best = a; bestURL = SFHLSAbsolute(uri, base); bestBW = bw; bestFits = fits; }
     }
     if (!bestURL) return nil;
@@ -83,9 +83,9 @@ NSArray *SFHLSChooseVariant(NSString *master, NSString *base, long long *bandwid
 // audio renditions (an audio description stays choosable): lavf probes the first segments of every
 // variant before it plays - 8 variants made an ORF start 13-21 s (2026-11-08) - and it never switches
 // variants anyway. What playback keeps is then what a download needs.
-NSString *SFHLSOneVariant(NSString *master, NSString *base) {
+NSString *SFHLSOneVariant(NSString *master, NSString *base, int maxHeight) {
     long long bw = 0;
-    NSString *chosen = [SFHLSChooseVariant(master, base, &bw) firstObject];
+    NSString *chosen = [SFHLSChooseVariant(master, base, maxHeight, &bw) firstObject];
     if (!chosen) return master;
     NSArray *lines = [master componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
     NSString *group = nil;

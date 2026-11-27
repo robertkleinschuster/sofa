@@ -33,17 +33,21 @@ int main(void) { @autoreleasepool {
         "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a1\",NAME=\"de\",DEFAULT=YES,URI=\"audio/de.m3u8\"\n"
         "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a2\",NAME=\"de\",DEFAULT=YES,URI=\"audio2/de.m3u8\"\n"
         "#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,AUDIO=\"a1\"\nv360.m3u8\n"
+        "#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,AUDIO=\"a1\"\nv720.m3u8\n"
         "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO=\"a1\"\nv1080.m3u8\n"
         "#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160,AUDIO=\"a2\"\nv2160.m3u8\n"
         "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,URI=\"iframes.m3u8\"\n";
     long long bw = 0;
-    NSArray *v = SFHLSChooseVariant(master, base, &bw);
+    NSArray *v = SFHLSChooseVariant(master, base, kSFHLSMaxHeight, &bw);
     expect(v.count == 2 && [v[0] isEqual:@"https://cdn.example/vod/v1080.m3u8"] && [v[1] isEqual:@"https://cdn.example/vod/audio/de.m3u8"] && bw == 5000000,
            "the best variant up to 1080p, with its group's audio");
-    NSString *one = SFHLSOneVariant(master, base);
+    NSString *one = SFHLSOneVariant(master, base, kSFHLSMaxHeight);
     expect([one rangeOfString:@"v1080.m3u8"].location != NSNotFound && [one rangeOfString:@"v360.m3u8"].location == NSNotFound
            && [one rangeOfString:@"v2160.m3u8"].location == NSNotFound && [one rangeOfString:@"audio2/"].location == NSNotFound
            && [one rangeOfString:@"I-FRAME"].location == NSNotFound, "the master for the player: only that variant and its audio");
-    expect([SFHLSOneVariant(@"#EXTM3U\n#EXTINF:4,\nseg.ts\n", base) isEqual:@"#EXTM3U\n#EXTINF:4,\nseg.ts\n"], "no variants: the playlist as it is");
+    v = SFHLSChooseVariant(master, base, 720, &bw);
+    expect(v.count == 2 && [v[0] isEqual:@"https://cdn.example/vod/v720.m3u8"] && bw == 3000000, "up to 720 lines (a re-encode into 720p): the 720p variant");
+    expect([SFHLSOneVariant(master, base, 720) rangeOfString:@"v1080.m3u8"].location == NSNotFound, "... and the master reduced to it");
+    expect([SFHLSOneVariant(@"#EXTM3U\n#EXTINF:4,\nseg.ts\n", base, kSFHLSMaxHeight) isEqual:@"#EXTM3U\n#EXTINF:4,\nseg.ts\n"], "no variants: the playlist as it is");
     return bad ? 1 : 0;
 } }

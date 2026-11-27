@@ -39,4 +39,5 @@ extern NSString *const SFWebTranscodeBusyMessage;   // the viewer's message when
 // viewer) - when the browser decodes it, the source isn't in it and Sofa has an encoder for it.
 + (SFSegmentPlan *)planVideo:(NSString *)video audio:(NSString *)audio formats:(NSSet *)formats
                    keyframes:(NSArray *)keyframes reencode:(NSString *)reencode asIs:(BOOL *)asIs error:(NSString **)why;
++ (int)maxHeightFor:(NSString *)codec;   // the most lines a video is encoded into (avc1 1080, av01 720)
 @end

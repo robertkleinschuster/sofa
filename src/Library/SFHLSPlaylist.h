@@ -8,8 +8,9 @@ extern const int kSFHLSMaxHeight;   // the highest variant taken (1080p)
 NSDictionary *SFHLSAttributes(NSString *line);             // a tag's attribute list: KEY=value / KEY="value"
 NSString *SFHLSAbsolute(NSString *uri, NSString *base);    // absolute against base; nil only for a nil uri
 NSArray *SFHLSResources(NSString *text, NSString *base);   // a media playlist's URIs (segments, keys, init sections)
-// the best variant up to kSFHLSMaxHeight (by bandwidth) and its group's default audio rendition when
-// it has its own playlist: @[variant URL, audio URL?]; nil = none
-NSArray *SFHLSChooseVariant(NSString *master, NSString *base, long long *bandwidth);
+// the best variant up to `maxHeight` lines (by bandwidth; kSFHLSMaxHeight for the TV and downloads, less
+// for a re-encode into a smaller picture) and its group's default audio rendition when it has its own
+// playlist: @[variant URL, audio URL?]; nil = none
+NSArray *SFHLSChooseVariant(NSString *master, NSString *base, int maxHeight, long long *bandwidth);
 // the master with only that variant and its audio renditions (what a download keeps is what plays)
-NSString *SFHLSOneVariant(NSString *master, NSString *base);
+NSString *SFHLSOneVariant(NSString *master, NSString *base, int maxHeight);
