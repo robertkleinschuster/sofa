@@ -5,8 +5,32 @@
 // A source re-encoded for fewer bytes (`reencode`) falls back to playing as it is.
 #import "SFWebStreams+Private.h"
 #import "SFSegmentTrack.h"
+#import "SFLoopbackClient.h"
+#import "SFHLSPlaylist.h"
+
+static const NSTimeInterval kMasterTimeout = 60;   // the media proxy fetches the playlist from the source
 
 @implementation SFWebStreams (Transcode)
+
+- (void)reencodeHLS:(SFWebStream *)s formats:(NSSet *)formats done:(void (^)(BOOL))done {
+    SFBackground(^{
+        SFLoopbackResponse *r = [SFLoopbackClient get:s.upstream range:nil timeout:kMasterTimeout];
+        NSString *text = r.status == 200 && r.body ? [[NSString alloc] initWithData:r.body encoding:NSUTF8StringEncoding] : nil;
+        long long bandwidth = 0;
+        // a master: its variant + audio rendition; a media playlist: itself (audio inside)
+        NSArray *tracks = ![text hasPrefix:@"#EXTM3U"] ? nil
+                        : [text rangeOfString:@"#EXT-X-STREAM-INF"].location != NSNotFound ? SFHLSChooseVariant(text, s.upstream.absoluteString, &bandwidth)
+                        : @[s.upstream.absoluteString];
+        SFMain(^{
+            if (!tracks.count) { SFLog(@"web: %@ as HLS (its playlist answered %ld)", s.item.identifier, (long)r.status); done(NO); return; }
+            [self segment:s video:tracks[0] audio:tracks.count > 1 ? tracks[1] : nil keyframes:nil formats:formats reencode:@"av01"
+                     done:^(BOOL segmented, BOOL asIs, NSString *why) {
+                if (!segmented && !asIs) SFLog(@"web: %@ as HLS (%@)", s.item.identifier, why);
+                done(segmented);
+            }];
+        });
+    });
+}
 
 - (void)segment:(SFWebStream *)s video:(NSString *)video audio:(NSString *)audio keyframes:(NSArray *)keyframes
         formats:(NSSet *)formats reencode:(NSString *)reencode done:(void (^)(BOOL, BOOL, NSString *))done {

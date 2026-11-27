@@ -32,8 +32,8 @@ extern NSString *const SFWebTranscodeBusyMessage;   // the viewer's message when
 @interface SFWebTranscode (Plan)   // SFWebTranscode+Plan.m
 // How `video` (+ `audio`, nil: in the video's input) becomes something a browser decoding `formats`
 // (SFAVBrowserCodec names: avc1, vp09, av01, hvc1, mp4a, opus) plays. Blocking (a background queue):
-// reads the source's headers. nil when it needs no segmenter (*asIs: one MP4 file of codecs the browser
-// plays) or can't help (*why, for the log). `keyframes` (s): where the video's segments may start, when
+// reads the source's headers. nil when it needs no segmenter (*asIs: one MP4 file or an HLS media
+// playlist of codecs the browser plays) or can't help (*why, for the log). `keyframes` (s): where the video's segments may start, when
 // the caller knows them (a fragmented MP4's sidx); else the container's index. `reencode` (nil: none):
 // a codec to encode the video into even where the browser plays the source's (av01: fewer bytes for the
 // viewer) - when the browser decodes it, the source isn't in it and Sofa has an encoder for it.

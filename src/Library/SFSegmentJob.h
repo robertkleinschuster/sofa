@@ -19,6 +19,7 @@ typedef NS_ENUM(NSInteger, SFSegmentMode) { SFSegmentModeNone, SFSegmentModeCopy
 @property (nonatomic) double segment;                        // encoded video: seconds per segment
 @property (nonatomic, copy) NSArray *starts;                 // every segment's start (s, ascending, first 0)
 @property (nonatomic) double duration;                       // s
+@property (nonatomic) int64_t originUs;                      // the timeline's start in the source's timestamps (SFAVProbe)
 - (NSUInteger)segmentAt:(double)seconds;                     // the segment playing at that time
 @end
 

@@ -68,6 +68,7 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
     id<SFSegmentTrack> audio = nil;
     if (p.audioMode == SFSegmentModeCopy) audio = [[SFSegmentCopy alloc] initWithURL:audioURL type:AVMEDIA_TYPE_AUDIO timeout:kReadTimeout];
     else if (p.audioMode == SFSegmentModeEncode) audio = [[SFSegmentAudio alloc] initWithURL:audioURL timeout:kReadTimeout];
+    video.originUs = p.originUs; audio.originUs = p.originUs;
     @synchronized (self) { _video = video; _audio = audio; }
     if (self.cancelled) return nil;
     int64_t startUs = (int64_t)([p.starts[_first] doubleValue] * 1e6);

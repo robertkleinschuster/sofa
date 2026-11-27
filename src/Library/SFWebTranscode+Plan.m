@@ -33,7 +33,10 @@ static const NSTimeInterval kProbeTimeout = 20;
     BOOL copyAudio = p.audioTag && p.audioCopyable && [formats containsObject:p.audioTag];
     BOOL noAudio = p.audioCodec == AV_CODEC_ID_NONE;
     if (p.mp4File && copyVideo && (noAudio || copyAudio)) { *asIs = YES; return nil; }
-    plan.videoURL = video; plan.audioURL = audio; plan.duration = p.duration;
+    // an HLS presentation the browser decodes: its own HLS player reads it (an ADTS audio track isn't
+    // copyable into MP4, but the browser plays it)
+    if (p.hls && copyVideo && (noAudio || [formats containsObject:p.audioTag ?: @""])) { *asIs = YES; return nil; }
+    plan.videoURL = video; plan.audioURL = audio; plan.duration = p.duration; plan.originUs = p.originUs;
     NSArray *keys = keyframes.count > 1 ? keyframes : p.keyframes;
     if (into) {
         plan.videoMode = SFSegmentModeEncode;

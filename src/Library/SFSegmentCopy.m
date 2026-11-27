@@ -18,6 +18,7 @@ static const int64_t kSlackUs = 2000;   // timestamps of one instant may differ 
 @end
 
 @implementation SFSegmentCopy {
+    int64_t _originUs;
     NSString *_url;
     enum AVMediaType _type;
     NSTimeInterval _timeout;
@@ -32,6 +33,7 @@ static const int64_t kSlackUs = 2000;   // timestamps of one instant may differ 
     return self;
 }
 
+@synthesize originUs = _originUs;
 - (const AVCodecParameters *)parameters { return _in.stream->codecpar; }
 - (AVRational)timeBase { return _in.stream->time_base; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
@@ -39,7 +41,8 @@ static const int64_t kSlackUs = 2000;   // timestamps of one instant may differ 
 - (BOOL)startAt:(int64_t)us error:(NSString **)why {
     if (!_in && !(_in = [SFAVInput open:_url type:_type timeout:_timeout error:why])) return NO;
     if (_cancelled) [_in cancel];
-    _offset = av_rescale_q(SFSegmentOffsetUs, AV_TIME_BASE_Q, _in.stream->time_base);
+    _in.originUs = _originUs;
+    _offset = av_rescale_q(SFSegmentOffsetUs - _originUs, AV_TIME_BASE_Q, _in.stream->time_base);
     _pending = nil;
     _startUs = us;
     _skipping = YES;
@@ -64,7 +67,7 @@ static const int64_t kSlackUs = 2000;   // timestamps of one instant may differ 
             p = [SFAVPacket taking:pkt];
         }
         AVPacket *q = p.packet;
-        int64_t t = [self timeOf:q], dur = [_in microseconds:q->duration];
+        int64_t t = [self timeOf:q], dur = [_in durationMicroseconds:q->duration];
         BOOL key = (q->flags & AV_PKT_FLAG_KEY) != 0;
         if (t == AV_NOPTS_VALUE) continue;   // no time: no place in a segment
         if (_skipping) {   // after a seek: from the keyframe at the start / the audio around it

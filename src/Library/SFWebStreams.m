@@ -144,9 +144,15 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
         if (!prefix) { cannot(nil); return; }
         s.prefixes = @[prefix];
     }
-    // a file (a mediathek's MP4, online or downloaded) for a browser decoding AV1: re-encoded into it -
-    // a third of the bytes over the viewer's line (docs/pwa.md §8); as before when that can't be
-    NSString *reencode = !s.live && s.kind != SFWebStreamHLS && [formats containsObject:@"av01"] ? @"av01" : nil;
+    // on demand (a mediathek's MP4 or HLS, online or downloaded) for a browser decoding AV1: re-encoded
+    // into it - less than half the bytes over the viewer's line (docs/pwa.md §8); as before when that can't be
+    NSString *reencode = !s.live && [formats containsObject:@"av01"] ? @"av01" : nil;
+    if (s.kind == SFWebStreamHLS && reencode) {
+        [self reencodeHLS:s formats:formats done:^(BOOL segmented) {
+            [self opened:s app:app duration:segmented ? s.transcode.duration : item.duration done:done];
+        }];
+        return;
+    }
     if (s.kind == SFWebStreamHLS || s.live || (!stored && !reencode)) { [self opened:s app:app duration:item.duration done:done]; return; }
     // a stored file: as it is where the browser plays it (an MP4 of its codecs), else through the segmenter
     NSString *input = url.isFileURL ? url.path : local.absoluteString;

@@ -223,6 +223,7 @@ static NSDictionary *EncoderOrder(void) {
     av_frame_free(&_frame); av_frame_free(&_cur); av_frame_free(&_next); av_frame_free(&_emit); av_frame_free(&_scaled); av_packet_free(&_pkt);
 }
 
+@synthesize originUs = _originUs;
 - (const AVCodecParameters *)parameters { return _par; }
 - (AVRational)timeBase { return kTB; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
@@ -238,6 +239,7 @@ static NSDictionary *EncoderOrder(void) {
 
 - (BOOL)openWithError:(NSString **)why {
     if (!(_in = [SFAVInput open:_url type:AVMEDIA_TYPE_VIDEO timeout:_timeout error:why])) return NO;
+    _in.originUs = _originUs;
     if (_cancelled) [_in cancel];
     AVCodecParameters *sp = _in.stream->codecpar;
     // AV1: dav1d (FFmpeg's own av1 decoder needs a hardware decoder this Mac lacks)
@@ -253,8 +255,9 @@ static NSDictionary *EncoderOrder(void) {
     if (!(_enc = NewEncoder(_encoderName, _w, _h, _fps, _perSegment, _bitrate, ^BOOL { return self->_cancelled; }, why))) return NO;
     if (!_clearColors) {   // x264 writes the source's colour description into the stream (VUI)
         _enc->color_primaries = sp->color_primaries; _enc->color_trc = sp->color_trc;
-        _enc->colorspace = sp->color_space; _enc->color_range = sp->color_range;
+        _enc->colorspace = sp->color_space;
     }
+    _enc->color_range = AVCOL_RANGE_MPEG;   // what it gets (converted(): a full-range source is brought into it)
     _par = avcodec_parameters_alloc();
     avcodec_parameters_from_context(_par, _enc);
     return YES;
@@ -312,18 +315,28 @@ static NSDictionary *EncoderOrder(void) {
     return _emit;
 }
 
-// A decoded frame as the encoder takes it: 8-bit 4:2:0 at the output size
+// A decoded frame as the encoder takes it: 8-bit 4:2:0, TV range (16-235), at the output size. A
+// full-range source (JPEG range: a yuvj* format - FFmpeg's deprecated way of saying it, which swscale
+// warns about on every frame - or the frame's range) is converted: swscale's frame API takes both
+// ranges from the frames (the older sws_setColorspaceDetails left the values full-range here, measured
+// 2026-11-27 on a Tagesschau file: luma 0-255 in a stream marked TV range).
 - (AVFrame *)converted:(AVFrame *)f {
-    if (f->format == AV_PIX_FMT_YUV420P && f->width == _w && f->height == _h) return f;
-    if (!_scaled) {
-        _scaled = av_frame_alloc();
-        _scaled->format = AV_PIX_FMT_YUV420P; _scaled->width = _w; _scaled->height = _h;
-        if (av_frame_get_buffer(_scaled, 0) < 0) return NULL;
+    switch (f->format) {   // the same planes; the range said as the range
+        case AV_PIX_FMT_YUVJ420P: f->format = AV_PIX_FMT_YUV420P; f->color_range = AVCOL_RANGE_JPEG; break;
+        case AV_PIX_FMT_YUVJ422P: f->format = AV_PIX_FMT_YUV422P; f->color_range = AVCOL_RANGE_JPEG; break;
+        case AV_PIX_FMT_YUVJ444P: f->format = AV_PIX_FMT_YUV444P; f->color_range = AVCOL_RANGE_JPEG; break;
+        default: break;
     }
-    _sws = sws_getCachedContext(_sws, f->width, f->height, f->format, _w, _h, AV_PIX_FMT_YUV420P, SWS_BILINEAR, NULL, NULL, NULL);
-    if (!_sws || av_frame_make_writable(_scaled) < 0) return NULL;
-    sws_scale(_sws, (const uint8_t *const *)f->data, f->linesize, 0, f->height, _scaled->data, _scaled->linesize);
+    if (f->format == AV_PIX_FMT_YUV420P && f->color_range != AVCOL_RANGE_JPEG && f->width == _w && f->height == _h) return f;
+    if (!_sws && !(_sws = sws_alloc_context())) return NULL;
+    av_opt_set_int(_sws, "sws_flags", SWS_BILINEAR, 0);
+    av_frame_unref(_scaled ?: (_scaled = av_frame_alloc()));
+    _scaled->format = AV_PIX_FMT_YUV420P; _scaled->width = _w; _scaled->height = _h;
+    _scaled->color_range = AVCOL_RANGE_MPEG;
+    _scaled->colorspace = f->colorspace; _scaled->color_primaries = f->color_primaries; _scaled->color_trc = f->color_trc;
+    if (sws_scale_frame(_sws, _scaled, f) < 0) return NULL;
     av_frame_copy_props(_scaled, f);
+    _scaled->color_range = AVCOL_RANGE_MPEG;
     return _scaled;
 }
 

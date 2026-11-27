@@ -39,6 +39,10 @@
 #  15  a file (a mediathek's H.264 + AAC MP4) for a browser decoding AV1: re-encoded into AV1 by the segmenter
 #      (720p50 kept, a keyframe opening every segment, also after a seek), the AAC copied; as it is for
 #      a browser without AV1
+#  16  an HLS presentation on demand (as ORF's: a video variant + a separate audio rendition, MPEG-TS
+#      timestamps from 11.4 s) for a browser decoding AV1: re-encoded into AV1, the audio into AAC, both
+#      on the video's timeline from 0, a keyframe per segment, also after a seek; as the playlist for a
+#      browser without AV1
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -55,7 +59,7 @@ APPS=(); SRV=
 cleanup() {
   for p in ${APPS[@]+"${APPS[@]}"}; do kill "$p" 2>/dev/null; done
   [ -n "$SRV" ] && kill "$SRV" 2>/dev/null
-  for i in a b c d e f; do { defaults delete de.sofa.dev.$INST$i; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST$i.plist"; } >/dev/null 2>&1; done
+  for i in a b c d e f g; do { defaults delete de.sofa.dev.$INST$i; rm -f "$HOME/Library/Preferences/de.sofa.dev.$INST$i.plist"; } >/dev/null 2>&1; done
   [ $fail = 0 ] || [ -z "${WEBTEST_KEEP:-}" ] && rm -rf "$T" || echo "kept: $T"
 }
 trap cleanup EXIT
@@ -73,6 +77,12 @@ cp "$SRC/tests/fixtures/web/video.mp4" "$SRC/tests/fixtures/web/audio.mp4" "$T/m
 # a mediathek's kind of file: H.264 720p50 + AAC in one MP4 (small: 12 s, a static-ish pattern)
 /opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=1280x720:rate=50 -f lavfi -i sine=d=12 -t 12 -c:v libx264 -preset ultrafast \
   -b:v 400k -pix_fmt yuv420p -c:a aac -movflags +faststart "$T/media/x/file.mp4" || { echo "ffmpeg failed"; exit 1; }
+# an on-demand HLS presentation as ORF sends it: a video-only variant and a separate audio rendition (a
+# master), MPEG-TS whose timestamps don't start at 0 (10 s + the muxer's 1.4 s; the AAC's priming earlier)
+mkdir -p "$T/media/hls" && (cd "$T/media/hls" && /opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=640x360:rate=50 -f lavfi -i sine=f=440 -t 12 \
+  -map 0:v -map 1:a -c:v libx264 -preset ultrafast -g 50 -pix_fmt yuv420p -c:a aac -output_ts_offset 10 -f hls -hls_time 4 -hls_playlist_type vod \
+  -hls_segment_filename 's_%v_%d.ts' -master_pl_name master.m3u8 -var_stream_map "v:0,agroup:aud a:0,agroup:aud,default:yes" 'p_%v.m3u8') \
+  || { echo "ffmpeg failed"; exit 1; }
 cat > "$T/srv.py" <<'PY'
 import http.server, sys, os
 ROOT = sys.argv[1]
@@ -442,6 +452,32 @@ for enc in none libx264; do
   closed "$SID"
   echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 done
+
+echo "==> instance g: an HLS presentation for an AV1 browser"
+EXTRA=""
+start g "http://127.0.0.1:$MP/media/hls/master.m3u8"
+U="https://$NAME:$PORT"
+pair G
+ITEM=$(itemjson example:2)
+P=$(C "${A[@]}" -d "$(body "$ITEM" formats='["av01","avc1","mp4a"]')" "$U/api/play"); SID=$(echo "$P" | json 'd.get("stream","")')
+check "16: HLS (video variant + audio rendition) for an AV1 browser: AV1 segments, the audio as AAC" "$(echo "$P" | json 'd["kind"] + " " + d.get("segmented","-")')" "hls libsvtav1+aac"
+check "16: ... 3 segments of 4 s" "$(C "$U/m/$SID/index.m3u8" | grep -c '^#EXTINF:4.000,')" 3
+check "16: init and segments 0-2 answer" "$(segs $SID 0 1 2)" "200 200 200 200"
+F=$(probe "$T/seg.mp4" | facts 4)
+has "16: AV1 + AAC" "$F" "codecs=av1,aac"
+has "16: the timeline from the video's first timestamp (11.4 s): 12 s from 0 (+10 s), a keyframe per segment" "$F" "video=600 first=10.000 keys=[10.0, 14.0, 18.0] maxgap=0.020"
+A0=$(echo "$F" | sed -n 's/.*audio=[0-9]* first=\([0-9.]*\).*/\1/p')
+/opt/local/bin/python3.14 -I -c "import sys; sys.exit(0 if abs($A0 - 10.0) < 0.05 else 1)" && ok "16: ... the audio on the same clock ($A0)" || bad "16: audio starts at $A0"
+check "16: a seek to the last segment" "$(segs $SID 2)" "200 200"
+F=$(probe "$T/seg.mp4" | facts 4)
+has "16: ... opens with a keyframe at 8 s (+10 s)" "$F" "video=200 first=18.000 keys=[18.0]"
+A0=$(echo "$F" | sed -n 's/.*audio=[0-9]* first=\([0-9.]*\).*/\1/p')
+/opt/local/bin/python3.14 -I -c "import sys; sys.exit(0 if abs($A0 - 18.0) < 0.05 else 1)" && ok "16: ... the audio with it ($A0)" || bad "16: audio of the seek starts at $A0"
+closed "$SID"
+P=$(C "${A[@]}" -d "$(body "$ITEM" formats='["avc1","mp4a"]')" "$U/api/play")
+check "16: the same for a browser without AV1: the playlist as it is" "$(echo "$P" | json 'd["kind"] + " " + d.get("segmented","-")')" "hls -"
+closed "$(echo "$P" | json 'd["stream"]')"
+echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 
 [ $fail = 0 ] && echo "==> test-web ok" || echo "==> test-web FAILED"
 exit $fail

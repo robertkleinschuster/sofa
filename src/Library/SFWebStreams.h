@@ -8,8 +8,8 @@
 // client says so, after 10 minutes unused (4 hours after it said "paused": background audio, picture
 // in picture - docs/api.md "Streams"), when its app session ends (YouTube: the engine closes an unused
 // one, as on the TV), or when the same device opens a fourth. What the client can't play as it is goes
-// through the segmenter (SFWebTranscode; docs/pwa.md §8), and so does a file (a mediathek's MP4) for a
-// client decoding AV1: re-encoded into it, in fewer bytes. An ended stream answers 410: the client plays
+// through the segmenter (SFWebTranscode; docs/pwa.md §8), and so does a video on demand (a mediathek's
+// MP4 or HLS) for a client decoding AV1: re-encoded into it, in fewer bytes. An ended stream answers 410: the client plays
 // the item again at its position.
 #import "SFModel.h"
 #import "SFLocalHTTP.h"

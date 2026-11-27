@@ -81,8 +81,14 @@ static int Interrupted(void *opaque) {
     }
 }
 
+// HLS: FFmpeg's demuxer drops a non-video stream's packets before the target as measured on that
+// playlist's own baseline (hls.c, ts_offset) - a separate audio rendition started 257 ms past it
+// (test-web 16). Such a stream is sought this much earlier; the tracks cut to the exact start themselves.
+static const int64_t kHLSAudioLeadUs = 10000000;
+
 - (BOOL)seek:(int64_t)us {
-    int64_t ts = av_rescale_q(us, AV_TIME_BASE_Q, _stream->time_base);
+    if (_stream->codecpar->codec_type != AVMEDIA_TYPE_VIDEO && strcmp(_format->iformat->name, "hls") == 0) us -= kHLSAudioLeadUs;
+    int64_t ts = av_rescale_q(us + _originUs, AV_TIME_BASE_Q, _stream->time_base);
     if (_stream->start_time != AV_NOPTS_VALUE && ts < _stream->start_time) ts = _stream->start_time;
     [self arm];
     int r = avformat_seek_file(_format, _stream->index, INT64_MIN, ts, ts, 0);
@@ -92,8 +98,10 @@ static int Interrupted(void *opaque) {
 }
 
 - (int64_t)microseconds:(int64_t)ts {
-    return ts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : av_rescale_q(ts, _stream->time_base, AV_TIME_BASE_Q);
+    return ts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE : av_rescale_q(ts, _stream->time_base, AV_TIME_BASE_Q) - _originUs;
 }
+
+- (int64_t)durationMicroseconds:(int64_t)d { return av_rescale_q(d, _stream->time_base, AV_TIME_BASE_Q); }
 
 - (void)cancel { _guard->cancelled = 1; }
 - (BOOL)cancelled { return _guard->cancelled != 0; }
@@ -131,6 +139,10 @@ static int Interrupted(void *opaque) {
         _audioCopyable = (ap->codec_id == AV_CODEC_ID_AAC && ap->extradata_size > 0) || ap->codec_id == AV_CODEC_ID_OPUS;
     }
     _mp4File = !separate && strstr(v.format->iformat->name, "mp4") != NULL;
+    const char *fmt = v.format->iformat->name;
+    _hls = strcmp(fmt, "hls") == 0;
+    if ((_hls || strcmp(fmt, "mpegts") == 0) && v.stream->start_time != AV_NOPTS_VALUE)
+        _originUs = av_rescale_q(v.stream->start_time, v.stream->time_base, AV_TIME_BASE_Q);
     NSMutableArray *keys = [NSMutableArray new];
     // a Matroska/WebM file's cues are read at its first seek (a DASH WebM has them up front, a
     // muxer's at the end): one seek to the start makes the demuxer read them

@@ -22,7 +22,11 @@ NSString *SFAVBrowserCodec(enum AVCodecID codec);
 - (int)read:(AVPacket *)packet;
 // To the last keyframe at or before `us` (microseconds of the source's timeline); NO on an error
 - (BOOL)seek:(int64_t)us;
-- (int64_t)microseconds:(int64_t)ts;      // a timestamp of the stream in microseconds (AV_NOPTS_VALUE stays)
+// Where the source's timeline starts, in the stream's timestamps as µs (SFAVProbe originUs; default 0):
+// a position is its timestamp minus this
+@property (nonatomic) int64_t originUs;
+- (int64_t)microseconds:(int64_t)ts;      // a timestamp of the stream as a position (µs; AV_NOPTS_VALUE stays)
+- (int64_t)durationMicroseconds:(int64_t)d;   // a duration in the stream's time base, in µs
 - (void)cancel;                           // any thread: the current and every later read fails
 @property (nonatomic, readonly) BOOL cancelled;
 @end
@@ -36,6 +40,12 @@ NSString *SFAVBrowserCodec(enum AVCodecID codec);
 @property (nonatomic, readonly) int width, height, bitDepth;
 @property (nonatomic, readonly) double fps, duration;                    // frames per second, seconds
 @property (nonatomic, readonly) BOOL mp4File;                            // one MP4 file (video + audio) a browser reads as is
+@property (nonatomic, readonly) BOOL hls;                                // an HLS media playlist (the browser's HLS player reads it as is)
+// The timeline's start in the video's timestamps (µs): a broadcast container's (HLS, MPEG-TS) first
+// video timestamp - they don't start at 0 by design (a packager's 10 s, a channel's clock); 0 for a
+// file (MP4, WebM: their timestamps are the timeline, edit lists and pre-skip included). The audio of
+// a separate rendition shares the video's clock (RFC 8216), so the same origin holds for both.
+@property (nonatomic, readonly) int64_t originUs;
 // Keyframe times (s, ascending) from the container's index (WebM cues, an MP4's sync samples); nil
 // when it names none beyond the first (a fragmented MP4 - its sidx is read by SFWebHLS)
 @property (nonatomic, readonly, copy) NSArray *keyframes;

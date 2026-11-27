@@ -43,4 +43,8 @@ typedef NS_ENUM(NSInteger, SFWebStreamKind) {
 // into even where the browser plays it as it is (SFWebTranscode's planVideo). Main thread.
 - (void)segment:(SFWebStream *)s video:(NSString *)video audio:(NSString *)audio keyframes:(NSArray *)keyframes
         formats:(NSSet *)formats reencode:(NSString *)reencode done:(void (^)(BOOL segmented, BOOL asIs, NSString *why))done;
+// An HLS presentation on demand (`s` HLS: ORF's, online or stored) for a browser decoding AV1: the
+// variant the media proxy keeps (the best up to 1080p) and its default audio rendition re-encoded by
+// the segmenter; done(NO) leaves `s` as the playlist. Main thread.
+- (void)reencodeHLS:(SFWebStream *)s formats:(NSSet *)formats done:(void (^)(BOOL segmented))done;
 @end

@@ -257,10 +257,23 @@ An older PWA sends nothing: H.264 + AAC. Sofa then decides per track:
   for a browser decoding AV1 (iPhone 15 Pro and later, recent Macs and PCs): its video is **re-encoded
   into AV1** by the segmenter (the audio copied), for fewer bytes over the viewer's line; as the file
   when that can't be (no AV1 encoder, another device's playback encodes);
+- an HLS presentation on demand (ORF's, online or downloaded) for a browser decoding AV1: the variant
+  the media proxy keeps (the best up to 1080p) and its default audio rendition through the segmenter -
+  video into AV1, audio into AAC (an ADTS track isn't copyable into MP4); else the playlist as it is;
 - anything else that is stored (a downloaded YouTube video's VP9/AV1 + Opus, two separate tracks, a
   local MKV): through the **segmenter** - each track **copied** where the browser decodes its codec, else
   **encoded** (video H.264, audio AAC-LC stereo 48 kHz). Not stored (besides a file for AV1): as
   before (§3). Lives stay as they are (the segmenter makes VOD playlists only).
+
+**Timelines.** A file's timestamps are its timeline (MP4 edit lists, Opus pre-skip included). A broadcast
+container's (HLS, MPEG-TS) don't start at 0 by design (ORF: 0.02 s, ffmpeg's muxer 1.4 s, a channel's
+clock): there the timeline starts at the video's first timestamp (`SFAVProbe originUs`), and a separate
+audio rendition - on the same clock (RFC 8216) - is placed by the same origin, so A/V stay as the source
+has them. FFmpeg's HLS demuxer drops a non-video stream's packets before a seek target measured on that
+playlist's own baseline (an audio rendition started 257 ms late): audio is sought 10 s earlier and cut
+to the exact start by the track. A full-range source (`yuvj420p`, Tagesschau) is converted into TV range
+through swscale's frame API (`sws_setColorspaceDetails` left it full-range; the deprecated format also
+logged a warning per frame).
 - When the segmenter can't (no encoder for the browser's formats, another device's playback encodes):
   the app's browser format (YouTube: the online H.264 session), else the message
   "Dieses Video lässt sich im Browser nicht abspielen." / "Gerade wird schon ein anderes Video für einen
@@ -332,7 +345,9 @@ again with the next.
   1), but SVT keeps its intra period exactly from a job's first frame - each job starts at a segment
   boundary, so every segment opens with a keyframe (as with VideoToolbox). A real BR mediathek file
   (720p50, 3.2 Mbit/s video + 250 kbit/s AAC): 1.26 Mbit/s video at VMAF 90.6, the stream 56 % smaller,
-  a 4 s segment in ~1.9 s through the media proxy. HEVC is no option here: the HD 3000 has no HEVC
+  a 4 s segment in ~1.9 s through the media proxy. ORF (720p50 HLS, 4.2 Mbit/s video variant + 192 kbit/s
+  AAC rendition): ~2x real time, a seek 20 minutes in delivered its first segment after 5.5-7.5 s (the
+  proxy fetches the source's 9.6 s segments first). HEVC is no option here: the HD 3000 has no HEVC
   encoder, x265 ultrafast managed 1080p50 at 0.71x. Memory: ~285 MB while it encodes.
 
 Not done: audio beyond stereo is downmixed; subtitles of stored items are not offered in the browser.

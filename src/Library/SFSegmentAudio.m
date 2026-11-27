@@ -35,6 +35,7 @@ static const int kRate = 48000;
     av_frame_free(&_frame); av_frame_free(&_chunk); av_packet_free(&_pkt);
 }
 
+@synthesize originUs = _originUs;
 - (const AVCodecParameters *)parameters { return _par; }
 - (AVRational)timeBase { return (AVRational){1, kRate}; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
@@ -51,6 +52,7 @@ static const int kRate = 48000;
 
 - (BOOL)openWithError:(NSString **)why {
     if (!(_in = [SFAVInput open:_url type:AVMEDIA_TYPE_AUDIO timeout:_timeout error:why])) return NO;
+    _in.originUs = _originUs;
     if (_cancelled) [_in cancel];
     AVCodecParameters *sp = _in.stream->codecpar;
     const AVCodec *dc = avcodec_find_decoder(sp->codec_id);
