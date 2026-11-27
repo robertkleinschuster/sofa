@@ -1,7 +1,7 @@
 // SFSegmentTrack - one track of the browser segmenter (SFSegmentJob, docs/pwa.md §8): from a start
 // position on, the packets up to each segment boundary in the output's time base, ready for the
-// fragmented-MP4 muxer. Three kinds: copied as they are (SFSegmentCopy), video encoded to H.264
-// (SFSegmentVideo: VideoToolbox - the GPU's encoder - or x264), audio encoded to AAC (SFSegmentAudio).
+// fragmented-MP4 muxer. Three kinds: copied as they are (SFSegmentCopy), video encoded (SFSegmentVideo:
+// H.264 by VideoToolbox - the GPU's encoder - or x264; AV1 by SVT-AV1), audio encoded to AAC (SFSegmentAudio).
 // A track runs on its job's thread; only -cancel may come from another one.
 #import "SFAVInput.h"
 
@@ -33,15 +33,17 @@ static const int64_t SFSegmentOffsetUs = 10000000;
 @end
 
 @interface SFSegmentVideo : NSObject <SFSegmentTrack>
-// H.264 of at most `height` lines at `fps` (frames of a faster source are left out evenly) and about
-// `bitrate` bits/s, an IDR frame at every multiple of `segmentUs`. `encoder`: h264_videotoolbox | libx264.
+// `encoder`'s codec (H.264: h264_videotoolbox | libx264, AV1: libsvtav1) of at most `height` lines at
+// `fps` (frames of a faster source are left out evenly) and about `bitrate` bits/s (AV1: its ceiling),
+// a keyframe opening every multiple of `segmentUs`.
 - (instancetype)initWithURL:(NSString *)url encoder:(NSString *)encoder width:(int)width height:(int)height fps:(double)fps
                     bitrate:(long long)bitrate segment:(int64_t)segmentUs timeout:(NSTimeInterval)seconds;
-// The H.264 encoders this machine opens, best first (tried once: VideoToolbox only with the hardware)
-+ (NSArray *)availableEncoders;
+// The encoders of `codec` (avc1 | av01, SFAVBrowserCodec names) this machine opens, best first (tried
+// once: VideoToolbox only with the hardware)
++ (NSArray *)encodersFor:(NSString *)codec;
 // ... those that take a picture of that size (this Mac's VideoToolbox encoder: at least 640 on the
 // longer side - smaller sessions are refused, -8973, measured 2026-11-26)
-+ (NSArray *)encodersForWidth:(int)width height:(int)height;
++ (NSArray *)encodersFor:(NSString *)codec width:(int)width height:(int)height;
 + (void)encoderFailed:(NSString *)encoder;   // it broke during a job: not offered again until relaunch
 @end
 

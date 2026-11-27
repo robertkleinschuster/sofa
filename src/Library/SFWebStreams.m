@@ -144,10 +144,13 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
         if (!prefix) { cannot(nil); return; }
         s.prefixes = @[prefix];
     }
-    if (s.kind == SFWebStreamHLS || !stored || s.live) { [self opened:s app:app duration:item.duration done:done]; return; }
+    // a file (a mediathek's MP4, online or downloaded) for a browser decoding AV1: re-encoded into it -
+    // a third of the bytes over the viewer's line (docs/pwa.md §8); as before when that can't be
+    NSString *reencode = !s.live && s.kind != SFWebStreamHLS && [formats containsObject:@"av01"] ? @"av01" : nil;
+    if (s.kind == SFWebStreamHLS || s.live || (!stored && !reencode)) { [self opened:s app:app duration:item.duration done:done]; return; }
     // a stored file: as it is where the browser plays it (an MP4 of its codecs), else through the segmenter
     NSString *input = url.isFileURL ? url.path : local.absoluteString;
-    [self segment:s video:input audio:nil keyframes:nil formats:formats done:^(BOOL segmented, BOOL asIs, NSString *why) {
+    [self segment:s video:input audio:nil keyframes:nil formats:formats reencode:reencode done:^(BOOL segmented, BOOL asIs, NSString *why) {
         if (!segmented && !asIs) SFLog(@"web: %@ as it is (%@)", item.identifier, why);
         [self opened:s app:app duration:segmented ? s.transcode.duration : item.duration done:done];
     }];
@@ -174,7 +177,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
             if (pair && [formats containsObject:Tag(vt.codec)] && [formats containsObject:Tag(at.codec)]) { byRanges(); return; }
             NSMutableArray *keys = nil;   // a fragmented MP4's subsegments start at keyframes (its sidx)
             if (vt) { keys = [NSMutableArray new]; double t = 0; for (NSArray *seg in vt.segments) { [keys addObject:@(t)]; t += [seg[2] doubleValue]; } }
-            [self segment:s video:v audio:a keyframes:keys formats:formats done:^(BOOL segmented, BOOL asIs, NSString *why2) {
+            [self segment:s video:v audio:a keyframes:keys formats:formats reencode:nil done:^(BOOL segmented, BOOL asIs, NSString *why2) {
                 if (segmented) { [self opened:s app:app duration:s.transcode.duration done:done]; return; }
                 SFLog(@"web: %@ - no segments (%@; the browser decodes %@)", s.item.identifier, why2 ?: why ?: @"?",
                       [[formats.allObjects sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@" "]);

@@ -36,6 +36,9 @@
 #      timeline), the job pauses ahead and stops when idle, closing ends it; another device's playback
 #      is not encoded meanwhile (its app's browser format instead); without any encoder the app's
 #      browser format; x264 when it is the only one
+#  15  a file (a mediathek's H.264 + AAC MP4) for a browser decoding AV1: re-encoded into AV1 by the segmenter
+#      (720p50 kept, a keyframe opening every segment, also after a seek), the AAC copied; as it is for
+#      a browser without AV1
 # Exit code 0 = all ok.
 set -u
 unset DYLD_INSERT_LIBRARIES
@@ -67,8 +70,9 @@ cp "$SRC/tests/fixtures/web/video.mp4" "$SRC/tests/fixtures/web/audio.mp4" "$T/m
 /opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=640x360:rate=50 -t 60 -c:v libvpx-vp9 -b:v 300k -g 50 -deadline realtime -cpu-used 8 \
   "$T/media/x/v.webm" && /opt/local/bin/ffmpeg -v error -y -f lavfi -i sine=f=440:d=60 -c:a libopus -b:a 48k "$T/media/x/a.webm" \
   || { echo "ffmpeg failed"; exit 1; }
-/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=96x54:rate=25 -f lavfi -i sine=d=4 -t 4 -c:v libx264 -pix_fmt yuv420p \
-  -c:a aac -movflags +faststart "$T/media/x/file.mp4" || { echo "ffmpeg failed"; exit 1; }
+# a mediathek's kind of file: H.264 720p50 + AAC in one MP4 (small: 12 s, a static-ish pattern)
+/opt/local/bin/ffmpeg -v error -y -f lavfi -i testsrc2=size=1280x720:rate=50 -f lavfi -i sine=d=12 -t 12 -c:v libx264 -preset ultrafast \
+  -b:v 400k -pix_fmt yuv420p -c:a aac -movflags +faststart "$T/media/x/file.mp4" || { echo "ffmpeg failed"; exit 1; }
 cat > "$T/srv.py" <<'PY'
 import http.server, sys, os
 ROOT = sys.argv[1]
@@ -133,6 +137,31 @@ body() { /opt/local/bin/python3.14 -I -c 'import json,sys; d={"item": json.loads
 itemjson() { C "${A[@]}" "$U/api/app/example" | json "json.dumps(next(i for s in d['shelves'] for i in s['items'] if i.get('id')=='$1')['d'])"; }
 # logged PATTERN [s]: the instance's log has it (default 30 s)
 logged() { local i; for i in $(seq 1 $(( ${2:-30} * 10 ))); do grep -qE "$1" "$LOG" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
+# probe FILE: per stream "codec" and the packets as "stream pts key" lines (ffprobe)
+probe() { /opt/local/bin/ffprobe -v error -show_entries stream=index,codec_name:packet=stream_index,pts_time,flags -of compact=p=0:nk=1 "$1"; }
+# segs STREAM N...: init + those segments of a stream, one file ($T/seg.mp4); prints the HTTP codes
+segs() {
+  local sid=$1 codes; shift
+  codes=$(C -o "$T/seg.mp4" "$U/m/$sid/init.mp4" -w '%{http_code}')
+  for n in "$@"; do codes="$codes $(C -o "$T/one.m4s" "$U/m/$sid/s/$n.m4s" -w '%{http_code}')"; cat "$T/one.m4s" >> "$T/seg.mp4"; done
+  echo "$codes"
+}
+# facts PROBE-OUTPUT SEGMENT-SECONDS: codecs, packets, keyframe times, first video/audio pts, gaps
+facts() { /opt/local/bin/python3.14 -I -c '
+import sys
+seg = float(sys.argv[1]); codecs = {}; pk = {0: [], 1: []}
+for l in sys.stdin.read().split():
+    f = l.split("|")
+    if len(f) == 2: codecs[int(f[0])] = f[1]
+    elif len(f) == 3 and f[1] != "N/A": pk[int(f[0])].append((float(f[1]), "K" in f[2]))
+v, a = pk[0], pk[1]
+keys = [round(t, 3) for t, k in v if k]
+gaps = max([b[0] - x[0] for x, b in zip(v, v[1:])] or [0])
+print("codecs=%s" % ",".join(codecs[i] for i in sorted(codecs)))
+print("video=%d first=%.3f keys=%s maxgap=%.3f" % (len(v), v[0][0] if v else -1, keys, gaps))
+print("audio=%d first=%.3f" % (len(a), a[0][0] if a else -1))' "$1"; }
+# closed STREAM: the player's "closed"
+closed() { C "${A[@]}" -o /dev/null -d '{"state":"closed"}' "$U/api/stream/$1"; }
 # status EXPR: Sofa's status now (no generation: answers at once), EXPR of it
 status() { C "${A[@]}" "$U/api/status" | json "$1"; }
 # until_status EXPR WANT [s]: the status until EXPR is WANT (or the time is up); prints the last value
@@ -235,6 +264,24 @@ WANT=$(dd if="$T/media/x/file.mp4" bs=1 skip=100 count=32 2>/dev/null | od -An -
 check "9: its bytes with Range (media proxy -> relay)" "$GOT" "$WANT"
 grep -q "media-proxy: example:2 is file:example:2" "$LOG" && ok "9: through the media store (a track of the item)" || bad "9: the media proxy did not take the file"
 
+# a file for a browser decoding AV1 (iPhone 15 Pro and later, recent Macs): re-encoded into AV1, the AAC copied
+P=$(C "${A[@]}" -d "$(body "$ITEM" formats='["av01","avc1","mp4a"]')" "$U/api/play"); SID=$(echo "$P" | json 'd.get("stream","")')
+check "15: a file for an AV1 browser: AV1 segments (SVT-AV1), the AAC copied" "$(echo "$P" | json 'd["kind"] + " " + d.get("segmented","-")')" "hls libsvtav1+copy"
+logged 'transcode: .* -> libsvtav1 1280x720 50 fps' 5 && ok "15: ... 720p50 as the source" || bad "15: plan: $(grep 'transcode: .* ->' "$LOG" | tail -1)"
+check "15: ... 3 segments of 4 s" "$(C "$U/m/$SID/index.m3u8" | grep -c '^#EXTINF:4.000,')" 3
+check "15: init and segments 0-2 answer" "$(segs $SID 0 1 2)" "200 200 200 200"
+F=$(probe "$T/seg.mp4" | facts 4)
+has "15: AV1 + AAC" "$F" "codecs=av1,aac"
+has "15: 12 s at 50 fps from 0 (+10 s), a keyframe opening each segment, no gap" "$F" "video=600 first=10.000 keys=[10.0, 14.0, 18.0] maxgap=0.020"
+A0=$(echo "$F" | sed -n 's/.*audio=[0-9]* first=\([0-9.]*\).*/\1/p')
+/opt/local/bin/python3.14 -I -c "import sys; sys.exit(0 if abs($A0 - 10.0) < 0.05 else 1)" && ok "15: A/V start together ($A0)" || bad "15: audio starts at $A0"
+check "15: a seek to the last segment" "$(segs $SID 2)" "200 200"
+has "15: ... opens with a keyframe at 8 s (+10 s)" "$(probe "$T/seg.mp4" | facts 4)" "video=200 first=18.000 keys=[18.0]"
+closed "$SID"
+P=$(C "${A[@]}" -d "$(body "$ITEM" formats='["avc1","mp4a"]')" "$U/api/play")
+check "15: the same file for a browser without AV1: as it is" "$(echo "$P" | json 'd["kind"] + " " + d.get("segmented","-")')" "file -"
+closed "$(echo "$P" | json 'd["stream"]')"
+
 # the browser hands its playback over to the TV: its own stream of the item ends
 R=$(C "${A[@]}" -w "\n%{http_code}" -d "$(body "$ITEM" at=2)" "$U/api/tv/play")
 check "12: sent to the TV while the browser plays it" "$(echo "$R" | tail -1)" 200
@@ -307,36 +354,12 @@ echo quit 1<>"$FIFO" 2>/dev/null; dev_wait_exit $APP || kill $APP 2>/dev/null
 
 echo "==> instance d: the segmenter"
 serve_media
-# probe FILE: per stream "codec" and the packets as "stream pts key" lines (ffprobe)
-probe() { /opt/local/bin/ffprobe -v error -show_entries stream=index,codec_name:packet=stream_index,pts_time,flags -of compact=p=0:nk=1 "$1"; }
-# segs STREAM N...: init + those segments of a stream, one file ($T/seg.mp4); prints the HTTP codes
-segs() {
-  local sid=$1 codes; shift
-  codes=$(C -o "$T/seg.mp4" "$U/m/$sid/init.mp4" -w '%{http_code}')
-  for n in "$@"; do codes="$codes $(C -o "$T/one.m4s" "$U/m/$sid/s/$n.m4s" -w '%{http_code}')"; cat "$T/one.m4s" >> "$T/seg.mp4"; done
-  echo "$codes"
-}
-# facts PROBE-OUTPUT SEGMENT-SECONDS: codecs, packets, keyframe times, first video/audio pts, gaps
-facts() { /opt/local/bin/python3.14 -I -c '
-import sys
-seg = float(sys.argv[1]); codecs = {}; pk = {0: [], 1: []}
-for l in sys.stdin.read().split():
-    f = l.split("|")
-    if len(f) == 2: codecs[int(f[0])] = f[1]
-    elif len(f) == 3 and f[1] != "N/A": pk[int(f[0])].append((float(f[1]), "K" in f[2]))
-v, a = pk[0], pk[1]
-keys = [round(t, 3) for t, k in v if k]
-gaps = max([b[0] - x[0] for x, b in zip(v, v[1:])] or [0])
-print("codecs=%s" % ",".join(codecs[i] for i in sorted(codecs)))
-print("video=%d first=%.3f keys=%s maxgap=%.3f" % (len(v), v[0][0] if v else -1, keys, gaps))
-print("audio=%d first=%.3f" % (len(a), a[0][0] if a else -1))' "$1"; }
 EXTRA="SOFA_EXAMPLE_FILL=0.05 SOFA_TRANSCODE_IDLE=3 SOFA_EXAMPLE_BROWSER_VIDEO=http://127.0.0.1:$MP/media/x/video.mp4 SOFA_EXAMPLE_BROWSER_AUDIO=http://127.0.0.1:$MP/media/x/audio.mp4"
 start d "http://127.0.0.1:$MP/media/x/v.webm" "http://127.0.0.1:$MP/media/x/a.webm"
 U="https://$NAME:$PORT"
 pair D
 ITEM=$(itemjson example:1)
 play() { C "${A[@]}" -d "$(body "$ITEM" formats="$1")" "$U/api/play"; }
-closed() { C "${A[@]}" -o /dev/null -d '{"state":"closed"}' "$U/api/stream/$1"; }
 P=$(play '["avc1","mp4a"]')
 check "14: not downloaded: the app's browser format (byte ranges)" "$(echo "$P" | json 'd["kind"] + " " + d.get("segmented", "-")')" "hls -"
 closed "$(echo "$P" | json 'd["stream"]')"

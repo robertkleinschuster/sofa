@@ -1,7 +1,8 @@
 // SFWebTranscode - a playback of Sofa im Browser cut into HLS segments on demand (docs/pwa.md §8): a
 // source the browser can't play as it is (a stored YouTube video's VP9/AV1 + Opus for Safari, two
 // separate WebM tracks for any browser, a local MKV) becomes fragmented-MP4 HLS - every track copied
-// where the browser decodes its codec, else encoded (H.264: VideoToolbox, then x264; AAC). Nothing is
+// where the browser decodes its codec, else encoded (H.264: VideoToolbox, then x264; AAC) - and so does
+// an online one the caller wants in fewer bytes (a mediathek's H.264 as AV1: SVT-AV1). Nothing is
 // made ahead of need: a job starts at the segment asked for (a seek is a new job), runs a few
 // segments ahead of the player and waits, stops when nobody asked for a while; segments are kept in
 // memory within a bound and go with the session. One session encodes video at a time.
@@ -33,7 +34,9 @@ extern NSString *const SFWebTranscodeBusyMessage;   // the viewer's message when
 // (SFAVBrowserCodec names: avc1, vp09, av01, hvc1, mp4a, opus) plays. Blocking (a background queue):
 // reads the source's headers. nil when it needs no segmenter (*asIs: one MP4 file of codecs the browser
 // plays) or can't help (*why, for the log). `keyframes` (s): where the video's segments may start, when
-// the caller knows them (a fragmented MP4's sidx); else the container's index.
+// the caller knows them (a fragmented MP4's sidx); else the container's index. `reencode` (nil: none):
+// a codec to encode the video into even where the browser plays the source's (av01: fewer bytes for the
+// viewer) - when the browser decodes it, the source isn't in it and Sofa has an encoder for it.
 + (SFSegmentPlan *)planVideo:(NSString *)video audio:(NSString *)audio formats:(NSSet *)formats
-                   keyframes:(NSArray *)keyframes asIs:(BOOL *)asIs error:(NSString **)why;
+                   keyframes:(NSArray *)keyframes reencode:(NSString *)reencode asIs:(BOOL *)asIs error:(NSString **)why;
 @end

@@ -114,7 +114,9 @@ which doesn't exist yet (both URLs answer 404 today, checked 2026-11-26). When t
   `[av01, hvc1, avc1, mp4a]` on an iPhone with an AV1 decoder (15 Pro and later), H.264 + AAC always.
 
 Sofa uses the list twice. Stored items: tracks the client decodes are served as they are (copied into
-HLS segments), the rest is converted to H.264/AAC (docs/pwa.md §8). Apps with a session format of their
+HLS segments), the rest is converted to H.264/AAC (docs/pwa.md §8). A single file (a mediathek's MP4,
+online or stored) for a client listing `av01`: its video is re-encoded into AV1 (720p at most, the audio
+copied - `segmented: "libsvtav1+copy"`), else served as it is. Apps with a session format of their
 own: **YouTube** opens the online session in the client's codecs (`SFApp resolveForBrowser:formats:done:`
 → the engine's `vcodecs`/`acodecs`): a VP9/AV1 + Opus client gets VP9/AV1 + Opus (copied into segments),
 an H.264 client H.264 + AAC; the biggest picture first (up to 1080p - VP9 often has it where H.264

@@ -1249,7 +1249,7 @@ components:
           type: string
         segmented:
           type: string
-          description: What the segmenter does (diagnostics) - "copy+copy", "h264_videotoolbox+aac", ...
+          description: What the segmenter does (diagnostics) - "copy+copy", "h264_videotoolbox+aac", "libsvtav1+copy" (a file re-encoded into AV1 for fewer bytes), ...
     Report:
       type: object
       required: [state]

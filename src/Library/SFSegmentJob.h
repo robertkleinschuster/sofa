@@ -12,7 +12,7 @@ typedef NS_ENUM(NSInteger, SFSegmentMode) { SFSegmentModeNone, SFSegmentModeCopy
 @interface SFSegmentPlan : NSObject
 @property (nonatomic, copy) NSString *videoURL, *audioURL;   // audioURL nil: the audio is in the video's input
 @property (nonatomic) SFSegmentMode videoMode, audioMode;    // audio SFSegmentModeNone: no audio track
-@property (nonatomic, copy) NSString *encoder;               // h264_videotoolbox | libx264 (video encoded)
+@property (nonatomic, copy) NSString *encoder;               // h264_videotoolbox | libx264 | libsvtav1 (video encoded)
 @property (nonatomic) int width, height;                     // encoded video
 @property (nonatomic) double fps;                            // encoded video
 @property (nonatomic) long long bitrate;                     // encoded video, bits/s

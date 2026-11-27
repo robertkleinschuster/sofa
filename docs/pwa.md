@@ -253,10 +253,14 @@ User: "das Format on the fly transkodieren" - a stored item always plays from th
 browser's own HLS player (Safari, iOS) is told H.264 + AAC only - what every Apple player decodes in HLS.
 An older PWA sends nothing: H.264 + AAC. Sofa then decides per track:
 - a DASH pair of fMP4 tracks of codecs the browser decodes (YouTube's browser session): byte ranges as in §3;
-- a single MP4 file of such codecs (a mediathek download): served as the file;
+- a single MP4 file of such codecs (a mediathek's, online or downloaded): served as the file - except
+  for a browser decoding AV1 (iPhone 15 Pro and later, recent Macs and PCs): its video is **re-encoded
+  into AV1** by the segmenter (the audio copied), for fewer bytes over the viewer's line; as the file
+  when that can't be (no AV1 encoder, another device's playback encodes);
 - anything else that is stored (a downloaded YouTube video's VP9/AV1 + Opus, two separate tracks, a
   local MKV): through the **segmenter** - each track **copied** where the browser decodes its codec, else
-  **encoded** (video H.264, audio AAC-LC stereo 48 kHz). Not stored: as before (§3).
+  **encoded** (video H.264, audio AAC-LC stereo 48 kHz). Not stored (besides a file for AV1): as
+  before (§3). Lives stay as they are (the segmenter makes VOD playlists only).
 - When the segmenter can't (no encoder for the browser's formats, another device's playback encodes):
   the app's browser format (YouTube: the online H.264 session), else the message
   "Dieses Video lässt sich im Browser nicht abspielen." / "Gerade wird schon ein anderes Video für einen
@@ -264,7 +268,7 @@ An older PWA sends nothing: H.264 + AAC. Sofa then decides per track:
 
 **Where it lives.** In Sofa's process, on the FFmpeg libraries libmpv already uses (bundled in
 `Contents/Frameworks`; FFmpeg 9.0.2 of MacPorts is built with VideoToolbox, AudioToolbox and x264 -
-no port change was needed; Sofa now links them itself, Makefile). Library modules:
+no port change was needed; Sofa now links them itself, Makefile; SVT-AV1 comes with it). Library modules:
 `SFAVInput` (one track through libavformat: a file or a local route, every blocking read bounded by
 a deadline and cancellable; `SFAVProbe`: codecs, size, rate, duration, the container's keyframe
 index), `SFSegmentTrack` (`SFSegmentCopy`, `SFSegmentVideo`, `SFSegmentAudio`), `SFSegmentJob` (one
@@ -320,6 +324,16 @@ again with the next.
   under the same ceiling. 10-bit (VP9.2 HDR) is converted to 8 bit without tone mapping.
 - One encoding session at a time: a second device's play while one encodes (asked within 45 s) gets
   the app's browser format; the same device's new play takes the encoder over. Copying has no limit.
+- AV1 (`libsvtav1`, the only AV1 encoder; measured 2026-11-27 on 20 s of Das Erste's 720p50 H.264
+  broadcast, 3.7 Mbit/s): preset 10 without lookahead 2.65x real time with every core busy, ~1.1 Mbit/s
+  at VMAF 92.6 (preset 12: 3.0x, VMAF 92.0); 1080p50 only 1.48x (preset 12) - too tight next to the
+  TV's playback, so at most **720 lines**. Constant quality (CRF 35) under a ceiling of ~0.05 bit per
+  pixel (720p50 2.3 Mbit/s), closed GOPs. FFmpeg's SVT-AV1 wrapper forces no keyframes (only with gop
+  1), but SVT keeps its intra period exactly from a job's first frame - each job starts at a segment
+  boundary, so every segment opens with a keyframe (as with VideoToolbox). A real BR mediathek file
+  (720p50, 3.2 Mbit/s video + 250 kbit/s AAC): 1.26 Mbit/s video at VMAF 90.6, the stream 56 % smaller,
+  a 4 s segment in ~1.9 s through the media proxy. HEVC is no option here: the HD 3000 has no HEVC
+  encoder, x265 ultrafast managed 1080p50 at 0.71x. Memory: ~285 MB while it encodes.
 
 Not done: audio beyond stereo is downmixed; subtitles of stored items are not offered in the browser.
 

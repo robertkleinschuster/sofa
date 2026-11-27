@@ -1,7 +1,8 @@
-// SFSegmentVideo - a video track the browser can't play, as H.264: decoded (VP9 natively, AV1 with
-// dav1d), scaled only when it must be (above the size cap, or not 8-bit 4:2:0), frames of a faster
-// source left out evenly down to the rate cap, encoded by VideoToolbox (the GPU's encoder; measured
-// on this Mac 2026-11-26, docs/pwa.md §8) or x264, with an IDR frame at every segment boundary.
+// SFSegmentVideo - a video track re-encoded for the browser: decoded (VP9 natively, AV1 with dav1d),
+// scaled only when it must be (above the size cap, or not 8-bit 4:2:0), frames of a faster source left
+// out evenly down to the rate cap, encoded - H.264 by VideoToolbox (the GPU's encoder; measured on this
+// Mac 2026-11-26, docs/pwa.md §8) or x264 (what the browser can't play as it is), AV1 by SVT-AV1 (an
+// online source in fewer bytes) - with a keyframe opening every segment.
 #import "SFSegmentTrack.h"
 #import "SFCore.h"
 #include <libswscale/swscale.h>
@@ -56,9 +57,9 @@ static AVCodecContext *Configured(const AVCodec *c, NSString *name, int w, int h
     e->color_range = AVCOL_RANGE_MPEG;
     e->time_base = kTB;
     e->framerate = av_d2q(fps, 100000);
-    // a keyframe every segment: VideoToolbox on 10.9 ignores forced keyframes (measured) but keeps its
-    // interval exactly, so the frames are constant-rate and every segment has `gop` of them (x264 is
-    // forced as well)
+    // a keyframe every segment: VideoToolbox on 10.9 and FFmpeg's SVT-AV1 wrapper (unless gop is 1)
+    // ignore forced keyframes (measured) but keep their interval exactly from a job's first frame, so
+    // the frames are constant-rate and every segment has `gop` of them (x264 is forced as well)
     e->gop_size = gop;
     e->max_b_frames = 0;                 // decode order = presentation order: every segment starts clean
     e->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;   // SPS/PPS in the init segment (avcC)
@@ -66,6 +67,16 @@ static AVCodecContext *Configured(const AVCodec *c, NSString *name, int w, int h
         e->bit_rate = bitrate;
         av_opt_set_int(e->priv_data, "allow_sw", 0, 0);   // the hardware or nothing (Apple's software encoder is no better than x264)
         av_opt_set(e->priv_data, "profile", "high", 0);
+    } else if ([name isEqualToString:@"libsvtav1"]) {
+        // SVT-AV1: constant quality under a ceiling (capped CRF), closed GOPs (a segment decodes on its
+        // own). Preset 10 without lookahead: 720p50 at 2.65x real time here, VMAF 92.6 at ~1.1 Mbit/s
+        // from a 3.7 Mbit/s H.264 broadcast (preset 12: 3.0x, 92.0; measured 2026-11-27, docs/pwa.md §8)
+        av_opt_set_int(e->priv_data, "preset", 10, 0);
+        av_opt_set_int(e->priv_data, "crf", 35, 0);
+        av_opt_set(e->priv_data, "svtav1-params", "lookahead=0", 0);
+        e->flags |= AV_CODEC_FLAG_CLOSED_GOP;
+        e->rc_max_rate = bitrate;
+        e->rc_buffer_size = (int)MIN(bitrate * 2, INT_MAX);
     } else {
         // x264: constant quality with a ceiling; no lookahead, no B-frames (tune zerolatency: measured
         // 4.7x real time at 1080p30 here, the default lookahead only 1.6x)
@@ -151,25 +162,33 @@ static NSMutableSet *gBroken;
     NSUInteger _unkeyed;      // boundaries the encoder did not start with a keyframe (logged)
 }
 
-+ (NSArray *)availableEncoders {
-    static NSArray *found;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        // dev instances may narrow the choice (tests of the fallbacks): SOFA_TRANSCODE_ENCODERS=libx264 | none
-        NSString *only = SFDevEnv(@"SOFA_TRANSCODE_ENCODERS");
-        NSArray *order = only ? [only componentsSeparatedByString:@","] : @[@"h264_videotoolbox", @"libx264"];
-        NSMutableArray *ok = [NSMutableArray new];
-        for (NSString *n in order) if (n.length && ![n isEqualToString:@"none"] && EncoderWorks(n)) [ok addObject:n];
-        SFLog(@"transcode: H.264 encoders here: %@", ok.count ? [ok componentsJoinedByString:@", "] : @"none");
-        found = ok;
-    });
+// Every encoder Sofa uses, by codec, best first
+static NSDictionary *EncoderOrder(void) {
+    return @{@"avc1": @[@"h264_videotoolbox", @"libx264"], @"av01": @[@"libsvtav1"]};
+}
+
++ (NSArray *)encodersFor:(NSString *)codec {
+    static NSMutableDictionary *found;   // codec -> those that work (tried once each)
+    NSArray *ok;
     @synchronized (self) {
-        return [found filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *n, NSDictionary *b) { return ![gBroken containsObject:n]; }]];
+        if (!found) found = [NSMutableDictionary new];
+        if (!(ok = found[codec ?: @""])) {
+            // dev instances may narrow the choice (tests of the fallbacks): SOFA_TRANSCODE_ENCODERS=libx264 | none
+            NSString *only = SFDevEnv(@"SOFA_TRANSCODE_ENCODERS");
+            NSArray *allowed = only ? [only componentsSeparatedByString:@","] : nil;
+            NSMutableArray *works = [NSMutableArray new];
+            for (NSString *n in EncoderOrder()[codec ?: @""] ?: @[])
+                if ((!allowed || [allowed containsObject:n]) && EncoderWorks(n)) [works addObject:n];
+            SFLog(@"transcode: %@ encoders here: %@", [codec isEqualToString:@"av01"] ? @"AV1" : @"H.264",
+                  works.count ? [works componentsJoinedByString:@", "] : @"none");
+            found[codec ?: @""] = ok = works;
+        }
+        return [ok filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *n, NSDictionary *b) { return ![gBroken containsObject:n]; }]];
     }
 }
 
-+ (NSArray *)encodersForWidth:(int)width height:(int)height {
-    return [[self availableEncoders] filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *n, NSDictionary *b) {
++ (NSArray *)encodersFor:(NSString *)codec width:(int)width height:(int)height {
+    return [[self encodersFor:codec] filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSString *n, NSDictionary *b) {
         return ![n isEqualToString:@"h264_videotoolbox"] || MAX(width, height) >= 640;
     }]];
 }
