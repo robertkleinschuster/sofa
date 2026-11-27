@@ -83,9 +83,11 @@ export class Player {
     addEventListener('pagehide', this.onPageHide);
     addEventListener('keydown', this.onKey);
     this.video.focus({ preventScroll: true });   // the keyboard drives the video's own controls (space, arrows)
-    this.background = new Background(this.video, () => history.back(), (on) => {
-      this.pip.setAttribute('aria-pressed', String(on));
-      this.overlay.classList.toggle('in-pip', on);
+    this.background = new Background(this.video, {
+      close: () => history.back(),
+      pip: (on) => { this.pip.setAttribute('aria-pressed', String(on)); this.overlay.classList.toggle('in-pip', on); },
+      // the sound plays on in the background without the video (background.ts): Sofa hears of it
+      clock: (state) => { this.report(state); if (state === 'playing') this.startClock(); else this.stopClock(); },
     });
     this.wire();
     try {
@@ -162,13 +164,16 @@ export class Player {
 
   private startClock(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => { if (!this.video.paused) this.report('playing'); }, REPORT_EVERY_MS);
+    this.timer = setInterval(() => { if (!this.clock.paused) this.report('playing'); }, REPORT_EVERY_MS);
   }
 
   private stopClock(): void { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
 
+  // whichever element plays: the video, or the carrier of its sound in the background
+  private get clock(): HTMLMediaElement { return this.background?.clock ?? this.video; }
+
   private state(state: StreamReport['state']): StreamReport {
-    const v = this.video;
+    const v = this.clock;
     const r: StreamReport = { state, lactMs: Math.max(0, Date.now() - lastActivity) };
     if (Number.isFinite(v.currentTime)) r.position = Math.max(0, v.currentTime);
     const d = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : this.answer?.duration;

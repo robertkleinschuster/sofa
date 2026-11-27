@@ -121,14 +121,28 @@ browser (they would run as a second live session of the same page).
 The TV is not affected: its player, its engine sessions and their view reports are separate; the
 engine's document refresh already waits for sessions in use.
 
-Beyond the page (`src/background.ts`, 2026-11-26): a "Bild in Bild" button in the player's bar where the
-browser has picture in picture (the standard API, or WebKit's presentation mode on iOS - also in a
-Home Screen app), and `autopictureinpicture` so the browser may enter it by itself when the app goes
-to the background. The audio session is "playback" (WebKit's Audio Session API), and a pause the
-system makes on the way to the background is undone once - the person's own pauses come through the
-Media Session actions (lock screen, Control Center, headphones) or happen while the page shows.
-Media Session also gets the position (the lock screen's seek bar) and "stop" (closes the player).
-What iOS allows in the background is its call: verified on the device, not in test-pwa (Firefox).
+Beyond the page (`src/background.ts`, 2026-11-26/27): a "Bild in Bild" button in the player's bar where
+the browser has picture in picture (the standard API, or WebKit's presentation mode), and
+`autopictureinpicture` so the browser may enter it by itself when the app goes to the background.
+iOS offers no picture in picture in a Home Screen web app (WebKit bug 303885, open): the button stays
+hidden there by the browser's own answer and comes back by itself once Apple fixes it. The audio
+session is "playback" (WebKit's Audio Session API), and a pause the system makes on the way to the
+background is undone once - the person's own pauses come through the Media Session actions (lock
+screen, Control Center, headphones) or happen while the page shows.
+
+**The carrier.** iOS pauses every `<video>` with a picture when the app leaves or the screen locks
+(WebKit `MediaSessionManageriOS`: the Video and VideoAudio session types are background-restricted;
+an `<audio>` element is an Audio session whatever its stream holds, and is not). So the sound is
+carried on by an `<audio>` element of the same stream: it holds the video's URL with metadata loaded
+from the start, is unlocked by the person's first tap (WebKit lets an element play without a gesture
+once it saw one), and when the system pauses the video on the way out it starts at the video's
+position - a hand-over right after audible playback stopped, which WebKit lets a hidden page start.
+Back in front the video takes over at the carrier's position. The player's reports follow whichever
+element plays (`Background.clock`); so do the lock screen's position and actions. A live stream
+carries on from its edge; a MediaSource stream (hls.js, `blob:`) has no URL to carry, there the video
+itself is asked to play on. A second reader of the stream is no burden: the capability path is plain
+GETs, and the paused video reads nothing meanwhile. `test/background.test.ts` plays it through with
+stand-ins for the page and both elements; what iOS really does is verified on the device.
 
 ### 4. Shared state
 
