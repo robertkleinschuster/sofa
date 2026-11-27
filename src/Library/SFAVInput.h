@@ -29,6 +29,21 @@ NSString *SFAVBrowserCodec(enum AVCodecID codec);
 - (int64_t)durationMicroseconds:(int64_t)d;   // a duration in the stream's time base, in µs
 - (void)cancel;                           // any thread: the current and every later read fails
 @property (nonatomic, readonly) BOOL cancelled;
+// No read or seek of it failed or was cut off (a cancel between reads leaves it whole): another job may
+// go on with it after -reuse (the cancel undone)
+@property (nonatomic, readonly) BOOL reusable;
+- (void)reuse;
+@end
+
+// Open inputs kept for the next job of a playback (SFSegmentJob): opening a source again - its headers,
+// an HLS playlist and first segment through the media proxy - took ~0.4-0.7 s per track (ORF, measured
+// 2026-11-27); the probe's inputs serve the first job, a cancelled job's the next (a seek). At most one
+// per source and type; any thread.
+@interface SFAVInputPool : NSObject
+// a kept input of `url` and `type` (reused), else a new one
+- (SFAVInput *)open:(NSString *)url type:(enum AVMediaType)type timeout:(NSTimeInterval)seconds error:(NSString **)why;
+- (void)keep:(SFAVInput *)input url:(NSString *)url;   // when it is reusable
+- (void)drain;                                         // none kept (the playback waits or ended)
 @end
 
 // What a source is: its video and audio tracks (`audioURL` nil: the audio is in the video's input)
@@ -50,4 +65,6 @@ NSString *SFAVBrowserCodec(enum AVCodecID codec);
 // when it names none beyond the first (a fragmented MP4 - its sidx is read by SFWebHLS)
 @property (nonatomic, readonly, copy) NSArray *keyframes;
 @property (nonatomic, readonly, copy) NSString *summary;                 // for the log: "vp9 1920x1080 60 fps + opus"
+// The inputs it opened go to `pool` (the first job goes on with them)
+- (void)keepInputsIn:(SFAVInputPool *)pool video:(NSString *)videoURL audio:(NSString *)audioURL;
 @end

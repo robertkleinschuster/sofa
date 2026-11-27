@@ -288,6 +288,7 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
 // stays (every job's is the same), a later request makes what it asks for again
 - (void)dropSegments {
     dispatch_async(_q, ^{
+        if (!self->_closed && !self->_job) [self->_plan.inputs drain];   // no source held open meanwhile
         if (self->_closed || self->_job || !self->_cache.count) return;
         SFLog(@"transcode: stream %@ waits - %lu segments dropped (%.1f MB)", [self->_stream substringToIndex:6],
               (unsigned long)self->_cache.count, self->_cacheBytes / 1e6);
@@ -302,6 +303,7 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
         self->_closed = YES;
         [self->_job cancel];
         self->_job = nil;
+        [self->_plan.inputs drain];
         [self->_cache removeAllObjects];
         self->_cacheBytes = 0;
         self->_init = nil;

@@ -56,6 +56,8 @@ static const NSTimeInterval kProbeTimeout = 20;
     else if (copyAudio) plan.audioMode = SFSegmentModeCopy;
     else if ([formats containsObject:@"mp4a"]) plan.audioMode = SFSegmentModeEncode;
     else { if (why) *why = [NSString stringWithFormat:@"%@ - the browser decodes neither its audio nor AAC", p.summary]; return nil; }
+    plan.inputs = [SFAVInputPool new];
+    [p keepInputsIn:plan.inputs video:video audio:audio];   // the first job goes on with them
     SFLog(@"transcode: %@ -> %@ (%lu segments)", p.summary, [self describe:plan], (unsigned long)plan.starts.count);
     return plan;
 }

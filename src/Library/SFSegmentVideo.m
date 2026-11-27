@@ -158,6 +158,8 @@ static NSMutableSet *gBroken;
     AVFrame *_frame, *_cur, *_next, *_emit, *_scaled;   // decoded: the frame for the slot, the one after it
     AVPacket *_pkt;
     SFAVPacket *_pending;     // encoded, belongs to the next segment
+    BOOL _seeking;            // the packets up to the start's keyframe are still to be passed over
+    NSMutableArray *_queued;  // read after a seek, to decode first (SFAVPacket)
     BOOL _inputDone, _encoderFlushed, _cancelled, _clearColors, _haveCur, _haveNext, _decoderDone;
     NSUInteger _unkeyed;      // boundaries the encoder did not start with a keyframe (logged)
 }
@@ -216,6 +218,7 @@ static NSDictionary *EncoderOrder(void) {
 }
 
 - (void)dealloc {
+    [_inputs keep:_in url:_url];   // whole: the playback's next job goes on with it
     if (_unkeyed) SFLog(@"transcode: %lu segment(s) did not start with a keyframe", (unsigned long)_unkeyed);
     avcodec_free_context(&_dec); FreeEncoder(&_enc);
     avcodec_parameters_free(&_par);
@@ -223,7 +226,7 @@ static NSDictionary *EncoderOrder(void) {
     av_frame_free(&_frame); av_frame_free(&_cur); av_frame_free(&_next); av_frame_free(&_emit); av_frame_free(&_scaled); av_packet_free(&_pkt);
 }
 
-@synthesize originUs = _originUs;
+@synthesize originUs = _originUs, inputs = _inputs;
 - (const AVCodecParameters *)parameters { return _par; }
 - (AVRational)timeBase { return kTB; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
@@ -233,12 +236,14 @@ static NSDictionary *EncoderOrder(void) {
     if (![_in seek:us]) { if (why) *why = @"seek failed"; return NO; }
     avcodec_flush_buffers(_dec);
     _startUs = us; _pending = nil; _inputDone = _decoderDone = _haveCur = _haveNext = NO;
+    _seeking = YES; _queued = nil;
     _slot = av_rescale(us, _rate.num, (int64_t)AV_TIME_BASE * _rate.den);   // a segment boundary: a multiple of _perSegment
     return YES;
 }
 
 - (BOOL)openWithError:(NSString **)why {
-    if (!(_in = [SFAVInput open:_url type:AVMEDIA_TYPE_VIDEO timeout:_timeout error:why])) return NO;
+    if (!(_in = _inputs ? [_inputs open:_url type:AVMEDIA_TYPE_VIDEO timeout:_timeout error:why]
+                        : [SFAVInput open:_url type:AVMEDIA_TYPE_VIDEO timeout:_timeout error:why])) return NO;
     _in.originUs = _originUs;
     if (_cancelled) [_in cancel];
     AVCodecParameters *sp = _in.stream->codecpar;
@@ -275,13 +280,45 @@ static NSDictionary *EncoderOrder(void) {
         if (r == AVERROR_EOF) { _decoderDone = YES; return NO; }
         if (r != AVERROR(EAGAIN)) { if (why) *why = [NSString stringWithFormat:@"decode: %s", av_err2str(r)]; return NO; }
         if (_inputDone) { avcodec_send_packet(_dec, NULL); continue; }
-        r = [_in read:_pkt];
+        r = [self nextPacket:_pkt];
         if (r == AVERROR_EOF) { _inputDone = YES; avcodec_send_packet(_dec, NULL); continue; }
         if (r < 0) { if (why) *why = [NSString stringWithFormat:@"read: %s", av_err2str(r)]; return NO; }
         r = avcodec_send_packet(_dec, _pkt);
         av_packet_unref(_pkt);
         if (r < 0 && r != AVERROR_INVALIDDATA) { if (why) *why = [NSString stringWithFormat:@"decode: %s", av_err2str(r)]; return NO; }
     }
+}
+
+// The packets to decode after a seek: from the last keyframe at or before the start - read, not decoded,
+// up to it. A seek lands on the keyframe before the target where the container has an index; HLS lands
+// on a segment's start (FFmpeg's demuxer: the one before, at a boundary) - ORF's 9.6 s segments with a
+// keyframe every 4.8 s made a seek decode (and drop) 9 s of 720p50 first: 2.2 s; from the keyframe
+// 0.3 s (measured 2026-11-27).
+- (int)nextPacket:(AVPacket *)pkt {
+    if (_seeking) {
+        _seeking = NO;
+        NSMutableArray *gop = nil;   // from the last keyframe at or before the start
+        for (;;) {
+            int r = [_in read:pkt];
+            if (r == AVERROR_EOF) break;
+            if (r < 0) return r;
+            int64_t pts = [_in microseconds:pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts];
+            int64_t dts = [_in microseconds:pkt->dts != AV_NOPTS_VALUE ? pkt->dts : pkt->pts];
+            BOOL key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
+            BOOL atStart = dts != AV_NOPTS_VALUE && dts >= _startUs;   // no later keyframe can show at or before it
+            if (key && pts != AV_NOPTS_VALUE && pts <= _startUs + kSlackUs) gop = [NSMutableArray new];
+            if (gop || atStart) { if (!gop) gop = [NSMutableArray new]; [gop addObject:[SFAVPacket taking:pkt]]; }
+            else av_packet_unref(pkt);
+            if (atStart) break;
+        }
+        _queued = gop;
+    }
+    if (_queued.count) {
+        av_packet_move_ref(pkt, [_queued.firstObject packet]);
+        [_queued removeObjectAtIndex:0];
+        return 0;
+    }
+    return [_in read:pkt];
 }
 
 // The frame for the next output slot (constant rate: the decoded frame nearest the slot's time - a

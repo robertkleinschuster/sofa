@@ -274,6 +274,16 @@ playlist's own baseline (an audio rendition started 257 ms late): audio is sough
 to the exact start by the track. A full-range source (`yuvj420p`, Tagesschau) is converted into TV range
 through swscale's frame API (`sws_setColorspaceDetails` left it full-range; the deprecated format also
 logged a warning per frame).
+
+**Start time.** Every job logs how long its start took (`transcode: job from segment N: video open .. ms,
+audio .. ms, first segment .. ms later`). The probe's open inputs serve the first job, a job's inputs the
+next one (a seek) - `SFAVInputPool`, only inputs none of whose reads or seeks failed or were cut off:
+opening ORF's two tracks again took ~1 s, now ~45 ms. After a seek the video's packets up to the last
+keyframe at or before the start are read, not decoded (HLS lands on a segment's start: ORF 9.6 s
+segments, a keyframe every 4.8 s - 2.2 s of decoding before, 0.3 s after). Measured 2026-11-27, first
+segment after the init: BR MP4 2.2 s (seek 2.6 s), ORF ~2.5 s (seek ~5.5 s: the source's 5 MB segment
+before the target comes over the line first, ~1.8 s). What remains is encoding: SVT-AV1 needs 0.2 s to
+start and 1.4 s for 4 s of 720p50; shorter segments would cost data (2 s: +13 %, 1 s: +40 %).
 - When the segmenter can't (no encoder for the browser's formats, another device's playback encodes):
   the app's browser format (YouTube: the online H.264 session), else the message
   "Dieses Video lässt sich im Browser nicht abspielen." / "Gerade wird schon ein anderes Video für einen

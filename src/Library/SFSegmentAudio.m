@@ -29,13 +29,14 @@ static const int kRate = 48000;
 }
 
 - (void)dealloc {
+    [_inputs keep:_in url:_url];   // whole: the playback's next job goes on with it
     avcodec_free_context(&_dec); avcodec_free_context(&_enc); avcodec_parameters_free(&_par);
     swr_free(&_swr);
     if (_fifo) av_audio_fifo_free(_fifo);
     av_frame_free(&_frame); av_frame_free(&_chunk); av_packet_free(&_pkt);
 }
 
-@synthesize originUs = _originUs;
+@synthesize originUs = _originUs, inputs = _inputs;
 - (const AVCodecParameters *)parameters { return _par; }
 - (AVRational)timeBase { return (AVRational){1, kRate}; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
@@ -51,7 +52,8 @@ static const int kRate = 48000;
 }
 
 - (BOOL)openWithError:(NSString **)why {
-    if (!(_in = [SFAVInput open:_url type:AVMEDIA_TYPE_AUDIO timeout:_timeout error:why])) return NO;
+    if (!(_in = _inputs ? [_inputs open:_url type:AVMEDIA_TYPE_AUDIO timeout:_timeout error:why]
+                        : [SFAVInput open:_url type:AVMEDIA_TYPE_AUDIO timeout:_timeout error:why])) return NO;
     _in.originUs = _originUs;
     if (_cancelled) [_in cancel];
     AVCodecParameters *sp = _in.stream->codecpar;

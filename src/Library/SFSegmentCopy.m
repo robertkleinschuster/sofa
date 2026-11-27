@@ -33,13 +33,15 @@ static const int64_t kSlackUs = 2000;   // timestamps of one instant may differ 
     return self;
 }
 
-@synthesize originUs = _originUs;
+@synthesize originUs = _originUs, inputs = _inputs;
+- (void)dealloc { [_inputs keep:_in url:_url]; }   // whole: the playback's next job goes on with it
 - (const AVCodecParameters *)parameters { return _in.stream->codecpar; }
 - (AVRational)timeBase { return _in.stream->time_base; }
 - (void)cancel { _cancelled = YES; [_in cancel]; }
 
 - (BOOL)startAt:(int64_t)us error:(NSString **)why {
-    if (!_in && !(_in = [SFAVInput open:_url type:_type timeout:_timeout error:why])) return NO;
+    if (!_in && !(_in = _inputs ? [_inputs open:_url type:_type timeout:_timeout error:why]
+                                 : [SFAVInput open:_url type:_type timeout:_timeout error:why])) return NO;
     if (_cancelled) [_in cancel];
     _in.originUs = _originUs;
     _offset = av_rescale_q(SFSegmentOffsetUs - _originUs, AV_TIME_BASE_Q, _in.stream->time_base);

@@ -26,6 +26,8 @@ static int Interrupted(void *opaque) {
 @implementation SFAVInput {
     SFAVGuard *_guard;
     int64_t _step;   // µs a blocking step may take
+    BOOL _broken;    // a read or seek failed or was cut off
+    enum AVMediaType _type;
 }
 
 + (instancetype)open:(NSString *)url type:(enum AVMediaType)type timeout:(NSTimeInterval)seconds error:(NSString **)why {
@@ -47,6 +49,7 @@ static int Interrupted(void *opaque) {
 
 - (BOOL)openURL:(NSString *)url type:(enum AVMediaType)type timeout:(NSTimeInterval)seconds error:(NSString **)why {
     _step = (int64_t)(seconds * 1e6);
+    _type = type;
     AVFormatContext *fc = avformat_alloc_context();
     if (!fc) { if (why) *why = @"no memory"; return NO; }
     fc->interrupt_callback = (AVIOInterruptCB){ Interrupted, _guard };
@@ -72,9 +75,11 @@ static int Interrupted(void *opaque) {
 
 - (int)read:(AVPacket *)packet {
     for (;;) {
+        if (_guard->cancelled) return AVERROR_EXIT;   // not read: the demuxer stays whole
         [self arm];
         int r = av_read_frame(_format, packet);
         _guard->deadline = 0;
+        if (r < 0 && r != AVERROR_EOF) _broken = YES;
         if (r < 0) return _guard->cancelled ? AVERROR_EXIT : r;
         if (packet->stream_index == _stream->index) return 0;
         av_packet_unref(packet);
@@ -94,6 +99,7 @@ static const int64_t kHLSAudioLeadUs = 10000000;
     int r = avformat_seek_file(_format, _stream->index, INT64_MIN, ts, ts, 0);
     if (r < 0) r = av_seek_frame(_format, _stream->index, ts, AVSEEK_FLAG_BACKWARD);
     _guard->deadline = 0;
+    if (r < 0) _broken = YES;
     return r >= 0;
 }
 
@@ -105,9 +111,40 @@ static const int64_t kHLSAudioLeadUs = 10000000;
 
 - (void)cancel { _guard->cancelled = 1; }
 - (BOOL)cancelled { return _guard->cancelled != 0; }
+- (BOOL)reusable { return _format && !_broken; }
+- (void)reuse { _guard->cancelled = 0; }
+- (enum AVMediaType)type { return _type; }
 @end
 
-@implementation SFAVProbe
+@implementation SFAVInputPool {
+    NSMutableDictionary *_kept;   // "<type> <url>" -> SFAVInput
+}
+
+static NSString *PoolKey(NSString *url, enum AVMediaType type) { return [NSString stringWithFormat:@"%d %@", (int)type, url]; }
+
+- (instancetype)init {
+    if ((self = [super init])) _kept = [NSMutableDictionary new];
+    return self;
+}
+
+- (SFAVInput *)open:(NSString *)url type:(enum AVMediaType)type timeout:(NSTimeInterval)seconds error:(NSString **)why {
+    SFAVInput *i;
+    @synchronized (self) { i = _kept[PoolKey(url, type)]; [_kept removeObjectForKey:PoolKey(url, type)]; }
+    if (i) { [i reuse]; return i; }
+    return [SFAVInput open:url type:type timeout:seconds error:why];
+}
+
+- (void)keep:(SFAVInput *)input url:(NSString *)url {
+    if (!input.reusable || !url) return;
+    @synchronized (self) { _kept[PoolKey(url, [input type])] = input; }
+}
+
+- (void)drain { @synchronized (self) { [_kept removeAllObjects]; } }
+@end
+
+@implementation SFAVProbe {
+    SFAVInput *_v, *_a;
+}
 
 + (instancetype)probeVideo:(NSString *)videoURL audio:(NSString *)audioURL timeout:(NSTimeInterval)seconds error:(NSString **)why {
     SFAVInput *v = [SFAVInput open:videoURL type:AVMEDIA_TYPE_VIDEO timeout:seconds error:why];
@@ -116,7 +153,14 @@ static const int64_t kHLSAudioLeadUs = 10000000;
     SFAVInput *a = [SFAVInput open:audioURL ?: videoURL type:AVMEDIA_TYPE_AUDIO timeout:seconds error:&ignored];
     SFAVProbe *p = [SFAVProbe new];
     [p describeVideo:v audio:a separate:audioURL != nil];
+    p->_v = v; p->_a = a;
     return p;
+}
+
+- (void)keepInputsIn:(SFAVInputPool *)pool video:(NSString *)videoURL audio:(NSString *)audioURL {
+    [pool keep:_v url:videoURL];
+    [pool keep:_a url:audioURL ?: videoURL];
+    _v = _a = nil;
 }
 
 - (void)describeVideo:(SFAVInput *)v audio:(SFAVInput *)a separate:(BOOL)separate {

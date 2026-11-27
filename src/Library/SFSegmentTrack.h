@@ -19,6 +19,9 @@ static const int64_t SFSegmentOffsetUs = 10000000;
 @protocol SFSegmentTrack <NSObject>
 // Where the source's timeline starts (SFAVProbe originUs; set before the first startAt:)
 @property (nonatomic) int64_t originUs;
+// Inputs kept for the playback: the track opens its source from there and leaves it there when it goes
+// (nil: opened and closed by the track alone)
+@property (nonatomic, strong) SFAVInputPool *inputs;
 // Opens the source (the first time) and goes to `us` (µs of the source): the first packet is the one at it
 - (BOOL)startAt:(int64_t)us error:(NSString **)why;
 @property (nonatomic, readonly) const AVCodecParameters *parameters;   // the output's (after startAt:)

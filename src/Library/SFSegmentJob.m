@@ -69,12 +69,17 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
     if (p.audioMode == SFSegmentModeCopy) audio = [[SFSegmentCopy alloc] initWithURL:audioURL type:AVMEDIA_TYPE_AUDIO timeout:kReadTimeout];
     else if (p.audioMode == SFSegmentModeEncode) audio = [[SFSegmentAudio alloc] initWithURL:audioURL timeout:kReadTimeout];
     video.originUs = p.originUs; audio.originUs = p.originUs;
+    video.inputs = p.inputs; audio.inputs = p.inputs;
     @synchronized (self) { _video = video; _audio = audio; }
     if (self.cancelled) return nil;
     int64_t startUs = (int64_t)([p.starts[_first] doubleValue] * 1e6);
     NSString *why = nil;
+    // how long a start takes, by step (the log: what a viewer waits for)
+    CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent(), tVideo, tAudio;
     if (![_video startAt:startUs error:&why]) return [@"video: " stringByAppendingString:why ?: @"?"];
+    tVideo = CFAbsoluteTimeGetCurrent();
     if (_audio && ![_audio startAt:startUs error:&why]) return [@"audio: " stringByAppendingString:why ?: @"?"];
+    tAudio = CFAbsoluteTimeGetCurrent();
     if ((why = [self openMuxer])) return why;
     if (self.onInit) self.onInit([self takeBytes]);
     BOOL videoEnded = NO, audioEnded = NO;
@@ -86,6 +91,8 @@ static int CollectBytes(void *opaque, const uint8_t *buf, int size) {
         if (!a) return self.cancelled ? nil : [@"audio: " stringByAppendingString:why ?: @"?"];
         if ((why = [self writeFragment:v audio:a])) return why;
         NSData *segment = [self takeBytes];
+        if (n == _first) SFLog(@"transcode: job from segment %lu: video open %.0f ms, audio %.0f ms, first segment %.0f ms later",
+                               (unsigned long)n, (tVideo - t0) * 1000, (tAudio - tVideo) * 1000, (CFAbsoluteTimeGetCurrent() - tAudio) * 1000);
         _next = n + 1;
         if (!self.onSegment || !self.onSegment(n, segment)) return nil;
         if (videoEnded && (!_audio || audioEnded)) break;   // the source is shorter than its stated duration

@@ -5,10 +5,11 @@
 // at low priority (the TV's player and UI come first) and makes one segment after the other as long
 // as its session lets it (onSegment); a seek elsewhere is a new job.
 #import <Foundation/Foundation.h>
+@class SFAVInputPool;
 
 typedef NS_ENUM(NSInteger, SFSegmentMode) { SFSegmentModeNone, SFSegmentModeCopy, SFSegmentModeEncode };
 
-// What a session decided for a source (SFWebTranscode): pure data, shared by its jobs
+// What a session decided for a source (SFWebTranscode): data shared by its jobs (and their kept inputs)
 @interface SFSegmentPlan : NSObject
 @property (nonatomic, copy) NSString *videoURL, *audioURL;   // audioURL nil: the audio is in the video's input
 @property (nonatomic) SFSegmentMode videoMode, audioMode;    // audio SFSegmentModeNone: no audio track
@@ -20,6 +21,7 @@ typedef NS_ENUM(NSInteger, SFSegmentMode) { SFSegmentModeNone, SFSegmentModeCopy
 @property (nonatomic, copy) NSArray *starts;                 // every segment's start (s, ascending, first 0)
 @property (nonatomic) double duration;                       // s
 @property (nonatomic) int64_t originUs;                      // the timeline's start in the source's timestamps (SFAVProbe)
+@property (nonatomic, strong) SFAVInputPool *inputs;         // open inputs its jobs go on with (the probe's, a cancelled job's)
 - (NSUInteger)segmentAt:(double)seconds;                     // the segment playing at that time
 @end
 
