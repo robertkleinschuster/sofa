@@ -44,9 +44,11 @@ static NSString *fifoPath(void) {
                : [SFSharedCacheDir() stringByAppendingPathComponent:[NSString stringWithFormat:@"dev-%@.fifo", gInstance]];
 }
 
-// What the real app takes over its FIFO: measuring on the real screen, nothing that plays,
-// downloads or changes data.
-static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] || [cmd isEqualToString:@"framemeter"]; }
+// What the real app takes over its FIFO: measuring on the real screen and reading its log now
+// ("flushlog": the lines a rest holds in memory, up to an hour), nothing that plays, downloads or changes data.
+static BOOL realAppCommand(NSString *cmd) {
+    return [cmd isEqualToString:@"key"] || [cmd isEqualToString:@"framemeter"] || [cmd isEqualToString:@"flushlog"];
+}
 
 // The pipe's file calls (unlink, mkfifo, open) wait on the disk - on a cold one ~100 ms of the
 // launching main thread (hitch 2026-11-08): they run on a queue, the reader is set up on the main
@@ -102,6 +104,7 @@ static BOOL realAppCommand(NSString *cmd) { return [cmd isEqualToString:@"key"] 
     NSString *arg = parts.count > 1 ? [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "] : nil;
     if (!SFDevMode && !realAppCommand(cmd)) { SFLog(@"control: '%@' only in dev instances", cmd); return; }
     SFLog(@"dev: %@", line);
+    if ([cmd isEqualToString:@"flushlog"]) { SFLogFlush(); return; }
     if ([SFAppRegistry handleDevCommand:cmd arg:arg host:self]) return;   // app-specific commands (docs: each app's handleDevCommand)
     if ([cmd isEqualToString:@"parse"] && arg) {   // parser golden test: parse <app> <kind> <in.json> <out.txt>
         NSArray *a = [arg componentsSeparatedByString:@" "];

@@ -355,8 +355,8 @@ Applies to ALL apps (YouTube, ZDF, ARD, ORF, CCC …); the implementation may di
   video layer, masks and 3D transforms do not appear in them → solve effects image-based,
   e.g. backdrop gradients are baked into the image).
 - No web server (removed 2026-11-07; the user views the screen via RustDesk). Measuring on the
-  real app: its FIFO `~/Library/Caches/Sofa/sofa.fifo` takes `key <k>` and `framemeter on|off`
-  only (e.g. `echo 'framemeter on' > ~/Library/Caches/Sofa/sofa.fifo`); dev instances take every
+  real app: its FIFO `~/Library/Caches/Sofa/sofa.fifo` takes `key <k>`, `framemeter on|off` and `flushlog`
+  (writes the lines a rest holds in memory for up to an hour - read a test's log now) only (e.g. `echo 'framemeter on' > ~/Library/Caches/Sofa/sofa.fifo`); dev instances take every
   command over theirs (`sofa-dev do ...`).
 - Log `~/Library/Logs/Sofa.log`, stderr `~/Library/Caches/Sofa/dev.stderr`, crash reports
   are reported by `sofa-dev check`.
