@@ -18,6 +18,7 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
 
 @interface SFTranscodeWaiter : NSObject
 @property (nonatomic) NSInteger segment;
+@property (nonatomic) NSTimeInterval since;   // when it was asked for (the newest waiting request is the player's intent)
 @property (nonatomic, copy) void (^done)(NSData *data, NSInteger status);
 @end
 @implementation SFTranscodeWaiter
@@ -137,8 +138,44 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
             [self->_gate broadcast];
             [self->_gate unlock];
         }
-        [self wait:(NSInteger)n done:respond];
+        SFTranscodeWaiter *w = [self wait:(NSInteger)n done:respond];
+        if (!w) return;
+        // the player gave the request up (a seek cancels what it loaded ahead): it waits no more - and a
+        // job started for it alone gives way to one for a request still waiting (reviewJob)
+        __weak SFWebTranscode *weakSelf = self;
+        dispatch_queue_t q = self->_q;
+        x.onClose = ^{ dispatch_async(q, ^{ [weakSelf waiterGone:w]; }); };
     });
+}
+
+- (void)waiterGone:(SFTranscodeWaiter *)w {
+    if (![_waiters containsObject:w]) return;
+    [_waiters removeObject:w];
+    SFLog(@"transcode: stream %@ segment %ld given up by the player after %.1f s", [_stream substringToIndex:6], (long)w.segment,
+          [NSDate timeIntervalSinceReferenceDate] - w.since);
+    [self reviewJob];
+}
+
+// On _q: a request no job will answer - its job gave way to a newer request's, or stopped - gets one,
+// once the running job has no one waiting in its reach (the newest request's job goes on first). Without
+// this a seek's request waited until the player asked again (2026-11-28: ~30 s): the player's request
+// at the new position, then a late one ahead of the old position - whose job replaced the seek's.
+- (void)reviewJob {
+    if (_closed || _failed) return;
+    SFSegmentJob *job = _job;
+    BOOL running = job && !job.cancelled;
+    SFTranscodeWaiter *orphan = nil;
+    for (SFTranscodeWaiter *w in _waiters) {
+        if (w.segment == kInit) continue;   // the init comes with every job
+        NSUInteger k = (NSUInteger)w.segment;
+        if (_cache[@(k)]) continue;
+        if (running && k >= job.next && k <= job.next + kJump) return;   // the running job serves someone
+        if (!orphan || w.since >= orphan.since) orphan = w;
+    }
+    if (!orphan) return;
+    SFLog(@"transcode: stream %@ segment %ld still waited for (%.1f s) - a job for it", [_stream substringToIndex:6], (long)orphan.segment,
+          [NSDate timeIntervalSinceReferenceDate] - orphan.since);
+    [self startJobAt:(NSUInteger)orphan.segment];
 }
 
 - (void (^)(NSData *, NSInteger))responder:(SFHTTPExchange *)x {
@@ -153,14 +190,15 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
     };
 }
 
-// On _q: answered at once from what is there, else when the job delivers it (or fails, or the time is up)
-- (void)wait:(NSInteger)n done:(void (^)(NSData *, NSInteger))done {
+// On _q: answered at once from what is there (nil), else when the job delivers it (or fails, or the
+// time is up) - the waiter
+- (SFTranscodeWaiter *)wait:(NSInteger)n done:(void (^)(NSData *, NSInteger))done {
     NSData *have = n == kInit ? _init : _cache[@(n)];
-    if (have) { done(have, 200); return; }
-    if (_closed) { done(nil, 410); return; }
-    if (_failed) { done(nil, 503); return; }
+    if (have) { done(have, 200); return nil; }
+    if (_closed) { done(nil, 410); return nil; }
+    if (_failed) { done(nil, 503); return nil; }
     SFTranscodeWaiter *w = [SFTranscodeWaiter new];
-    w.segment = n; w.done = done;
+    w.segment = n; w.done = done; w.since = [NSDate timeIntervalSinceReferenceDate];
     [_waiters addObject:w];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kWait * NSEC_PER_SEC)), _q, ^{
         if (![self->_waiters containsObject:w]) return;
@@ -168,6 +206,7 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
         SFLog(@"transcode: segment %ld of stream %@ not ready in %.0f s", (long)n, [self->_stream substringToIndex:6], kWait);
         w.done(nil, 504);
     });
+    return w;
 }
 
 - (void)answerWaiters:(BOOL (^)(SFTranscodeWaiter *w))match data:(NSData *)data status:(NSInteger)status {
@@ -240,7 +279,8 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
     if (!_cache[@(n)]) { _cache[@(n)] = data; _cacheBytes += data.length; }
     [self answerWaiters:^BOOL(SFTranscodeWaiter *w) { return w.segment == (NSInteger)n; } data:data status:200];
     [self trimCacheKeeping:n];
-    return YES;
+    [self reviewJob];
+    return _job == job;   // it gave way to a job for a request still waiting
 }
 
 - (void)job:(SFSegmentJob *)job ended:(NSString *)failure {
@@ -256,7 +296,8 @@ static NSUInteger gJobs;                       // job threads running (tests; gu
         _ended = YES; _endedAt = job.next;
         [self answerWaiters:^BOOL(SFTranscodeWaiter *w) { return w.segment >= (NSInteger)job.next; } data:nil status:404];
     }
-    // (stopped while idle: the next request starts a new job)
+    // (stopped while idle: the next request starts a new job - or one still waiting does)
+    [self reviewJob];
 }
 
 - (void)fail:(NSString *)why job:(SFSegmentJob *)job {

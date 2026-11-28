@@ -422,6 +422,19 @@ A=("${A_D[@]}")
 closed "$SID"
 logged "web: stream ${SID:0:6} ended \(closed by the browser\)" 5 && ok "14: closing ends it" || bad "14: the stream did not end"
 check "14: ... its segments are gone" "$(C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/0.m4s")" 410
+# a seek's request, then a late one for far behind it (Safari: its prefetch at the old position) - the
+# late one's job replaced the seek's, which then waited until the player asked again (2026-11-28: ~30 s)
+P=$(play '["avc1","mp4a"]'); SID=$(echo "$P" | json 'd.get("stream","")')
+MARK=$(log_mark "$LOG")
+C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/14.m4s" > "$T/far" & F1=$!
+sleep 0.1
+C -o /dev/null -w '%{http_code}' "$U/m/$SID/s/6.m4s" > "$T/near" & F2=$!
+wait $F1 $F2
+check "14: a seek, then a late request far behind it: both answered" "$(cat "$T/far") $(cat "$T/near")" "200 200"
+log_since $MARK "$LOG" | grep -q "segment 14 still waited for" && ok "14: ... the seek's request got a job again" || bad "14: no job for the waiting request: $(log_since $MARK "$LOG" | grep transcode)"
+C --max-time 0.3 -o /dev/null "$U/m/$SID/s/12.m4s"
+logged "stream ${SID:0:6} segment 12 given up by the player" 5 && ok "14: a request the player gives up waits no more" || bad "14: the given-up request is not noticed"
+closed "$SID"
 # a browser decoding VP9 and Opus (Firefox, Chrome): both copied
 P=$(play '["vp09","av01","opus","avc1","mp4a"]'); SID=$(echo "$P" | json 'd.get("stream","")')
 check "14: VP9 + Opus decoded by the browser: copied" "$(echo "$P" | json 'd.get("segmented","-")')" "copy+copy"

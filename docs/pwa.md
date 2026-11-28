@@ -320,7 +320,12 @@ before the segment's start, encodes from exactly there. A job makes at most 4 se
 furthest one asked for, then waits; nobody asking for 45 s stops it (a later request starts one
 again); closing the stream stops it and drops its segments. Segments are kept in memory (48 MB per
 stream, the ones furthest from the player first). Jobs run on a thread of their own at low priority.
-A request waits at most 60 s.
+A request waits at most 60 s - or until the player gives it up (it closes the connection: a seek
+cancels what it loaded ahead). No waiting request is left without a job: once the running job has
+no one waiting in its reach, a job starts for the newest request still waiting. Safari asks for the
+segment at a seek's position and, a few ms later, for one ahead of the old position; that late
+request's job replaced the seek's, whose request then waited until Safari asked again (2026-11-28:
+~30 s per seek).
 
 **Encoders, measured on this Mac (i5-2500S, HD 3000 Quick Sync; 2026-11-26).** Order: the GPU's
 VideoToolbox (`h264_videotoolbox`, `allow_sw 0` - Apple's software path is no better than x264), then
