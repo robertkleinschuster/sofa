@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, SFWebStreamKind) {
 @property (nonatomic) BOOL live, saved, everSaved, everPlayed;
 @property (atomic) BOOL paused;                        // its last report said "paused" (it may stay unused longer)
 @property (atomic) NSTimeInterval lastUsed;
+@property (nonatomic) NSUInteger requestsSeen;          // media requests so far (the first are logged)
 @property (nonatomic) NSTimeInterval opened;            // when it was asked for (its start time counts from here)
 // What the viewer waited for, from its reports (only on a change, not every periodic report): the
 // first picture after `opened`, and how long each "buffering" lasted until it played again. nil: nothing new.

@@ -27,6 +27,8 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
     return [re stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0, text.length) withTemplate:to];
 }
 
+static const NSUInteger kLoggedRequests = 12;   // a stream's first requests in the log (its start)
+
 @implementation SFWebStreams (Serve)
 
 - (void)serve:(SFHTTPExchange *)x stream:(NSString *)streamID rest:(NSArray *)rest {
@@ -34,6 +36,7 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
     if (![m isEqualToString:@"GET"] && ![m isEqualToString:@"HEAD"]) { [x respondJSON:405 object:SFWebError(SFWebErrMethodNotAllowed, @"Nur GET und HEAD.")]; return; }
     SFWebStream *s = [self streamWithID:streamID];
     if (!s) { [x respondJSON:410 object:SFWebError(SFWebErrStreamGone, @"Diese Wiedergabe ist beendet.")]; return; }
+    [self note:x stream:s rest:rest];
     NSString *what = rest.firstObject ?: @"";
     switch (s.kind) {
         case SFWebStreamDash:
@@ -64,6 +67,18 @@ static NSString *Rewrite(NSString *text, NSString *streamID) {
             break;
     }
     [x respondJSON:404 object:SFWebError(SFWebErrNotFound, @"Nicht gefunden.")];
+}
+
+// A stream's first requests, timed from the play request: what the player asks for (and when)
+// before the first picture - its start time beside "plays after" (SFWebStream waitedFor:)
+- (void)note:(SFHTTPExchange *)x stream:(SFWebStream *)s rest:(NSArray *)rest {
+    NSUInteger n;
+    @synchronized (s) { n = s.requestsSeen++; }
+    if (n >= kLoggedRequests) return;
+    NSString *range = [x.request header:@"range"], *agent = n ? nil : [x.request header:@"user-agent"];
+    SFLog(@"web: stream %@ +%.2f s %@ %@%@%@", [s.identifier substringToIndex:6], [NSDate timeIntervalSinceReferenceDate] - s.opened,
+          x.request.method, [rest componentsJoinedByString:@"/"], range ? [@" " stringByAppendingString:range] : @"",
+          agent ? [NSString stringWithFormat:@" (%@)", agent] : @"");
 }
 
 - (void)text:(NSString *)text to:(SFHTTPExchange *)x {
