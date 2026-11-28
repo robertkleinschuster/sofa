@@ -154,7 +154,8 @@ export class Player {
     v.addEventListener('pause', () => { if (!v.ended && !this.closing) this.report('paused'); this.stopClock(); });
     v.addEventListener('seeked', () => this.report(v.paused ? 'paused' : 'playing'));
     v.addEventListener('ended', () => { this.report('ended'); this.stopClock(); });
-    v.addEventListener('waiting', () => this.showStatus('Lädt …', 800));
+    // Sofa logs how long the viewer waited (the first picture, each stall until it plays on)
+    v.addEventListener('waiting', () => { this.showStatus('Lädt …', 800); if (!v.paused) this.report('buffering'); });
     v.addEventListener('error', () => {
       if (this.hls || this.closing) return;
       // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: the format, not the connection - opening it again won't help

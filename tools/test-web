@@ -245,6 +245,11 @@ check "7: 206 with Content-Range" "$(C -r 0-9 -o /dev/null -w '%{http_code}' "$U
 check "7: another stream id: 410" "$(C -o /dev/null -w '%{http_code}' "$U/m/0123456789abcdef0123456789abcdef/index.m3u8")" 410
 
 check "8: a report" "$(C "${A[@]}" -o /dev/null -w '%{http_code}' -d '{"state":"paused","position":2,"duration":4}' "$U/api/stream/$SID")" 200
+R() { C "${A[@]}" -o /dev/null -d "{\"state\":\"$1\",\"position\":$2,\"duration\":4}" "$U/api/stream/$SID"; }
+R playing 2; R playing 3; R buffering 3; sleep 0.5; R playing 3
+logged "web: stream ${SID:0:6} plays after [0-9.]+ s at 2 s" 5 && ok "8: the first picture's wait is logged" || bad "8: no first-picture line"
+logged "web: stream ${SID:0:6} plays on after 0\.[5-9] s of buffering at 3 s" 5 && ok "8: a stall's wait is logged" || bad "8: stall: $(grep "stream ${SID:0:6} plays" "$LOG")"
+check "8: once each (not every report)" "$(grep -c "web: stream ${SID:0:6} plays" "$LOG")" 2
 sleep 1
 check "8: the position is in the TV's history" "$(/opt/local/bin/sqlite3 "$DB" "select count(*) from progress where id='example:1'")" 1
 check "8: the capability path (sendBeacon) reports too" "$(C -o /dev/null -w '%{http_code}' -H 'Content-Type: text/plain' -d '{"state":"ended","position":4,"duration":4}' "$U/m/$SID/state")" 200

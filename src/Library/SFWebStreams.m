@@ -31,7 +31,23 @@ NSDictionary *SFWebStreamReportError(NSInteger status) {
     return status == 400 ? SFWebError(SFWebErrBadState, @"Unbekannter Zustand.") : SFWebError(SFWebErrStreamGone, @"Diese Wiedergabe ist beendet.");
 }
 
-@implementation SFWebStream
+@implementation SFWebStream {
+    NSTimeInterval _waitingSince;  // "buffering" began (0: not buffering)
+}
+
+- (NSString *)waitedFor:(NSString *)state position:(double)position {
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    NSString *line = nil;
+    if ([state isEqualToString:@"buffering"]) { if (!_waitingSince) _waitingSince = now; return nil; }
+    if (![state isEqualToString:@"playing"]) { _waitingSince = 0; return nil; }
+    if (!self.everPlayed)
+        line = [NSString stringWithFormat:@"plays after %.1f s at %.0f s", now - self.opened, position];
+    else if (_waitingSince)
+        line = [NSString stringWithFormat:@"plays on after %.1f s of buffering at %.0f s", now - _waitingSince, position];
+    self.everPlayed = YES;
+    _waitingSince = 0;
+    return line;
+}
 @end
 
 // "http://127.0.0.1:<port>/<a>/<b>/" - the route a local URL belongs to (a proxy or engine session)
@@ -114,7 +130,7 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     s.item = item;
     s.source = SFMPVSourceFor(url) ?: @{};
     s.live = item.kind == SFItemLive || [s.source[@"live"] boolValue];
-    s.lastUsed = [NSDate timeIntervalSinceReferenceDate];
+    s.lastUsed = s.opened = [NSDate timeIntervalSinceReferenceDate];
     if (!s.identifier) { done(nil, 500, SFWebErrInternal, kNotForBrowser); return; }
     // what can't be: the fallback (the app's browser format) or the viewer is told
     void (^cannot)(NSString *) = ^(NSString *message) {
@@ -248,6 +264,9 @@ static NSString *Tag(NSString *codec) { return [[codec componentsSeparatedByStri
     if (![@[@"playing", @"paused", @"buffering", @"ended", @"closed"] containsObject:st ?: @""]) return 400;
     s.paused = [st isEqualToString:@"paused"];
     double pos = [num(state[@"position"]) doubleValue], dur = [num(state[@"duration"]) doubleValue];
+    NSString *waited;
+    @synchronized (s) { waited = [s waitedFor:st position:pos]; }
+    if (waited) SFLog(@"web: stream %@ %@", [s.identifier substringToIndex:6], waited);
     Class<SFApp> app = [SFAppRegistry appForItem:s.item];
     if ([app respondsToSelector:@selector(playback:reports:)]) {
         NSMutableDictionary *r = [@{@"state": st} mutableCopy];

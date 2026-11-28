@@ -23,9 +23,13 @@ typedef NS_ENUM(NSInteger, SFWebStreamKind) {
 @property (nonatomic, copy) NSArray *prefixes;         // local URLs this stream may reach (route prefixes)
 @property (nonatomic, strong) NSURL *proxied;          // a media proxy session opened for it (released at the end)
 @property (nonatomic, strong) SFWebTranscode *transcode;   // segmented: its session (closed at the end)
-@property (nonatomic) BOOL live, saved, everSaved;
+@property (nonatomic) BOOL live, saved, everSaved, everPlayed;
 @property (atomic) BOOL paused;                        // its last report said "paused" (it may stay unused longer)
 @property (atomic) NSTimeInterval lastUsed;
+@property (nonatomic) NSTimeInterval opened;            // when it was asked for (its start time counts from here)
+// What the viewer waited for, from its reports (only on a change, not every periodic report): the
+// first picture after `opened`, and how long each "buffering" lasted until it played again. nil: nothing new.
+- (NSString *)waitedFor:(NSString *)state position:(double)position;
 @end
 
 @interface SFWebStreams ()

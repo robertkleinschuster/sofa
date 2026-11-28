@@ -129,7 +129,9 @@ session or client.
 
 The play answer's `url` is a capability URL (`/m/<stream>/...`, no header: players can't send one).
 Report the player's state to `POST /stream/<stream>` (`playing/paused/buffering/ended/closed`, position,
-duration): it is how the TV learns the progress, and `closed` ends the stream.
+duration): it is how the TV learns the progress, and `closed` ends the stream. Report `buffering` when
+the player waits for media while it should play, and `playing` once it plays (on its `playing` event):
+Sofa logs how long the viewer waited - the first picture after the play request, each stall after it.
 
 A stream ends:
 - when the client says `closed`;
