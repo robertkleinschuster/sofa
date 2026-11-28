@@ -9,7 +9,10 @@
 //     demand's media time (seek = new SABR run at that playerTimeMs; no player request);
 //   - a buffered demand starts a pump at the end of its contiguous run once less than LOW_MS is
 //     buffered ahead, and stops being a reason to keep a pump running at HIGH_MS ahead (pacing);
-//   - pumps that no demand needs for GRACE_MS are aborted.
+//   - pumps that no demand needs for GRACE_MS are aborted. A lingering demand (between two requests)
+//     keeps the run feeding it, paced like a reader, but starts none: a player that reads in pieces -
+//     the browser's MediaSource player, one range per segment with pauses while it appends - would
+//     otherwise get a new SABR run per range (2026-11-28: 12 a minute, starts throttled, 25 s stall).
 // Video pumps carry the audio track read most recently (SABR has no video-only mode); other audio
 // tracks (language switch) get audio-only pumps. Memory: media more than KEEP_BEHIND_MS behind every
 // demand is evicted, plus a byte cap per track; init segment + index are always kept.
@@ -189,7 +192,8 @@ class Track {
       out.push({ off: r.pos, ms: this.file.timeAt(r.pos), movedAt: r.movedAt ?? r.since ?? now });
     }
     if (!live && this.lastPos !== null && now - this.lastReadAt < this.session.cfg.LINGER_MS) {
-      // between two requests (seek, reconnect): only protects the buffer from eviction
+      // between two requests (the next piece, a seek, a reconnect): keeps the run feeding this position
+      // and the buffer around it, starts no run (schedule())
       out.push({ off: this.lastPos, ms: this.file.timeAt(this.lastPos), linger: true });
     }
     if (this.hint) {
@@ -434,10 +438,9 @@ export class PlaybackSession {
     const paced = new Set<Pump>();
     for (const t of this.tracks.values()) {
       for (const d of t.demands(now)) {
-        if (d.linger) continue;
         if (d.off !== null && d.off < t.initEnd) {
           // reading the header/index: every SABR run starts with the init segment
-          if (t.file.init) continue;
+          if (t.file.init || d.linger) continue;
           const feeder = [...this.pumps].find((x) => x.alive && x.feeds(t));
           if (feeder) { if (feeder.driver === t) useful.add(feeder); continue; }
           if (this.failed) continue;
@@ -462,6 +465,8 @@ export class PlaybackSession {
           if (p.driver === t) (enough ? paced : useful).add(p);
           continue;
         }
+        // a pause between two requests starts no run - the next request asks for its own position
+        if (d.linger) continue;
         // hysteresis: buffered but no pump -> resume only below LOW_MS (or half the byte cap)
         if (sat && (sat.aheadMs >= cfg.LOW_MS || sat.aheadBytes >= cfg.HIGH_BYTES[t.kind] / 2)) continue;
         if (this.failed) continue;

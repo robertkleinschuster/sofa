@@ -217,6 +217,17 @@ it answers 404 with `gone: <sid>`; `SFYTEngine` posts `SFYTEngineSessionsLostNot
 matches it to the open stream; the player reopens right away, or on play when paused. Before, mpv
 reconnected to 404s and finally took the failed read for the end of the video.
 
+## Players that read in pieces (2026-11-28)
+
+The browser's MediaSource player (Sofa im Browser) asks for one byte range per segment and pauses
+while it appends it. Between two requests the track's demand lingers (`LINGER_MS`, 20 s); a
+lingering demand now keeps the run that feeds it, paced like a reader (`HIGH_MS`/`LOW_MS`), but
+never starts one - the next request asks for its own position. Before, the run was stopped after
+`GRACE_MS` (1 s) and every range started a new SABR run: 12 a minute hit the start limit, and
+the stream stalled 25 s (`pump starts throttled`). mpv reads the same way in 1 MiB requests with
+ms gaps and is unaffected. Coverage: `unit-session.test.ts` (one segment per request, pauses
+between: at most one paced restart over ten segments; the old code started ten runs).
+
 ## Audio recovery (2026-11-20)
 
 `session.ts` measures advancing media separately for each track. The 20 s pump watchdog uses

@@ -225,6 +225,26 @@ test('pacing: pull pauses ~HIGH ahead of a stalled reader, resumes below LOW; me
   }
 });
 
+test('a player reading one segment per request, with pauses between, is fed by one run (2026-11-28 browser stall)', async () => {
+  // the browser's MediaSource player: a range per segment, then a pause while it appends; the run
+  // feeding it must outlive the pauses - a run per range hit the start limit and stalled playback
+  const pumps = fakePumps(MEDIA, { intervalMs: 150 });
+  const formats = describeFormats(info.formats);
+  const s = new PlaybackSession({ info, formats, video: must(pickVideo(formats)), audio: must(pickAudio(formats)),
+    audioChoices: audioTracks(formats).map((t) => t.format), startPump: (o) => pumps.start(info, formats, o), cfg: CFG });
+  s.video.file.add({ start: 0, buf: VINIT, init: true });
+  try {
+    for (let i = 5; i < 15; i++) {
+      const res = new FakeRes();
+      await s.serve(s.video, V(i).start, V(i).start + V(i).length, res);
+      assert.equal(res.bytes, V(i).length, `segment ${i} served whole`);
+      res.destroy();
+      await sleep(250);   // > GRACE_MS, < LINGER_MS
+    }
+    assert.ok(pumps.log.starts.length <= 2, `one run, at most a paced restart: ${JSON.stringify(pumps.log.starts.map((x) => x.startMs))}`);
+  } finally { s.close('test'); }
+});
+
 test('media a running pump already passed but that is missing gets a run of its own (2026-11-07 audio switch hang)', async () => {
   const pumps = fakePumps(MEDIA, { intervalMs: 15 });
   const formats = describeFormats(info.formats);
